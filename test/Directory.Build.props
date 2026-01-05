@@ -1,0 +1,53 @@
+<Project>
+    <Import Project="$([MSBuild]::GetPathOfFileAbove(&#39;build.props&#39;))"/>
+
+    <PropertyGroup>
+        <IsPackable>false</IsPackable>
+        <IsTestProject>true</IsTestProject>
+    </PropertyGroup>
+
+    <!-- Code coverage configuration -->
+    <PropertyGroup>
+        <CollectCoverage>true</CollectCoverage>
+        <CoverletOutputFormat>opencover,cobertura,json</CoverletOutputFormat>
+        <CoverletOutput>./coverage/</CoverletOutput>
+        <Exclude>[*.Tests]*,[*.xunit]*,[xunit.*]*</Exclude>
+        <ExcludeByAttribute>Obsolete,GeneratedCode,CompilerGenerated</ExcludeByAttribute>
+
+        <!--
+          Coverage thresholds configuration:
+          - Disabled by default to allow builds to succeed
+          - Enable in CI or per-project by uncommenting and setting appropriate values
+          - Current coverage levels (as of latest run):
+            * Functional.Tests: Line 45%, Branch 27%, Method 29%
+            * Functional.AspNetCore.Tests: Line 8%, Branch 4%, Method 6%
+            * Functional.xunit.Tests: Line 4%, Branch 1%, Method 4%
+          - Recommended approach: Start with baseline thresholds and gradually increase
+          - Example for CI: <Threshold Condition="'$(CI)' == 'true'">40,20,25</Threshold>
+        -->
+        <!-- <ThresholdType>line,branch,method</ThresholdType> -->
+        <!-- <Threshold>40,20,25</Threshold> -->
+    </PropertyGroup>
+
+    <ItemGroup>
+        <Using Include="Xunit"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="coverlet.collector">
+            <PrivateAssets>all</PrivateAssets>
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+        </PackageReference>
+        <PackageReference Include="coverlet.msbuild">
+            <PrivateAssets>all</PrivateAssets>
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+        </PackageReference>
+        <PackageReference Include="xunit"/>
+        <PackageReference Include="xunit.runner.visualstudio">
+            <PrivateAssets>all</PrivateAssets>
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+        </PackageReference>
+        <PackageReference Include="Microsoft.NET.Test.Sdk"/>
+        <PackageReference Include="JetBrains.Annotations"/>
+    </ItemGroup>
+</Project>

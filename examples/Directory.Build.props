@@ -1,0 +1,12 @@
+﻿<Project>
+    <Import Project="$([MSBuild]::GetPathOfFileAbove(&#39;build.props&#39;))"/>
+
+    <PropertyGroup>
+        <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+        <IsPackable>false</IsPackable>
+        <WarningsAsErrors>false</WarningsAsErrors>
+        <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+        <RootNamespace>$(Product).Examples.$(MSBuildProjectName)</RootNamespace>
+        <AssemblyName>$(Product).Examples.$(MSBuildProjectName)</AssemblyName>
+    </PropertyGroup>
+</Project>

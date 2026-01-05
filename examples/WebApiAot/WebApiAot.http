@@ -1,0 +1,238 @@
+@baseUrl = http://localhost:5225
+
+### ===== Todo Examples =====
+
+GET {{baseUrl}}/todos/
+Accept: application/json
+
+> {%
+    client.test("Response should be empty array", function () {
+        client.assert(response.status === 200, "Response status is OK");
+        client.assert(Array.isArray(response.body), "Response body is array");
+        client.assert(response.body.length === 0, "Array is empty");
+    });
+%}
+
+###
+
+POST {{baseUrl}}/todos/
+Accept: application/json
+Content-Type: application/json
+
+{
+  "name": "my todo task 1"
+}
+
+> {%
+    client.test("Response status is Created", function () {
+        client.assert(response.status === 201, "Response status is 201 Created");
+    });
+
+    client.test("Response has Location header with valid URL", function () {
+        client.assert(response.headers.valueOf("Location"), "Location header exists");
+        const locationUrl = response.headers.valueOf("Location");
+        const guidPattern = /^\/todo\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
+        client.assert(guidPattern.test(locationUrl), "Location header contains valid URL with GUID");
+
+        const match = locationUrl.match(guidPattern);
+        client.global.set("todoId", match[1]);
+    });
+%}
+
+###
+
+GET {{baseUrl}}/todos/{{todoId}}
+Accept: application/json
+
+> {%
+    client.test("Get todo response", function () {
+        client.assert(response.status === 200, "Response status is OK");
+        client.assert(response.body.id === client.global.get("todoId"), "Todo ID matches");
+        client.assert(response.body.name === "my todo task 1", "Todo name matches");
+    });
+%}
+
+###
+
+PUT {{baseUrl}}/todos/{{todoId}}
+Accept: application/json
+Content-Type: application/json
+
+{
+  "name": "updated todo task 1"
+}
+
+> {%
+    client.test("Update todo response", function () {
+        client.assert(response.status === 200, "Response status is OK");
+    });
+%}
+
+###
+
+GET {{baseUrl}}/todos/
+Accept: application/json
+
+> {%
+    client.test("List todos response", function () {
+        client.assert(response.status === 200, "Response status is OK");
+        client.assert(Array.isArray(response.body), "Response body is array");
+        client.assert(response.body.length === 1, "Array contains one item");
+        client.assert(response.body[0].id === client.global.get("todoId"), "Todo ID matches");
+        client.assert(response.body[0].name === "updated todo task 1", "Todo name matches");
+    });
+%}
+
+###
+
+
+
+
+
+
+DELETE {{baseUrl}}/todos/{{todoId}}
+Accept: application/json
+
+> {%
+    client.test("Delete todo response", function () {
+        client.assert(response.status === 200, "Response status is OK");
+    });
+%}
+
+###
+
+### ===== Fulfillment System Endpoints =====
+
+### List All Fulfillments
+GET {{baseUrl}}/fulfillment/
+Accept: application/json
+
+> {%
+    client.test("List fulfillments response", function () {
+        client.assert(response.status === 200, "Response status is OK");
+        client.assert(Array.isArray(response.body), "Response body is array");
+    });
+%}
+
+###
+
+### Request Fulfillment (triggers EXTERNAL event: OrderFulfillmentRequested - sent to WebApi)
+POST {{baseUrl}}/fulfillment/request
+Content-Type: application/json
+
+{
+  "orderId": "550e8400-e29b-41d4-a716-446655440000",
+  "warehouseLocation": "Warehouse-A"
+}
+
+> {%
+    client.test("Request fulfillment response", function () {
+        client.assert(response.status === 201, "Response status is Created");
+        client.assert(response.body.fulfillmentId, "Response contains fulfillmentId");
+        client.global.set("fulfillmentId", response.body.fulfillmentId);
+    });
+%}
+
+###
+
+### Get Fulfillment by ID
+GET {{baseUrl}}/fulfillment/{{fulfillmentId}}
+Accept: application/json
+
+> {%
+    client.test("Get fulfillment response", function () {
+        client.assert(response.status === 200, "Response status is OK");
+        client.assert(response.body.fulfillmentId === client.global.get("fulfillmentId"), "Fulfillment ID matches");
+        client.assert(response.body.status === "Pending", "Status is Pending");
+    });
+%}
+
+###
+
+### Complete Fulfillment (triggers EXTERNAL event: OrderFulfillmentCompleted - sent to WebApi)
+POST {{baseUrl}}/fulfillment/{{fulfillmentId}}/complete
+
+> {%
+    client.test("Complete fulfillment response", function () {
+        client.assert(response.status === 200, "Response status is OK");
+        client.assert(response.body.message, "Response contains message");
+    });
+%}
+
+###
+
+### ===== Cross-App Demo Scenario (use with WebApi) =====
+
+### Scenario 3: Request Fulfillment (after shipping from WebApi)
+### Use the demoOrderId from WebApi.http
+POST {{baseUrl}}/fulfillment/request
+Content-Type: application/json
+
+{
+  "orderId": "PUT_ORDER_ID_HERE",
+  "warehouseLocation": "Warehouse-B"
+}
+
+> {%
+    client.test("Demo - Request fulfillment", function () {
+        client.assert(response.status === 201, "Response status is Created");
+        client.global.set("demoFulfillmentId", response.body.fulfillmentId);
+    });
+%}
+
+###
+
+### Scenario 4: Complete Fulfillment (publishes event back to WebApi)
+POST {{baseUrl}}/fulfillment/{{demoFulfillmentId}}/complete
+
+> {%
+    client.test("Demo - Complete fulfillment", function () {
+        client.assert(response.status === 200, "Response status is OK");
+    });
+%}
+
+###
+
+### Check all fulfillments after scenario
+GET {{baseUrl}}/fulfillment/
+Accept: application/json
+
+###
+
+### ===== Complete Cross-App Workflow =====
+
+### Step 1: Go to WebApi.http and create + ship an order
+### This will publish OrderShipped (EXTERNAL) which WebApiAot will receive
+
+###
+
+### Step 2: Request fulfillment for that order
+POST {{baseUrl}}/fulfillment/request
+Content-Type: application/json
+
+{
+  "orderId": "PUT_SHIPPED_ORDER_ID_HERE",
+  "warehouseLocation": "Warehouse-C"
+}
+
+> {%
+    client.test("Full workflow - Request fulfillment", function () {
+        client.assert(response.status === 201, "Response status is Created");
+        client.global.set("fullWorkflowFulfillmentId", response.body.fulfillmentId);
+    });
+%}
+
+###
+
+### Step 3: Complete the fulfillment
+POST {{baseUrl}}/fulfillment/{{fullWorkflowFulfillmentId}}/complete
+
+> {%
+    client.test("Full workflow - Complete fulfillment", function () {
+        client.assert(response.status === 200, "Response status is OK");
+    });
+%}
+
+### WebApi will receive OrderFulfillmentCompleted event and log the order status update
+
+###

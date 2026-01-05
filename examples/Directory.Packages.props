@@ -1,0 +1,6 @@
+<Project>
+  <!-- Disable central package management for examples -->
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+</Project>

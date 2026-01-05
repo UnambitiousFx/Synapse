@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or Discussion
+    url: https://github.com/UnambitiousFx/Synapse/discussions
+    about: Ask questions or discuss ideas with the community
+  - name: Documentation
+    url: https://github.com/UnambitiousFx/Synapse/blob/main/README.md
+    about: Read the library documentation
