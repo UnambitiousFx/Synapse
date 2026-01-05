@@ -1,0 +1,23 @@
+<Solution>
+    <Folder Name="/benchmarks/">
+        <Project Path="benchmarks\SynapseBenchmark\SynapseBenchmark.csproj"/>
+    </Folder>
+    <Folder Name="/examples/">
+        <Project Path="examples/Application/Application.csproj"/>
+        <Project Path="examples/ConsoleApp/ConsoleApp.csproj"/>
+        <Project Path="examples/WebApi.Tests/WebApi.Tests.csproj"/>
+        <Project Path="examples/WebApi/WebApi.csproj"/>
+        <Project Path="examples/WebApiAot/WebApiAot.csproj"/>
+    </Folder>
+    <Folder Name="/src/">
+        <Project Path="src\Synapse.Abstractions\Synapse.Abstractions.csproj"/>
+        <Project Path="src\Synapse.Generator\Synapse.Generator.csproj"/>
+        <Project Path="src\Synapse\Synapse.csproj"/>
+    </Folder>
+    <Folder Name="/test/">
+        <Project Path="test\Synapse.Tests\Synapse.Tests.csproj"/>
+    </Folder>
+    <Folder Name="/_/">
+        <File Path="Directory.Packages.props"/>
+    </Folder>
+</Solution>

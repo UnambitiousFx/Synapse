@@ -1,0 +1,333 @@
+@baseUrl = http://localhost:5175
+
+### ===== Todo Examples =====
+
+GET {{baseUrl}}/todos/
+Accept: application/json
+
+> {%
+    client.test("Response should be empty array", function () {
+        client.assert(response.status === 200, "Response status is OK");
+        client.assert(Array.isArray(response.body), "Response body is array");
+        client.assert(response.body.length === 0, "Array is empty");
+    });
+%}
+
+###
+
+POST {{baseUrl}}/todos/
+Accept: application/json
+Content-Type: application/json
+
+{
+  "name": "my todo task 1"
+}
+
+> {%
+    client.test("Response status is Created", function () {
+        client.assert(response.status === 201, "Response status is 201 Created");
+    });
+
+    client.test("Response has Location header with valid URL", function () {
+        client.assert(response.headers.valueOf("Location"), "Location header exists");
+        const locationUrl = response.headers.valueOf("Location");
+        const guidPattern = /^\/todo\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
+        client.assert(guidPattern.test(locationUrl), "Location header contains valid URL with GUID");
+
+        const match = locationUrl.match(guidPattern);
+        client.global.set("todoId", match[1]);
+    });
+%}
+
+###
+
+GET {{baseUrl}}/todos/{{todoId}}
+Accept: application/json
+
+> {%
+    client.test("Get todo response", function () {
+        client.assert(response.status === 200, "Response status is OK");
+        client.assert(response.body.id === client.global.get("todoId"), "Todo ID matches");
+        client.assert(response.body.name === "my todo task 1", "Todo name matches");
+    });
+%}
+
+###
+
+PUT {{baseUrl}}/todos/{{todoId}}
+Accept: application/json
+Content-Type: application/json
+
+{
+  "name": "updated todo task 1"
+}
+
+> {%
+    client.test("Update todo response", function () {
+        client.assert(response.status === 200, "Response status is OK");
+    });
+%}
+
+###
+
+GET {{baseUrl}}/todos/
+Accept: application/json
+
+> {%
+    client.test("List todos response", function () {
+        client.assert(response.status === 200, "Response status is OK");
+        client.assert(Array.isArray(response.body), "Response body is array");
+        client.assert(response.body.length === 1, "Array contains one item");
+        client.assert(response.body[0].id === client.global.get("todoId"), "Todo ID matches");
+        client.assert(response.body[0].name === "updated todo task 1", "Todo name matches");
+    });
+%}
+
+###
+
+
+
+
+
+
+DELETE {{baseUrl}}/todos/{{todoId}}
+Accept: application/json
+
+> {%
+    client.test("Delete todo response", function () {
+        client.assert(response.status === 200, "Response status is OK");
+    });
+%}
+
+###
+
+### ===== Transport Examples - Orders =====
+
+### Create Order (triggers LOCAL events: OrderCreated, NotificationRequested)
+POST {{baseUrl}}/orders
+Content-Type: application/json
+
+{
+  "customerName": "John Doe",
+  "totalAmount": 299.99
+}
+
+> {%
+    client.test("Create order response", function () {
+        client.assert(response.status === 201, "Response status is Created");
+        client.assert(response.body.orderId, "Response contains orderId");
+        client.global.set("orderId", response.body.orderId);
+    });
+%}
+
+###
+
+### Ship Order (triggers EXTERNAL event: OrderShipped - sent through transport)
+POST {{baseUrl}}/orders/{{orderId}}/ship
+
+> {%
+    client.test("Ship order response", function () {
+        client.assert(response.status === 200, "Response status is OK");
+        client.assert(response.body.message, "Response contains message");
+    });
+%}
+
+###
+
+### Ship Order - with specific ID
+POST {{baseUrl}}/orders/550e8400-e29b-41d4-a716-446655440000/ship
+
+###
+
+### ===== Transport Examples - Payments =====
+
+### Process Payment (triggers EXTERNAL event: PaymentProcessed - sent through transport)
+POST {{baseUrl}}/payments
+Content-Type: application/json
+
+{
+  "orderId": "{{orderId}}",
+  "amount": 299.99,
+  "paymentMethod": "CreditCard"
+}
+
+> {%
+    client.test("Process payment response", function () {
+        client.assert(response.status === 200, "Response status is OK");
+        client.assert(response.body.message, "Response contains message");
+    });
+%}
+
+###
+
+### Process Payment - PayPal
+POST {{baseUrl}}/payments
+Content-Type: application/json
+
+{
+  "orderId": "550e8400-e29b-41d4-a716-446655440000",
+  "amount": 599.99,
+  "paymentMethod": "PayPal"
+}
+
+###
+
+### ===== Transport Examples - Inventory =====
+
+### Update Inventory - Decrease (triggers EXTERNAL event: InventoryUpdated - sent through transport)
+POST {{baseUrl}}/inventory/660e8400-e29b-41d4-a716-446655440000/update
+Content-Type: application/json
+
+{
+  "quantityChange": -10
+}
+
+> {%
+    client.test("Update inventory response", function () {
+        client.assert(response.status === 200, "Response status is OK");
+        client.assert(response.body.message, "Response contains message");
+    });
+%}
+
+###
+
+### Update Inventory - Increase
+POST {{baseUrl}}/inventory/660e8400-e29b-41d4-a716-446655440000/update
+Content-Type: application/json
+
+{
+  "quantityChange": 50
+}
+
+###
+
+### ===== Complete Workflow Example =====
+
+### Step 1: Create an order (local events)
+POST {{baseUrl}}/orders
+Content-Type: application/json
+
+{
+  "customerName": "Jane Smith",
+  "totalAmount": 599.99
+}
+
+> {%
+    client.test("Workflow - Create order", function () {
+        client.assert(response.status === 201, "Response status is Created");
+        client.global.set("workflowOrderId", response.body.orderId);
+    });
+%}
+
+###
+
+### Step 2: Process payment for the order (external event)
+POST {{baseUrl}}/payments
+Content-Type: application/json
+
+{
+  "orderId": "{{workflowOrderId}}",
+  "amount": 599.99,
+  "paymentMethod": "PayPal"
+}
+
+> {%
+    client.test("Workflow - Process payment", function () {
+        client.assert(response.status === 200, "Response status is OK");
+    });
+%}
+
+###
+
+### Step 3: Update inventory (external event)
+POST {{baseUrl}}/inventory/770e8400-e29b-41d4-a716-446655440000/update
+Content-Type: application/json
+
+{
+  "quantityChange": -1
+}
+
+> {%
+    client.test("Workflow - Update inventory", function () {
+        client.assert(response.status === 200, "Response status is OK");
+    });
+%}
+
+###
+
+### Step 4: Ship the order (external event)
+POST {{baseUrl}}/orders/{{workflowOrderId}}/ship
+
+> {%
+    client.test("Workflow - Ship order", function () {
+        client.assert(response.status === 200, "Response status is OK");
+    });
+%}
+
+###
+
+### ===== Cross-Application Communication Examples =====
+
+### Cancel Order (triggers EXTERNAL event: OrderCancelled - consumed by WebApiAot)
+DELETE {{baseUrl}}/orders/{{orderId}}
+Content-Type: application/json
+
+{
+  "reason": "Customer requested cancellation"
+}
+
+> {%
+    client.test("Cancel order response", function () {
+        client.assert(response.status === 200, "Response status is OK");
+        client.assert(response.body.message, "Response contains message");
+    });
+%}
+
+###
+
+### ===== Cross-App Demo Scenario =====
+
+### Scenario 1: Create Order
+POST {{baseUrl}}/orders
+Content-Type: application/json
+
+{
+  "customerName": "Alice Johnson",
+  "totalAmount": 899.99
+}
+
+> {%
+    client.test("Demo - Create order", function () {
+        client.assert(response.status === 201, "Response status is Created");
+        client.global.set("demoOrderId", response.body.orderId);
+    });
+%}
+
+###
+
+### Scenario 2: Ship Order (EXTERNAL event to WebApiAot)
+POST {{baseUrl}}/orders/{{demoOrderId}}/ship
+
+> {%
+    client.test("Demo - Ship order", function () {
+        client.assert(response.status === 200, "Response status is OK");
+    });
+%}
+
+###
+
+### Now go to WebApiAot.http to:
+### 1. Request fulfillment (publishes OrderFulfillmentRequested)
+### 2. Complete fulfillment (publishes OrderFulfillmentCompleted back to WebApi)
+
+###
+
+### Alternative: Cancel the order (EXTERNAL event to WebApiAot)
+DELETE {{baseUrl}}/orders/{{demoOrderId}}
+Content-Type: application/json
+
+{
+  "reason": "Customer changed mind"
+}
+
+###
