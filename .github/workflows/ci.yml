@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  build-and-test:
+    name: Build and Test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+      fail-fast: false
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore dependencies
+        run: dotnet restore Synapse.slnx
+
+      - name: Build
+        run: dotnet build Synapse.slnx --no-restore --configuration Release
+
+      - name: Test (coverage + TRX)
+        run: >
+          dotnet test Synapse.slnx
+          --no-build
+          --configuration Release
+          --verbosity normal
+          --collect:"XPlat Code Coverage"
+          --results-directory ./test-results
+          --logger "trx;LogFileName=test-results.trx"
+
+      - name: Convert TRX to JUnit (for Codecov test results)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          dotnet tool install --global trx2junit
+          trx2junit ./test-results/test-results.trx --output ./test-results/junit.xml
+
+      - name: Upload coverage reports to Codecov
+        if: matrix.os == 'ubuntu-latest'
+        uses: codecov/codecov-action@v5
+        with:
+          directory: ./test-results
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Upload test results to Codecov
+        if: matrix.os == 'ubuntu-latest'
+        uses: codecov/codecov-action@v5
+        with:
+          report_type: test_results
+          files: ./test-results/junit.xml
+          token: ${{ secrets.CODECOV_TOKEN }}
