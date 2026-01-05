@@ -18,7 +18,7 @@ internal static class EventDispatcherRegistrationFactory
         sb.AppendLine("using System;");
         sb.AppendLine("using System.Diagnostics.CodeAnalysis;");
         sb.AppendLine($"using global::{abstractionsNamespace};");
-        sb.AppendLine("using UnambitiousFx.Functional.Results;");
+        sb.AppendLine("using global::UnambitiousFx.Functional;");
         sb.AppendLine();
         sb.AppendLine($"namespace {rootNamespace};");
         sb.AppendLine();

@@ -2,10 +2,7 @@
 
 
     <ItemGroup>
-        <ProjectReference Include="..\..\src\Synapse.Messaging\Synapse.Messaging.csproj"/>
         <ProjectReference Include="..\..\src\Synapse\Synapse.csproj"/>
-        <ProjectReference Include="..\..\src\Messaging.Transports.Aws\Messaging.Transports.Aws.csproj"/>
-        <ProjectReference Include="..\..\src\Messaging\Messaging.csproj"/>
         <ProjectReference Include="..\Application\Application.csproj"/>
     </ItemGroup>
     <ItemGroup>

@@ -1,3 +1,6 @@
+using System.Net.Http.Json;
+using Microsoft.AspNetCore.Mvc.Testing;
+
 namespace UnambitiousFx.Examples.WebApi.Tests;
 
 public sealed class BasicHttpTests
