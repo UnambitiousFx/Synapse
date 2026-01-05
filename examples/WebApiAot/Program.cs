@@ -44,18 +44,21 @@ builder.Services.AddMediator(cfg =>
     // Enable distributed messaging with transports
     cfg.EnableDistributedEvent(messaging =>
     {
+        // Todo replace with working transport
+        return null!;
+
         // Configure messaging transport (all-in-one configuration)
-        return messaging.ConfigureMessagingAsTransport(msgCfg =>
-        {
-            msgCfg.ApplicationName(applicationName);
-            msgCfg.UseAwsNameFormatter();
-            msgCfg.UseBackgroundService();
-            msgCfg.UseAws(awsConfig => { awsConfig.UseCredentialBuilder<LocalstackCredentialBuilder>(); });
-            msgCfg.UseJsonSerializer(o =>
-            {
-                // todo register json source generator context
-            });
-        });
+        //return messaging.ConfigureMessagingAsTransport(msgCfg =>
+        //{
+        //    msgCfg.ApplicationName(applicationName);
+        //    msgCfg.UseAwsNameFormatter();
+        //    msgCfg.UseBackgroundService();
+        //    msgCfg.UseAws(awsConfig => { awsConfig.UseCredentialBuilder<LocalstackCredentialBuilder>(); });
+        //    msgCfg.UseJsonSerializer(o =>
+        //    {
+        //        // todo register json source generator context
+        //    });
+        //});
     }, transport =>
     {
         // ===== EXTERNAL EVENTS (sent through transport) =====
