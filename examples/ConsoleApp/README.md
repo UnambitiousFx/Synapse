@@ -1,6 +1,6 @@
-# Mediator Profiling Console App
+# Synapse Profiling Console App
 
-This console application provides comprehensive profiling scenarios for the UnambitiousFx Mediator library. It's
+This console application provides comprehensive profiling scenarios for the UnambitiousFx Synapse library. It's
 designed to help you measure and optimize mediator performance across different use cases.
 
 ## Architecture
