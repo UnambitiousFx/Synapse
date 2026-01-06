@@ -9,7 +9,7 @@ using UnambitiousFx.Synapse.Publish.Outbox;
 
 namespace UnambitiousFx.Synapse;
 
-internal sealed class MediatorConfig(IServiceCollection services) : IMediatorConfig
+internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfig
 {
     private readonly List<Action<IServiceCollection>> _actions = new();
     private readonly Dictionary<Type, DispatchEventDelegate> _eventDispatchers = new();
@@ -33,7 +33,7 @@ internal sealed class MediatorConfig(IServiceCollection services) : IMediatorCon
     private Action<OutboxOptions> _outboxConfigure = _ => { };
 
 
-    public IMediatorConfig RegisterRequestPipelineBehavior<
+    public ISynapseConfig RegisterRequestPipelineBehavior<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         TRequestPipelineBehavior>()
         where TRequestPipelineBehavior : class, IRequestPipelineBehavior
@@ -42,7 +42,7 @@ internal sealed class MediatorConfig(IServiceCollection services) : IMediatorCon
         return this;
     }
 
-    public IMediatorConfig RegisterRequestPipelineBehavior<
+    public ISynapseConfig RegisterRequestPipelineBehavior<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         TBehavior, TRequest>()
         where TBehavior : class, IRequestPipelineBehavior<TRequest>
@@ -52,7 +52,7 @@ internal sealed class MediatorConfig(IServiceCollection services) : IMediatorCon
         return this;
     }
 
-    public IMediatorConfig RegisterRequestPipelineBehavior<
+    public ISynapseConfig RegisterRequestPipelineBehavior<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         TBehavior, TRequest,
         TResponse>()
@@ -64,7 +64,7 @@ internal sealed class MediatorConfig(IServiceCollection services) : IMediatorCon
         return this;
     }
 
-    public IMediatorConfig RegisterConditionalRequestPipelineBehavior<
+    public ISynapseConfig RegisterConditionalRequestPipelineBehavior<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         TBehavior>(
         Func<object, bool> predicate)
@@ -74,7 +74,7 @@ internal sealed class MediatorConfig(IServiceCollection services) : IMediatorCon
         return this;
     }
 
-    public IMediatorConfig RegisterConditionalRequestPipelineBehavior<
+    public ISynapseConfig RegisterConditionalRequestPipelineBehavior<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         TBehavior, TRequest>(
         Func<TRequest, bool> predicate)
@@ -86,7 +86,7 @@ internal sealed class MediatorConfig(IServiceCollection services) : IMediatorCon
         return this;
     }
 
-    public IMediatorConfig RegisterConditionalRequestPipelineBehavior<
+    public ISynapseConfig RegisterConditionalRequestPipelineBehavior<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         TBehavior, TRequest,
         TResponse>(Func<TRequest, bool> predicate)
@@ -99,7 +99,7 @@ internal sealed class MediatorConfig(IServiceCollection services) : IMediatorCon
         return this;
     }
 
-    public IMediatorConfig RegisterEventPipelineBehavior<
+    public ISynapseConfig RegisterEventPipelineBehavior<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         TEventPipelineBehavior>()
         where TEventPipelineBehavior : class, IEventPipelineBehavior
@@ -108,7 +108,7 @@ internal sealed class MediatorConfig(IServiceCollection services) : IMediatorCon
         return this;
     }
 
-    public IMediatorConfig SetEventOrchestrator<
+    public ISynapseConfig SetEventOrchestrator<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         TEventOrchestrator>()
         where TEventOrchestrator : class, IEventOrchestrator
@@ -117,14 +117,14 @@ internal sealed class MediatorConfig(IServiceCollection services) : IMediatorCon
         return this;
     }
 
-    public IMediatorConfig AddRegisterGroup(IRegisterGroup group)
+    public ISynapseConfig AddRegisterGroup(IRegisterGroup group)
     {
         _builder = new DefaultDependencyInjectionBuilder();
         group.Register(_builder);
         return this;
     }
 
-    public IMediatorConfig RegisterRequestHandler<
+    public ISynapseConfig RegisterRequestHandler<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         THandler, TRequest, TResponse>()
         where TResponse : notnull
@@ -135,7 +135,7 @@ internal sealed class MediatorConfig(IServiceCollection services) : IMediatorCon
         return this;
     }
 
-    public IMediatorConfig RegisterRequestHandler<
+    public ISynapseConfig RegisterRequestHandler<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         THandler, TRequest>()
         where TRequest : IRequest
@@ -145,7 +145,7 @@ internal sealed class MediatorConfig(IServiceCollection services) : IMediatorCon
         return this;
     }
 
-    public IMediatorConfig RegisterEventHandler<
+    public ISynapseConfig RegisterEventHandler<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         THandler, TEvent>()
         where THandler : class, IEventHandler<TEvent>
@@ -165,7 +165,7 @@ internal sealed class MediatorConfig(IServiceCollection services) : IMediatorCon
         return this;
     }
 
-    public IMediatorConfig SetEventOutboxStorage<
+    public ISynapseConfig SetEventOutboxStorage<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         TEventOutboxStorage>()
         where TEventOutboxStorage : class, IEventOutboxStorage
@@ -174,26 +174,26 @@ internal sealed class MediatorConfig(IServiceCollection services) : IMediatorCon
         return this;
     }
 
-    public IMediatorConfig SetDefaultPublishingMode(PublishMode mode)
+    public ISynapseConfig SetDefaultPublishingMode(PublishMode mode)
     {
         _defaultPublisherMode = mode;
         return this;
     }
 
-    public IMediatorConfig ConfigureOutbox(Action<OutboxOptions> configure)
+    public ISynapseConfig ConfigureOutbox(Action<OutboxOptions> configure)
     {
         _outboxConfigure = configure;
         return this;
     }
 
-    public IMediatorConfig EnableCqrsBoundaryEnforcement(bool enable = true)
+    public ISynapseConfig EnableCqrsBoundaryEnforcement(bool enable = true)
     {
         if (!enable) return this;
 
         return RegisterRequestPipelineBehavior<CqrsBoundaryEnforcementBehavior>();
     }
 
-    public IMediatorConfig AddValidator<
+    public ISynapseConfig AddValidator<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         TValidator, TRequest>()
         where TValidator : class, IRequestValidator<TRequest>
@@ -203,17 +203,17 @@ internal sealed class MediatorConfig(IServiceCollection services) : IMediatorCon
         return this;
     }
 
-    public IMediatorConfig UseDefaultContextFactory()
+    public ISynapseConfig UseDefaultContextFactory()
     {
         return UseContextFactory<DefaultContextFactory>();
     }
 
-    public IMediatorConfig UseSlimContextFactory()
+    public ISynapseConfig UseSlimContextFactory()
     {
         return UseContextFactory<SlimContextFactory>();
     }
 
-    public IMediatorConfig UseContextFactory<
+    public ISynapseConfig UseContextFactory<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         TContextFactory>()
         where TContextFactory : class, IContextFactory
@@ -223,7 +223,7 @@ internal sealed class MediatorConfig(IServiceCollection services) : IMediatorCon
     }
 
 
-    public IMediatorConfig RegisterEventRoutingFilter<
+    public ISynapseConfig RegisterEventRoutingFilter<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         TEventRoutingFilter>()
         where TEventRoutingFilter : class, IEventRoutingFilter
@@ -232,7 +232,7 @@ internal sealed class MediatorConfig(IServiceCollection services) : IMediatorCon
         return this;
     }
 
-    public IMediatorConfig UseEventDispatcherRegistration<
+    public ISynapseConfig UseEventDispatcherRegistration<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         TRegistration>()
         where TRegistration : class, IEventDispatcherRegistration, new()
@@ -245,7 +245,7 @@ internal sealed class MediatorConfig(IServiceCollection services) : IMediatorCon
         return this;
     }
 
-    public IMediatorConfig EnableDistributedEvent(Func<IDistributedEventConfig, ITransportConfig> defineTransport,
+    public ISynapseConfig EnableDistributedEvent(Func<IDistributedEventConfig, ITransportConfig> defineTransport,
         Action<ITransportConfig> configureTransport)
     {
         var transportConfig = new DistributedEventConfig();

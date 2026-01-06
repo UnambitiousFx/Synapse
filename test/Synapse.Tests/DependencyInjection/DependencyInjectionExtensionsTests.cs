@@ -12,7 +12,7 @@ public sealed class DependencyInjectionExtensionsTests
     public async Task GivenRequest_WhenResolve_ThenReturnResult()
     {
         var services = new ServiceCollection()
-            .AddMediator(cfg =>
+            .AddSynapse(cfg =>
             {
                 cfg.RegisterRequestHandler<RequestWithResponseExampleHandler, RequestWithResponseExample, int>();
             })
@@ -32,7 +32,7 @@ public sealed class DependencyInjectionExtensionsTests
     public async Task GivenRequestWithBehavior_WhenResolve_ThenReturnResult()
     {
         var services = new ServiceCollection()
-            .AddMediator(cfg =>
+            .AddSynapse(cfg =>
             {
                 cfg.RegisterRequestHandler<RequestWithResponseExampleHandler, RequestWithResponseExample, int>();
                 cfg.RegisterRequestPipelineBehavior<TestRequestPipelineBehavior>();

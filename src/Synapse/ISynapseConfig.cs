@@ -9,7 +9,7 @@ namespace UnambitiousFx.Synapse;
 ///     Represents the configuration provider for the mediator, allowing the setup of different
 ///     components such as handlers, pipelines, and orchestrators.
 /// </summary>
-public interface IMediatorConfig
+public interface ISynapseConfig
 {
     /// <summary>
     ///     Registers a request pipeline behavior to be included in the mediator's processing pipeline.
@@ -19,9 +19,9 @@ public interface IMediatorConfig
     ///     This type must have a public constructor to be resolved at runtime.
     /// </typeparam>
     /// <returns>
-    ///     The current instance of <see cref="IMediatorConfig" />, enabling further configuration chaining.
+    ///     The current instance of <see cref="ISynapseConfig" />, enabling further configuration chaining.
     /// </returns>
-    IMediatorConfig RegisterRequestPipelineBehavior<
+    ISynapseConfig RegisterRequestPipelineBehavior<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         TRequestPipelineBehavior>()
         where TRequestPipelineBehavior : class, IRequestPipelineBehavior;
@@ -38,9 +38,9 @@ public interface IMediatorConfig
     ///     The type of the request that the behavior processes. Must implement <see cref="IRequest" />.
     /// </typeparam>
     /// <returns>
-    ///     The current instance of <see cref="IMediatorConfig" />, enabling further configuration chaining.
+    ///     The current instance of <see cref="ISynapseConfig" />, enabling further configuration chaining.
     /// </returns>
-    IMediatorConfig RegisterRequestPipelineBehavior<
+    ISynapseConfig RegisterRequestPipelineBehavior<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         TBehavior, TRequest>()
         where TBehavior : class, IRequestPipelineBehavior<TRequest>
@@ -61,9 +61,9 @@ public interface IMediatorConfig
     ///     The type of the response that the behavior generates. Must be a non-nullable type.
     /// </typeparam>
     /// <returns>
-    ///     The current instance of <see cref="IMediatorConfig" />, enabling further configuration chaining.
+    ///     The current instance of <see cref="ISynapseConfig" />, enabling further configuration chaining.
     /// </returns>
-    IMediatorConfig RegisterRequestPipelineBehavior<
+    ISynapseConfig RegisterRequestPipelineBehavior<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         TBehavior, TRequest,
         TResponse>()
@@ -83,9 +83,9 @@ public interface IMediatorConfig
     ///     A function that determines whether the behavior should be applied, based on the context and request.
     /// </param>
     /// <returns>
-    ///     The current instance of <see cref="IMediatorConfig" />, enabling further configuration chaining.
+    ///     The current instance of <see cref="ISynapseConfig" />, enabling further configuration chaining.
     /// </returns>
-    IMediatorConfig RegisterConditionalRequestPipelineBehavior<
+    ISynapseConfig RegisterConditionalRequestPipelineBehavior<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         TBehavior>(
         Func<object, bool> predicate)
@@ -106,9 +106,9 @@ public interface IMediatorConfig
     ///     A function that determines whether the behavior should be applied, based on the context and request.
     /// </param>
     /// <returns>
-    ///     The current instance of <see cref="IMediatorConfig" />, enabling further configuration chaining.
+    ///     The current instance of <see cref="ISynapseConfig" />, enabling further configuration chaining.
     /// </returns>
-    IMediatorConfig RegisterConditionalRequestPipelineBehavior<
+    ISynapseConfig RegisterConditionalRequestPipelineBehavior<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         TBehavior, TRequest>(
         Func<TRequest, bool> predicate)
@@ -133,9 +133,9 @@ public interface IMediatorConfig
     ///     A function that determines whether the behavior should be applied, based on the context and request.
     /// </param>
     /// <returns>
-    ///     The current instance of <see cref="IMediatorConfig" />, enabling further configuration chaining.
+    ///     The current instance of <see cref="ISynapseConfig" />, enabling further configuration chaining.
     /// </returns>
-    IMediatorConfig RegisterConditionalRequestPipelineBehavior<
+    ISynapseConfig RegisterConditionalRequestPipelineBehavior<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         TBehavior, TRequest, TResponse>(
         Func<TRequest, bool> predicate)
@@ -152,9 +152,9 @@ public interface IMediatorConfig
     ///     must have a public parameterless constructor.
     /// </typeparam>
     /// <returns>
-    ///     The instance of <see cref="IMediatorConfig" />, enabling method chaining for further configuration.
+    ///     The instance of <see cref="ISynapseConfig" />, enabling method chaining for further configuration.
     /// </returns>
-    IMediatorConfig RegisterEventPipelineBehavior<
+    ISynapseConfig RegisterEventPipelineBehavior<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         TEventPipelineBehavior>()
         where TEventPipelineBehavior : class, IEventPipelineBehavior;
@@ -168,9 +168,9 @@ public interface IMediatorConfig
     ///     and implement <see cref="IEventOrchestrator" />.
     /// </typeparam>
     /// <returns>
-    ///     The current <see cref="IMediatorConfig" /> instance to allow method chaining.
+    ///     The current <see cref="ISynapseConfig" /> instance to allow method chaining.
     /// </returns>
-    IMediatorConfig SetEventOrchestrator<
+    ISynapseConfig SetEventOrchestrator<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         TEventOrchestrator>()
         where TEventOrchestrator : class, IEventOrchestrator;
@@ -182,9 +182,9 @@ public interface IMediatorConfig
     ///     The instance of <see cref="IRegisterGroup" /> that contains the registrations to be added.
     /// </param>
     /// <returns>
-    ///     The current instance of <see cref="IMediatorConfig" />, enabling fluent configuration.
+    ///     The current instance of <see cref="ISynapseConfig" />, enabling fluent configuration.
     /// </returns>
-    IMediatorConfig AddRegisterGroup(IRegisterGroup group);
+    ISynapseConfig AddRegisterGroup(IRegisterGroup group);
 
     /// <summary>
     ///     Registers a request handler within the mediator configuration to handle requests of a specific type and produce
@@ -201,9 +201,9 @@ public interface IMediatorConfig
     ///     The type of the response that the handler generates. Must be a non-nullable type.
     /// </typeparam>
     /// <returns>
-    ///     The current instance of <see cref="IMediatorConfig" />, enabling method chaining for additional configuration.
+    ///     The current instance of <see cref="ISynapseConfig" />, enabling method chaining for additional configuration.
     /// </returns>
-    IMediatorConfig RegisterRequestHandler<
+    ISynapseConfig RegisterRequestHandler<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         THandler, TRequest, TResponse>()
         where TResponse : notnull
@@ -220,9 +220,9 @@ public interface IMediatorConfig
     ///     The type of the request that the handler processes. Must implement <see cref="IRequest" />.
     /// </typeparam>
     /// <returns>
-    ///     The current instance of <see cref="IMediatorConfig" />, enabling chained configuration.
+    ///     The current instance of <see cref="ISynapseConfig" />, enabling chained configuration.
     /// </returns>
-    IMediatorConfig RegisterRequestHandler<
+    ISynapseConfig RegisterRequestHandler<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         THandler, TRequest>()
         where TRequest : IRequest
@@ -238,9 +238,9 @@ public interface IMediatorConfig
     ///     The event type that the handler will process, implementing <see cref="IEvent" />.
     /// </typeparam>
     /// <returns>
-    ///     The current instance of <see cref="IMediatorConfig" />, allowing for fluent configuration.
+    ///     The current instance of <see cref="ISynapseConfig" />, allowing for fluent configuration.
     /// </returns>
-    IMediatorConfig RegisterEventHandler<
+    ISynapseConfig RegisterEventHandler<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         THandler, TEvent>()
         where THandler : class, IEventHandler<TEvent>
@@ -254,9 +254,9 @@ public interface IMediatorConfig
     ///     The type of the event outbox storage implementation. Must implement <see cref="IEventOutboxStorage" />.
     /// </typeparam>
     /// <returns>
-    ///     The current <see cref="IMediatorConfig" /> instance, allowing for method chaining.
+    ///     The current <see cref="ISynapseConfig" /> instance, allowing for method chaining.
     /// </returns>
-    IMediatorConfig SetEventOutboxStorage<
+    ISynapseConfig SetEventOutboxStorage<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         TEventOutboxStorage>()
         where TEventOutboxStorage : class, IEventOutboxStorage;
@@ -265,15 +265,15 @@ public interface IMediatorConfig
     ///     Sets the default publishing mode for events in the mediator configuration.
     /// </summary>
     /// <param name="mode">The <see cref="PublishMode" /> to set as the default publishing mode.</param>
-    /// <returns>An instance of <see cref="IMediatorConfig" /> to allow for method chaining.</returns>
-    IMediatorConfig SetDefaultPublishingMode(PublishMode mode);
+    /// <returns>An instance of <see cref="ISynapseConfig" /> to allow for method chaining.</returns>
+    ISynapseConfig SetDefaultPublishingMode(PublishMode mode);
 
     /// <summary>
     ///     Configures options for the outbox retry, dead-letter and batch processing features.
     /// </summary>
     /// <param name="configure">Delegate to mutate the <see cref="OutboxOptions" /> instance.</param>
     /// <returns>The current config instance.</returns>
-    IMediatorConfig ConfigureOutbox(Action<OutboxOptions> configure);
+    ISynapseConfig ConfigureOutbox(Action<OutboxOptions> configure);
 
     /// <summary>
     ///     Enables CQRS boundary enforcement to prevent violations such as:
@@ -283,7 +283,7 @@ public interface IMediatorConfig
     /// </summary>
     /// <param name="enable">True to enable CQRS boundary enforcement, false to disable it. Default is true.</param>
     /// <returns>The current config instance.</returns>
-    IMediatorConfig EnableCqrsBoundaryEnforcement(bool enable = true);
+    ISynapseConfig EnableCqrsBoundaryEnforcement(bool enable = true);
 
     /// <summary>
     ///     Adds a request validator to the mediator configuration.
@@ -295,9 +295,9 @@ public interface IMediatorConfig
     ///     The type of the request that the validator applies to, implementing <see cref="IRequest" />.
     /// </typeparam>
     /// <returns>
-    ///     The current instance of <see cref="IMediatorConfig" />, allowing for fluent configuration.
+    ///     The current instance of <see cref="ISynapseConfig" />, allowing for fluent configuration.
     /// </returns>
-    IMediatorConfig AddValidator<
+    ISynapseConfig AddValidator<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         TValidator, TRequest>()
         where TValidator : class, IRequestValidator<TRequest>
@@ -307,17 +307,17 @@ public interface IMediatorConfig
     ///     Configures the mediator to use the default context factory implementation.
     /// </summary>
     /// <returns>
-    ///     The current instance of <see cref="IMediatorConfig" />, allowing for fluent configuration.
+    ///     The current instance of <see cref="ISynapseConfig" />, allowing for fluent configuration.
     /// </returns>
-    IMediatorConfig UseDefaultContextFactory();
+    ISynapseConfig UseDefaultContextFactory();
 
     /// <summary>
     ///     Configures the mediator to use the slim context factory implementation for improved performance.
     /// </summary>
     /// <returns>
-    ///     The current instance of <see cref="IMediatorConfig" />, allowing for fluent configuration.
+    ///     The current instance of <see cref="ISynapseConfig" />, allowing for fluent configuration.
     /// </returns>
-    IMediatorConfig UseSlimContextFactory();
+    ISynapseConfig UseSlimContextFactory();
 
     /// <summary>
     ///     Configures the mediator to use a custom context factory implementation.
@@ -326,9 +326,9 @@ public interface IMediatorConfig
     ///     The type of the context factory to use. Must implement <see cref="IContextFactory" />.
     /// </typeparam>
     /// <returns>
-    ///     The current instance of <see cref="IMediatorConfig" />, allowing for fluent configuration.
+    ///     The current instance of <see cref="ISynapseConfig" />, allowing for fluent configuration.
     /// </returns>
-    IMediatorConfig UseContextFactory<
+    ISynapseConfig UseContextFactory<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         TContextFactory>()
         where TContextFactory : class, IContextFactory;
@@ -341,14 +341,14 @@ public interface IMediatorConfig
     ///     The type of the routing filter to register. Must implement <see cref="IEventRoutingFilter" />.
     /// </typeparam>
     /// <returns>
-    ///     The current instance of <see cref="IMediatorConfig" />, enabling method chaining.
+    ///     The current instance of <see cref="ISynapseConfig" />, enabling method chaining.
     /// </returns>
     /// <remarks>
     ///     Multiple routing filters can be registered. They will be evaluated in ascending order
     ///     of their Order property. The first filter that returns a non-null distribution mode
     ///     determines how the event is routed.
     /// </remarks>
-    IMediatorConfig RegisterEventRoutingFilter<
+    ISynapseConfig RegisterEventRoutingFilter<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         TEventRoutingFilter>()
         where TEventRoutingFilter : class, IEventRoutingFilter;
@@ -364,9 +364,9 @@ public interface IMediatorConfig
     ///     An action that configures the transport using an instance of <see cref="ITransportConfig" />.
     /// </param>
     /// <returns>
-    ///     The current instance of <see cref="IMediatorConfig" />, allowing for fluent configuration.
+    ///     The current instance of <see cref="ISynapseConfig" />, allowing for fluent configuration.
     /// </returns>
-    IMediatorConfig EnableDistributedEvent(Func<IDistributedEventConfig, ITransportConfig> defineTransport,
+    ISynapseConfig EnableDistributedEvent(Func<IDistributedEventConfig, ITransportConfig> defineTransport,
         Action<ITransportConfig> configureTransport);
 
     /// <summary>
@@ -378,14 +378,14 @@ public interface IMediatorConfig
     ///     The type of the registration class. Must implement <see cref="IEventDispatcherRegistration" />.
     /// </typeparam>
     /// <returns>
-    ///     The current instance of <see cref="IMediatorConfig" />, enabling method chaining.
+    ///     The current instance of <see cref="ISynapseConfig" />, enabling method chaining.
     /// </returns>
     /// <remarks>
     ///     This method should be called with the generated EventDispatcherRegistration class
     ///     to register typed dispatcher delegates for all event types, avoiding reflection
     ///     during outbox replay.
     /// </remarks>
-    IMediatorConfig UseEventDispatcherRegistration<
+    ISynapseConfig UseEventDispatcherRegistration<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         TRegistration>()
         where TRegistration : class, IEventDispatcherRegistration, new();

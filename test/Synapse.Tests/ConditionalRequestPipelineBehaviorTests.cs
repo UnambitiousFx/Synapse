@@ -11,7 +11,7 @@ public sealed class ConditionalRequestPipelineBehaviorTests
     public async Task Conditional_untyped_behavior_executes_when_predicate_true()
     {
         var services = new ServiceCollection();
-        services.AddMediator(cfg =>
+        services.AddSynapse(cfg =>
         {
             cfg.RegisterRequestHandler<RequestExampleHandler, RequestExample>();
             cfg.RegisterConditionalRequestPipelineBehavior<UntypedConditionalBehavior>(_ => true);
@@ -27,7 +27,7 @@ public sealed class ConditionalRequestPipelineBehaviorTests
     public async Task Conditional_untyped_behavior_skips_when_predicate_false()
     {
         var services = new ServiceCollection();
-        services.AddMediator(cfg =>
+        services.AddSynapse(cfg =>
         {
             cfg.RegisterRequestHandler<RequestExampleHandler, RequestExample>();
             cfg.RegisterConditionalRequestPipelineBehavior<UntypedConditionalBehavior>(_ => false);

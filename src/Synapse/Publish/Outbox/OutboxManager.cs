@@ -14,7 +14,7 @@ internal sealed class OutboxManager : IOutboxManager
 {
     private readonly IEventDispatcher _eventDispatcher;
     private readonly ILogger<OutboxManager> _logger;
-    private readonly IMediatorMetrics _metrics;
+    private readonly ISynapseMetrics _metrics;
     private readonly EventDispatcherOptions _options;
     private readonly OutboxOptions _outboxOptions;
     private readonly IEventOutboxStorage _outboxStorage;
@@ -22,7 +22,7 @@ internal sealed class OutboxManager : IOutboxManager
     public OutboxManager(
         IEventOutboxStorage outboxStorage,
         IEventDispatcher eventDispatcher,
-        IMediatorMetrics metrics,
+        ISynapseMetrics metrics,
         IOptions<EventDispatcherOptions> options,
         IOptions<OutboxOptions> outboxOptions,
         ILogger<OutboxManager> logger)

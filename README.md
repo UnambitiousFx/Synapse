@@ -15,7 +15,8 @@ A lightweight, **high-performance** mediator implementation for .NET with first-
 
 - **Dependency-free at runtime:** No external runtime dependencies.
 - **Native AOT-compatible:** Designed to work well in Native AOT scenarios (see the `examples/WebApiAot`).
-- **Supported .NET versions:** Supports Microsoft LTS releases and the latest non-LTS release. See CI matrix for exact versions.
+- **Supported .NET versions:** Supports Microsoft LTS releases and the latest non-LTS release. See CI matrix for exact
+  versions.
 
 ## 🎯 Features
 
@@ -23,7 +24,7 @@ A lightweight, **high-performance** mediator implementation for .NET with first-
 - **Result-first** — Uses `UnambitiousFx.Functional` `Result` for explicit error handling.
 - **Streaming requests** — Built-in support for streaming request/response patterns.
 - **Pipeline Behaviors** — Typed, untyped and conditional pipeline behaviors for requests and events.
-- **Dependency injection friendly** — Register handlers and behaviours via a fluent configuration API (`AddMediator`).
+- **Dependency injection friendly** — Register handlers and behaviours via a fluent configuration API (`AddSynapse`).
 - **Outbox support** — Interfaces and helpers to implement the outbox pattern and reliable event publishing.
 - **Observability hooks** — Metrics and tracing integration points to capture latency and publish metrics.
 - **Source generator** — Optional code-generation to reduce allocations and simplify registration.
@@ -39,10 +40,10 @@ dotnet add package UnambitiousFx.Synapse
 
 ### Register mediator services
 
-Register the mediator and your handlers in `Program.cs`:
+Register the synapse and your handlers in `Program.cs`:
 
 ```csharp
-builder.Services.AddMediator(cfg =>
+builder.Services.AddSynapse(cfg =>
 {
     cfg.AddRegisterGroup(new ManualRegisterGroup());
 
@@ -79,11 +80,14 @@ await foreach (var itemResult in sender.SendStreamAsync<ListItemsRequest, Item>(
 
 ### Use handlers directly
 
-You can also resolve `IRequestHandler<TRequest, TResponse>` or `IRequestHandler<TRequest>` from DI and call `HandleAsync` directly when appropriate.
+You can also resolve `IRequestHandler<TRequest, TResponse>` or `IRequestHandler<TRequest>` from DI and call
+`HandleAsync` directly when appropriate.
 
 ## 📊 Observability & Metrics
 
-Synapse exposes hooks for recording metrics and integrates with OpenTelemetry tracing through dedicated activity sources and metric interfaces. Consumers can provide their own `IMediatorMetrics` implementation or use the default which integrates with `IMeterFactory`.
+Synapse exposes hooks for recording metrics and integrates with OpenTelemetry tracing through dedicated activity sources
+and metric interfaces. Consumers can provide their own `ISynapseMetrics` implementation or use the default which
+integrates with `IMeterFactory`.
 
 ## 🧪 Examples & Benchmarks
 
@@ -96,7 +100,8 @@ Synapse exposes hooks for recording metrics and integrates with OpenTelemetry tr
 - **Registration groups:** implement `IRegisterGroup` to modularize and share handler registration logic.
 - **Outbox & commits:** implement `IOutboxStorage`, `IOutboxCommit` for transactional event persistence.
 
-> Note: Transport/distributed messaging APIs are intentionally not documented here — they may change prior to the first stable release.
+> Note: Transport/distributed messaging APIs are intentionally not documented here — they may change prior to the first
+> stable release.
 
 ## 🤝 Contributing
 

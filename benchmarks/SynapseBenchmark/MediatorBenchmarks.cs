@@ -64,7 +64,7 @@ public class MediatorVsMediatRBenchmarks
     private static IServiceProvider BuildOurSp(int behaviors, bool slimContext)
     {
         var services = new ServiceCollection();
-        services.AddMediator(cfg =>
+        services.AddSynapse(cfg =>
         {
             cfg.RegisterRequestHandler<RequestWithResponseHandler, RequestWithResponse, int>();
             cfg.RegisterRequestHandler<RequestWithoutResponseHandler, RequestWithoutResponse>();

@@ -11,7 +11,7 @@ public sealed class TypedRequestPipelineBehaviorTests
     public async Task Typed_behavior_without_response_executes_only_for_matching_request()
     {
         var services = new ServiceCollection();
-        services.AddMediator(cfg =>
+        services.AddSynapse(cfg =>
         {
             cfg.RegisterRequestHandler<TypedSampleRequestHandler, TypedSampleRequest>();
             cfg.RegisterRequestPipelineBehavior<OnlyTypedSampleRequestBehavior, TypedSampleRequest>();
@@ -28,7 +28,7 @@ public sealed class TypedRequestPipelineBehaviorTests
     public async Task Typed_behavior_without_response_skips_for_request_with_response()
     {
         var services = new ServiceCollection();
-        services.AddMediator(cfg =>
+        services.AddSynapse(cfg =>
         {
             cfg.RegisterRequestHandler<TypedSampleRequestWithResponseHandler, TypedSampleRequestWithResponse, int>();
             cfg.RegisterRequestPipelineBehavior<OnlyTypedSampleRequestBehavior, TypedSampleRequest>();
@@ -45,7 +45,7 @@ public sealed class TypedRequestPipelineBehaviorTests
     public async Task Typed_behavior_with_response_executes_only_for_matching_request()
     {
         var services = new ServiceCollection();
-        services.AddMediator(cfg =>
+        services.AddSynapse(cfg =>
         {
             cfg.RegisterRequestHandler<TypedSampleRequestWithResponseHandler, TypedSampleRequestWithResponse, int>();
             cfg.RegisterRequestPipelineBehavior<OnlyTypedSampleRequestWithResponseBehavior,
@@ -66,7 +66,7 @@ public sealed class TypedRequestPipelineBehaviorTests
     public async Task Interface_typed_behavior_executes_only_for_matching_request()
     {
         var services = new ServiceCollection();
-        services.AddMediator(cfg =>
+        services.AddSynapse(cfg =>
         {
             cfg.RegisterRequestHandler<TypedSampleInheritanceRequestHandler, TypedSampleInheritanceRequest>();
             cfg.RegisterRequestPipelineBehavior<InterfaceTypedRequestBehavior, TypedSampleInheritanceRequest>();
@@ -83,7 +83,7 @@ public sealed class TypedRequestPipelineBehaviorTests
     public async Task Abstract_typed_behavior_executes_only_for_matching_request()
     {
         var services = new ServiceCollection();
-        services.AddMediator(cfg =>
+        services.AddSynapse(cfg =>
         {
             cfg.RegisterRequestHandler<TypedSampleInheritanceRequestHandler, TypedSampleInheritanceRequest>();
             cfg.RegisterRequestPipelineBehavior<AbstractTypedRequestBehavior, TypedSampleInheritanceRequest>();
@@ -100,7 +100,7 @@ public sealed class TypedRequestPipelineBehaviorTests
     public async Task Conditional_typed_behavior_executes_when_predicate_true()
     {
         var services = new ServiceCollection();
-        services.AddMediator(cfg =>
+        services.AddSynapse(cfg =>
         {
             cfg.RegisterRequestHandler<TypedSampleRequestHandler, TypedSampleRequest>();
             cfg.RegisterConditionalRequestPipelineBehavior<ConditionalTypedRequestBehavior, TypedSampleRequest>(_ =>
@@ -118,7 +118,7 @@ public sealed class TypedRequestPipelineBehaviorTests
     public async Task Conditional_typed_behavior_skips_when_predicate_false()
     {
         var services = new ServiceCollection();
-        services.AddMediator(cfg =>
+        services.AddSynapse(cfg =>
         {
             cfg.RegisterRequestHandler<TypedSampleRequestHandler, TypedSampleRequest>();
             cfg.RegisterConditionalRequestPipelineBehavior<ConditionalTypedRequestBehavior, TypedSampleRequest>(_ =>

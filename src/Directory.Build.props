@@ -7,16 +7,16 @@
         <!-- Package metadata -->
         <Authors>UnambitiousFx</Authors>
         <Company>UnambitiousFx</Company>
-        <Description>A lightweight functional programming library for .NET providing Result, Maybe, and OneOf types for railway-oriented programming and error handling.</Description>
-        <PackageTags>functional-programming;railway-oriented-programming;result;maybe;option;either;oneof;discriminated-unions;error-handling;monads</PackageTags>
+        <Description>A lightweight, performance-oriented library for building message-driven applications and in-process mediators. Provides composable primitives for Commands, Queries, Events, and Pipelines with a focus on low latency and minimal allocations.</Description>
+        <PackageTags>message-driven;mediator;mediator-pattern;in-process-messaging;pipelines;commands;queries;events;performance</PackageTags>
         <PackageLicenseExpression>MIT</PackageLicenseExpression>
         <Copyright>Copyright (c) UnambitiousFx $([System.DateTime]::Now.Year)</Copyright>
 
         <!-- Repository metadata -->
-        <RepositoryUrl>https://github.com/UnambitiousFx/Functional.git</RepositoryUrl>
+        <RepositoryUrl>https://github.com/UnambitiousFx/Synapse.git</RepositoryUrl>
         <RepositoryType>git</RepositoryType>
         <PublishRepositoryUrl>true</PublishRepositoryUrl>
-        <PackageProjectUrl>https://github.com/UnambitiousFx/Functional</PackageProjectUrl>
+        <PackageProjectUrl>https://github.com/UnambitiousFx/Synapse</PackageProjectUrl>
         <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
         <PackageReadmeFile>README.md</PackageReadmeFile>
 

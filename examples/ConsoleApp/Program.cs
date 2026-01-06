@@ -17,14 +17,14 @@ var services = new ServiceCollection()
         builder.SetMinimumLevel(LogLevel.Information);
     })
     .AddMetrics()
-    .AddMediator(cfg => cfg.AddRegisterGroup(new RegisterGroup()))
+    .AddSynapse(cfg => cfg.AddRegisterGroup(new RegisterGroup()))
     .AddScoped<IStreamRequestPipelineBehavior, StreamLoggingBehavior>()
     .BuildServiceProvider();
 
 var sender = services.GetRequiredService<ISender>();
 var publisher = services.GetRequiredService<IPublisher>();
 
-Console.WriteLine("=== Mediator Profiling Console App ===\n");
+Console.WriteLine("=== Synapse Profiling Console App ===\n");
 
 // Run different profiling scenarios
 await RunSimpleCommandScenario(sender);

@@ -13,7 +13,7 @@ public sealed class CqrsBoundaryEnforcementTests
         // Arrange
         var services = new ServiceCollection()
             .AddLogging();
-        services.AddMediator(cfg =>
+        services.AddSynapse(cfg =>
         {
             cfg.RegisterRequestHandler<FirstRequestHandlerThatSendsSecondRequest, FirstRequest>();
             cfg.RegisterRequestHandler<ValidSecondRequestHandler, SecondRequest>();
@@ -38,7 +38,7 @@ public sealed class CqrsBoundaryEnforcementTests
         // Arrange
         var services = new ServiceCollection()
             .AddLogging();
-        services.AddMediator(cfg =>
+        services.AddSynapse(cfg =>
         {
             cfg.RegisterRequestHandler<FirstRequestHandlerThatSendsRequestWithResponse, FirstRequest>();
             cfg.RegisterRequestHandler<ValidFirstRequestWithResponseHandler, FirstRequestWithResponse, int>();
@@ -65,7 +65,7 @@ public sealed class CqrsBoundaryEnforcementTests
         // Arrange
         var services = new ServiceCollection()
             .AddLogging();
-        services.AddMediator(cfg =>
+        services.AddSynapse(cfg =>
         {
             cfg.RegisterRequestHandler<FirstRequestWithResponseHandlerThatSendsRequest, FirstRequestWithResponse,
                 int>();
@@ -90,7 +90,7 @@ public sealed class CqrsBoundaryEnforcementTests
     {
         // Arrange
         var services = new ServiceCollection();
-        services.AddMediator(cfg =>
+        services.AddSynapse(cfg =>
         {
             cfg.RegisterRequestHandler<FirstRequestHandlerThatSendsSecondRequest, FirstRequest>();
             cfg.RegisterRequestHandler<ValidSecondRequestHandler, SecondRequest>();
@@ -110,7 +110,7 @@ public sealed class CqrsBoundaryEnforcementTests
         // Arrange
         var services = new ServiceCollection()
             .AddLogging();
-        services.AddMediator(cfg =>
+        services.AddSynapse(cfg =>
         {
             cfg.RegisterRequestHandler<ValidFirstRequestHandler, FirstRequest>();
             cfg.EnableCqrsBoundaryEnforcement();
@@ -129,7 +129,7 @@ public sealed class CqrsBoundaryEnforcementTests
         // Arrange
         var services = new ServiceCollection()
             .AddLogging();
-        services.AddMediator(cfg =>
+        services.AddSynapse(cfg =>
         {
             cfg.RegisterRequestHandler<ValidFirstRequestWithResponseHandler, FirstRequestWithResponse, int>();
             cfg.EnableCqrsBoundaryEnforcement();
@@ -152,7 +152,7 @@ public sealed class CqrsBoundaryEnforcementTests
         // Arrange
         var services = new ServiceCollection()
             .AddLogging()
-            .AddMediator(cfg =>
+            .AddSynapse(cfg =>
             {
                 cfg.RegisterRequestHandler<ValidFirstRequestHandler, FirstRequest>();
                 cfg.RegisterRequestHandler<ValidSecondRequestHandler, SecondRequest>();
@@ -175,7 +175,7 @@ public sealed class CqrsBoundaryEnforcementTests
         // Arrange
         var services = new ServiceCollection()
             .AddLogging();
-        services.AddMediator(cfg =>
+        services.AddSynapse(cfg =>
         {
             cfg.RegisterRequestHandler<FirstRequestHandlerThatSendsSecondRequest, FirstRequest>();
             cfg.RegisterRequestHandler<ValidSecondRequestHandler, SecondRequest>();
@@ -202,7 +202,7 @@ public sealed class CqrsBoundaryEnforcementTests
         // Arrange
         var services = new ServiceCollection()
             .AddLogging();
-        services.AddMediator(cfg =>
+        services.AddSynapse(cfg =>
         {
             cfg.RegisterRequestHandler<FirstRequestHandlerThatSendsSecondRequest, FirstRequest>();
             cfg.RegisterRequestHandler<ValidSecondRequestHandler, SecondRequest>();
@@ -222,7 +222,7 @@ public sealed class CqrsBoundaryEnforcementTests
         // Arrange
         var services = new ServiceCollection()
             .AddLogging();
-        services.AddMediator(cfg =>
+        services.AddSynapse(cfg =>
         {
             cfg.RegisterRequestHandler<RequestHandlerThatRemovesBoundaryKey, FirstRequest>();
             cfg.EnableCqrsBoundaryEnforcement();
@@ -247,7 +247,7 @@ public sealed class CqrsBoundaryEnforcementTests
         // Arrange
         var services = new ServiceCollection()
             .AddLogging();
-        services.AddMediator(cfg =>
+        services.AddSynapse(cfg =>
         {
             cfg.RegisterRequestHandler<RequestWithResponseHandlerThatRemovesBoundaryKey, FirstRequestWithResponse,
                 int>();

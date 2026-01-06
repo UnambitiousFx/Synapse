@@ -5,7 +5,7 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 namespace UnambitiousFx.Synapse.Generator;
 
 /// <summary>
-///     MediatorGenerator is responsible for generating source code at compile-time
+///     SynapseGenerator is responsible for generating source code at compile-time
 ///     as part of the incremental source generation process within the compilation
 ///     pipeline. It interacts with the Roslyn API and implements the IIncrementalGenerator
 ///     interface to enable efficient and reusable code generation.
@@ -15,7 +15,7 @@ namespace UnambitiousFx.Synapse.Generator;
 ///     from the compilation, to generate source files dynamically.
 /// </remarks>
 [Generator]
-public class MediatorGenerator : IIncrementalGenerator
+public class SynapseGenerator : IIncrementalGenerator
 {
     private const string BaseNamespace = "UnambitiousFx.Synapse";
     private const string AbstractionsNamespace = $"{BaseNamespace}.Abstractions";
@@ -32,7 +32,7 @@ public class MediatorGenerator : IIncrementalGenerator
         $"{AbstractionsNamespace}.{LongRequestStreamHandlerAttributeName}";
 
     /// <summary>
-    ///     Initializes the MediatorGenerator by registering post-initialization output with the provided
+    ///     Initializes the SynapseGenerator by registering post-initialization output with the provided
     ///     <see cref="IncrementalGeneratorInitializationContext" />. This method is called during the
     ///     generator's setup phase to define the generator's behavior, such as adding generated source code.
     /// </summary>

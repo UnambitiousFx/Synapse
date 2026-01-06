@@ -25,10 +25,10 @@ public static class DependencyInjectionExtensions
     /// <param name="services">The service collection to add the mediator services to.</param>
     /// <param name="configure">A delegate to configure the mediator services.</param>
     /// <returns>The IServiceCollection with the mediator services added.</returns>
-    public static IServiceCollection AddMediator(this IServiceCollection services,
-        Action<IMediatorConfig> configure)
+    public static IServiceCollection AddSynapse(this IServiceCollection services,
+        Action<ISynapseConfig> configure)
     {
-        var cfg = new MediatorConfig(services);
+        var cfg = new SynapseConfig(services);
         configure(cfg);
         cfg.Apply();
         services.TryAddScoped<IDependencyResolver, DefaultDependencyResolver>();
@@ -46,11 +46,11 @@ public static class DependencyInjectionExtensions
         services.AddScoped<IContext>(sp => sp.GetRequiredService<IContextAccessor>()
             .Context);
 
-        services.TryAddSingleton<IMediatorMetrics>(sp =>
+        services.TryAddSingleton<ISynapseMetrics>(sp =>
         {
             var meterFactory = sp.GetRequiredService<IMeterFactory>();
             var eventOutboxStorage = sp.GetService<IEventOutboxStorage>();
-            return new MediatorMetrics(meterFactory, eventOutboxStorage);
+            return new SynapseMetrics(meterFactory, eventOutboxStorage);
         });
 
         return services.AddMetrics();
