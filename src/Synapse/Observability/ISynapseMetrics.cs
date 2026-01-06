@@ -5,7 +5,7 @@ namespace UnambitiousFx.Synapse.Observability;
 ///     the mediator system, including message publishing, consumption, retries, latency tracking,
 ///     and outbox processing activities.
 /// </summary>
-public interface IMediatorMetrics
+public interface ISynapseMetrics
 {
     /// <summary>
     ///     Records a message published to a transport.

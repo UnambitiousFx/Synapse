@@ -3,7 +3,7 @@ namespace UnambitiousFx.Synapse.Abstractions.Exceptions;
 /// <summary>
 ///     Represents an exception that is thrown when no handler is found for a specified request type.
 /// </summary>
-public sealed class MissingHandlerException : MediatorException
+public sealed class MissingHandlerException : SynapseException
 {
     /// <summary>
     ///     Represents an exception that is thrown when a handler for a specific request type is not found.

@@ -5,7 +5,7 @@ namespace UnambitiousFx.Synapse.Observability;
 /// <summary>
 ///     Provides the ActivitySource for OpenTelemetry distributed tracing in the mediator transport system.
 /// </summary>
-public static class MediatorActivitySource
+public static class SynapseActivitySource
 {
     /// <summary>
     ///     The ActivitySource for creating activity spans for distributed tracing.

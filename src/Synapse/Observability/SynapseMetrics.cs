@@ -4,9 +4,9 @@ using UnambitiousFx.Synapse.Abstractions;
 namespace UnambitiousFx.Synapse.Observability;
 
 /// <summary>
-///     Provides metrics for monitoring mediator transport operations using OpenTelemetry.
+///     Provides metrics for monitoring synapse transport operations using OpenTelemetry.
 /// </summary>
-public sealed class MediatorMetrics : IMediatorMetrics
+public sealed class SynapseMetrics : ISynapseMetrics
 {
     private readonly Histogram<double> _consumeLatency;
     private readonly Counter<long> _dispatchFailures;
@@ -26,11 +26,11 @@ public sealed class MediatorMetrics : IMediatorMetrics
     private readonly Histogram<double> _publishLatency;
 
     /// <summary>
-    ///     Initializes a new instance of the <see cref="MediatorMetrics" /> class.
+    ///     Initializes a new instance of the <see cref="SynapseMetrics" /> class.
     /// </summary>
     /// <param name="meterFactory">The meter factory for creating meters.</param>
     /// <param name="eventOutboxStorage">Optional event outbox storage for queue depth metrics.</param>
-    public MediatorMetrics(
+    public SynapseMetrics(
         IMeterFactory meterFactory,
         IEventOutboxStorage? eventOutboxStorage = null)
     {

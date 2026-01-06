@@ -20,7 +20,7 @@ const string applicationName = "WebApi";
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddMediator(cfg =>
+builder.Services.AddSynapse(cfg =>
 {
     cfg.AddRegisterGroup(new ManualRegisterGroup());
 

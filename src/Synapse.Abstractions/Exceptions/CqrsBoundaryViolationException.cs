@@ -3,7 +3,7 @@ namespace UnambitiousFx.Synapse.Abstractions.Exceptions;
 /// <summary>
 ///     Exception thrown when a CQRS boundary violation is detected.
 /// </summary>
-public sealed class CqrsBoundaryViolationException : MediatorException
+public sealed class CqrsBoundaryViolationException : SynapseException
 {
     /// <summary>
     ///     Initializes a new instance of the <see cref="CqrsBoundaryViolationException" /> class.

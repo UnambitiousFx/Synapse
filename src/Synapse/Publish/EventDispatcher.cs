@@ -44,7 +44,7 @@ internal sealed class EventDispatcher : IEventDispatcher
     private readonly IDependencyResolver _dependencyResolver;
     private readonly IEventOrchestrator _eventOrchestrator;
     private readonly ILogger<EventDispatcher> _logger;
-    private readonly IMediatorMetrics _metrics;
+    private readonly ISynapseMetrics _metrics;
     private readonly EventDispatcherOptions _options;
     private readonly Dictionary<Type, IPublishEventTrait> _publishEventTraits;
 
@@ -57,7 +57,7 @@ internal sealed class EventDispatcher : IEventDispatcher
         IDependencyResolver dependencyResolver,
         IEnumerable<IEventRoutingFilter> routingFilters,
         IEnumerable<IPublishEventTrait> publishEventTraits,
-        IMediatorMetrics metrics,
+        ISynapseMetrics metrics,
         IEventOrchestrator eventOrchestrator,
         ITransportDispatcher transportDispatcher,
         IOptions<EventDispatcherOptions> options,
@@ -191,7 +191,7 @@ internal sealed class EventDispatcher : IEventDispatcher
         var distributionModeStr = distributionMode.ToString();
         var startTime = Stopwatch.GetTimestamp();
 
-        using var activity = MediatorActivitySource.Source.StartActivity(
+        using var activity = SynapseActivitySource.Source.StartActivity(
             "mediator.event.dispatch",
             ActivityKind.Producer);
 

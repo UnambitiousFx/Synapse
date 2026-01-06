@@ -3,7 +3,7 @@ namespace UnambitiousFx.Synapse.Abstractions.Exceptions;
 /// <summary>
 ///     Exception thrown when a required context feature is not available.
 /// </summary>
-public sealed class MissingContextFeatureException : MediatorException
+public sealed class MissingContextFeatureException : SynapseException
 {
     /// <summary>
     ///     Initializes a new instance of the <see cref="MissingContextFeatureException" /> class.

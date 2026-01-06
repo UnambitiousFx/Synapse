@@ -22,7 +22,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.TypeInfoResolverChain.Insert(0, AppJsonSerializerContext.Default);
 });
 
-builder.Services.AddMediator(cfg =>
+builder.Services.AddSynapse(cfg =>
 {
     // Todo handlers (keep for demo)
     cfg.RegisterRequestHandler<CreateTodoCommandHandler, CreateTodoCommand, Guid>()
