@@ -138,4 +138,19 @@ public interface IContext
     /// <exception cref="InvalidOperationException">Thrown when the feature is not found.</exception>
     TFeature MustGetFeature<TFeature>()
         where TFeature : class, IContextFeature;
+    
+    /// <summary>
+    ///     Adds or updates a feature in the context.
+    /// </summary>
+    /// <typeparam name="TFeature">The type of the feature.</typeparam>
+    /// <param name="feature">The feature instance to set.</param>
+    void SetFeature<TFeature>(TFeature feature)
+        where TFeature : class, IContextFeature;
+
+    /// <summary>
+    /// Removes a specific feature of the specified type from the context.
+    /// </summary>
+    /// <typeparam name="TFeature">The type of the feature to remove.</typeparam>
+    void RemoveFeature<TFeature>()
+        where TFeature : class, IContextFeature;
 }

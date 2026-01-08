@@ -1,12 +1,12 @@
 namespace UnambitiousFx.Synapse.Abstractions;
 
 /// <summary>
-///     Provides access to the current <see cref="IContext" />.
+/// Provides a mechanism to set the current <see cref="IContext" />.
 /// </summary>
-public interface IContextAccessor
+public interface IContextSetter
 {
     /// <summary>
-    ///     Gets the current context.
+    ///     Gets or sets the current context.
     /// </summary>
     IContext Context { get; set; }
 }
