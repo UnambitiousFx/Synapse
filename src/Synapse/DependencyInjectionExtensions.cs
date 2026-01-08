@@ -38,13 +38,14 @@ public static class DependencyInjectionExtensions
         services.TryAddScoped<ISender, Sender>();
         services.TryAddScoped<IPublisher, Publisher>();
         services.TryAddScoped<IContextFactory, DefaultContextFactory>();
-        services.TryAddScoped<IContextAccessor>(sp =>
+        services.TryAddScoped(sp =>
         {
             var factory = sp.GetRequiredService<IContextFactory>();
-            return new ContextAccessor(factory);
+            return new ContextHandler(factory);
         });
-        services.AddScoped<IContext>(sp => sp.GetRequiredService<IContextAccessor>()
-            .Context);
+        services.TryAddScoped<IContextAccessor>(sp => sp.GetRequiredService<ContextHandler>());
+        services.TryAddScoped<IContextSetter>(sp => sp.GetRequiredService<ContextHandler>());
+        services.AddScoped<IContext>(sp => sp.GetRequiredService<IContextAccessor>().Context);
 
         services.TryAddSingleton<ISynapseMetrics>(sp =>
         {

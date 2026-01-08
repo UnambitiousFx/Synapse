@@ -24,6 +24,18 @@ internal readonly record struct Context : IContext
         _features = features?.ToDictionary() ?? new Dictionary<Type, IContextFeature>();
     }
 
+
+    public Context(Context context,
+        IReadOnlyDictionary<Type, IContextFeature>? features = null,
+        IReadOnlyDictionary<string, object>? metadata = null)
+    {
+        _publisher = context._publisher;
+        _outboxCommit = context._outboxCommit;
+        CorrelationId = context.CorrelationId;
+        _metadata = metadata is not null ? Merge(metadata, context._metadata) : context._metadata;
+        _features = features is not null ? Merge(features, context._features) : context._features;
+    }
+
     public Guid CorrelationId { get; }
 
     public void SetMetadata(string key,
@@ -100,5 +112,26 @@ internal readonly record struct Context : IContext
     {
         var feature = GetFeature<TFeature>();
         return feature ?? throw new MissingContextFeatureException(typeof(TFeature));
+    }
+
+    public void SetFeature<TFeature>(TFeature feature) where TFeature : class, IContextFeature
+    {
+        _features[typeof(TFeature)] = feature;
+    }
+
+    public void RemoveFeature<TFeature>() where TFeature : class, IContextFeature
+    {
+        _features.Remove(typeof(TFeature));
+    }
+
+    private static Dictionary<TKey, TValue> Merge<TKey, TValue>(params IReadOnlyDictionary<TKey, TValue>[] dictionaries)
+        where TKey : notnull
+    {
+        var merged = new Dictionary<TKey, TValue>();
+        foreach (var dictionary in dictionaries)
+        foreach (var kvp in dictionary)
+            merged[kvp.Key] = kvp.Value;
+
+        return merged;
     }
 }
