@@ -78,6 +78,29 @@ internal sealed class EventDispatcher : IEventDispatcher
         CancellationToken cancellationToken)
         where TEvent : class, IEvent
     {
+        var runtimeType = @event.GetType();
+        var genericType = typeof(TEvent);
+
+        // Handle polymorphic dispatch: if runtime type differs from generic type,
+        if (runtimeType != genericType)
+        {
+            _logger.LogDebug(
+                "Runtime type {RuntimeType} differs from generic type {GenericType}, using dispatcher delegate",
+                runtimeType.Name, genericType.Name);
+
+            var dispatcher = _options.Dispatchers.GetValueOrDefault(runtimeType);
+            if (dispatcher == null)
+            {
+                _logger.LogError(
+                    "No dispatcher registered for runtime event type {RuntimeType}",
+                    runtimeType.Name);
+                return new ValueTask<Result>(Result.Failure($"No dispatcher registered for event type {runtimeType.Name}"));
+            }
+
+            // Delegate contains correct generic type via closure, maintaining NativeAOT compatibility
+            return dispatcher(@event, this, cancellationToken);
+        }
+
         // 1. Determine distribution mode
         if (distributionMode == DistributionMode.Undefined) distributionMode = DetermineDistributionMode(@event);
 
