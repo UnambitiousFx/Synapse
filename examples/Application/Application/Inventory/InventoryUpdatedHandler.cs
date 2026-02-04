@@ -18,7 +18,7 @@ public sealed class InventoryUpdatedHandler : IEventHandler<InventoryUpdated>
         _logger = logger;
     }
 
-    public ValueTask<Result> HandleAsync(InventoryUpdated @event, CancellationToken cancellationToken = default)
+    public ResultTask HandleAsync(InventoryUpdated @event, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation(
             "Inventory updated for product {ProductId}: {QuantityChange:+#;-#;0} (New quantity: {NewQuantity})",
@@ -26,6 +26,6 @@ public sealed class InventoryUpdatedHandler : IEventHandler<InventoryUpdated>
             @event.QuantityChange,
             @event.NewQuantity);
 
-        return ValueTask.FromResult(Result.Success());
+        return Result.Success();
     }
 }

@@ -11,7 +11,7 @@ internal interface IOutboxManager
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A combined result of all processed events.</returns>
-    ValueTask<Result> ProcessPendingAsync(CancellationToken cancellationToken);
+    ResultTask ProcessPendingAsync(CancellationToken cancellationToken);
 
     /// <summary>
     ///     Stores the specified event in the outbox for later processing.
@@ -23,7 +23,7 @@ internal interface IOutboxManager
     ///     The type of the event. Must implement <see cref="IEvent" /> and have a parameterless constructor.
     /// </typeparam>
     /// <returns>A result indicating the success or failure of the operation.</returns>
-    ValueTask<Result> StoreAsync<TEvent>(TEvent @event, DistributionMode distributionMode,
+    ResultTask StoreAsync<TEvent>(TEvent @event, DistributionMode distributionMode,
         CancellationToken cancellationToken)
         where TEvent : class, IEvent;
 }

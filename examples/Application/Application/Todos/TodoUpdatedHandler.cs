@@ -15,7 +15,7 @@ public sealed class TodoUpdatedHandler : IEventHandler<TodoUpdated>
         _logger = logger;
     }
 
-    public ValueTask<Result> HandleAsync(TodoUpdated @event,
+    public ResultTask HandleAsync(TodoUpdated @event,
         CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Todo updated {TodoId}", @event.Todo.Id);

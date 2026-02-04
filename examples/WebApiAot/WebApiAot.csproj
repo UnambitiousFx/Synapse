@@ -10,7 +10,7 @@
         <ProjectReference Include="..\Application\Application.csproj"/>
     </ItemGroup>
     <ItemGroup>
-        <PackageReference Include="UnambitiousFx.Functional.AspNetCore" Version="1.0.0"/>
+        <PackageReference Include="UnambitiousFx.Functional.AspNetCore" Version="2.0.0-draft.20260204185911.8824f10" />
     </ItemGroup>
 
 </Project>

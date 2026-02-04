@@ -14,7 +14,7 @@ public sealed class TodoCreatedHandler : IEventHandler<TodoCreated>
         _logger = logger;
     }
 
-    public ValueTask<Result> HandleAsync(TodoCreated @event,
+    public ResultTask HandleAsync(TodoCreated @event,
         CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("New todo created {TodoId}", @event.Todo.Id);

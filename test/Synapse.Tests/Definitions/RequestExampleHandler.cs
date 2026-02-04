@@ -10,13 +10,13 @@ public sealed class RequestExampleHandler : IRequestHandler<RequestExample>
     public int ExecutionCount { get; private set; }
     public Action? OnExecuted { get; set; }
 
-    public ValueTask<Result> HandleAsync(RequestExample request,
+    public ResultTask HandleAsync(RequestExample request,
         CancellationToken cancellationToken = default)
     {
         Executed = true;
         RequestExecuted = request;
         ExecutionCount++;
         OnExecuted?.Invoke();
-        return new ValueTask<Result>(Result.Success());
+        return new ResultTask(Result.Success());
     }
 }

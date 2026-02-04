@@ -15,7 +15,7 @@ namespace UnambitiousFx.Synapse.Abstractions;
 ///     Each event type has a registered dispatcher that casts the event to the correct type and calls
 ///     the generic DispatchFromOutboxAsync method, preserving type information for NativeAOT compilation.
 /// </remarks>
-public delegate ValueTask<Result> DispatchEventDelegate(
+public delegate ResultTask DispatchEventDelegate(
     IEvent @event,
     IEventDispatcher dispatcher,
     CancellationToken cancellationToken);

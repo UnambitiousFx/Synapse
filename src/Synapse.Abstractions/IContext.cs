@@ -63,7 +63,7 @@ public interface IContext
     ///     A <see cref="ValueTask" /> containing a <see cref="Result" /> that indicates the success or failure of the
     ///     operation.
     /// </returns>
-    ValueTask<Result> PublishEventAsync<TEvent>(TEvent @event,
+    ResultTask PublishEventAsync<TEvent>(TEvent @event,
         CancellationToken cancellationToken = default)
         where TEvent : class, IEvent;
 
@@ -90,7 +90,7 @@ public interface IContext
     ///     A <see cref="ValueTask" /> containing a <see cref="Result" /> that indicates the success or failure of the
     ///     operation.
     /// </returns>
-    ValueTask<Result> PublishEventAsync<TEvent>(TEvent @event,
+    ResultTask PublishEventAsync<TEvent>(TEvent @event,
         PublishMode mode,
         DistributionMode distributionMode,
         CancellationToken cancellationToken = default)
@@ -111,7 +111,7 @@ public interface IContext
     ///     This method processes all events that were published with <see cref="PublishMode.Outbox" />
     ///     in the current scope. It delegates to <see cref="IOutboxCommit.CommitAsync" />.
     /// </remarks>
-    ValueTask<Result> CommitEventsAsync(CancellationToken cancellationToken = default);
+    ResultTask CommitEventsAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     ///     Tries to get a feature of the specified type from the context.
@@ -138,7 +138,7 @@ public interface IContext
     /// <exception cref="InvalidOperationException">Thrown when the feature is not found.</exception>
     TFeature MustGetFeature<TFeature>()
         where TFeature : class, IContextFeature;
-    
+
     /// <summary>
     ///     Adds or updates a feature in the context.
     /// </summary>
@@ -148,7 +148,7 @@ public interface IContext
         where TFeature : class, IContextFeature;
 
     /// <summary>
-    /// Removes a specific feature of the specified type from the context.
+    ///     Removes a specific feature of the specified type from the context.
     /// </summary>
     /// <typeparam name="TFeature">The type of the feature to remove.</typeparam>
     void RemoveFeature<TFeature>()

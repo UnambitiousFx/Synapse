@@ -15,7 +15,7 @@ public sealed class UpdateShippingTrackingHandler : IEventHandler<OrderShippedEv
         _logger = logger;
     }
 
-    public ValueTask<Result> HandleAsync(OrderShippedEvent @event,
+    public ResultTask HandleAsync(OrderShippedEvent @event,
         CancellationToken cancellationToken = default)
     {
         _logger.LogDebug("Updating tracking for order: {OrderId}, Shipping: {ShippingId}", @event.OrderId,

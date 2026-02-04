@@ -34,7 +34,7 @@ public interface ISender
     /// <param name="request">The request object to be processed.</param>
     /// <param name="cancellationToken">An optional cancellation token to cancel the operation.</param>
     /// <returns>A <see cref="ValueTask{Result}" /> that represents the result of the operation.</returns>
-    ValueTask<Result> SendAsync<TRequest>(TRequest request,
+    ResultTask SendAsync<TRequest>(TRequest request,
         CancellationToken cancellationToken = default)
         where TRequest : IRequest;
 

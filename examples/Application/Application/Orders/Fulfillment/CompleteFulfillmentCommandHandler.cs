@@ -2,7 +2,6 @@ using Microsoft.Extensions.Logging;
 using UnambitiousFx.Examples.Application.Domain.Events;
 using UnambitiousFx.Examples.Application.Infrastructure.Services;
 using UnambitiousFx.Functional;
-using UnambitiousFx.Functional.Errors;
 using UnambitiousFx.Synapse.Abstractions;
 
 namespace UnambitiousFx.Examples.Application.Application.Orders.Fulfillment;
@@ -24,7 +23,7 @@ public sealed class CompleteFulfillmentCommandHandler : IRequestHandler<Complete
         _fulfillmentService = fulfillmentService;
     }
 
-    public async ValueTask<Result> HandleAsync(
+    public async ResultTask HandleAsync(
         CompleteFulfillmentCommand request,
         CancellationToken cancellationToken = default)
     {

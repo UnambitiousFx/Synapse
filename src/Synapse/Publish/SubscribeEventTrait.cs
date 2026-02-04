@@ -7,7 +7,7 @@ internal abstract class SubscribeEventTrait : ISubscribeEventTrait
 {
     public abstract Type EventType { get; }
     public int MaxConcurrency { get; init; }
-    public abstract ValueTask<Result> HandleAsync(object @event, CancellationToken cancellationToken);
+    public abstract ResultTask HandleAsync(object @event, CancellationToken cancellationToken);
 }
 
 internal sealed class SubscribeEventTrait<TEvent> : SubscribeEventTrait where TEvent : class, IEvent
@@ -21,7 +21,7 @@ internal sealed class SubscribeEventTrait<TEvent> : SubscribeEventTrait where TE
 
     public override Type EventType => typeof(TEvent);
 
-    public override ValueTask<Result> HandleAsync(object @event, CancellationToken cancellationToken)
+    public override ResultTask HandleAsync(object @event, CancellationToken cancellationToken)
     {
         if (@event is not TEvent typedEvent) throw new ArgumentException($"Event must be of type {typeof(TEvent)}");
 

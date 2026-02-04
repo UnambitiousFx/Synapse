@@ -10,13 +10,13 @@ public sealed class InheritedEventExampleHandler : IEventHandler<InheritedEventE
     public int ExecutionCount { get; private set; }
     public Action? OnExecuted { get; set; }
 
-    public ValueTask<Result> HandleAsync(InheritedEventExample @event,
+    public ResultTask HandleAsync(InheritedEventExample @event,
         CancellationToken cancellationToken = default)
     {
         Executed = true;
         EventExecuted = @event;
         ExecutionCount++;
         OnExecuted?.Invoke();
-        return new ValueTask<Result>(Result.Success());
+        return new ResultTask(Result.Success());
     }
 }

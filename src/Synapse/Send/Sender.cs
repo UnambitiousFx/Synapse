@@ -16,7 +16,7 @@ internal sealed class Sender(IDependencyResolver resolver) : ISender
         return handler.HandleAsync(request, cancellationToken);
     }
 
-    public ValueTask<Result> SendAsync<TRequest>(TRequest request,
+    public ResultTask SendAsync<TRequest>(TRequest request,
         CancellationToken cancellationToken = default)
         where TRequest : IRequest
     {

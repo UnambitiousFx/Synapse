@@ -15,7 +15,7 @@ public class SendPaymentNotificationHandler : IEventHandler<PaymentCompletedEven
         _logger = logger;
     }
 
-    public ValueTask<Result> HandleAsync(PaymentCompletedEvent @event,
+    public ResultTask HandleAsync(PaymentCompletedEvent @event,
         CancellationToken cancellationToken = default)
     {
         _logger.LogDebug("Sending notification for payment: {PaymentId}", @event.PaymentId);

@@ -63,11 +63,11 @@ public abstract class RequestHandler<TRequest> : IRequestHandler<TRequest>
     ///     A ValueTask of type Result, representing the outcome of processing the specified request. The result indicates
     ///     success or failure.
     /// </returns>
-    public ValueTask<Result> HandleAsync(TRequest request,
+    public ResultTask HandleAsync(TRequest request,
         CancellationToken cancellationToken = default)
     {
         var result = Handle(request);
-        return new ValueTask<Result>(result);
+        return result.AsAsync();
     }
 
     /// Handles a request and produces a result. This method must be implemented by derived classes

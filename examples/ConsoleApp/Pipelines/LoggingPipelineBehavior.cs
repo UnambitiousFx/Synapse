@@ -14,7 +14,7 @@ public class LoggingPipelineBehavior : IRequestPipelineBehavior
         _logger = logger;
     }
 
-    public async ValueTask<Result> HandleAsync<TRequest>(TRequest request,
+    public async ResultTask HandleAsync<TRequest>(TRequest request,
         RequestHandlerDelegate next,
         CancellationToken cancellationToken = default)
         where TRequest : IRequest

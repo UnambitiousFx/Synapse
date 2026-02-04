@@ -43,7 +43,7 @@ public sealed class ConditionalRequestPipelineBehaviorTests
     {
         public int ExecutionCount { get; private set; }
 
-        public ValueTask<Result> HandleAsync<TRequest>(TRequest request,
+        public ResultTask HandleAsync<TRequest>(TRequest request,
             RequestHandlerDelegate next,
             CancellationToken cancellationToken = default)
             where TRequest : IRequest

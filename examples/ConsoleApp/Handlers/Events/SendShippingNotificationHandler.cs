@@ -15,7 +15,7 @@ public sealed class SendShippingNotificationHandler : IEventHandler<OrderShipped
         _logger = logger;
     }
 
-    public ValueTask<Result> HandleAsync(OrderShippedEvent @event,
+    public ResultTask HandleAsync(OrderShippedEvent @event,
         CancellationToken cancellationToken = default)
     {
         _logger.LogDebug("Sending shipping notification for order: {OrderId}", @event.OrderId);

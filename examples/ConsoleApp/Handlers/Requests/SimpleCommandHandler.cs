@@ -15,7 +15,7 @@ public sealed class SimpleCommandHandler : IRequestHandler<SimpleCommand>
         _logger = logger;
     }
 
-    public ValueTask<Result> HandleAsync(SimpleCommand request,
+    public ResultTask HandleAsync(SimpleCommand request,
         CancellationToken cancellationToken = default)
     {
         _logger.LogDebug("Processing simple command: {Message}", request.Message);

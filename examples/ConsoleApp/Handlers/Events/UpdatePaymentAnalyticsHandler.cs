@@ -15,7 +15,7 @@ public class UpdatePaymentAnalyticsHandler : IEventHandler<PaymentCompletedEvent
         _logger = logger;
     }
 
-    public ValueTask<Result> HandleAsync(PaymentCompletedEvent @event,
+    public ResultTask HandleAsync(PaymentCompletedEvent @event,
         CancellationToken cancellationToken = default)
     {
         _logger.LogDebug("Updating analytics for payment: {PaymentId}, Amount: {Amount}", @event.PaymentId,

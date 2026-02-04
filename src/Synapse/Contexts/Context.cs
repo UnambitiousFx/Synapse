@@ -74,27 +74,6 @@ internal readonly record struct Context : IContext
 
     public IReadOnlyDictionary<string, object> Metadata => _metadata;
 
-    public ValueTask<Result> PublishEventAsync<TEvent>(TEvent @event,
-        CancellationToken cancellationToken = default)
-        where TEvent : class, IEvent
-    {
-        return _publisher.PublishAsync(@event, cancellationToken);
-    }
-
-    public ValueTask<Result> PublishEventAsync<TEvent>(TEvent @event,
-        PublishMode mode,
-        DistributionMode distributionMode,
-        CancellationToken cancellationToken = default)
-        where TEvent : class, IEvent
-    {
-        return _publisher.PublishAsync(@event, mode, distributionMode, cancellationToken);
-    }
-
-    public ValueTask<Result> CommitEventsAsync(CancellationToken cancellationToken = default)
-    {
-        return _outboxCommit.CommitAsync(cancellationToken);
-    }
-
     public bool TryGetFeature<TFeature>(out TFeature? feature) where TFeature : class, IContextFeature
     {
         feature = GetFeature<TFeature>();
@@ -122,6 +101,27 @@ internal readonly record struct Context : IContext
     public void RemoveFeature<TFeature>() where TFeature : class, IContextFeature
     {
         _features.Remove(typeof(TFeature));
+    }
+
+    public ResultTask PublishEventAsync<TEvent>(TEvent @event,
+        CancellationToken cancellationToken = default)
+        where TEvent : class, IEvent
+    {
+        return _publisher.PublishAsync(@event, cancellationToken);
+    }
+
+    public ResultTask PublishEventAsync<TEvent>(TEvent @event,
+        PublishMode mode,
+        DistributionMode distributionMode,
+        CancellationToken cancellationToken = default)
+        where TEvent : class, IEvent
+    {
+        return _publisher.PublishAsync(@event, mode, distributionMode, cancellationToken);
+    }
+
+    public ResultTask CommitEventsAsync(CancellationToken cancellationToken = default)
+    {
+        return _outboxCommit.CommitAsync(cancellationToken);
     }
 
     private static Dictionary<TKey, TValue> Merge<TKey, TValue>(params IReadOnlyDictionary<TKey, TValue>[] dictionaries)

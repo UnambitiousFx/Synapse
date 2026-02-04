@@ -47,35 +47,35 @@ public sealed class InMemoryEventOutboxStorage : IEventOutboxStorage
     }
 
     /// <inheritdoc />
-    public ValueTask<Result> MarkAsProcessedAsync(IEvent @event,
+    public ResultTask MarkAsProcessedAsync(IEvent @event,
         CancellationToken cancellationToken = default)
     {
         var correlationId = CorrelationContext.CurrentCorrelationId;
 
         if (!_scopedItems.TryGetValue(correlationId, out var items))
-            return new ValueTask<Result>(Result.Failure($"Event '{@event}' was not found in the outbox storage"));
+            return Result.Failure($"Event '{@event}' was not found in the outbox storage").AsAsync();
 
         var item = items.FirstOrDefault(i => i.Event.Equals(@event));
         if (item == null)
-            return new ValueTask<Result>(Result.Failure($"Event '{@event}' was not found in the outbox storage"));
+            return Result.Failure($"Event '{@event}' was not found in the outbox storage").AsAsync();
 
         item.Processed = true;
         item.ProcessedAt = DateTimeOffset.UtcNow;
         item.LastError = null;
         item.NextAttemptAt = null;
-        return new ValueTask<Result>(Result.Success());
+        return Result.Success().AsAsync();
     }
 
     /// <inheritdoc />
-    public ValueTask<Result> ClearAsync(CancellationToken cancellationToken = default)
+    public ResultTask ClearAsync(CancellationToken cancellationToken = default)
     {
         var correlationId = CorrelationContext.CurrentCorrelationId;
         _scopedItems.TryRemove(correlationId, out _);
-        return new ValueTask<Result>(Result.Success());
+        return Result.Success().AsAsync();
     }
 
     /// <inheritdoc />
-    public ValueTask<Result> AddAsync<TEvent>(TEvent @event,
+    public ResultTask AddAsync<TEvent>(TEvent @event,
         CancellationToken cancellationToken = default)
         where TEvent : class, IEvent
     {
@@ -84,7 +84,7 @@ public sealed class InMemoryEventOutboxStorage : IEventOutboxStorage
     }
 
     /// <inheritdoc />
-    public ValueTask<Result> AddAsync<TEvent>(TEvent @event,
+    public ResultTask AddAsync<TEvent>(TEvent @event,
         DistributionMode distributionMode,
         CancellationToken cancellationToken = default)
         where TEvent : class, IEvent
@@ -93,11 +93,11 @@ public sealed class InMemoryEventOutboxStorage : IEventOutboxStorage
         var items = _scopedItems.GetOrAdd(correlationId, _ => new ConcurrentBag<Item>());
         items.Add(new Item(@event, distributionMode));
 
-        return new ValueTask<Result>(Result.Success());
+        return Result.Success().AsAsync();
     }
 
     /// <inheritdoc />
-    public ValueTask<Result> MarkAsFailedAsync(IEvent @event,
+    public ResultTask MarkAsFailedAsync(IEvent @event,
         string reason,
         bool deadLetter,
         DateTimeOffset? nextAttemptAt = null,
@@ -106,11 +106,11 @@ public sealed class InMemoryEventOutboxStorage : IEventOutboxStorage
         var correlationId = CorrelationContext.CurrentCorrelationId;
 
         if (!_scopedItems.TryGetValue(correlationId, out var items))
-            return new ValueTask<Result>(Result.Failure($"Event '{@event}' was not found in the outbox storage"));
+            return Result.Failure($"Event '{@event}' was not found in the outbox storage").AsAsync();
 
         var item = items.FirstOrDefault(i => i.Event.Equals(@event));
         if (item == null)
-            return new ValueTask<Result>(Result.Failure($"Event '{@event}' was not found in the outbox storage"));
+            return Result.Failure($"Event '{@event}' was not found in the outbox storage").AsAsync();
 
         item.Attempts++;
         item.LastError = reason;
@@ -124,7 +124,7 @@ public sealed class InMemoryEventOutboxStorage : IEventOutboxStorage
             item.NextAttemptAt = nextAttemptAt;
         }
 
-        return new ValueTask<Result>(Result.Success());
+        return Result.Success().AsAsync();
     }
 
     /// <inheritdoc />

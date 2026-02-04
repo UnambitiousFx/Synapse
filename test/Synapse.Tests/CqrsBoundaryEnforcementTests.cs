@@ -284,7 +284,7 @@ public sealed class CqrsBoundaryEnforcementTests
             _sender = sender;
         }
 
-        public async ValueTask<Result> HandleAsync(FirstRequest request,
+        public async ResultTask HandleAsync(FirstRequest request,
             CancellationToken cancellationToken = default)
         {
             // This should throw CqrsBoundaryViolationException
@@ -303,7 +303,7 @@ public sealed class CqrsBoundaryEnforcementTests
             _sender = sender;
         }
 
-        public async ValueTask<Result> HandleAsync(FirstRequest request,
+        public async ResultTask HandleAsync(FirstRequest request,
             CancellationToken cancellationToken = default)
         {
             // This should throw CqrsBoundaryViolationException
@@ -343,12 +343,12 @@ public sealed class CqrsBoundaryEnforcementTests
             _context = context;
         }
 
-        public ValueTask<Result> HandleAsync(FirstRequest request,
+        public ResultTask HandleAsync(FirstRequest request,
             CancellationToken cancellationToken = default)
         {
             // Malicious attempt to remove the boundary enforcement key
             _context.RemoveMetadata("__CQRSBoundaryEnforcement");
-            return new ValueTask<Result>(Result.Success());
+            return new ResultTask(Result.Success());
         }
     }
 
@@ -375,19 +375,19 @@ public sealed class CqrsBoundaryEnforcementTests
     // Valid handlers that don't violate boundaries
     private sealed class ValidSecondRequestHandler : IRequestHandler<SecondRequest>
     {
-        public ValueTask<Result> HandleAsync(SecondRequest request,
+        public ResultTask HandleAsync(SecondRequest request,
             CancellationToken cancellationToken = default)
         {
-            return new ValueTask<Result>(Result.Success());
+            return new ResultTask(Result.Success());
         }
     }
 
     private sealed class ValidFirstRequestHandler : IRequestHandler<FirstRequest>
     {
-        public ValueTask<Result> HandleAsync(FirstRequest request,
+        public ResultTask HandleAsync(FirstRequest request,
             CancellationToken cancellationToken = default)
         {
-            return new ValueTask<Result>(Result.Success());
+            return new ResultTask(Result.Success());
         }
     }
 

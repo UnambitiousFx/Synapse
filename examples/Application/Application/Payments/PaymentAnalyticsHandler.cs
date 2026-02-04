@@ -19,7 +19,7 @@ public sealed class PaymentAnalyticsHandler : IEventHandler<PaymentProcessed>
         _logger = logger;
     }
 
-    public ValueTask<Result> HandleAsync(PaymentProcessed @event, CancellationToken cancellationToken = default)
+    public ResultTask HandleAsync(PaymentProcessed @event, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation(
             "📊 Recording payment analytics: {PaymentMethod} payment of {Amount:C}",

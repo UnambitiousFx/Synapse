@@ -17,7 +17,7 @@ public sealed class ShipOrderCommandHandler : IRequestHandler<ShipOrderCommand>
         _publisher = publisher;
     }
 
-    public async ValueTask<Result> HandleAsync(ShipOrderCommand request, CancellationToken cancellationToken = default)
+    public async ResultTask HandleAsync(ShipOrderCommand request, CancellationToken cancellationToken = default)
     {
         var trackingNumber = $"TRACK-{Guid.NewGuid():N}".Substring(0, 20).ToUpperInvariant();
 

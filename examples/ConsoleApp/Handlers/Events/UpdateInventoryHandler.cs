@@ -15,7 +15,7 @@ public sealed class UpdateInventoryHandler : IEventHandler<OrderShippedEvent>
         _logger = logger;
     }
 
-    public ValueTask<Result> HandleAsync(OrderShippedEvent @event,
+    public ResultTask HandleAsync(OrderShippedEvent @event,
         CancellationToken cancellationToken = default)
     {
         _logger.LogDebug("Updating inventory for shipped order: {OrderId}", @event.OrderId);

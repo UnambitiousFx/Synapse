@@ -12,5 +12,5 @@ public interface IRequestValidator<in TRequest>
     /// <param name="request">The request to be validated.</param>
     /// <param name="cancellationToken">A token to cancel the operation if needed.</param>
     /// <return>A task representing the result of the validation, containing information about success or failure.</return>
-    ValueTask<Result> ValidateAsync(TRequest request, CancellationToken cancellationToken = default);
+    ResultTask ValidateAsync(TRequest request, CancellationToken cancellationToken = default);
 }

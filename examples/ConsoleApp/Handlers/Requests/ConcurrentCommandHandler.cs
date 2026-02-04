@@ -15,7 +15,7 @@ public sealed class ConcurrentCommandHandler : IRequestHandler<ConcurrentCommand
         _logger = logger;
     }
 
-    public ValueTask<Result> HandleAsync(ConcurrentCommand request,
+    public ResultTask HandleAsync(ConcurrentCommand request,
         CancellationToken cancellationToken = default)
     {
         _logger.LogDebug("Processing concurrent command Batch: {BatchId}, Item: {ItemId}", request.BatchId,

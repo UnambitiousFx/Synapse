@@ -18,7 +18,7 @@ public interface IEventDispatcher
     ///     A task that represents the asynchronous operation. The task's result contains a <see cref="Result" />
     ///     indicating the outcome of the operation.
     /// </returns>
-    ValueTask<Result> DispatchAsync<TEvent>(TEvent @event,
+    ResultTask DispatchAsync<TEvent>(TEvent @event,
         DistributionMode distributionMode,
         CancellationToken cancellationToken = default)
         where TEvent : class, IEvent;

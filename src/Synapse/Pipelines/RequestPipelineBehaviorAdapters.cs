@@ -14,7 +14,7 @@ internal sealed class RequestTypedBehaviorAdapter<TRequest, TResponse> : IReques
         _inner = inner;
     }
 
-    public ValueTask<Result> HandleAsync<TReq>(TReq request,
+    public ResultTask HandleAsync<TReq>(TReq request,
         RequestHandlerDelegate next,
         CancellationToken cancellationToken = default)
         where TReq : IRequest

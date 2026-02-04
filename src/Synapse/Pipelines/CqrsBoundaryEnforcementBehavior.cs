@@ -31,19 +31,13 @@ public sealed class CqrsBoundaryEnforcementBehavior : IRequestPipelineBehavior
     /// <param name="cancellationToken"></param>
     /// <typeparam name="TRequest"></typeparam>
     /// <returns></returns>
-    public async ValueTask<Result> HandleAsync<TRequest>(TRequest request,
+    public ResultTask HandleAsync<TRequest>(TRequest request,
         RequestHandlerDelegate next,
         CancellationToken cancellationToken = default)
         where TRequest : IRequest
     {
-        var requestName = typeof(TRequest).Name;
-        ValidateBoundaries(_context, requestName);
-
-        AddBoundaryMetadata(_context, requestName);
-
-        var response = await next();
-        RemoveBoundaryMetadata(_context);
-        return response;
+        return HandleCoreAsync(request, next, cancellationToken)
+            .AsAsync();
     }
 
     /// <summary>
@@ -64,6 +58,20 @@ public sealed class CqrsBoundaryEnforcementBehavior : IRequestPipelineBehavior
         ValidateBoundaries(_context, requestName);
 
         AddBoundaryMetadata(_context, requestName);
+        var response = await next();
+        RemoveBoundaryMetadata(_context);
+        return response;
+    }
+
+    private async ValueTask<Result> HandleCoreAsync<TRequest>(TRequest request,
+        RequestHandlerDelegate next,
+        CancellationToken cancellationToken = default) where TRequest : IRequest
+    {
+        var requestName = typeof(TRequest).Name;
+        ValidateBoundaries(_context, requestName);
+
+        AddBoundaryMetadata(_context, requestName);
+
         var response = await next();
         RemoveBoundaryMetadata(_context);
         return response;

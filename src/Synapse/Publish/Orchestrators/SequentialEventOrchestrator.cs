@@ -10,7 +10,15 @@ namespace UnambitiousFx.Synapse.Publish.Orchestrators;
 public sealed class SequentialEventOrchestrator : IEventOrchestrator
 {
     /// <inheritdoc />
-    public async ValueTask<Result> RunAsync<TEvent>(IEnumerable<IEventHandler<TEvent>> handlers,
+    public ResultTask RunAsync<TEvent>(IEnumerable<IEventHandler<TEvent>> handlers,
+        TEvent @event,
+        CancellationToken cancellationToken = default)
+        where TEvent : class, IEvent
+    {
+        return RunCoreAsync(handlers, @event, cancellationToken).AsAsync();
+    }
+
+    private async ValueTask<Result> RunCoreAsync<TEvent>(IEnumerable<IEventHandler<TEvent>> handlers,
         TEvent @event,
         CancellationToken cancellationToken = default)
         where TEvent : class, IEvent

@@ -145,7 +145,7 @@ public class MediatorVsMediatRBenchmarks
     public async Task<int> Our_Send_Response()
     {
         var res = await _ourSenderBase.SendAsync<RequestWithResponse, int>(RrRequest);
-        return res.TryGet(out int v)
+        return res.TryGetValue(out var v)
             ? v!
             : -1;
     }
@@ -155,7 +155,7 @@ public class MediatorVsMediatRBenchmarks
     {
         var handler = _ourBaseSp.GetRequiredService<RequestWithResponseHandler>();
         var res = await handler.HandleAsync(RrRequest, CancellationToken.None);
-        return res.TryGet(out int v)
+        return res.TryGetValue(out var v)
             ? v!
             : -1;
     }
@@ -208,7 +208,7 @@ public class MediatorVsMediatRBenchmarks
     {
         var sender = _our1BehSp.GetRequiredService<OurSender>();
         var res = await sender.SendAsync<RequestWithResponse, int>(RrRequest);
-        return res.TryGet(out int v)
+        return res.TryGetValue(out var v)
             ? v!
             : -1;
     }
@@ -225,7 +225,7 @@ public class MediatorVsMediatRBenchmarks
     {
         var sender = _our3BehSp.GetRequiredService<OurSender>();
         var res = await sender.SendAsync<RequestWithResponse, int>(RrRequest);
-        return res.TryGet(out int v)
+        return res.TryGetValue(out var v)
             ? v!
             : -1;
     }
@@ -256,16 +256,16 @@ public class MediatorVsMediatRBenchmarks
     public sealed class
         RequestWithoutResponseHandler : Synapse.Abstractions.IRequestHandler<RequestWithoutResponse>
     {
-        public ValueTask<Result> HandleAsync(RequestWithoutResponse request,
+        public ResultTask HandleAsync(RequestWithoutResponse request,
             CancellationToken cancellationToken = default)
         {
-            return ValueTask.FromResult(Result.Success());
+            return Result.Success().AsAsync();
         }
     }
 
     public sealed class OurNoOpBehavior1 : IRequestPipelineBehavior
     {
-        public ValueTask<Result> HandleAsync<TRequest>(TRequest request,
+        public ResultTask HandleAsync<TRequest>(TRequest request,
             RequestHandlerDelegate next,
             CancellationToken cancellationToken = default)
             where TRequest : Synapse.Abstractions.IRequest
@@ -285,7 +285,7 @@ public class MediatorVsMediatRBenchmarks
 
     public sealed class OurNoOpBehavior2 : IRequestPipelineBehavior
     {
-        public ValueTask<Result> HandleAsync<TRequest>(TRequest request,
+        public ResultTask HandleAsync<TRequest>(TRequest request,
             RequestHandlerDelegate next,
             CancellationToken cancellationToken = default)
             where TRequest : Synapse.Abstractions.IRequest
@@ -305,7 +305,7 @@ public class MediatorVsMediatRBenchmarks
 
     public sealed class OurNoOpBehavior3 : IRequestPipelineBehavior
     {
-        public ValueTask<Result> HandleAsync<TRequest>(TRequest request,
+        public ResultTask HandleAsync<TRequest>(TRequest request,
             RequestHandlerDelegate next,
             CancellationToken cancellationToken = default)
             where TRequest : Synapse.Abstractions.IRequest
@@ -329,46 +329,46 @@ public class MediatorVsMediatRBenchmarks
 
     public sealed class OurEventHandler1 : IEventHandler<OurEvent>
     {
-        public ValueTask<Result> HandleAsync(OurEvent @event,
+        public ResultTask HandleAsync(OurEvent @event,
             CancellationToken cancellationToken = default)
         {
-            return ValueTask.FromResult(Result.Success());
+            return Result.Success().AsAsync();
         }
     }
 
     public sealed class OurEventHandler2 : IEventHandler<OurEvent>
     {
-        public ValueTask<Result> HandleAsync(OurEvent @event,
+        public ResultTask HandleAsync(OurEvent @event,
             CancellationToken cancellationToken = default)
         {
-            return ValueTask.FromResult(Result.Success());
+            return Result.Success().AsAsync();
         }
     }
 
     public sealed class OurEventHandler3 : IEventHandler<OurEvent>
     {
-        public ValueTask<Result> HandleAsync(OurEvent @event,
+        public ResultTask HandleAsync(OurEvent @event,
             CancellationToken cancellationToken = default)
         {
-            return ValueTask.FromResult(Result.Success());
+            return Result.Success().AsAsync();
         }
     }
 
     public sealed class OurEventHandler4 : IEventHandler<OurEvent>
     {
-        public ValueTask<Result> HandleAsync(OurEvent @event,
+        public ResultTask HandleAsync(OurEvent @event,
             CancellationToken cancellationToken = default)
         {
-            return ValueTask.FromResult(Result.Success());
+            return Result.Success().AsAsync();
         }
     }
 
     public sealed class OurEventHandler5 : IEventHandler<OurEvent>
     {
-        public ValueTask<Result> HandleAsync(OurEvent @event,
+        public ResultTask HandleAsync(OurEvent @event,
             CancellationToken cancellationToken = default)
         {
-            return ValueTask.FromResult(Result.Success());
+            return Result.Success().AsAsync();
         }
     }
 

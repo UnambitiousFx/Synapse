@@ -17,7 +17,7 @@ public interface IEventOrchestrator
     ///     A task that represents the asynchronous operation, containing a Result indicating the outcome of the event
     ///     handling process.
     /// </returns>
-    ValueTask<Result> RunAsync<TEvent>(IEnumerable<IEventHandler<TEvent>> handlers,
+    ResultTask RunAsync<TEvent>(IEnumerable<IEventHandler<TEvent>> handlers,
         TEvent @event,
         CancellationToken cancellationToken = default)
         where TEvent : class, IEvent;

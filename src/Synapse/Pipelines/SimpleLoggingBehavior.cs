@@ -23,49 +23,23 @@ public sealed class SimpleLoggingBehavior : IRequestPipelineBehavior, IEventPipe
     }
 
     /// <inheritdoc />
-    public async ValueTask<Result> HandleAsync<TEvent>(TEvent @event,
+    public ResultTask HandleAsync<TEvent>(TEvent @event,
         EventHandlerDelegate next,
         CancellationToken cancellationToken = default)
         where TEvent : IEvent
     {
-        var startedAt = Stopwatch.GetTimestamp();
-        var eventName = typeof(TEvent).Name;
-
-        var result = await next();
-
-
-        var elapsedTime = Stopwatch.GetElapsedTime(startedAt);
-        if (!result.TryGet(out var error))
-            _logger.LogWarning("Event {EventName} handled in {ElapsedMilliseconds}ms with error {ErrorMessage}",
-                eventName, elapsedTime, error.ToString());
-        else
-            _logger.LogInformation("Event {EventName} handled in {ElapsedMilliseconds}ms", eventName, elapsedTime);
-
-        return result;
+        return HandleCoreAsync(@event, next, cancellationToken)
+            .AsAsync();
     }
 
     /// <inheritdoc />
-    public async ValueTask<Result> HandleAsync<TRequest>(TRequest request,
+    public ResultTask HandleAsync<TRequest>(TRequest request,
         RequestHandlerDelegate next,
         CancellationToken cancellationToken = default)
         where TRequest : IRequest
     {
-        var startedAt = Stopwatch.GetTimestamp();
-        var requestName = typeof(TRequest).Name;
-
-
-        var result = await next();
-
-
-        var elapsedTime = Stopwatch.GetElapsedTime(startedAt);
-        if (!result.TryGet(out var errors))
-            _logger.LogWarning("Request {RequestName} handled in {ElapsedMilliseconds}ms with error {ErrorMessage}",
-                requestName, elapsedTime, errors.ToString());
-        else
-            _logger.LogInformation("Request {RequestName} handled in {ElapsedMilliseconds}ms", requestName,
-                elapsedTime);
-
-        return result;
+        return HandleCoreAsync(request, next, cancellationToken)
+            .AsAsync();
     }
 
     /// <inheritdoc />
@@ -85,6 +59,48 @@ public sealed class SimpleLoggingBehavior : IRequestPipelineBehavior, IEventPipe
         if (!result.TryGet(out _, out var error))
             _logger.LogWarning("Request {RequestName} handled in {ElapsedMilliseconds}ms with error {ErrorMessage}",
                 requestName, elapsedTime, error.ToString());
+        else
+            _logger.LogInformation("Request {RequestName} handled in {ElapsedMilliseconds}ms", requestName,
+                elapsedTime);
+
+        return result;
+    }
+
+    private async ValueTask<Result> HandleCoreAsync<TEvent>(TEvent @event,
+        EventHandlerDelegate next,
+        CancellationToken cancellationToken = default)
+        where TEvent : IEvent
+    {
+        var startedAt = Stopwatch.GetTimestamp();
+        var eventName = typeof(TEvent).Name;
+
+        var result = await next();
+
+
+        var elapsedTime = Stopwatch.GetElapsedTime(startedAt);
+        if (result.TryGetError(out var error))
+            _logger.LogWarning("Event {EventName} handled in {ElapsedMilliseconds}ms with error {ErrorMessage}",
+                eventName, elapsedTime, error.ToString());
+        else
+            _logger.LogInformation("Event {EventName} handled in {ElapsedMilliseconds}ms", eventName, elapsedTime);
+
+        return result;
+    }
+
+    private async ValueTask<Result> HandleCoreAsync<TRequest>(TRequest request,
+        RequestHandlerDelegate next,
+        CancellationToken cancellationToken = default)
+        where TRequest : IRequest
+    {
+        var startedAt = Stopwatch.GetTimestamp();
+        var requestName = typeof(TRequest).Name;
+
+        var result = await next();
+
+        var elapsedTime = Stopwatch.GetElapsedTime(startedAt);
+        if (result.TryGetError(out var errors))
+            _logger.LogWarning("Request {RequestName} handled in {ElapsedMilliseconds}ms with error {ErrorMessage}",
+                requestName, elapsedTime, errors.ToString());
         else
             _logger.LogInformation("Request {RequestName} handled in {ElapsedMilliseconds}ms", requestName,
                 elapsedTime);

@@ -134,10 +134,10 @@ public sealed class TypedRequestPipelineBehaviorTests
 
     private sealed class TypedSampleRequestHandler : IRequestHandler<TypedSampleRequest>
     {
-        public ValueTask<Result> HandleAsync(TypedSampleRequest request,
+        public ResultTask HandleAsync(TypedSampleRequest request,
             CancellationToken cancellationToken = default)
         {
-            return new ValueTask<Result>(Result.Success());
+            return new ResultTask(Result.Success());
         }
     }
 
@@ -152,10 +152,10 @@ public sealed class TypedRequestPipelineBehaviorTests
 
     private sealed class TypedSampleInheritanceRequestHandler : IRequestHandler<TypedSampleInheritanceRequest>
     {
-        public ValueTask<Result> HandleAsync(TypedSampleInheritanceRequest request,
+        public ResultTask HandleAsync(TypedSampleInheritanceRequest request,
             CancellationToken cancellationToken = default)
         {
-            return new ValueTask<Result>(Result.Success());
+            return new ResultTask(Result.Success());
         }
     }
 }

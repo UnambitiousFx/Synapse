@@ -17,7 +17,7 @@ public sealed class OnlyTypedSampleRequestBehavior : IRequestPipelineBehavior<Ty
 {
     public int ExecutionCount { get; private set; }
 
-    public ValueTask<Result> HandleAsync(TypedSampleRequest request,
+    public ResultTask HandleAsync(TypedSampleRequest request,
         RequestHandlerDelegate next,
         CancellationToken cancellationToken = default)
     {
@@ -45,7 +45,7 @@ public sealed class ConditionalTypedRequestBehavior : IRequestPipelineBehavior<T
 {
     public int ExecutionCount { get; private set; }
 
-    public ValueTask<Result> HandleAsync(TypedSampleRequest request,
+    public ResultTask HandleAsync(TypedSampleRequest request,
         RequestHandlerDelegate next,
         CancellationToken cancellationToken = default)
     {
@@ -58,7 +58,7 @@ public sealed class InterfaceTypedRequestBehavior : IRequestPipelineBehavior<IBa
 {
     public int ExecutionCount { get; private set; }
 
-    public ValueTask<Result> HandleAsync(IBaseRequest request,
+    public ResultTask HandleAsync(IBaseRequest request,
         RequestHandlerDelegate next,
         CancellationToken cancellationToken = default)
     {
@@ -71,7 +71,7 @@ public sealed class AbstractTypedRequestBehavior : IRequestPipelineBehavior<Base
 {
     public int ExecutionCount { get; private set; }
 
-    public ValueTask<Result> HandleAsync(BaseRequest request,
+    public ResultTask HandleAsync(BaseRequest request,
         RequestHandlerDelegate next,
         CancellationToken cancellationToken = default)
     {

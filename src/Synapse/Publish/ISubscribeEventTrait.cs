@@ -6,5 +6,5 @@ internal interface ISubscribeEventTrait
 {
     Type EventType { get; }
     int MaxConcurrency { get; }
-    ValueTask<Result> HandleAsync(object @event, CancellationToken cancellationToken);
+    ResultTask HandleAsync(object @event, CancellationToken cancellationToken);
 }

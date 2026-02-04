@@ -13,13 +13,13 @@ internal sealed class ProxyRequestHandler<TRequestHandler, TRequest>(
 {
     private readonly ImmutableArray<IRequestPipelineBehavior> _behaviors = [.. behaviors];
 
-    public ValueTask<Result> HandleAsync(TRequest request,
+    public ResultTask HandleAsync(TRequest request,
         CancellationToken cancellationToken = default)
     {
         return ExecutePipelineAsync(request, 0, cancellationToken);
     }
 
-    private ValueTask<Result> ExecutePipelineAsync(TRequest request,
+    private ResultTask ExecutePipelineAsync(TRequest request,
         int index,
         CancellationToken cancellationToken)
     {
@@ -28,7 +28,7 @@ internal sealed class ProxyRequestHandler<TRequestHandler, TRequest>(
         return _behaviors[index]
             .HandleAsync(request, Next, cancellationToken);
 
-        ValueTask<Result> Next()
+        ResultTask Next()
         {
             return ExecutePipelineAsync(request, index + 1, cancellationToken);
         }

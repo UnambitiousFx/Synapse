@@ -19,7 +19,7 @@ public sealed class OrderShippedNotificationHandler : IEventHandler<OrderShipped
         _logger = logger;
     }
 
-    public ValueTask<Result> HandleAsync(OrderShipped @event, CancellationToken cancellationToken = default)
+    public ResultTask HandleAsync(OrderShipped @event, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation(
             "📧 Sending shipping notification for order {OrderId} with tracking {TrackingNumber}",

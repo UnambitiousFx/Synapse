@@ -17,7 +17,12 @@ public sealed class UpdateInventoryCommandHandler : IRequestHandler<UpdateInvent
         _publisher = publisher;
     }
 
-    public async ValueTask<Result> HandleAsync(UpdateInventoryCommand request,
+    public ResultTask HandleAsync(UpdateInventoryCommand request, CancellationToken cancellationToken = default)
+    {
+        return HandleCoreAsync(request, cancellationToken).AsAsync();
+    }
+
+    public async ValueTask<Result> HandleCoreAsync(UpdateInventoryCommand request,
         CancellationToken cancellationToken = default)
     {
         // Simulate current inventory (in real app, would query from database)

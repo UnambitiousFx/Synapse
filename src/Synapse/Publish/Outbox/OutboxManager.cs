@@ -35,7 +35,20 @@ internal sealed class OutboxManager : IOutboxManager
         _metrics = metrics;
     }
 
-    public async ValueTask<Result> ProcessPendingAsync(CancellationToken cancellationToken)
+    public ResultTask ProcessPendingAsync(CancellationToken cancellationToken)
+    {
+        return ProcessPendingCoreAsync(cancellationToken).AsAsync();
+    }
+
+    public ResultTask StoreAsync<TEvent>(TEvent @event,
+        DistributionMode distributionMode,
+        CancellationToken cancellationToken)
+        where TEvent : class, IEvent
+    {
+        return _outboxStorage.AddAsync(@event, distributionMode, cancellationToken);
+    }
+
+    private async ValueTask<Result> ProcessPendingCoreAsync(CancellationToken cancellationToken)
     {
         _logger.LogDebug("Processing pending events from outbox");
 
@@ -74,14 +87,6 @@ internal sealed class OutboxManager : IOutboxManager
                 events.Count, combinedResult.ToString());
 
         return combinedResult;
-    }
-
-    public ValueTask<Result> StoreAsync<TEvent>(TEvent @event,
-        DistributionMode distributionMode,
-        CancellationToken cancellationToken)
-        where TEvent : class, IEvent
-    {
-        return _outboxStorage.AddAsync(@event, distributionMode, cancellationToken);
     }
 
 
