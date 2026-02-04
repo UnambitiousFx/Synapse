@@ -17,7 +17,11 @@ var services = new ServiceCollection()
         builder.SetMinimumLevel(LogLevel.Information);
     })
     .AddMetrics()
-    .AddSynapse(cfg => cfg.AddRegisterGroup(new RegisterGroup()))
+    .AddSynapse(cfg =>
+    {
+        cfg.AddRegisterGroup(new RegisterGroup());
+        cfg.UseEventDispatcherRegistration<EventDispatcherRegistration>();
+    })
     .AddScoped<IStreamRequestPipelineBehavior, StreamLoggingBehavior>()
     .BuildServiceProvider();
 
