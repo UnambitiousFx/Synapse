@@ -238,9 +238,9 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
         where TRegistration : class, IEventDispatcherRegistration, new()
     {
         var registration = new TRegistration();
-        registration.RegisterDispatchers((type, del) =>
+        registration.RegisterDispatchers((type, dispatchDelegate) =>
         {
-            if (del is DispatchEventDelegate dispatchDelegate) _eventDispatchers[type] = dispatchDelegate;
+            _eventDispatchers[type] = dispatchDelegate;
         });
         return this;
     }

@@ -1,7 +1,6 @@
 using UnambitiousFx.Functional;
-using UnambitiousFx.Synapse.Abstractions;
 
-namespace UnambitiousFx.Synapse.Publish;
+namespace UnambitiousFx.Synapse.Abstractions;
 
 /// <summary>
 ///     Delegate for dispatching events from the outbox without reflection.
@@ -16,7 +15,7 @@ namespace UnambitiousFx.Synapse.Publish;
 ///     Each event type has a registered dispatcher that casts the event to the correct type and calls
 ///     the generic DispatchFromOutboxAsync method, preserving type information for NativeAOT compilation.
 /// </remarks>
-internal delegate ValueTask<Result> DispatchEventDelegate(
+public delegate ValueTask<Result> DispatchEventDelegate(
     IEvent @event,
     IEventDispatcher dispatcher,
     CancellationToken cancellationToken);

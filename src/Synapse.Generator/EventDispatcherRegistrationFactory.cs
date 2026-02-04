@@ -35,7 +35,7 @@ internal static class EventDispatcherRegistrationFactory
         sb.AppendLine("    /// </summary>");
         sb.AppendLine(
             "    /// <param name=\"register\">A callback to register each event type with its dispatcher delegate.</param>");
-        sb.AppendLine("    public void RegisterDispatchers(Action<Type, Delegate> register)");
+        sb.AppendLine("    public void RegisterDispatchers(Action<Type, global::UnambitiousFx.Synapse.Abstractions.DispatchEventDelegate> register)");
         sb.AppendLine("    {");
 
         foreach (var eventType in eventInfo.EventTypes)
@@ -45,8 +45,8 @@ internal static class EventDispatcherRegistrationFactory
             var globalizedType = GlobalizeType(eventType);
 
             sb.AppendLine(
-                $"        register(typeof({globalizedType}), new Func<global::{abstractionsNamespace}.IEvent, global::{abstractionsNamespace}.IEventDispatcher, DistributionMode, CancellationToken, ValueTask<Result>>(");
-            sb.AppendLine("            async (@event, dispatcher, distributionMode, ct) =>");
+                $"        register(typeof({globalizedType}), new global::UnambitiousFx.Synapse.Abstractions.DispatchEventDelegate(");
+            sb.AppendLine("            async (@event, dispatcher, ct) =>");
             sb.AppendLine("            {");
             sb.AppendLine($"                var typedEvent = ({globalizedType})@event;");
             sb.AppendLine(

@@ -10,5 +10,5 @@ public interface IEventDispatcherRegistration
     ///     Registers event dispatcher delegates for all event types in the assembly.
     /// </summary>
     /// <param name="register">A callback to register each event type with its dispatcher delegate.</param>
-    void RegisterDispatchers(Action<Type, Delegate> register);
+    void RegisterDispatchers(Action<Type, DispatchEventDelegate> register);
 }
