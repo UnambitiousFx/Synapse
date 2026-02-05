@@ -15,7 +15,7 @@ public sealed class TodoDeletedHandler : IEventHandler<TodoDeleted>
         _logger = logger;
     }
 
-    public ResultTask HandleAsync(TodoDeleted @event,
+    public ValueTask<Result> HandleAsync(TodoDeleted @event,
         CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Todo deleted {TodoId}", @event.Todo.Id);

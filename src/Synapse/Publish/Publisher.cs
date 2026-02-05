@@ -20,14 +20,14 @@ internal sealed class Publisher : IPublisher
         _defaultMode = options.Value.DefaultMode;
     }
 
-    public ResultTask PublishAsync<TEvent>(TEvent @event,
+    public ValueTask<Result> PublishAsync<TEvent>(TEvent @event,
         CancellationToken cancellationToken = default)
         where TEvent : class, IEvent
     {
         return PublishAsync(@event, _defaultMode, DistributionMode.Undefined, cancellationToken);
     }
 
-    public ResultTask PublishAsync<TEvent>(TEvent @event,
+    public ValueTask<Result> PublishAsync<TEvent>(TEvent @event,
         PublishMode publishMode,
         DistributionMode distributionMode,
         CancellationToken cancellationToken = default)

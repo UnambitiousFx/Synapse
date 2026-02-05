@@ -31,7 +31,7 @@ public sealed class CqrsBoundaryEnforcementBehavior : IRequestPipelineBehavior
     /// <param name="cancellationToken"></param>
     /// <typeparam name="TRequest"></typeparam>
     /// <returns></returns>
-    public ResultTask HandleAsync<TRequest>(TRequest request,
+    public ValueTask<Result> HandleAsync<TRequest>(TRequest request,
         RequestHandlerDelegate next,
         CancellationToken cancellationToken = default)
         where TRequest : IRequest

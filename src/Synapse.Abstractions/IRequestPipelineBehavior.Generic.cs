@@ -16,7 +16,7 @@ public interface IRequestPipelineBehavior<in TRequest>
     /// <param name="next">Delegate to invoke the next behavior/handler.</param>
     /// <param name="cancellationToken">Token for cancelling the operation.</param>
     /// <returns>A task containing the result of the operation.</returns>
-    ResultTask HandleAsync(TRequest request,
+    ValueTask<Result> HandleAsync(TRequest request,
         RequestHandlerDelegate next,
         CancellationToken cancellationToken = default);
 }

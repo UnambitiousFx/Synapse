@@ -13,7 +13,7 @@ public class EventLoggingPipelineBehavior : IEventPipelineBehavior
         _logger = logger;
     }
 
-    public async ResultTask HandleAsync<TEvent>(TEvent @event,
+    public async ValueTask<Result> HandleAsync<TEvent>(TEvent @event,
         EventHandlerDelegate next,
         CancellationToken cancellationToken = default)
         where TEvent : IEvent

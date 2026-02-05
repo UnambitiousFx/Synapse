@@ -11,7 +11,8 @@ using UnambitiousFx.Examples.Application.Domain.Repositories;
 using UnambitiousFx.Examples.Application.Infrastructure.Repositories;
 using UnambitiousFx.Examples.Application.Infrastructure.Services;
 using UnambitiousFx.Examples.WebApi.Models;
-using UnambitiousFx.Functional.AspNetCore.Http.ValueTasks;
+using UnambitiousFx.Functional;
+using UnambitiousFx.Functional.AspNetCore.Http;
 using UnambitiousFx.Synapse;
 using UnambitiousFx.Synapse.Abstractions;
 using UnambitiousFx.Synapse.Pipelines;
@@ -121,7 +122,7 @@ todoEndpoints.MapGet("/{id:guid}", async ([FromRoute] Guid id,
 {
     var query = new TodoQuery { Id = id };
     return await sender.SendAsync<TodoQuery, Todo>(query, cancellationToken)
-        .ToHttpResultAsync();
+        .ToHttpResult();
 });
 
 todoEndpoints.MapGet("/", async ([FromServices] IRequestHandler<ListTodoQuery, IEnumerable<Todo>> handler,
@@ -131,7 +132,8 @@ todoEndpoints.MapGet("/", async ([FromServices] IRequestHandler<ListTodoQuery, I
     var query = new ListTodoQuery();
 
     return await handler.HandleAsync(query, cancellationToken)
-        .ToHttpResultAsync();
+        .AsAsync()
+        .ToHttpResult();
 });
 
 todoEndpoints.MapPost("/", async ([FromServices] ISender sender,
@@ -141,7 +143,7 @@ todoEndpoints.MapPost("/", async ([FromServices] ISender sender,
     var command = new CreateTodoCommand { Name = input.Name };
 
     return await sender.SendAsync<CreateTodoCommand, Guid>(command, cancellationToken)
-        .ToHttpResultAsync();
+        .ToHttpResult();
 });
 
 todoEndpoints.MapPut("/{id:guid}", async ([FromServices] IRequestHandler<UpdateTodoCommand> handler,
@@ -157,7 +159,8 @@ todoEndpoints.MapPut("/{id:guid}", async ([FromServices] IRequestHandler<UpdateT
     };
 
     return await handler.HandleAsync(command, cancellationToken)
-        .ToHttpResultAsync();
+        .AsAsync()
+        .ToHttpResult();
 });
 
 todoEndpoints.MapDelete("/{id:guid}", async ([FromServices] ISender sender,
@@ -167,7 +170,7 @@ todoEndpoints.MapDelete("/{id:guid}", async ([FromServices] ISender sender,
     var command = new DeleteTodoCommand { Id = id };
 
     return await sender.SendAsync(command, cancellationToken)
-        .ToHttpResultAsync();
+        .ToHttpResult();
 });
 
 // ===== Transport Examples =====
@@ -185,8 +188,8 @@ orderEndpoints.MapPost("/", async ([FromServices] ISender sender,
     };
 
     return await sender.SendAsync<CreateOrderCommand, Guid>(command, cancellationToken)
-        .ToCreatedHttpResultAsync(orderId => $"/orders/{orderId}",
-            orderId => new { orderId });
+        .Map(orderId => new { orderId })
+        .ToCreatedHttpResult(r => $"/orders/{r.orderId}");
 });
 
 orderEndpoints.MapPost("/{id:guid}/ship", async ([FromServices] ISender sender,
@@ -196,7 +199,8 @@ orderEndpoints.MapPost("/{id:guid}/ship", async ([FromServices] ISender sender,
     var command = new ShipOrderCommand { OrderId = id };
 
     return await sender.SendAsync(command, cancellationToken)
-        .ToHttpResultAsync(() => new { message = "Order shipped successfully (EXTERNAL event sent to WebApiAot)" });
+        .Map(() => new { message = "Order shipped successfully (EXTERNAL event sent to WebApiAot)" })
+        .ToHttpResult();
 });
 
 orderEndpoints.MapDelete("/{id:guid}", async ([FromServices] ISender sender,
@@ -211,7 +215,8 @@ orderEndpoints.MapDelete("/{id:guid}", async ([FromServices] ISender sender,
     };
 
     return await sender.SendAsync(command, cancellationToken)
-        .ToHttpResultAsync(() => new { message = "Order cancelled (EXTERNAL event sent to WebApiAot)" });
+        .Map(() => new { message = "Order cancelled (EXTERNAL event sent to WebApiAot)" })
+        .ToHttpResult();
 });
 
 var paymentEndpoints = app.MapGroup("/payments");
@@ -228,7 +233,8 @@ paymentEndpoints.MapPost("/", async ([FromServices] ISender sender,
     };
 
     return await sender.SendAsync(command, cancellationToken)
-        .ToHttpResultAsync(() => new { message = "Payment processed (event sent to transport)" });
+        .Map(() => new { message = "Payment processed (event sent to transport)" })
+        .ToHttpResult();
 });
 
 var inventoryEndpoints = app.MapGroup("/inventory");
@@ -245,7 +251,8 @@ inventoryEndpoints.MapPost("/{productId:guid}/update", async ([FromServices] ISe
     };
 
     return await sender.SendAsync(command, cancellationToken)
-        .ToHttpResultAsync(() => new { message = "Inventory updated (event sent to transport)" });
+        .Map(() => new { message = "Inventory updated (event sent to transport)" })
+        .ToHttpResult();
 });
 
 app.Run();

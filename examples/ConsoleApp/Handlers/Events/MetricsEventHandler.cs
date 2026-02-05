@@ -7,7 +7,7 @@ namespace UnambitiousFx.Examples.ConsoleApp.Handlers.Events;
 [EventHandler<MetricsEvent>]
 public class MetricsEventHandler : IEventHandler<MetricsEvent>
 {
-    public ResultTask HandleAsync(MetricsEvent @event,
+    public ValueTask<Result> HandleAsync(MetricsEvent @event,
         CancellationToken cancellationToken = default)
     {
         // Minimal processing for high-volume metrics

@@ -28,7 +28,7 @@ public interface IRequestPipelineBehavior
     ///     A task representing the asynchronous operation, containing a result object indicating the success or failure
     ///     of the process.
     /// </returns>
-    ResultTask HandleAsync<TRequest>(TRequest request,
+    ValueTask<Result> HandleAsync<TRequest>(TRequest request,
         RequestHandlerDelegate next,
         CancellationToken cancellationToken = default)
         where TRequest : IRequest;

@@ -13,7 +13,7 @@ public class ValidationPipelineBehavior : IRequestPipelineBehavior
         _logger = logger;
     }
 
-    public async ResultTask HandleAsync<TRequest>(TRequest request,
+    public async ValueTask<Result> HandleAsync<TRequest>(TRequest request,
         RequestHandlerDelegate next,
         CancellationToken cancellationToken = default)
         where TRequest : IRequest

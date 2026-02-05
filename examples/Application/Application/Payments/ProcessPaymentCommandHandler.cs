@@ -17,7 +17,7 @@ public sealed class ProcessPaymentCommandHandler : IRequestHandler<ProcessPaymen
         _publisher = publisher;
     }
 
-    public async ResultTask HandleAsync(ProcessPaymentCommand request,
+    public async ValueTask<Result> HandleAsync(ProcessPaymentCommand request,
         CancellationToken cancellationToken = default)
     {
         var paymentId = Guid.NewGuid();

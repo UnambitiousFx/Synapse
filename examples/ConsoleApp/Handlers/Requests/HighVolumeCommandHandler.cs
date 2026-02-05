@@ -7,7 +7,7 @@ namespace UnambitiousFx.Examples.ConsoleApp.Handlers.Requests;
 [RequestHandler<HighVolumeCommand>]
 public sealed class HighVolumeCommandHandler : IRequestHandler<HighVolumeCommand>
 {
-    public ResultTask HandleAsync(HighVolumeCommand request,
+    public ValueTask<Result> HandleAsync(HighVolumeCommand request,
         CancellationToken cancellationToken = default)
     {
         // Minimal processing for high volume scenario

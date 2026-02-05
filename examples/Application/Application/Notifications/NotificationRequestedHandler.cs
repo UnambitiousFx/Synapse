@@ -18,7 +18,7 @@ public sealed class NotificationRequestedHandler : IEventHandler<NotificationReq
         _logger = logger;
     }
 
-    public ResultTask HandleAsync(NotificationRequested @event, CancellationToken cancellationToken = default)
+    public ValueTask<Result> HandleAsync(NotificationRequested @event, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation(
             "Sending notification to {RecipientEmail}: {Subject}",
@@ -28,6 +28,6 @@ public sealed class NotificationRequestedHandler : IEventHandler<NotificationReq
         // Simulate sending email
         _logger.LogDebug("Email content: {Message}", @event.Message);
 
-        return Result.Success();
+        return Result.Success().AsAsync();
     }
 }

@@ -20,7 +20,7 @@ public sealed class OrderCancelledHandler : IEventHandler<OrderCancelled>
         _fulfillmentService = fulfillmentService;
     }
 
-    public ResultTask HandleAsync(
+    public ValueTask<Result> HandleAsync(
         OrderCancelled @event,
         CancellationToken cancellationToken = default)
     {

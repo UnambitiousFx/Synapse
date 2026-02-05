@@ -18,7 +18,7 @@ public sealed class OrderShippedHandler : IEventHandler<OrderShipped>
         _logger = logger;
     }
 
-    public ResultTask HandleAsync(OrderShipped @event, CancellationToken cancellationToken = default)
+    public ValueTask<Result> HandleAsync(OrderShipped @event, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation(
             "Order {OrderId} shipped with tracking number {TrackingNumber} at {ShippedAt}",

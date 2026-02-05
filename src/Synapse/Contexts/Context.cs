@@ -103,14 +103,14 @@ internal readonly record struct Context : IContext
         _features.Remove(typeof(TFeature));
     }
 
-    public ResultTask PublishEventAsync<TEvent>(TEvent @event,
+    public ValueTask<Result> PublishEventAsync<TEvent>(TEvent @event,
         CancellationToken cancellationToken = default)
         where TEvent : class, IEvent
     {
         return _publisher.PublishAsync(@event, cancellationToken);
     }
 
-    public ResultTask PublishEventAsync<TEvent>(TEvent @event,
+    public ValueTask<Result> PublishEventAsync<TEvent>(TEvent @event,
         PublishMode mode,
         DistributionMode distributionMode,
         CancellationToken cancellationToken = default)
@@ -119,7 +119,7 @@ internal readonly record struct Context : IContext
         return _publisher.PublishAsync(@event, mode, distributionMode, cancellationToken);
     }
 
-    public ResultTask CommitEventsAsync(CancellationToken cancellationToken = default)
+    public ValueTask<Result> CommitEventsAsync(CancellationToken cancellationToken = default)
     {
         return _outboxCommit.CommitAsync(cancellationToken);
     }

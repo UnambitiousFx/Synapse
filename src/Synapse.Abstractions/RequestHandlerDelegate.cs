@@ -15,4 +15,4 @@ public delegate ValueTask<Result<TResponse>> RequestHandlerDelegate<TResponse>()
 ///     optionally including a response when used with a generic version.
 /// </summary>
 /// <returns>A <see cref="ValueTask" /> containing the processing result.</returns>
-public delegate ResultTask RequestHandlerDelegate();
+public delegate ValueTask<Result> RequestHandlerDelegate();

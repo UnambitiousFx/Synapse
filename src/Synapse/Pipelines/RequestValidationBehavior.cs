@@ -42,7 +42,7 @@ public class RequestValidationBehavior<TRequest, TResponse> : IRequestPipelineBe
         RequestHandlerDelegate<TResponse> next,
         CancellationToken cancellationToken)
     {
-        var result = await _validators.Select(x => x.ValidateAsync(request, cancellationToken))
+        var result = await _validators.Select(x => x.ValidateAsync(request, cancellationToken).AsAsync())
             .Combine();
 
         return await result.Match(() => next(),

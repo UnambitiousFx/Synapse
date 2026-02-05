@@ -15,7 +15,7 @@ internal sealed class ConditionalTypedBehaviorWrapper : IRequestPipelineBehavior
         _predicate = predicate;
     }
 
-    public ResultTask HandleAsync<TReq>(TReq request,
+    public ValueTask<Result> HandleAsync<TReq>(TReq request,
         RequestHandlerDelegate next,
         CancellationToken cancellationToken = default)
         where TReq : IRequest

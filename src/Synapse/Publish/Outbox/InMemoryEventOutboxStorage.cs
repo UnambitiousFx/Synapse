@@ -47,7 +47,7 @@ public sealed class InMemoryEventOutboxStorage : IEventOutboxStorage
     }
 
     /// <inheritdoc />
-    public ResultTask MarkAsProcessedAsync(IEvent @event,
+    public ValueTask<Result> MarkAsProcessedAsync(IEvent @event,
         CancellationToken cancellationToken = default)
     {
         var correlationId = CorrelationContext.CurrentCorrelationId;
@@ -67,7 +67,7 @@ public sealed class InMemoryEventOutboxStorage : IEventOutboxStorage
     }
 
     /// <inheritdoc />
-    public ResultTask ClearAsync(CancellationToken cancellationToken = default)
+    public ValueTask<Result> ClearAsync(CancellationToken cancellationToken = default)
     {
         var correlationId = CorrelationContext.CurrentCorrelationId;
         _scopedItems.TryRemove(correlationId, out _);
@@ -75,7 +75,7 @@ public sealed class InMemoryEventOutboxStorage : IEventOutboxStorage
     }
 
     /// <inheritdoc />
-    public ResultTask AddAsync<TEvent>(TEvent @event,
+    public ValueTask<Result> AddAsync<TEvent>(TEvent @event,
         CancellationToken cancellationToken = default)
         where TEvent : class, IEvent
     {
@@ -84,7 +84,7 @@ public sealed class InMemoryEventOutboxStorage : IEventOutboxStorage
     }
 
     /// <inheritdoc />
-    public ResultTask AddAsync<TEvent>(TEvent @event,
+    public ValueTask<Result> AddAsync<TEvent>(TEvent @event,
         DistributionMode distributionMode,
         CancellationToken cancellationToken = default)
         where TEvent : class, IEvent
@@ -97,7 +97,7 @@ public sealed class InMemoryEventOutboxStorage : IEventOutboxStorage
     }
 
     /// <inheritdoc />
-    public ResultTask MarkAsFailedAsync(IEvent @event,
+    public ValueTask<Result> MarkAsFailedAsync(IEvent @event,
         string reason,
         bool deadLetter,
         DateTimeOffset? nextAttemptAt = null,

@@ -256,7 +256,7 @@ public class MediatorVsMediatRBenchmarks
     public sealed class
         RequestWithoutResponseHandler : Synapse.Abstractions.IRequestHandler<RequestWithoutResponse>
     {
-        public ResultTask HandleAsync(RequestWithoutResponse request,
+        public ValueTask<Result> HandleAsync(RequestWithoutResponse request,
             CancellationToken cancellationToken = default)
         {
             return Result.Success().AsAsync();
@@ -265,7 +265,7 @@ public class MediatorVsMediatRBenchmarks
 
     public sealed class OurNoOpBehavior1 : IRequestPipelineBehavior
     {
-        public ResultTask HandleAsync<TRequest>(TRequest request,
+        public ValueTask<Result> HandleAsync<TRequest>(TRequest request,
             RequestHandlerDelegate next,
             CancellationToken cancellationToken = default)
             where TRequest : Synapse.Abstractions.IRequest
@@ -285,7 +285,7 @@ public class MediatorVsMediatRBenchmarks
 
     public sealed class OurNoOpBehavior2 : IRequestPipelineBehavior
     {
-        public ResultTask HandleAsync<TRequest>(TRequest request,
+        public ValueTask<Result> HandleAsync<TRequest>(TRequest request,
             RequestHandlerDelegate next,
             CancellationToken cancellationToken = default)
             where TRequest : Synapse.Abstractions.IRequest
@@ -305,7 +305,7 @@ public class MediatorVsMediatRBenchmarks
 
     public sealed class OurNoOpBehavior3 : IRequestPipelineBehavior
     {
-        public ResultTask HandleAsync<TRequest>(TRequest request,
+        public ValueTask<Result> HandleAsync<TRequest>(TRequest request,
             RequestHandlerDelegate next,
             CancellationToken cancellationToken = default)
             where TRequest : Synapse.Abstractions.IRequest
@@ -329,7 +329,7 @@ public class MediatorVsMediatRBenchmarks
 
     public sealed class OurEventHandler1 : IEventHandler<OurEvent>
     {
-        public ResultTask HandleAsync(OurEvent @event,
+        public ValueTask<Result> HandleAsync(OurEvent @event,
             CancellationToken cancellationToken = default)
         {
             return Result.Success().AsAsync();
@@ -338,7 +338,7 @@ public class MediatorVsMediatRBenchmarks
 
     public sealed class OurEventHandler2 : IEventHandler<OurEvent>
     {
-        public ResultTask HandleAsync(OurEvent @event,
+        public ValueTask<Result> HandleAsync(OurEvent @event,
             CancellationToken cancellationToken = default)
         {
             return Result.Success().AsAsync();
@@ -347,7 +347,7 @@ public class MediatorVsMediatRBenchmarks
 
     public sealed class OurEventHandler3 : IEventHandler<OurEvent>
     {
-        public ResultTask HandleAsync(OurEvent @event,
+        public ValueTask<Result> HandleAsync(OurEvent @event,
             CancellationToken cancellationToken = default)
         {
             return Result.Success().AsAsync();
@@ -356,7 +356,7 @@ public class MediatorVsMediatRBenchmarks
 
     public sealed class OurEventHandler4 : IEventHandler<OurEvent>
     {
-        public ResultTask HandleAsync(OurEvent @event,
+        public ValueTask<Result> HandleAsync(OurEvent @event,
             CancellationToken cancellationToken = default)
         {
             return Result.Success().AsAsync();
@@ -365,7 +365,7 @@ public class MediatorVsMediatRBenchmarks
 
     public sealed class OurEventHandler5 : IEventHandler<OurEvent>
     {
-        public ResultTask HandleAsync(OurEvent @event,
+        public ValueTask<Result> HandleAsync(OurEvent @event,
             CancellationToken cancellationToken = default)
         {
             return Result.Success().AsAsync();

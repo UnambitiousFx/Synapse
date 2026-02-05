@@ -34,5 +34,5 @@ public interface IOutboxCommit
     ///     for the current scope (identified by <see cref="IContext.CorrelationId" />)
     ///     and dispatches them according to their configured distribution mode.
     /// </remarks>
-    ResultTask CommitAsync(CancellationToken cancellationToken = default);
+    ValueTask<Result> CommitAsync(CancellationToken cancellationToken = default);
 }

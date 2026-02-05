@@ -18,7 +18,7 @@ public sealed class UpdateTodoCommandHandler : IRequestHandler<UpdateTodoCommand
         _context = context;
     }
 
-    public async ResultTask HandleAsync(UpdateTodoCommand request,
+    public async ValueTask<Result> HandleAsync(UpdateTodoCommand request,
         CancellationToken cancellationToken = default)
     {
         var todoOpt = await _todoRepository.GetAsync(request.Id, cancellationToken);

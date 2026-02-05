@@ -73,7 +73,7 @@ internal sealed class EventDispatcher : IEventDispatcher
         _transportDispatcher = transportDispatcher;
     }
 
-    public ResultTask DispatchAsync<TEvent>(TEvent @event,
+    public ValueTask<Result> DispatchAsync<TEvent>(TEvent @event,
         DistributionMode distributionMode,
         CancellationToken cancellationToken)
         where TEvent : class, IEvent
@@ -195,9 +195,9 @@ internal sealed class EventDispatcher : IEventDispatcher
             return DispatchByModeAsync(@event, handlers, distributionMode, cancellationToken)
                 .AsAsync();
 
-        return behaviors[index].HandleAsync(@event, Next, cancellationToken);
+        return behaviors[index].HandleAsync(@event, Next, cancellationToken).AsAsync();
 
-        ResultTask Next()
+        ValueTask<Result> Next()
         {
             return ExecutePipelineAsync(@event, handlers, behaviors, distributionMode, index + 1,
                 cancellationToken);

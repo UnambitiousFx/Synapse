@@ -63,7 +63,7 @@ public interface IContext
     ///     A <see cref="ValueTask" /> containing a <see cref="Result" /> that indicates the success or failure of the
     ///     operation.
     /// </returns>
-    ResultTask PublishEventAsync<TEvent>(TEvent @event,
+    ValueTask<Result> PublishEventAsync<TEvent>(TEvent @event,
         CancellationToken cancellationToken = default)
         where TEvent : class, IEvent;
 
@@ -90,7 +90,7 @@ public interface IContext
     ///     A <see cref="ValueTask" /> containing a <see cref="Result" /> that indicates the success or failure of the
     ///     operation.
     /// </returns>
-    ResultTask PublishEventAsync<TEvent>(TEvent @event,
+    ValueTask<Result> PublishEventAsync<TEvent>(TEvent @event,
         PublishMode mode,
         DistributionMode distributionMode,
         CancellationToken cancellationToken = default)
@@ -111,7 +111,7 @@ public interface IContext
     ///     This method processes all events that were published with <see cref="PublishMode.Outbox" />
     ///     in the current scope. It delegates to <see cref="IOutboxCommit.CommitAsync" />.
     /// </remarks>
-    ResultTask CommitEventsAsync(CancellationToken cancellationToken = default);
+    ValueTask<Result> CommitEventsAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     ///     Tries to get a feature of the specified type from the context.

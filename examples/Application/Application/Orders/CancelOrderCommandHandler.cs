@@ -19,7 +19,7 @@ public sealed class CancelOrderCommandHandler : IRequestHandler<CancelOrderComma
         _publisher = publisher;
     }
 
-    public async ResultTask HandleAsync(
+    public async ValueTask<Result> HandleAsync(
         CancelOrderCommand request,
         CancellationToken cancellationToken = default)
     {

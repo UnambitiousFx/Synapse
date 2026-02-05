@@ -17,7 +17,7 @@ public sealed class UpdateInventoryCommandHandler : IRequestHandler<UpdateInvent
         _publisher = publisher;
     }
 
-    public ResultTask HandleAsync(UpdateInventoryCommand request, CancellationToken cancellationToken = default)
+    public ValueTask<Result> HandleAsync(UpdateInventoryCommand request, CancellationToken cancellationToken = default)
     {
         return HandleCoreAsync(request, cancellationToken).AsAsync();
     }

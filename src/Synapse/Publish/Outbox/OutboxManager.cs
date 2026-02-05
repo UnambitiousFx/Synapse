@@ -45,7 +45,8 @@ internal sealed class OutboxManager : IOutboxManager
         CancellationToken cancellationToken)
         where TEvent : class, IEvent
     {
-        return _outboxStorage.AddAsync(@event, distributionMode, cancellationToken);
+        return _outboxStorage.AddAsync(@event, distributionMode, cancellationToken)
+            .AsAsync();
     }
 
     private async ValueTask<Result> ProcessPendingCoreAsync(CancellationToken cancellationToken)

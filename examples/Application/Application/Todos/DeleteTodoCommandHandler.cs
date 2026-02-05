@@ -17,7 +17,7 @@ public sealed class DeleteTodoCommandHandler : IRequestHandler<DeleteTodoCommand
         _context = context;
     }
 
-    public async ResultTask HandleAsync(DeleteTodoCommand request,
+    public async ValueTask<Result> HandleAsync(DeleteTodoCommand request,
         CancellationToken cancellationToken = default)
     {
         var todoOpt = await _todoRepository.GetAsync(request.Id, cancellationToken);

@@ -8,7 +8,8 @@ using UnambitiousFx.Examples.Application.Domain.Repositories;
 using UnambitiousFx.Examples.Application.Infrastructure.Repositories;
 using UnambitiousFx.Examples.Application.Infrastructure.Services;
 using UnambitiousFx.Examples.WebApiAot.Models;
-using UnambitiousFx.Functional.AspNetCore.Http.ValueTasks;
+using UnambitiousFx.Functional;
+using UnambitiousFx.Functional.AspNetCore.Http;
 using UnambitiousFx.Synapse;
 using UnambitiousFx.Synapse.Abstractions;
 using UnambitiousFx.Synapse.Pipelines;
@@ -95,7 +96,7 @@ todoEndpoints.MapGet("/{id:guid}", async ([FromRoute] Guid id,
 {
     var query = new TodoQuery { Id = id };
     return await sender.SendAsync<TodoQuery, Todo>(query, cancellationToken)
-        .ToHttpResultAsync();
+        .ToHttpResult();
 });
 
 todoEndpoints.MapGet("/", async ([FromServices] IRequestHandler<ListTodoQuery, IEnumerable<Todo>> handler,
@@ -105,7 +106,8 @@ todoEndpoints.MapGet("/", async ([FromServices] IRequestHandler<ListTodoQuery, I
     var query = new ListTodoQuery();
 
     return await handler.HandleAsync(query, cancellationToken)
-        .ToHttpResultAsync();
+        .AsAsync()
+        .ToHttpResult();
 });
 
 todoEndpoints.MapPost("/", async ([FromServices] ISender sender,
@@ -115,7 +117,8 @@ todoEndpoints.MapPost("/", async ([FromServices] ISender sender,
     var command = new CreateTodoCommand { Name = input.Name };
 
     return await sender.SendAsync<CreateTodoCommand, Guid>(command, cancellationToken)
-        .ToCreatedHttpResultAsync(id => $"/todos/{id}", id => new { id });
+        .Map(id => new { id })
+        .ToCreatedHttpResult(r => $"/todos/{r.id}");
 });
 
 todoEndpoints.MapPut("/{id:guid}", async ([FromServices] IRequestHandler<UpdateTodoCommand> handler,
@@ -131,7 +134,8 @@ todoEndpoints.MapPut("/{id:guid}", async ([FromServices] IRequestHandler<UpdateT
     };
 
     return await handler.HandleAsync(command, cancellationToken)
-        .ToHttpResultAsync();
+        .AsAsync()
+        .ToHttpResult();
 });
 
 todoEndpoints.MapDelete("/{id:guid}", async ([FromServices] ISender sender,
@@ -141,7 +145,7 @@ todoEndpoints.MapDelete("/{id:guid}", async ([FromServices] ISender sender,
     var command = new DeleteTodoCommand { Id = id };
 
     return await sender.SendAsync(command, cancellationToken)
-        .ToHttpResultAsync();
+        .ToHttpResult();
 });
 
 // ===== Fulfillment System Endpoints =====
@@ -159,8 +163,8 @@ fulfillmentEndpoints.MapPost("/request", async ([FromServices] ISender sender,
     };
 
     return await sender.SendAsync<RequestFulfillmentCommand, Guid>(command, cancellationToken)
-        .ToCreatedHttpResultAsync(fulfillmentId => $"/fulfillment/{fulfillmentId}",
-            fulfillmentId => new { fulfillmentId });
+        .Map(fulfillmentId => new { fulfillmentId })
+        .ToCreatedHttpResult(r => $"/fulfillment/{r.fulfillmentId}");
 });
 
 fulfillmentEndpoints.MapPost("/{id:guid}/complete", async ([FromServices] ISender sender,
@@ -170,7 +174,8 @@ fulfillmentEndpoints.MapPost("/{id:guid}/complete", async ([FromServices] ISende
     var command = new CompleteFulfillmentCommand { FulfillmentId = id };
 
     return await sender.SendAsync(command, cancellationToken)
-        .ToHttpResultAsync(() => new { message = "Fulfillment completed (EXTERNAL event sent to WebApi)" });
+        .Map(() => new { message = "Fulfillment completed (EXTERNAL event sent to WebApi)" })
+        .ToHttpResult();
 });
 
 fulfillmentEndpoints.MapGet("/", ([FromServices] IFulfillmentService fulfillmentService) =>

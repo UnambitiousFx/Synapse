@@ -25,6 +25,6 @@ internal sealed class SubscribeEventTrait<TEvent> : SubscribeEventTrait where TE
     {
         if (@event is not TEvent typedEvent) throw new ArgumentException($"Event must be of type {typeof(TEvent)}");
 
-        return _handler.HandleAsync(typedEvent, cancellationToken);
+        return _handler.HandleAsync(typedEvent, cancellationToken).AsAsync();
     }
 }

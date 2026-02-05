@@ -15,7 +15,7 @@ public sealed class OrderFulfillmentCompletedHandler : IEventHandler<OrderFulfil
         _logger = logger;
     }
 
-    public ResultTask HandleAsync(
+    public ValueTask<Result> HandleAsync(
         OrderFulfillmentCompleted @event,
         CancellationToken cancellationToken = default)
     {

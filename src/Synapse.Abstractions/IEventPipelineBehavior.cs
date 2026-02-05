@@ -26,7 +26,7 @@ public interface IEventPipelineBehavior
     ///     If successful, the result will indicate the successful processing of the event; otherwise, it will indicate a
     ///     failure.
     /// </returns>
-    ResultTask HandleAsync<TEvent>(TEvent @event,
+    ValueTask<Result> HandleAsync<TEvent>(TEvent @event,
         EventHandlerDelegate next,
         CancellationToken cancellationToken = default)
         where TEvent : IEvent;

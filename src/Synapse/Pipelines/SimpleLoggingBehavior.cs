@@ -23,7 +23,7 @@ public sealed class SimpleLoggingBehavior : IRequestPipelineBehavior, IEventPipe
     }
 
     /// <inheritdoc />
-    public ResultTask HandleAsync<TEvent>(TEvent @event,
+    public ValueTask<Result> HandleAsync<TEvent>(TEvent @event,
         EventHandlerDelegate next,
         CancellationToken cancellationToken = default)
         where TEvent : IEvent
@@ -33,7 +33,7 @@ public sealed class SimpleLoggingBehavior : IRequestPipelineBehavior, IEventPipe
     }
 
     /// <inheritdoc />
-    public ResultTask HandleAsync<TRequest>(TRequest request,
+    public ValueTask<Result> HandleAsync<TRequest>(TRequest request,
         RequestHandlerDelegate next,
         CancellationToken cancellationToken = default)
         where TRequest : IRequest

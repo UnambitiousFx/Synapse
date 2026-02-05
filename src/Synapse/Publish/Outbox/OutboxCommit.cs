@@ -20,7 +20,7 @@ internal sealed class OutboxCommit : IOutboxCommit
     }
 
     /// <inheritdoc />
-    public ResultTask CommitAsync(CancellationToken cancellationToken = default)
+    public ValueTask<Result> CommitAsync(CancellationToken cancellationToken = default)
     {
         return _outboxManager.ProcessPendingAsync(cancellationToken);
     }

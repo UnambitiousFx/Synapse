@@ -31,7 +31,7 @@ public interface IEventOutboxStorage
     ///     This overload defaults to <see cref="DistributionMode.Local" /> for backward compatibility.
     ///     Use the overload with <see cref="DistributionMode" /> parameter to specify distribution behavior explicitly.
     /// </remarks>
-    ResultTask AddAsync<TEvent>(TEvent @event,
+    ValueTask<Result> AddAsync<TEvent>(TEvent @event,
         CancellationToken cancellationToken = default)
         where TEvent : class, IEvent;
 
@@ -57,7 +57,7 @@ public interface IEventOutboxStorage
     ///     scenarios.
     ///     This enables the outbox to maintain the intended distribution strategy even after application restarts.
     /// </remarks>
-    ResultTask AddAsync<TEvent>(TEvent @event,
+    ValueTask<Result> AddAsync<TEvent>(TEvent @event,
         DistributionMode distributionMode,
         CancellationToken cancellationToken = default)
         where TEvent : class, IEvent;
@@ -84,7 +84,7 @@ public interface IEventOutboxStorage
     ///     A task that represents the asynchronous operation. The task result contains a <see cref="Result" />
     ///     indicating whether the event was successfully marked as processed.
     /// </returns>
-    ResultTask MarkAsProcessedAsync(IEvent @event,
+    ValueTask<Result> MarkAsProcessedAsync(IEvent @event,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -97,7 +97,7 @@ public interface IEventOutboxStorage
     ///     A task that represents the asynchronous operation. The task result contains a <see cref="Result" />
     ///     object indicating whether the operation was successful.
     /// </returns>
-    ResultTask ClearAsync(CancellationToken cancellationToken = default);
+    ValueTask<Result> ClearAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     ///     Marks the specified event as failed and optionally schedules the next attempt.
@@ -108,7 +108,7 @@ public interface IEventOutboxStorage
     /// <param name="nextAttemptAt">Optional next attempt date. Ignored when <paramref name="deadLetter" /> is true.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A result indicating success or failure.</returns>
-    ResultTask MarkAsFailedAsync(IEvent @event,
+    ValueTask<Result> MarkAsFailedAsync(IEvent @event,
         string reason,
         bool deadLetter,
         DateTimeOffset? nextAttemptAt = null,

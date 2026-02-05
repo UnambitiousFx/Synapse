@@ -24,7 +24,7 @@ public interface ISender
     ///     A task representing the asynchronous operation. The task result contains a <see cref="Result" />
     ///     holding the response of type <typeparamref name="TResponse" />.
     /// </returns>
-    ValueTask<Result<TResponse>> SendAsync<TRequest, TResponse>(TRequest request,
+    ResultTask<TResponse> SendAsync<TRequest, TResponse>(TRequest request,
         CancellationToken cancellationToken = default)
         where TResponse : notnull
         where TRequest : IRequest<TResponse>;

@@ -57,7 +57,7 @@ async Task RunSimpleCommandScenario(ISender senderService)
         var command = new SimpleCommand { Message = $"Command {i}" };
         var result = await senderService.SendAsync(command);
 
-        if (!result.TryGet(out var error)) Console.WriteLine($"Failed with {error}");
+        if (result.TryGetError(out var error)) Console.WriteLine($"Failed with {error}");
     }
 
     stopwatch.Stop();
@@ -154,7 +154,7 @@ async Task RunEventPublishingScenario(IPublisher publisherService)
         };
         var result = await publisherService.PublishAsync(@event);
 
-        if (!result.TryGet(out var error)) Console.WriteLine($"Failed with {error}");
+        if (result.TryGetError(out var error)) Console.WriteLine($"Failed with {error}");
     }
 
     stopwatch.Stop();
@@ -178,7 +178,7 @@ async Task RunMultipleEventHandlersScenario(IPublisher publisherService)
         };
         var result = await publisherService.PublishAsync(@event);
 
-        if (!result.TryGet(out var error)) Console.WriteLine($"Failed with {error}");
+        if (result.TryGetError(out var error)) Console.WriteLine($"Failed with {error}");
     }
 
     stopwatch.Stop();

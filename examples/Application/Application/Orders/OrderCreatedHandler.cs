@@ -18,7 +18,7 @@ public sealed class OrderCreatedHandler : IEventHandler<OrderCreated>
         _logger = logger;
     }
 
-    public ResultTask HandleAsync(OrderCreated @event, CancellationToken cancellationToken = default)
+    public ValueTask<Result> HandleAsync(OrderCreated @event, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation(
             "Order {OrderId} created for customer {CustomerName} with total {TotalAmount:C}",
