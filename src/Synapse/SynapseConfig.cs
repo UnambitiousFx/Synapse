@@ -271,7 +271,15 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
         {
             options.DefaultDistributionMode = DistributionMode.Local;
             options.DispatchStrategy = DispatchStrategy.Immediate;
-            options.Dispatchers = _eventDispatchers;
+            if (options.Dispatchers.Count != 0)
+            {
+                options.Dispatchers = options.Dispatchers.Concat(_eventDispatchers)
+                    .ToDictionary(x => x.Key, x => x.Value);
+            }
+            else
+            {
+                options.Dispatchers = _eventDispatchers;
+            }
         });
         services.Configure<OutboxOptions>(options => { _outboxConfigure(options); });
     }
