@@ -20,12 +20,12 @@ public sealed class CqrsBoundaryEnforcementTests
             cfg.EnableCqrsBoundaryEnforcement();
         });
         var provider = services.BuildServiceProvider();
-        var sender = provider.GetRequiredService<ISender>();
+        var sender = provider.GetRequiredService<IInvoker>();
 
         // Act & Assert
         var exception =
             await Assert.ThrowsAsync<CqrsBoundaryViolationException>(async () =>
-                await sender.SendAsync(new FirstRequest()));
+                await sender.InvokeAsync(new FirstRequest()));
 
         Assert.Contains("CQRS boundary violation", exception.Message);
         Assert.Contains("SecondRequest", exception.Message);
@@ -45,12 +45,12 @@ public sealed class CqrsBoundaryEnforcementTests
             cfg.EnableCqrsBoundaryEnforcement();
         });
         var provider = services.BuildServiceProvider();
-        var sender = provider.GetRequiredService<ISender>();
+        var sender = provider.GetRequiredService<IInvoker>();
 
         // Act & Assert
         var exception =
             await Assert.ThrowsAsync<CqrsBoundaryViolationException>(async () =>
-                await sender.SendAsync(new FirstRequest())
+                await sender.InvokeAsync(new FirstRequest())
             );
 
         Assert.Contains("CQRS boundary violation", exception.Message);
@@ -73,11 +73,11 @@ public sealed class CqrsBoundaryEnforcementTests
             cfg.EnableCqrsBoundaryEnforcement();
         });
         var provider = services.BuildServiceProvider();
-        var sender = provider.GetRequiredService<ISender>();
+        var sender = provider.GetRequiredService<IInvoker>();
 
         // Act & Assert
         var exception = await Assert.ThrowsAsync<CqrsBoundaryViolationException>(async () =>
-            await sender.SendAsync<FirstRequestWithResponse, int>(new FirstRequestWithResponse())
+            await sender.InvokeAsync<FirstRequestWithResponse, int>(new FirstRequestWithResponse())
         );
 
         Assert.Contains("CQRS boundary violation", exception.Message);
@@ -97,10 +97,10 @@ public sealed class CqrsBoundaryEnforcementTests
             cfg.EnableCqrsBoundaryEnforcement(false); // Explicitly disabled
         });
         var provider = services.BuildServiceProvider();
-        var sender = provider.GetRequiredService<ISender>();
+        var sender = provider.GetRequiredService<IInvoker>();
 
         // Act & Assert - Should not throw
-        var result = await sender.SendAsync(new FirstRequest());
+        var result = await sender.InvokeAsync(new FirstRequest());
         Assert.True(result.IsSuccess);
     }
 
@@ -116,10 +116,10 @@ public sealed class CqrsBoundaryEnforcementTests
             cfg.EnableCqrsBoundaryEnforcement();
         });
         var provider = services.BuildServiceProvider();
-        var sender = provider.GetRequiredService<ISender>();
+        var sender = provider.GetRequiredService<IInvoker>();
 
         // Act & Assert - Should not throw
-        var result = await sender.SendAsync(new FirstRequest());
+        var result = await sender.InvokeAsync(new FirstRequest());
         Assert.True(result.IsSuccess);
     }
 
@@ -135,10 +135,10 @@ public sealed class CqrsBoundaryEnforcementTests
             cfg.EnableCqrsBoundaryEnforcement();
         });
         var provider = services.BuildServiceProvider();
-        var sender = provider.GetRequiredService<ISender>();
+        var sender = provider.GetRequiredService<IInvoker>();
 
         // Act & Assert - Should not throw
-        var result = await sender.SendAsync<FirstRequestWithResponse, int>(new FirstRequestWithResponse());
+        var result = await sender.InvokeAsync<FirstRequestWithResponse, int>(new FirstRequestWithResponse());
         Assert.True(result.IsSuccess);
         if (result.TryGet(out int value))
             Assert.Equal(42, value);
@@ -159,13 +159,13 @@ public sealed class CqrsBoundaryEnforcementTests
                 cfg.EnableCqrsBoundaryEnforcement();
             });
         var provider = services.BuildServiceProvider();
-        var sender = provider.GetRequiredService<ISender>();
+        var sender = provider.GetRequiredService<IInvoker>();
 
         // Act & Assert - Should not throw when requests are independent (not nested)
-        var result1 = await sender.SendAsync(new FirstRequest());
+        var result1 = await sender.InvokeAsync(new FirstRequest());
         Assert.True(result1.IsSuccess);
 
-        var result2 = await sender.SendAsync(new SecondRequest());
+        var result2 = await sender.InvokeAsync(new SecondRequest());
         Assert.True(result2.IsSuccess);
     }
 
@@ -182,12 +182,12 @@ public sealed class CqrsBoundaryEnforcementTests
             cfg.EnableCqrsBoundaryEnforcement();
         });
         var provider = services.BuildServiceProvider();
-        var sender = provider.GetRequiredService<ISender>();
+        var sender = provider.GetRequiredService<IInvoker>();
 
         // Act & Assert
         var exception =
             await Assert.ThrowsAsync<CqrsBoundaryViolationException>(async () =>
-                await sender.SendAsync(new FirstRequest())
+                await sender.InvokeAsync(new FirstRequest())
             );
 
         // Verify error message contains useful debugging information
@@ -209,10 +209,10 @@ public sealed class CqrsBoundaryEnforcementTests
             // Not calling EnableCqrsBoundaryEnforcement at all - should be disabled by default
         });
         var provider = services.BuildServiceProvider();
-        var sender = provider.GetRequiredService<ISender>();
+        var sender = provider.GetRequiredService<IInvoker>();
 
         // Act & Assert - Should not throw because enforcement is not enabled
-        var result = await sender.SendAsync(new FirstRequest());
+        var result = await sender.InvokeAsync(new FirstRequest());
         Assert.True(result.IsSuccess);
     }
 
@@ -228,12 +228,12 @@ public sealed class CqrsBoundaryEnforcementTests
             cfg.EnableCqrsBoundaryEnforcement();
         });
         var provider = services.BuildServiceProvider();
-        var sender = provider.GetRequiredService<ISender>();
+        var sender = provider.GetRequiredService<IInvoker>();
 
         // Act & Assert
         var exception =
             await Assert.ThrowsAsync<CqrsBoundaryViolationException>(async () =>
-                await sender.SendAsync(new FirstRequest())
+                await sender.InvokeAsync(new FirstRequest())
             );
 
         Assert.Contains("CQRS boundary enforcement metadata was missing", exception.Message);
@@ -254,11 +254,11 @@ public sealed class CqrsBoundaryEnforcementTests
             cfg.EnableCqrsBoundaryEnforcement();
         });
         var provider = services.BuildServiceProvider();
-        var sender = provider.GetRequiredService<ISender>();
+        var sender = provider.GetRequiredService<IInvoker>();
 
         // Act & Assert
         var exception = await Assert.ThrowsAsync<CqrsBoundaryViolationException>(async () =>
-            await sender.SendAsync<FirstRequestWithResponse, int>(new FirstRequestWithResponse())
+            await sender.InvokeAsync<FirstRequestWithResponse, int>(new FirstRequestWithResponse())
         );
 
         Assert.Contains("CQRS boundary enforcement metadata was missing", exception.Message);
@@ -277,18 +277,18 @@ public sealed class CqrsBoundaryEnforcementTests
     // Handler that attempts to send another request (violates CQRS boundary)
     private sealed class FirstRequestHandlerThatSendsSecondRequest : IRequestHandler<FirstRequest>
     {
-        private readonly ISender _sender;
+        private readonly IInvoker _invoker;
 
-        public FirstRequestHandlerThatSendsSecondRequest(ISender sender)
+        public FirstRequestHandlerThatSendsSecondRequest(IInvoker invoker)
         {
-            _sender = sender;
+            _invoker = invoker;
         }
 
         public async ValueTask<Result> HandleAsync(FirstRequest request,
             CancellationToken cancellationToken = default)
         {
             // This should throw CqrsBoundaryViolationException
-            await _sender.SendAsync(new SecondRequest(), cancellationToken);
+            await _invoker.InvokeAsync(new SecondRequest(), cancellationToken);
             return Result.Success();
         }
     }
@@ -296,18 +296,18 @@ public sealed class CqrsBoundaryEnforcementTests
     // Handler that attempts to send a request with response (violates CQRS boundary)
     private sealed class FirstRequestHandlerThatSendsRequestWithResponse : IRequestHandler<FirstRequest>
     {
-        private readonly ISender _sender;
+        private readonly IInvoker _invoker;
 
-        public FirstRequestHandlerThatSendsRequestWithResponse(ISender sender)
+        public FirstRequestHandlerThatSendsRequestWithResponse(IInvoker invoker)
         {
-            _sender = sender;
+            _invoker = invoker;
         }
 
         public async ValueTask<Result> HandleAsync(FirstRequest request,
             CancellationToken cancellationToken = default)
         {
             // This should throw CqrsBoundaryViolationException
-            await _sender.SendAsync<FirstRequestWithResponse, int>(new FirstRequestWithResponse(), cancellationToken);
+            await _invoker.InvokeAsync<FirstRequestWithResponse, int>(new FirstRequestWithResponse(), cancellationToken);
             return Result.Success();
         }
     }
@@ -316,18 +316,18 @@ public sealed class CqrsBoundaryEnforcementTests
     private sealed class
         FirstRequestWithResponseHandlerThatSendsRequest : IRequestHandler<FirstRequestWithResponse, int>
     {
-        private readonly ISender _sender;
+        private readonly IInvoker _invoker;
 
-        public FirstRequestWithResponseHandlerThatSendsRequest(ISender sender)
+        public FirstRequestWithResponseHandlerThatSendsRequest(IInvoker invoker)
         {
-            _sender = sender;
+            _invoker = invoker;
         }
 
         public async ValueTask<Result<int>> HandleAsync(FirstRequestWithResponse request,
             CancellationToken cancellationToken = default)
         {
             // This should throw CqrsBoundaryViolationException
-            await _sender.SendAsync<SecondRequestWithResponse, string>(new SecondRequestWithResponse(),
+            await _invoker.InvokeAsync<SecondRequestWithResponse, string>(new SecondRequestWithResponse(),
                 cancellationToken);
             return Result.Success(42);
         }

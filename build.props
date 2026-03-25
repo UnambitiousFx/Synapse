@@ -10,7 +10,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
     <Copyright>Copyright 2025 (c) Maxime Charles. All rights reserved.</Copyright>
-    <TargetFramework>net10.0</TargetFramework>
+    <LibraryTargetFrameworks>net8.0;net9.0;net10.0</LibraryTargetFrameworks>
   </PropertyGroup>
 
 

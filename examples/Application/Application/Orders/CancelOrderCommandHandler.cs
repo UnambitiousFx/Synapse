@@ -9,14 +9,14 @@ namespace UnambitiousFx.Examples.Application.Application.Orders;
 public sealed class CancelOrderCommandHandler : IRequestHandler<CancelOrderCommand>
 {
     private readonly ILogger<CancelOrderCommandHandler> _logger;
-    private readonly IPublisher _publisher;
+    private readonly IEmitter _emitter;
 
     public CancelOrderCommandHandler(
         ILogger<CancelOrderCommandHandler> logger,
-        IPublisher publisher)
+        IEmitter emitter)
     {
         _logger = logger;
-        _publisher = publisher;
+        _emitter = emitter;
     }
 
     public async ValueTask<Result> HandleAsync(
@@ -28,7 +28,7 @@ public sealed class CancelOrderCommandHandler : IRequestHandler<CancelOrderComma
             request.OrderId, request.Reason);
 
         // Publish EXTERNAL event - will be consumed by fulfillment system
-        await _publisher.PublishAsync(new OrderCancelled
+        await _emitter.EmitAsync(new OrderCancelled
         {
             OrderId = request.OrderId,
             Reason = request.Reason,

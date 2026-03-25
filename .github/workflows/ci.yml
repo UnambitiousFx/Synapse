@@ -68,3 +68,50 @@ jobs:
           report_type: test_results
           files: ./test-results/junit.xml
           token: ${{ secrets.CODECOV_TOKEN }}
+
+  native-aot:
+    name: Native AOT Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore dependencies
+        run: dotnet restore examples/WebApiAot/WebApiAot.csproj
+
+      - name: Publish Native AOT
+        run: >
+          dotnet publish examples/WebApiAot/WebApiAot.csproj
+          --configuration Release
+          --runtime linux-x64
+          --self-contained
+          -p:PublishAot=true
+          -p:StripSymbols=true
+
+      - name: Verify AOT binary
+        run: |
+          if [ -f "examples/WebApiAot/bin/Release/net10.0/linux-x64/publish/WebApiAot" ]; then
+            echo "✓ Native AOT binary created successfully"
+            ls -lh examples/WebApiAot/bin/Release/net10.0/linux-x64/publish/WebApiAot
+          else
+            echo "✗ Native AOT binary not found"
+            exit 1
+          fi
+
+      - name: Test AOT binary starts
+        run: |
+          timeout 10s examples/WebApiAot/bin/Release/net10.0/linux-x64/publish/WebApiAot &
+          sleep 3
+          if curl -f http://localhost:5000/health || curl -f http://localhost:8080/health; then
+            echo "✓ Native AOT application started successfully"
+          else
+            echo "✗ Native AOT application failed to start"
+            exit 1
+          fi

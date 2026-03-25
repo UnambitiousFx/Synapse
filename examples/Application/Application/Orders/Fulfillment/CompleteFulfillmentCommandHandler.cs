@@ -12,15 +12,15 @@ public sealed class CompleteFulfillmentCommandHandler : IRequestHandler<Complete
 {
     private readonly IFulfillmentService _fulfillmentService;
     private readonly ILogger<CompleteFulfillmentCommandHandler> _logger;
-    private readonly IPublisher _publisher;
+    private readonly IEmitter _emitter;
 
     public CompleteFulfillmentCommandHandler(
         ILogger<CompleteFulfillmentCommandHandler> logger,
-        IPublisher publisher,
+        IEmitter emitter,
         IFulfillmentService fulfillmentService)
     {
         _logger = logger;
-        _publisher = publisher;
+        _emitter = emitter;
         _fulfillmentService = fulfillmentService;
     }
 
@@ -45,7 +45,7 @@ public sealed class CompleteFulfillmentCommandHandler : IRequestHandler<Complete
             request.FulfillmentId, fulfillment.OrderId);
 
         // Publish EXTERNAL event
-        await _publisher.PublishAsync(new OrderFulfillmentCompleted
+        await _emitter.EmitAsync(new OrderFulfillmentCompleted
         {
             OrderId = fulfillment.OrderId,
             FulfillmentId = request.FulfillmentId,

@@ -9,12 +9,12 @@ namespace UnambitiousFx.Examples.Application.Application.Inventory;
 public sealed class UpdateInventoryCommandHandler : IRequestHandler<UpdateInventoryCommand>
 {
     private readonly ILogger<UpdateInventoryCommandHandler> _logger;
-    private readonly IPublisher _publisher;
+    private readonly IEmitter _emitter;
 
-    public UpdateInventoryCommandHandler(IPublisher publisher, ILogger<UpdateInventoryCommandHandler> logger)
+    public UpdateInventoryCommandHandler(IEmitter emitter, ILogger<UpdateInventoryCommandHandler> logger)
     {
         _logger = logger;
-        _publisher = publisher;
+        _emitter = emitter;
     }
 
     public async ValueTask<Result> HandleAsync(UpdateInventoryCommand request,
@@ -28,7 +28,7 @@ public sealed class UpdateInventoryCommandHandler : IRequestHandler<UpdateInvent
             request.ProductId, request.QuantityChange);
 
         // Publish EXTERNAL event - will be sent through transport layer
-        await _publisher.PublishAsync(new InventoryUpdated
+        await _emitter.EmitAsync(new InventoryUpdated
         {
             ProductId = request.ProductId,
             QuantityChange = request.QuantityChange,

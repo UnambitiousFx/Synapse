@@ -1,6 +1,5 @@
 using NSubstitute;
 using UnambitiousFx.Synapse.Abstractions;
-using UnambitiousFx.Synapse.Send;
 using UnambitiousFx.Synapse.Tests.Definitions;
 
 namespace UnambitiousFx.Synapse.Tests.Proxy;
@@ -11,7 +10,7 @@ public sealed class ProxyRequestHandlerTests
     public async Task GivenARequestPipelineBehavior_WhenProxyHandle_ShouldCallTheBehavior()
     {
         var order = 0;
-        Substitute.For<IPublisher>();
+        Substitute.For<IEmitter>();
         var handler = new RequestWithResponseExampleHandler();
         handler.OnExecuted = () =>
         {

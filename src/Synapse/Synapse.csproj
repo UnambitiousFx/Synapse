@@ -1,8 +1,11 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
+    <PropertyGroup>
+        <TargetFrameworks>$(LibraryTargetFrameworks)</TargetFrameworks>
+    </PropertyGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\Synapse.Abstractions\Synapse.Abstractions.csproj"/>
+        <ProjectReference Include="..\Synapse.Abstractions\Synapse.Abstractions.csproj" />
     </ItemGroup>
 
     <ItemGroup>

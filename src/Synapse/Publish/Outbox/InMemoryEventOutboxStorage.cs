@@ -79,19 +79,9 @@ public sealed class InMemoryEventOutboxStorage : IEventOutboxStorage
         CancellationToken cancellationToken = default)
         where TEvent : class, IEvent
     {
-        // Default to LocalOnly for backward compatibility
-        return AddAsync(@event, DistributionMode.Local, cancellationToken);
-    }
-
-    /// <inheritdoc />
-    public ValueTask<Result> AddAsync<TEvent>(TEvent @event,
-        DistributionMode distributionMode,
-        CancellationToken cancellationToken = default)
-        where TEvent : class, IEvent
-    {
         var correlationId = CorrelationContext.CurrentCorrelationId;
         var items = _scopedItems.GetOrAdd(correlationId, _ => new ConcurrentBag<Item>());
-        items.Add(new Item(@event, distributionMode));
+        items.Add(new Item(@event));
 
         return new ValueTask<Result>(Result.Success());
     }
@@ -151,31 +141,60 @@ public sealed class InMemoryEventOutboxStorage : IEventOutboxStorage
     }
 
     /// <inheritdoc />
-    public ValueTask<DistributionMode> GetDistributionModeAsync(IEvent @event,
-        CancellationToken cancellationToken = default)
+    public ValueTask<int> GetPendingCountAsync(CancellationToken cancellationToken = default)
     {
         var correlationId = CorrelationContext.CurrentCorrelationId;
 
         if (!_scopedItems.TryGetValue(correlationId, out var items))
-            return new ValueTask<DistributionMode>(DistributionMode.Local);
+            return new ValueTask<int>(0);
 
-        var item = items.FirstOrDefault(i => i.Event.Equals(@event));
-        // Return LocalOnly as default if event not found (defensive programming)
-        return new ValueTask<DistributionMode>(item?.DistributionMode ?? DistributionMode.Local);
+        var count = items.Count(i => i is { Processed: false, DeadLetter: false });
+        return new ValueTask<int>(count);
     }
+
+    /// <inheritdoc />
+    public ValueTask<int> GetFailedCountAsync(CancellationToken cancellationToken = default)
+    {
+        var correlationId = CorrelationContext.CurrentCorrelationId;
+
+        if (!_scopedItems.TryGetValue(correlationId, out var items))
+            return new ValueTask<int>(0);
+
+        var count = items.Count(i => i is { Processed: false, DeadLetter: false } && i.Attempts > 0);
+        return new ValueTask<int>(count);
+    }
+
+    /// <inheritdoc />
+    public ValueTask<TimeSpan?> GetOldestPendingAgeAsync(CancellationToken cancellationToken = default)
+    {
+        var correlationId = CorrelationContext.CurrentCorrelationId;
+
+        if (!_scopedItems.TryGetValue(correlationId, out var items))
+            return new ValueTask<TimeSpan?>((TimeSpan?)null);
+
+        var oldestItem = items
+            .Where(i => i is { Processed: false, DeadLetter: false })
+            .OrderBy(i => i.CreatedAt)
+            .FirstOrDefault();
+
+        if (oldestItem == null)
+            return new ValueTask<TimeSpan?>((TimeSpan?)null);
+
+        var age = DateTimeOffset.UtcNow - oldestItem.CreatedAt;
+        return new ValueTask<TimeSpan?>(age);
+    }
+
 
     private sealed record Item
     {
-        public Item(IEvent @event, DistributionMode distributionMode = DistributionMode.Local)
+        public Item(IEvent @event)
         {
             Event = @event;
-            DistributionMode = distributionMode;
             Processed = false;
             CreatedAt = DateTimeOffset.UtcNow;
         }
 
         public IEvent Event { get; }
-        public DistributionMode DistributionMode { get; }
         public bool Processed { get; set; }
         public DateTimeOffset CreatedAt { get; }
         public DateTimeOffset? ProcessedAt { get; set; }

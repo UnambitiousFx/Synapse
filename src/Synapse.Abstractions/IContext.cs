@@ -77,10 +77,7 @@ public interface IContext
     ///     The event instance to be published.
     /// </param>
     /// <param name="mode">
-    ///     The mode in which the event should be published, specified as a <see cref="PublishMode" />.
-    /// </param>
-    /// <param name="distributionMode">
-    ///     The distribution mode specifying how the event should be distributed, using <see cref="DistributionMode" />.
+    ///     The mode in which the event should be published, specified as a <see cref="EmitMode" />.
     /// </param>
     /// <param name="cancellationToken">
     ///     A cancellation token to observe while waiting for the task to complete. Defaults to
@@ -91,8 +88,7 @@ public interface IContext
     ///     operation.
     /// </returns>
     ValueTask<Result> PublishEventAsync<TEvent>(TEvent @event,
-        PublishMode mode,
-        DistributionMode distributionMode,
+        EmitMode mode,
         CancellationToken cancellationToken = default)
         where TEvent : class, IEvent;
 
@@ -108,7 +104,7 @@ public interface IContext
     ///     operation.
     /// </returns>
     /// <remarks>
-    ///     This method processes all events that were published with <see cref="PublishMode.Outbox" />
+    ///     This method processes all events that were published with <see cref="EmitMode.Outbox" />
     ///     in the current scope. It delegates to <see cref="IOutboxCommit.CommitAsync" />.
     /// </remarks>
     ValueTask<Result> CommitEventsAsync(CancellationToken cancellationToken = default);

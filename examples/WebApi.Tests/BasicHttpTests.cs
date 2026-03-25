@@ -31,7 +31,7 @@ public sealed class BasicHttpTests
         return id;
     }
 
-    [Fact(Skip = "Disable until transport is working")]
+    [Fact(Skip = "API endpoints need to return Location headers for tests to pass")]
     public async Task CreateTodo_ReturnsSuccess()
     {
         // Arrange
@@ -47,7 +47,7 @@ public sealed class BasicHttpTests
         response.EnsureSuccessStatusCode(); // Status Code 200-299
     }
 
-    [Fact(Skip = "Disable until transport is working")]
+    [Fact(Skip = "API endpoints need to return Location headers for tests to pass")]
     public async Task GetTodos_ReturnsSuccess()
     {
         // Arrange
@@ -62,7 +62,7 @@ public sealed class BasicHttpTests
         response.EnsureSuccessStatusCode(); // Status Code 200-299
     }
 
-    [Fact(Skip = "Disable until transport is working")]
+    [Fact(Skip = "API endpoints need to return Location headers for tests to pass")]
     public async Task GetTodo_ReturnsSuccess()
     {
         // Arrange
@@ -76,7 +76,7 @@ public sealed class BasicHttpTests
         response.EnsureSuccessStatusCode(); // Status Code 200-299
     }
 
-    [Fact(Skip = "Disable until transport is working")]
+    [Fact(Skip = "API endpoints need to return Location headers for tests to pass")]
     public async Task UpdateTodo_ReturnsSuccess()
     {
         // Arrange
@@ -93,7 +93,7 @@ public sealed class BasicHttpTests
         response.EnsureSuccessStatusCode(); // Status Code 200-299
     }
 
-    [Fact(Skip = "Disable until transport is working")]
+    [Fact(Skip = "API endpoints need to return Location headers for tests to pass")]
     public async Task DeleteTodo_ReturnSuccess()
     {
         // Arrange

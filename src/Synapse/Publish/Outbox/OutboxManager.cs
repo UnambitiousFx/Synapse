@@ -77,11 +77,10 @@ internal sealed class OutboxManager : IOutboxManager
     }
 
     public ValueTask<Result> StoreAsync<TEvent>(TEvent @event,
-        DistributionMode distributionMode,
         CancellationToken cancellationToken)
         where TEvent : class, IEvent
     {
-        return _outboxStorage.AddAsync(@event, distributionMode, cancellationToken);
+        return _outboxStorage.AddAsync(@event, cancellationToken);
     }
 
 
@@ -93,11 +92,8 @@ internal sealed class OutboxManager : IOutboxManager
 
         try
         {
-            var distributionMode = await _outboxStorage.GetDistributionModeAsync(@event, cancellationToken);
 
-            _logger.LogDebug(
-                "Dispatching event {EventType} from outbox with distribution mode {DistributionMode}",
-                eventType, distributionMode);
+            _logger.LogDebug("Dispatching event {EventType} from outbox", eventType);
 
             // Use the registered dispatcher delegate to maintain type information
             // This delegate is registered at startup via source generation or explicit registration
@@ -127,7 +123,7 @@ internal sealed class OutboxManager : IOutboxManager
                 _logger.LogWarning(
                     "Event {EventType} dispatch from outbox failed: {Error}",
                     eventType, result.ToString());
-                await HandleDispatchFailureAsync(@event, result.ToString()!, cancellationToken);
+                await HandleDispatchFailureAsync(@event, result.ToString(), cancellationToken);
                 _metrics.RecordOutboxEventProcessed(eventType, false);
             }
 

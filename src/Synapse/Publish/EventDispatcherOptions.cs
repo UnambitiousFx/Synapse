@@ -8,20 +8,14 @@ namespace UnambitiousFx.Synapse.Publish;
 internal sealed record EventDispatcherOptions
 {
     /// <summary>
-    ///     Default distribution mode when no routing filter or message traits specify otherwise.
-    /// </summary>
-    public DistributionMode DefaultDistributionMode { get; set; } = DistributionMode.Local;
-
-    /// <summary>
-    ///     Strategy for dispatching external events.
+    ///     Strategy for dispatching events.
     /// </summary>
     public DispatchStrategy DispatchStrategy { get; set; } = DispatchStrategy.Immediate;
 
-
     /// <summary>
-    ///     Dispatcher delegates for event types to support NativeAOT-friendly outbox replay.
+    ///     Dispatcher delegates for event types to support NativeAOT-friendly polymorphic dispatch.
     ///     These are registered at startup via source generation or explicit registration.
-    ///     The delegate signature calls DispatchFromOutboxAsync with the correct generic type,
+    ///     The delegate calls DispatchAsync with the correct generic type,
     ///     avoiding reflection and ensuring compatibility with NativeAOT and trimming.
     /// </summary>
     /// <remarks>
@@ -33,15 +27,15 @@ internal sealed record EventDispatcherOptions
     ///     </para>
     ///     <code>
     ///     // The Synapse.Generator will generate this code for all IEvent types
-    ///     public static class GeneratedEventDispatchers
+    ///     public class EventDispatcherRegistration : IEventDispatcherRegistration
     ///     {
-    ///         public static void RegisterDispatchers(EventDispatcherOptions options)
+    ///         public void RegisterDispatchers(Action&lt;Type, DispatchEventDelegate&gt; register)
     ///         {
-    ///             options.Dispatchers[typeof(OrderCreatedEvent)] = async (@event, dispatcher, distributionMode, ct) =>
+    ///             register(typeof(OrderCreatedEvent), (@event, dispatcher, ct) =>
     ///             {
     ///                 var typedEvent = (OrderCreatedEvent)@event;
-    ///                 return await dispatcher.DispatchFromOutboxAsync(typedEvent, distributionMode, ct);
-    ///             };
+    ///                 return dispatcher.DispatchAsync(typedEvent, ct);
+    ///             });
     ///             // ... generated for all event types
     ///         }
     ///     }
@@ -52,10 +46,10 @@ internal sealed record EventDispatcherOptions
     ///     <code>
     ///     services.Configure&lt;EventDispatcherOptions&gt;(options =>
     ///     {
-    ///         options.Dispatchers[typeof(OrderCreatedEvent)] = async (@event, dispatcher, distributionMode, ct) =>
+    ///         options.Dispatchers[typeof(OrderCreatedEvent)] = (@event, dispatcher, ct) =>
     ///         {
     ///             var typedEvent = (OrderCreatedEvent)@event;
-    ///             return await dispatcher.DispatchFromOutboxAsync(typedEvent, distributionMode, ct);
+    ///             return dispatcher.DispatchAsync(typedEvent, ct);
     ///         };
     ///     });
     ///     </code>
@@ -69,7 +63,7 @@ internal sealed record EventDispatcherOptions
 public enum DispatchStrategy
 {
     /// <summary>
-    ///     Dispatch to transport immediately after storing in outbox.
+    ///     Dispatch to handlers immediately.
     /// </summary>
     Immediate,
 

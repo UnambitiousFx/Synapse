@@ -7,6 +7,6 @@
     </ItemGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\..\src\Synapse\Synapse.csproj"/>
+        <ProjectReference Include="..\..\src\Synapse\Synapse.csproj" />
     </ItemGroup>
 </Project>

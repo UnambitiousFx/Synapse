@@ -9,12 +9,12 @@ namespace UnambitiousFx.Examples.Application.Application.Orders;
 public sealed class ShipOrderCommandHandler : IRequestHandler<ShipOrderCommand>
 {
     private readonly ILogger<ShipOrderCommandHandler> _logger;
-    private readonly IPublisher _publisher;
+    private readonly IEmitter _emitter;
 
-    public ShipOrderCommandHandler(ILogger<ShipOrderCommandHandler> logger, IPublisher publisher)
+    public ShipOrderCommandHandler(ILogger<ShipOrderCommandHandler> logger, IEmitter emitter)
     {
         _logger = logger;
-        _publisher = publisher;
+        _emitter = emitter;
     }
 
     public async ValueTask<Result> HandleAsync(ShipOrderCommand request, CancellationToken cancellationToken = default)
@@ -25,7 +25,7 @@ public sealed class ShipOrderCommandHandler : IRequestHandler<ShipOrderCommand>
             request.OrderId, trackingNumber);
 
         // Publish EXTERNAL event - will be sent through transport layer (RabbitMQ, etc.)
-        await _publisher.PublishAsync(new OrderShipped
+        await _emitter.EmitAsync(new OrderShipped
         {
             OrderId = request.OrderId,
             TrackingNumber = trackingNumber,

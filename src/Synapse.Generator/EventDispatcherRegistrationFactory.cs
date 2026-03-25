@@ -46,11 +46,11 @@ internal static class EventDispatcherRegistrationFactory
 
             sb.AppendLine(
                 $"        register(typeof({globalizedType}), new global::UnambitiousFx.Synapse.Abstractions.DispatchEventDelegate(");
-            sb.AppendLine("            async (@event, dispatcher, ct) =>");
+            sb.AppendLine("            (@event, dispatcher, ct) =>");
             sb.AppendLine("            {");
             sb.AppendLine($"                var typedEvent = ({globalizedType})@event;");
             sb.AppendLine(
-                "                return await dispatcher.DispatchAsync(typedEvent, global::UnambitiousFx.Synapse.Abstractions.DistributionMode.Undefined, ct);");
+                "                return dispatcher.DispatchAsync(typedEvent, ct);");
             sb.AppendLine("            }));");
             sb.AppendLine();
         }

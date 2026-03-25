@@ -13,16 +13,13 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
 {
     private readonly List<Action<IServiceCollection>> _actions = new();
     private readonly Dictionary<Type, DispatchEventDelegate> _eventDispatchers = new();
-
-    [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
-    private readonly Type _transportDispatcher = typeof(NoopTransportDispatcher);
-
+    
     private DefaultDependencyInjectionBuilder _builder = new();
 
     [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
     private Type _contextFactory = typeof(DefaultContextFactory);
 
-    private PublishMode _defaultPublisherMode = PublishMode.Now;
+    private EmitMode _defaultPublisherMode = EmitMode.Now;
 
     [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
     private Type _eventOrchestrator = typeof(SequentialEventOrchestrator);
@@ -160,7 +157,67 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
             if (@event is not TEvent typedEvent)
                 throw new InvalidOperationException(
                     $"Event type mismatch. Expected {typeof(TEvent)}, got {@event.GetType()}");
-            return dispatcher.DispatchAsync(typedEvent, DistributionMode.Undefined, cancellationToken);
+            return dispatcher.DispatchAsync(typedEvent, cancellationToken);
+        });
+        return this;
+    }
+
+    public ISynapseConfig RegisterRequestHandlerWhen<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+        THandler, TRequest, TResponse>(Func<bool> condition)
+        where TResponse : notnull
+        where TRequest : IRequest<TResponse>
+        where THandler : class, IRequestHandler<TRequest, TResponse>
+    {
+        _actions.Add(scv =>
+        {
+            if (condition())
+            {
+                scv.RegisterRequestHandler<THandler, TRequest, TResponse>();
+            }
+        });
+        return this;
+    }
+
+    public ISynapseConfig RegisterRequestHandlerWhen<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+        THandler, TRequest>(Func<bool> condition)
+        where TRequest : IRequest
+        where THandler : class, IRequestHandler<TRequest>
+    {
+        _actions.Add(scv =>
+        {
+            if (condition())
+            {
+                scv.RegisterRequestHandler<THandler, TRequest>();
+            }
+        });
+        return this;
+    }
+
+    public ISynapseConfig RegisterEventHandlerWhen<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+        THandler, TEvent>(Func<bool> condition)
+        where THandler : class, IEventHandler<TEvent>
+        where TEvent : class, IEvent
+    {
+        _actions.Add(scv =>
+        {
+            if (condition())
+            {
+                scv.RegisterEventHandler<THandler, TEvent>();
+
+                // Ensure only one dispatcher per event type; multiple handler registrations should not create duplicate dictionary entries
+                _eventDispatchers.TryAdd(typeof(TEvent), (@event,
+                    dispatcher,
+                    cancellationToken) =>
+                {
+                    if (@event is not TEvent typedEvent)
+                        throw new InvalidOperationException(
+                            $"Event type mismatch. Expected {typeof(TEvent)}, got {@event.GetType()}");
+                    return dispatcher.DispatchAsync(typedEvent, cancellationToken);
+                });
+            }
         });
         return this;
     }
@@ -174,7 +231,7 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
         return this;
     }
 
-    public ISynapseConfig SetDefaultPublishingMode(PublishMode mode)
+    public ISynapseConfig SetDefaultPublishingMode(EmitMode mode)
     {
         _defaultPublisherMode = mode;
         return this;
@@ -222,16 +279,6 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
         return this;
     }
 
-
-    public ISynapseConfig RegisterEventRoutingFilter<
-        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
-        TEventRoutingFilter>()
-        where TEventRoutingFilter : class, IEventRoutingFilter
-    {
-        _actions.Add(scv => scv.AddScoped<IEventRoutingFilter, TEventRoutingFilter>());
-        return this;
-    }
-
     public ISynapseConfig UseEventDispatcherRegistration<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         TRegistration>()
@@ -245,15 +292,7 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
         return this;
     }
 
-    public ISynapseConfig EnableDistributedEvent(Func<IDistributedEventConfig, ITransportConfig> defineTransport,
-        Action<ITransportConfig> configureTransport)
-    {
-        var transportConfig = new DistributedEventConfig();
-        var transport = defineTransport(transportConfig);
-        configureTransport(transport);
-        _actions.AddRange(transportConfig.Actions);
-        return this;
-    }
+
 
     public void Apply()
     {
@@ -264,12 +303,10 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
         services.AddSingleton(typeof(IEventOutboxStorage), _eventOutBoxStorage);
         services.AddScoped(typeof(IContextFactory), _contextFactory);
         services.AddScoped(typeof(IEventOrchestrator), _eventOrchestrator);
-        services.AddScoped(typeof(ITransportDispatcher), _transportDispatcher);
 
         services.Configure<PublisherOptions>(options => { options.DefaultMode = _defaultPublisherMode; });
         services.Configure<EventDispatcherOptions>(options =>
         {
-            options.DefaultDistributionMode = DistributionMode.Local;
             options.DispatchStrategy = DispatchStrategy.Immediate;
             if (options.Dispatchers.Count != 0)
             {

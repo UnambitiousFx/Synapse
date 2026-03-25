@@ -8,8 +8,6 @@ using UnambitiousFx.Functional;
 using UnambitiousFx.Synapse;
 using UnambitiousFx.Synapse.Abstractions;
 using IRequest = MediatR.IRequest;
-using OurSender = UnambitiousFx.Synapse.Abstractions.ISender;
-using OurPublisher = UnambitiousFx.Synapse.Abstractions.IPublisher;
 
 namespace UnambitiousFx.Benchmarks.SynapseBenchmark;
 
@@ -37,9 +35,9 @@ public class MediatorVsMediatRBenchmarks
     private IServiceProvider _our3BehSp = default!;
     private IServiceProvider _ourBaseSp = default!;
 
-    private OurPublisher _ourPublisherBase = default!;
+    private IEmitter _ourEmitterBase = default!;
 
-    private OurSender _ourSenderBase = default!;
+    private IInvoker _ourInvokerBase = default!;
 
     [GlobalSetup]
     public void GlobalSetup()
@@ -48,9 +46,9 @@ public class MediatorVsMediatRBenchmarks
         _our1BehSp = BuildOurSp(1, true);
         _our3BehSp = BuildOurSp(3, true);
 
-        _ourSenderBase = _ourBaseSp.GetRequiredService<OurSender>();
+        _ourInvokerBase = _ourBaseSp.GetRequiredService<IInvoker>();
 
-        _ourPublisherBase = _ourBaseSp.GetRequiredService<OurPublisher>();
+        _ourEmitterBase = _ourBaseSp.GetRequiredService<IEmitter>();
 
         _mrBaseSp = BuildMediatRSp(0);
         _mr1BehSp = BuildMediatRSp(1);
@@ -144,7 +142,7 @@ public class MediatorVsMediatRBenchmarks
     [Benchmark(Baseline = true, Description = "Our Mediator - Send (response)")]
     public async Task<int> Our_Send_Response()
     {
-        var res = await _ourSenderBase.SendAsync<RequestWithResponse, int>(RrRequest);
+        var res = await _ourInvokerBase.InvokeAsync<RequestWithResponse, int>(RrRequest);
         return res.TryGet(out int v)
             ? v!
             : -1;
@@ -177,7 +175,7 @@ public class MediatorVsMediatRBenchmarks
     [Benchmark(Description = "Our Mediator - Send (void)")]
     public async Task<bool> Our_Send_Void()
     {
-        var res = await _ourSenderBase.SendAsync(RqRequest);
+        var res = await _ourInvokerBase.InvokeAsync(RqRequest);
         return res.IsSuccess;
     }
 
@@ -192,7 +190,7 @@ public class MediatorVsMediatRBenchmarks
     [Benchmark(Description = "Our Mediator - Publish (5 handlers)")]
     public async Task<bool> Our_Publish_5Handlers()
     {
-        var res = await _ourPublisherBase.PublishAsync(OurEvt);
+        var res = await _ourEmitterBase.EmitAsync(OurEvt);
         return res.IsSuccess;
     }
 
@@ -206,8 +204,8 @@ public class MediatorVsMediatRBenchmarks
     [Benchmark(Description = "Our Mediator - Send (1 behavior)")]
     public async Task<int> Our_Send_Response_1Behavior()
     {
-        var sender = _our1BehSp.GetRequiredService<OurSender>();
-        var res = await sender.SendAsync<RequestWithResponse, int>(RrRequest);
+        var sender = _our1BehSp.GetRequiredService<IInvoker>();
+        var res = await sender.InvokeAsync<RequestWithResponse, int>(RrRequest);
         return res.TryGet(out int v)
             ? v!
             : -1;
@@ -223,8 +221,8 @@ public class MediatorVsMediatRBenchmarks
     [Benchmark(Description = "Our Mediator - Send (3 behaviors)")]
     public async Task<int> Our_Send_Response_3Behaviors()
     {
-        var sender = _our3BehSp.GetRequiredService<OurSender>();
-        var res = await sender.SendAsync<RequestWithResponse, int>(RrRequest);
+        var sender = _our3BehSp.GetRequiredService<IInvoker>();
+        var res = await sender.InvokeAsync<RequestWithResponse, int>(RrRequest);
         return res.TryGet(out int v)
             ? v!
             : -1;
@@ -273,8 +271,7 @@ public class MediatorVsMediatRBenchmarks
             return next();
         }
 
-        public ValueTask<Result<TResponse>> HandleAsync<TRequest, TResponse>(TRequest request,
-            Synapse.Abstractions.RequestHandlerDelegate<TResponse> next,
+        public ValueTask<Result<TResponse>> HandleAsync<TRequest, TResponse>(TRequest request, Synapse.Abstractions.RequestHandlerDelegate<TResponse> next,
             CancellationToken cancellationToken = default)
             where TResponse : notnull
             where TRequest : Synapse.Abstractions.IRequest<TResponse>
@@ -293,8 +290,7 @@ public class MediatorVsMediatRBenchmarks
             return next();
         }
 
-        public ValueTask<Result<TResponse>> HandleAsync<TRequest, TResponse>(TRequest request,
-            Synapse.Abstractions.RequestHandlerDelegate<TResponse> next,
+        public ValueTask<Result<TResponse>> HandleAsync<TRequest, TResponse>(TRequest request, Synapse.Abstractions.RequestHandlerDelegate<TResponse> next,
             CancellationToken cancellationToken = default)
             where TResponse : notnull
             where TRequest : Synapse.Abstractions.IRequest<TResponse>
@@ -313,8 +309,7 @@ public class MediatorVsMediatRBenchmarks
             return next();
         }
 
-        public ValueTask<Result<TResponse>> HandleAsync<TRequest, TResponse>(TRequest request,
-            Synapse.Abstractions.RequestHandlerDelegate<TResponse> next,
+        public ValueTask<Result<TResponse>> HandleAsync<TRequest, TResponse>(TRequest request, Synapse.Abstractions.RequestHandlerDelegate<TResponse> next,
             CancellationToken cancellationToken = default)
             where TResponse : notnull
             where TRequest : Synapse.Abstractions.IRequest<TResponse>

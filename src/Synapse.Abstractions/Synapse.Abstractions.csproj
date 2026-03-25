@@ -1,5 +1,9 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
+    <PropertyGroup>
+        <TargetFrameworks>$(LibraryTargetFrameworks)</TargetFrameworks>
+    </PropertyGroup>
+
     <ItemGroup>
         <PackageReference Include="UnambitiousFx.Functional"/>
     </ItemGroup>

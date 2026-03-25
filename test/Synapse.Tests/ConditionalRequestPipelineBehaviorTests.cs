@@ -17,8 +17,8 @@ public sealed class ConditionalRequestPipelineBehaviorTests
             cfg.RegisterConditionalRequestPipelineBehavior<UntypedConditionalBehavior>(_ => true);
         });
         var provider = services.BuildServiceProvider();
-        var sender = provider.GetRequiredService<ISender>();
-        await sender.SendAsync(new RequestExample());
+        var sender = provider.GetRequiredService<IInvoker>();
+        await sender.InvokeAsync(new RequestExample());
         var behavior = provider.GetRequiredService<UntypedConditionalBehavior>();
         Assert.Equal(1, behavior.ExecutionCount);
     }
@@ -33,8 +33,8 @@ public sealed class ConditionalRequestPipelineBehaviorTests
             cfg.RegisterConditionalRequestPipelineBehavior<UntypedConditionalBehavior>(_ => false);
         });
         var provider = services.BuildServiceProvider();
-        var sender = provider.GetRequiredService<ISender>();
-        await sender.SendAsync(new RequestExample());
+        var sender = provider.GetRequiredService<IInvoker>();
+        await sender.InvokeAsync(new RequestExample());
         var behavior = provider.GetRequiredService<UntypedConditionalBehavior>();
         Assert.Equal(0, behavior.ExecutionCount);
     }

@@ -90,4 +90,98 @@ public interface IDependencyInjectionBuilder
         where TStreamRequestHandler : class, IStreamRequestHandler<TRequest, TItem>
         where TItem : notnull
         where TRequest : IStreamRequest<TItem>;
+
+    /// <summary>
+    ///     Registers a request handler conditionally based on a predicate evaluated at service collection build time.
+    /// </summary>
+    /// <typeparam name="TRequestHandler">
+    ///     The type of the request handler to be registered.
+    /// </typeparam>
+    /// <typeparam name="TRequest">
+    ///     The type of the request being handled.
+    /// </typeparam>
+    /// <typeparam name="TResponse">
+    ///     The type of the response returned by the handler.
+    /// </typeparam>
+    /// <param name="condition">
+    ///     A predicate that determines whether the handler should be registered. Evaluated when building the service collection.
+    /// </param>
+    /// <remarks>
+    ///     Useful for registering handlers based on environment variables, feature flags, or configuration values.
+    /// </remarks>
+    IDependencyInjectionBuilder RegisterRequestHandlerWhen<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+        TRequestHandler, TRequest,
+        TResponse>(Func<bool> condition)
+        where TRequestHandler : class, IRequestHandler<TRequest, TResponse>
+        where TResponse : notnull
+        where TRequest : IRequest<TResponse>;
+
+    /// <summary>
+    ///     Registers a request handler conditionally based on a predicate evaluated at service collection build time.
+    /// </summary>
+    /// <typeparam name="TRequestHandler">
+    ///     The type of the request handler to be registered.
+    /// </typeparam>
+    /// <typeparam name="TRequest">
+    ///     The type of the request being handled.
+    /// </typeparam>
+    /// <param name="condition">
+    ///     A predicate that determines whether the handler should be registered. Evaluated when building the service collection.
+    /// </param>
+    /// <remarks>
+    ///     Useful for registering handlers based on environment variables, feature flags, or configuration values.
+    /// </remarks>
+    IDependencyInjectionBuilder RegisterRequestHandlerWhen<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+        TRequestHandler, TRequest>(Func<bool> condition)
+        where TRequestHandler : class, IRequestHandler<TRequest>
+        where TRequest : IRequest;
+
+    /// <summary>
+    ///     Registers an event handler conditionally based on a predicate evaluated at service collection build time.
+    /// </summary>
+    /// <typeparam name="TEventHandler">
+    ///     The type of the event handler to be registered.
+    /// </typeparam>
+    /// <typeparam name="TEvent">
+    ///     The type of the event that the handler processes.
+    /// </typeparam>
+    /// <param name="condition">
+    ///     A predicate that determines whether the handler should be registered. Evaluated when building the service collection.
+    /// </param>
+    /// <remarks>
+    ///     Useful for registering handlers based on environment variables, feature flags, or configuration values.
+    /// </remarks>
+    IDependencyInjectionBuilder RegisterEventHandlerWhen<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+        TEventHandler, TEvent>(Func<bool> condition)
+        where TEventHandler : class, IEventHandler<TEvent>
+        where TEvent : class, IEvent;
+
+    /// <summary>
+    ///     Registers a streaming request handler conditionally based on a predicate evaluated at service collection build time.
+    /// </summary>
+    /// <typeparam name="TStreamRequestHandler">
+    ///     The type of the streaming request handler to be registered.
+    /// </typeparam>
+    /// <typeparam name="TRequest">
+    ///     The type of the streaming request being handled.
+    /// </typeparam>
+    /// <typeparam name="TItem">
+    ///     The type of items yielded by the stream.
+    /// </typeparam>
+    /// <param name="condition">
+    ///     A predicate that determines whether the handler should be registered. Evaluated when building the service collection.
+    /// </param>
+    /// <remarks>
+    ///     Useful for registering handlers based on environment variables, feature flags, or configuration values.
+    /// </remarks>
+    IDependencyInjectionBuilder RegisterStreamRequestHandlerWhen<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+        TStreamRequestHandler, TRequest,
+        TItem>(Func<bool> condition)
+        where TStreamRequestHandler : class, IStreamRequestHandler<TRequest, TItem>
+        where TItem : notnull
+        where TRequest : IStreamRequest<TItem>;
 }

@@ -9,14 +9,14 @@ namespace UnambitiousFx.Examples.Application.Application.Orders.Fulfillment;
 public sealed class RequestFulfillmentCommandHandler : IRequestHandler<RequestFulfillmentCommand, Guid>
 {
     private readonly ILogger<RequestFulfillmentCommandHandler> _logger;
-    private readonly IPublisher _publisher;
+    private readonly IEmitter _emitter;
 
     public RequestFulfillmentCommandHandler(
         ILogger<RequestFulfillmentCommandHandler> logger,
-        IPublisher publisher)
+        IEmitter emitter)
     {
         _logger = logger;
-        _publisher = publisher;
+        _emitter = emitter;
     }
 
     public async ValueTask<Result<Guid>> HandleAsync(
@@ -30,7 +30,7 @@ public sealed class RequestFulfillmentCommandHandler : IRequestHandler<RequestFu
             fulfillmentId, request.OrderId, request.WarehouseLocation);
 
         // Publish EXTERNAL event
-        await _publisher.PublishAsync(new OrderFulfillmentRequested
+        await _emitter.EmitAsync(new OrderFulfillmentRequested
         {
             OrderId = request.OrderId,
             FulfillmentId = fulfillmentId,

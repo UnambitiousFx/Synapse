@@ -2,6 +2,7 @@
     <Import Project="$([MSBuild]::GetPathOfFileAbove(&#39;build.props&#39;))"/>
 
     <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
         <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
         <IsPackable>false</IsPackable>
         <RootNamespace>$(Product).Benchmarks.$(MSBuildProjectName)</RootNamespace>
