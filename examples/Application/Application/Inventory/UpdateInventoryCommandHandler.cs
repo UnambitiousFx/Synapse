@@ -21,13 +21,12 @@ public sealed class UpdateInventoryCommandHandler : IRequestHandler<UpdateInvent
         CancellationToken cancellationToken = default)
     {
         // Simulate current inventory (in real app, would query from database)
-        var currentQuantity = 100;
+        const int currentQuantity = 100;
         var newQuantity = currentQuantity + request.QuantityChange;
 
         _logger.LogInformation("Updating inventory for product {ProductId}: {QuantityChange:+#;-#;0}",
             request.ProductId, request.QuantityChange);
 
-        // Publish EXTERNAL event - will be sent through transport layer
         await _emitter.EmitAsync(new InventoryUpdated
         {
             ProductId = request.ProductId,

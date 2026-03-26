@@ -24,10 +24,6 @@ public sealed class OrderCancelledHandler : IEventHandler<OrderCancelled>
         OrderCancelled @event,
         CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation(
-            "[EXTERNAL EVENT RECEIVED] Order {OrderId} cancelled: {Reason}",
-            @event.OrderId, @event.Reason);
-
         // Cancel any pending fulfillment for this order
         _fulfillmentService.CancelFulfillment(@event.OrderId);
         _logger.LogInformation("Cancelled fulfillment for order {OrderId}", @event.OrderId);

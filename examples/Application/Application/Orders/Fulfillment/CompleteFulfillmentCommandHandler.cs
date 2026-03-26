@@ -44,7 +44,6 @@ public sealed class CompleteFulfillmentCommandHandler : IRequestHandler<Complete
             "Completing fulfillment {FulfillmentId} for order {OrderId}",
             request.FulfillmentId, fulfillment.OrderId);
 
-        // Publish EXTERNAL event
         await _emitter.EmitAsync(new OrderFulfillmentCompleted
         {
             OrderId = fulfillment.OrderId,

@@ -5,9 +5,6 @@ using UnambitiousFx.Synapse.Abstractions;
 
 namespace UnambitiousFx.Examples.Application.Application.Orders;
 
-/// <summary>
-///     Handler for external OrderShipped events received from transport
-/// </summary>
 [EventHandler<OrderShipped>]
 public sealed class OrderShippedHandler : IEventHandler<OrderShipped>
 {

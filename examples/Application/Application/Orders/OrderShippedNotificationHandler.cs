@@ -5,10 +5,6 @@ using UnambitiousFx.Synapse.Abstractions;
 
 namespace UnambitiousFx.Examples.Application.Application.Orders;
 
-/// <summary>
-///     Second handler for OrderShipped event - demonstrates fan-out pattern
-///     Multiple handlers can process the same external event
-/// </summary>
 [EventHandler<OrderShipped>]
 public sealed class OrderShippedNotificationHandler : IEventHandler<OrderShipped>
 {

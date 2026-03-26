@@ -5,9 +5,6 @@ using UnambitiousFx.Synapse.Abstractions;
 
 namespace UnambitiousFx.Examples.Application.Application.Payments;
 
-/// <summary>
-///     Handler for external PaymentProcessed events received from transport
-/// </summary>
 [EventHandler<PaymentProcessed>]
 public sealed class PaymentProcessedHandler : IEventHandler<PaymentProcessed>
 {

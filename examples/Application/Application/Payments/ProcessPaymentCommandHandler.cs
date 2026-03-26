@@ -24,7 +24,6 @@ public sealed class ProcessPaymentCommandHandler : IRequestHandler<ProcessPaymen
 
         _logger.LogInformation("Processing payment {PaymentId} for order {OrderId}", paymentId, request.OrderId);
 
-        // Publish EXTERNAL event - will be sent through transport layer
         await _emitter.EmitAsync(new PaymentProcessed
         {
             PaymentId = paymentId,

@@ -19,10 +19,6 @@ public sealed class OrderFulfillmentCompletedHandler : IEventHandler<OrderFulfil
         OrderFulfillmentCompleted @event,
         CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation(
-            "[EXTERNAL EVENT RECEIVED] Fulfillment {FulfillmentId} completed for order {OrderId} at {WarehouseLocation}",
-            @event.FulfillmentId, @event.OrderId, @event.WarehouseLocation);
-
         // In a real system, you would update the order status in the database
         _logger.LogInformation("Order {OrderId} status updated to 'Fulfilled'", @event.OrderId);
 

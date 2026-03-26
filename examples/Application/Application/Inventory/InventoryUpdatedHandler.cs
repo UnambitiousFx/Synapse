@@ -5,9 +5,6 @@ using UnambitiousFx.Synapse.Abstractions;
 
 namespace UnambitiousFx.Examples.Application.Application.Inventory;
 
-/// <summary>
-///     Handler for external InventoryUpdated events received from transport
-/// </summary>
 [EventHandler<InventoryUpdated>]
 public sealed class InventoryUpdatedHandler : IEventHandler<InventoryUpdated>
 {

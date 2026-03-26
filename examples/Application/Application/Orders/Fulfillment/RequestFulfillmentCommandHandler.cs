@@ -29,7 +29,6 @@ public sealed class RequestFulfillmentCommandHandler : IRequestHandler<RequestFu
             "Requesting fulfillment {FulfillmentId} for order {OrderId} at warehouse {WarehouseLocation}",
             fulfillmentId, request.OrderId, request.WarehouseLocation);
 
-        // Publish EXTERNAL event
         await _emitter.EmitAsync(new OrderFulfillmentRequested
         {
             OrderId = request.OrderId,

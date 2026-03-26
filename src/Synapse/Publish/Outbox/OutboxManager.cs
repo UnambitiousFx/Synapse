@@ -7,7 +7,7 @@ using UnambitiousFx.Synapse.Observability;
 namespace UnambitiousFx.Synapse.Publish.Outbox;
 
 /// <summary>
-///     Manages outbox storage and dispatch strategies for both local and external events.
+///     Manages outbox storage and dispatch strategies
 ///     Coordinates event storage, retry logic, and distribution mode-based dispatch.
 /// </summary>
 internal sealed class OutboxManager : IOutboxManager

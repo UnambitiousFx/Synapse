@@ -24,7 +24,6 @@ public sealed class ShipOrderCommandHandler : IRequestHandler<ShipOrderCommand>
         _logger.LogInformation("Shipping order {OrderId} with tracking {TrackingNumber}",
             request.OrderId, trackingNumber);
 
-        // Publish EXTERNAL event - will be sent through transport layer (RabbitMQ, etc.)
         await _emitter.EmitAsync(new OrderShipped
         {
             OrderId = request.OrderId,

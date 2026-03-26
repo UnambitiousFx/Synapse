@@ -122,7 +122,7 @@ Content-Type: application/json
 
 ###
 
-### Ship Order (triggers EXTERNAL event: OrderShipped - sent through transport)
+### Ship Order
 POST {{baseUrl}}/orders/{{orderId}}/ship
 
 > {%
@@ -141,7 +141,7 @@ POST {{baseUrl}}/orders/550e8400-e29b-41d4-a716-446655440000/ship
 
 ### ===== Transport Examples - Payments =====
 
-### Process Payment (triggers EXTERNAL event: PaymentProcessed - sent through transport)
+### Process Payment
 POST {{baseUrl}}/payments
 Content-Type: application/json
 
@@ -174,7 +174,7 @@ Content-Type: application/json
 
 ### ===== Transport Examples - Inventory =====
 
-### Update Inventory - Decrease (triggers EXTERNAL event: InventoryUpdated - sent through transport)
+### Update Inventory - Decrease 
 POST {{baseUrl}}/inventory/660e8400-e29b-41d4-a716-446655440000/update
 Content-Type: application/json
 
@@ -221,7 +221,7 @@ Content-Type: application/json
 
 ###
 
-### Step 2: Process payment for the order (external event)
+### Step 2: Process payment for the order
 POST {{baseUrl}}/payments
 Content-Type: application/json
 
@@ -239,7 +239,7 @@ Content-Type: application/json
 
 ###
 
-### Step 3: Update inventory (external event)
+### Step 3: Update inventory
 POST {{baseUrl}}/inventory/770e8400-e29b-41d4-a716-446655440000/update
 Content-Type: application/json
 
@@ -255,7 +255,7 @@ Content-Type: application/json
 
 ###
 
-### Step 4: Ship the order (external event)
+### Step 4: Ship the order
 POST {{baseUrl}}/orders/{{workflowOrderId}}/ship
 
 > {%
@@ -268,7 +268,7 @@ POST {{baseUrl}}/orders/{{workflowOrderId}}/ship
 
 ### ===== Cross-Application Communication Examples =====
 
-### Cancel Order (triggers EXTERNAL event: OrderCancelled - consumed by WebApiAot)
+### Cancel Order
 DELETE {{baseUrl}}/orders/{{orderId}}
 Content-Type: application/json
 
@@ -305,7 +305,7 @@ Content-Type: application/json
 
 ###
 
-### Scenario 2: Ship Order (EXTERNAL event to WebApiAot)
+### Scenario 2: Ship Order
 POST {{baseUrl}}/orders/{{demoOrderId}}/ship
 
 > {%
@@ -322,7 +322,7 @@ POST {{baseUrl}}/orders/{{demoOrderId}}/ship
 
 ###
 
-### Alternative: Cancel the order (EXTERNAL event to WebApiAot)
+### Alternative: Cancel the order
 DELETE {{baseUrl}}/orders/{{demoOrderId}}
 Content-Type: application/json
 

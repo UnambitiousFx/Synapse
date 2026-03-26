@@ -27,7 +27,6 @@ public sealed class CancelOrderCommandHandler : IRequestHandler<CancelOrderComma
             "Cancelling order {OrderId} with reason: {Reason}",
             request.OrderId, request.Reason);
 
-        // Publish EXTERNAL event - will be consumed by fulfillment system
         await _emitter.EmitAsync(new OrderCancelled
         {
             OrderId = request.OrderId,
