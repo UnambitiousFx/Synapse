@@ -271,7 +271,8 @@ public class MediatorVsMediatRBenchmarks
             return next();
         }
 
-        public ValueTask<Result<TResponse>> HandleAsync<TRequest, TResponse>(TRequest request, Synapse.Abstractions.RequestHandlerDelegate<TResponse> next,
+        public ValueTask<Result<TResponse>> HandleAsync<TRequest, TResponse>(TRequest request,
+            Synapse.Abstractions.RequestHandlerDelegate<TResponse> next,
             CancellationToken cancellationToken = default)
             where TResponse : notnull
             where TRequest : Synapse.Abstractions.IRequest<TResponse>
@@ -290,7 +291,8 @@ public class MediatorVsMediatRBenchmarks
             return next();
         }
 
-        public ValueTask<Result<TResponse>> HandleAsync<TRequest, TResponse>(TRequest request, Synapse.Abstractions.RequestHandlerDelegate<TResponse> next,
+        public ValueTask<Result<TResponse>> HandleAsync<TRequest, TResponse>(TRequest request,
+            Synapse.Abstractions.RequestHandlerDelegate<TResponse> next,
             CancellationToken cancellationToken = default)
             where TResponse : notnull
             where TRequest : Synapse.Abstractions.IRequest<TResponse>
@@ -309,7 +311,8 @@ public class MediatorVsMediatRBenchmarks
             return next();
         }
 
-        public ValueTask<Result<TResponse>> HandleAsync<TRequest, TResponse>(TRequest request, Synapse.Abstractions.RequestHandlerDelegate<TResponse> next,
+        public ValueTask<Result<TResponse>> HandleAsync<TRequest, TResponse>(TRequest request,
+            Synapse.Abstractions.RequestHandlerDelegate<TResponse> next,
             CancellationToken cancellationToken = default)
             where TResponse : notnull
             where TRequest : Synapse.Abstractions.IRequest<TResponse>

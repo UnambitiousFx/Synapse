@@ -1,15 +1,15 @@
 using UnambitiousFx.Synapse.Abstractions;
+using TaskStatus = UnambitiousFx.Examples.GettingStarted.Domain.TaskStatus;
 
 namespace UnambitiousFx.Examples.GettingStarted.Step1_BasicCommands;
 
 /// <summary>
-/// Step 1: Basic Commands and Queries
-///
-/// This step demonstrates:
-/// - Commands without responses (IRequest)
-/// - Commands with responses (IRequest&lt;TResponse&gt;)
-/// - Queries (read-only requests)
-/// - Using IInvoker to dispatch requests
+///     Step 1: Basic Commands and Queries
+///     This step demonstrates:
+///     - Commands without responses (IRequest)
+///     - Commands with responses (IRequest&lt;TResponse&gt;)
+///     - Queries (read-only requests)
+///     - Using IInvoker to dispatch requests
 /// </summary>
 public static class Step1_BasicCommands
 {
@@ -19,7 +19,8 @@ public static class Step1_BasicCommands
 
         // Example 1: Command without response (fire-and-forget)
         Console.WriteLine("1. Creating a task (command without response)...");
-        var createCommand = new CreateTaskCommand { Title = "Learn Synapse", Description = "Study the getting started tutorial" };
+        var createCommand = new CreateTaskCommand
+            { Title = "Learn Synapse", Description = "Study the getting started tutorial" };
         var createResult = await invoker.InvokeAsync(createCommand);
 
         if (createResult.IsSuccess)
@@ -29,7 +30,8 @@ public static class Step1_BasicCommands
 
         // Example 2: Command with response
         Console.WriteLine("2. Creating a task and getting its ID (command with response)...");
-        var createWithIdCommand = new CreateTaskWithIdCommand { Title = "Build an app", Description = "Create a real application" };
+        var createWithIdCommand = new CreateTaskWithIdCommand
+            { Title = "Build an app", Description = "Create a real application" };
         var idResult = await invoker.InvokeAsync<CreateTaskWithIdCommand, Guid>(createWithIdCommand);
 
         if (idResult.TryGet(out var taskId, out var error))
@@ -64,7 +66,7 @@ public static class Step1_BasicCommands
 // ═══════════════════════════════════════════════════════════════
 
 /// <summary>
-/// Command without response - use for fire-and-forget operations
+///     Command without response - use for fire-and-forget operations
 /// </summary>
 public sealed record CreateTaskCommand : IRequest
 {
@@ -73,7 +75,7 @@ public sealed record CreateTaskCommand : IRequest
 }
 
 /// <summary>
-/// Command with response - use when you need to return a value (e.g., ID of created entity)
+///     Command with response - use when you need to return a value (e.g., ID of created entity)
 /// </summary>
 public sealed record CreateTaskWithIdCommand : IRequest<Guid>
 {
@@ -82,7 +84,7 @@ public sealed record CreateTaskWithIdCommand : IRequest<Guid>
 }
 
 /// <summary>
-/// Command for updating task status
+///     Command for updating task status
 /// </summary>
 public sealed record CompleteTaskCommand : IRequest
 {
@@ -94,7 +96,7 @@ public sealed record CompleteTaskCommand : IRequest
 // ═══════════════════════════════════════════════════════════════
 
 /// <summary>
-/// Query to get a single task by ID
+///     Query to get a single task by ID
 /// </summary>
 public sealed record GetTaskQuery : IRequest<TaskDto>
 {
@@ -102,7 +104,7 @@ public sealed record GetTaskQuery : IRequest<TaskDto>
 }
 
 /// <summary>
-/// Query to list all tasks
+///     Query to list all tasks
 /// </summary>
 public sealed record ListTasksQuery : IRequest<List<TaskDto>>;
 
@@ -115,7 +117,7 @@ public sealed record TaskDto
     public required Guid Id { get; init; }
     public required string Title { get; init; }
     public required string Description { get; init; }
-    public required Domain.TaskStatus Status { get; init; }
+    public required TaskStatus Status { get; init; }
     public required DateTime CreatedAt { get; init; }
     public DateTime? CompletedAt { get; init; }
 }

@@ -8,8 +8,8 @@ namespace UnambitiousFx.Examples.Application.Application.Inventory;
 [RequestHandler<UpdateInventoryCommand>]
 public sealed class UpdateInventoryCommandHandler : IRequestHandler<UpdateInventoryCommand>
 {
-    private readonly ILogger<UpdateInventoryCommandHandler> _logger;
     private readonly IEmitter _emitter;
+    private readonly ILogger<UpdateInventoryCommandHandler> _logger;
 
     public UpdateInventoryCommandHandler(IEmitter emitter, ILogger<UpdateInventoryCommandHandler> logger)
     {

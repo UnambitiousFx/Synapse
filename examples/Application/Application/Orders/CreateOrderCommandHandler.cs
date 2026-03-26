@@ -8,8 +8,8 @@ namespace UnambitiousFx.Examples.Application.Application.Orders;
 [RequestHandler<CreateOrderCommand, Guid>]
 public sealed class CreateOrderCommandHandler : IRequestHandler<CreateOrderCommand, Guid>
 {
-    private readonly ILogger<CreateOrderCommandHandler> _logger;
     private readonly IEmitter _emitter;
+    private readonly ILogger<CreateOrderCommandHandler> _logger;
 
     public CreateOrderCommandHandler(ILogger<CreateOrderCommandHandler> logger, IEmitter emitter)
     {

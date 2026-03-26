@@ -8,11 +8,11 @@ namespace UnambitiousFx.Synapse.Publish.Outbox;
 /// </summary>
 public sealed class OutboxHealthCheck : IHealthCheck
 {
-    private readonly IEventOutboxStorage _storage;
     private readonly OutboxHealthCheckOptions _options;
+    private readonly IEventOutboxStorage _storage;
 
     /// <summary>
-    ///     Initializes a new instance of the <see cref="OutboxHealthCheck"/> class.
+    ///     Initializes a new instance of the <see cref="OutboxHealthCheck" /> class.
     /// </summary>
     /// <param name="storage">The outbox storage to monitor.</param>
     /// <param name="options">Configuration options for health check thresholds.</param>
@@ -46,47 +46,35 @@ public sealed class OutboxHealthCheck : IHealthCheck
 
             // Check for critical conditions
             if (failedCount >= _options.CriticalFailedThreshold)
-            {
                 return HealthCheckResult.Unhealthy(
                     $"Outbox has {failedCount} failed events (threshold: {_options.CriticalFailedThreshold})",
                     data: data);
-            }
 
             if (pendingCount >= _options.CriticalPendingThreshold)
-            {
                 return HealthCheckResult.Unhealthy(
                     $"Outbox has {pendingCount} pending events (threshold: {_options.CriticalPendingThreshold})",
                     data: data);
-            }
 
             if (oldestPendingAge.HasValue && oldestPendingAge.Value > _options.CriticalLagThreshold)
-            {
                 return HealthCheckResult.Unhealthy(
                     $"Outbox has events pending for {oldestPendingAge.Value.TotalMinutes:F1} minutes (threshold: {_options.CriticalLagThreshold.TotalMinutes:F1} minutes)",
                     data: data);
-            }
 
             // Check for degraded conditions
             if (failedCount >= _options.DegradedFailedThreshold)
-            {
                 return HealthCheckResult.Degraded(
                     $"Outbox has {failedCount} failed events (threshold: {_options.DegradedFailedThreshold})",
                     data: data);
-            }
 
             if (pendingCount >= _options.DegradedPendingThreshold)
-            {
                 return HealthCheckResult.Degraded(
                     $"Outbox has {pendingCount} pending events (threshold: {_options.DegradedPendingThreshold})",
                     data: data);
-            }
 
             if (oldestPendingAge.HasValue && oldestPendingAge.Value > _options.DegradedLagThreshold)
-            {
                 return HealthCheckResult.Degraded(
                     $"Outbox has events pending for {oldestPendingAge.Value.TotalMinutes:F1} minutes (threshold: {_options.DegradedLagThreshold.TotalMinutes:F1} minutes)",
                     data: data);
-            }
 
             return HealthCheckResult.Healthy("Outbox is healthy", data);
         }

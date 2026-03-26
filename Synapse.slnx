@@ -1,35 +1,35 @@
 <Solution>
     <Folder Name="/benchmarks/">
-        <Project Path="benchmarks\SynapseBenchmark\SynapseBenchmark.csproj" />
+        <Project Path="benchmarks\SynapseBenchmark\SynapseBenchmark.csproj"/>
     </Folder>
     <Folder Name="/benchmarks/_/">
-        <File Path="benchmarks\Directory.Build.props" />
+        <File Path="benchmarks\Directory.Build.props"/>
     </Folder>
     <Folder Name="/examples/">
-        <Project Path="examples/Application/Application.csproj" />
-        <Project Path="examples/GettingStarted/GettingStarted.csproj" />
-        <Project Path="examples/WebApi.Tests/WebApi.Tests.csproj" />
-        <Project Path="examples/WebApi/WebApi.csproj" />
-        <Project Path="examples/MinimalApi/MinimalApi.csproj" />
+        <Project Path="examples/Application/Application.csproj"/>
+        <Project Path="examples/GettingStarted/GettingStarted.csproj"/>
+        <Project Path="examples/WebApi.Tests/WebApi.Tests.csproj"/>
+        <Project Path="examples/WebApi/WebApi.csproj"/>
+        <Project Path="examples/MinimalApi/MinimalApi.csproj"/>
     </Folder>
     <Folder Name="/examples/_/">
-        <File Path="examples\compose.yml" />
-        <File Path="examples\Directory.Build.props" />
-        <File Path="examples\Directory.Packages.props" />
+        <File Path="examples\compose.yml"/>
+        <File Path="examples\Directory.Build.props"/>
+        <File Path="examples\Directory.Packages.props"/>
     </Folder>
     <Folder Name="/src/">
-        <Project Path="src\Synapse.Abstractions\Synapse.Abstractions.csproj" />
-        <Project Path="src\Synapse.Generator\Synapse.Generator.csproj" />
-        <Project Path="src\Synapse\Synapse.csproj" />
+        <Project Path="src\Synapse.Abstractions\Synapse.Abstractions.csproj"/>
+        <Project Path="src\Synapse.Generator\Synapse.Generator.csproj"/>
+        <Project Path="src\Synapse\Synapse.csproj"/>
     </Folder>
     <Folder Name="/test/">
-        <Project Path="test\Synapse.Tests\Synapse.Tests.csproj" />
+        <Project Path="test\Synapse.Tests\Synapse.Tests.csproj"/>
     </Folder>
     <Folder Name="/_/">
-        <File Path="build.props" />
-        <File Path="Directory.Packages.props" />
-        <File Path="global.json" />
-        <File Path="LICENSE" />
-        <File Path="README.md" />
+        <File Path="build.props"/>
+        <File Path="Directory.Packages.props"/>
+        <File Path="global.json"/>
+        <File Path="LICENSE"/>
+        <File Path="README.md"/>
     </Folder>
 </Solution>

@@ -12,7 +12,7 @@ public interface ISynapseMetrics
     /// </summary>
     /// <param name="eventType">The type of event dispatched.</param>
     /// <param name="success">Whether the dispatch was successful.</param>
-    void RecordEventDispatched(string eventType,  bool success);
+    void RecordEventDispatched(string eventType, bool success);
 
     /// <summary>
     ///     Records the latency of an event dispatch operation.

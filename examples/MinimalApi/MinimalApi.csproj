@@ -6,10 +6,10 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\..\src\Synapse\Synapse.csproj" />
+        <ProjectReference Include="..\..\src\Synapse\Synapse.csproj"/>
     </ItemGroup>
     <ItemGroup>
-        <PackageReference Include="UnambitiousFx.Functional.AspNetCore" Version="1.0.6" />
+        <PackageReference Include="UnambitiousFx.Functional.AspNetCore" Version="1.0.6"/>
     </ItemGroup>
 
 </Project>

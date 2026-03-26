@@ -307,7 +307,8 @@ public sealed class CqrsBoundaryEnforcementTests
             CancellationToken cancellationToken = default)
         {
             // This should throw CqrsBoundaryViolationException
-            await _invoker.InvokeAsync<FirstRequestWithResponse, int>(new FirstRequestWithResponse(), cancellationToken);
+            await _invoker.InvokeAsync<FirstRequestWithResponse, int>(new FirstRequestWithResponse(),
+                cancellationToken);
             return Result.Success();
         }
     }

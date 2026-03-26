@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Logging;
 using UnambitiousFx.Functional;
 using UnambitiousFx.Synapse.Abstractions;
 
@@ -9,7 +8,7 @@ namespace UnambitiousFx.Examples.WebApi.Features.Tasks.Handlers;
 // ═══════════════════════════════════════════════════════════════
 
 /// <summary>
-/// Logs when a task is created
+///     Logs when a task is created
 /// </summary>
 [EventHandler<TaskCreatedEvent>]
 public sealed class TaskCreatedLoggingHandler : IEventHandler<TaskCreatedEvent>
@@ -35,7 +34,7 @@ public sealed class TaskCreatedLoggingHandler : IEventHandler<TaskCreatedEvent>
 }
 
 /// <summary>
-/// Logs when a task is completed
+///     Logs when a task is completed
 /// </summary>
 [EventHandler<TaskCompletedEvent>]
 public sealed class TaskCompletedLoggingHandler : IEventHandler<TaskCompletedEvent>
@@ -61,7 +60,7 @@ public sealed class TaskCompletedLoggingHandler : IEventHandler<TaskCompletedEve
 }
 
 /// <summary>
-/// Sends notifications when a task is completed (simulated)
+///     Sends notifications when a task is completed (simulated)
 /// </summary>
 [EventHandler<TaskCompletedEvent>]
 public sealed class TaskCompletedNotificationHandler : IEventHandler<TaskCompletedEvent>
@@ -87,7 +86,7 @@ public sealed class TaskCompletedNotificationHandler : IEventHandler<TaskComplet
 }
 
 /// <summary>
-/// Logs when a task is deleted
+///     Logs when a task is deleted
 /// </summary>
 [EventHandler<TaskDeletedEvent>]
 public sealed class TaskDeletedLoggingHandler : IEventHandler<TaskDeletedEvent>

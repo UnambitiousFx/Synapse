@@ -8,8 +8,8 @@ namespace UnambitiousFx.Examples.Application.Application.Orders;
 [RequestHandler<CancelOrderCommand>]
 public sealed class CancelOrderCommandHandler : IRequestHandler<CancelOrderCommand>
 {
-    private readonly ILogger<CancelOrderCommandHandler> _logger;
     private readonly IEmitter _emitter;
+    private readonly ILogger<CancelOrderCommandHandler> _logger;
 
     public CancelOrderCommandHandler(
         ILogger<CancelOrderCommandHandler> logger,

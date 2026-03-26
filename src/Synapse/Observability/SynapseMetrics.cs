@@ -18,9 +18,9 @@ public sealed class SynapseMetrics : ISynapseMetrics
 
     // Outbox metrics
     private readonly Counter<long> _outboxEventsProcessed;
-    private readonly ObservableGauge<int> _outboxQueueDepth;
-    private readonly ObservableGauge<double> _outboxProcessingLag;
     private readonly ObservableGauge<int> _outboxFailedCount;
+    private readonly ObservableGauge<double> _outboxProcessingLag;
+    private readonly ObservableGauge<int> _outboxQueueDepth;
 
     /// <summary>
     ///     Initializes a new instance of the <see cref="SynapseMetrics" /> class.
@@ -80,7 +80,7 @@ public sealed class SynapseMetrics : ISynapseMetrics
             "{event}",
             "Number of failed events awaiting retry");
     }
-    
+
     /// <summary>
     ///     Records an event dispatch operation.
     /// </summary>

@@ -86,6 +86,7 @@ dotnet publish -c Release
 The native executable will be in `bin/Release/net10.0/{runtime}/publish/`.
 
 **Size Comparison:**
+
 - Regular publish: ~90 MB
 - Native AOT publish: ~15-25 MB
 - Startup time: 2-3x faster
@@ -95,6 +96,7 @@ The native executable will be in `bin/Release/net10.0/{runtime}/publish/`.
 ### ✅ Synapse is AOT-Ready
 
 Synapse is designed to work with Native AOT:
+
 - No runtime reflection in hot paths
 - Source generators for handler registration
 - Trimming annotations
@@ -112,21 +114,21 @@ Synapse is designed to work with Native AOT:
    ```
 
 2. **JSON Serialization**
-   - Always add `[JsonSerializable]` for types used in HTTP requests/responses
-   - Use source-generated serializers
+    - Always add `[JsonSerializable]` for types used in HTTP requests/responses
+    - Use source-generated serializers
 
 3. **Dependency Injection**
-   - Register services explicitly
-   - Avoid scanning assemblies at runtime
+    - Register services explicitly
+    - Avoid scanning assemblies at runtime
 
 ## Performance Characteristics
 
-| Metric | Regular .NET | Native AOT |
-|--------|-------------|------------|
-| Startup Time | 500-800ms | 150-250ms |
-| Memory (idle) | 60-80 MB | 20-35 MB |
-| Binary Size | ~90 MB | ~15-25 MB |
-| First Request | Similar | Slightly faster |
+| Metric        | Regular .NET | Native AOT      |
+|---------------|--------------|-----------------|
+| Startup Time  | 500-800ms    | 150-250ms       |
+| Memory (idle) | 60-80 MB     | 20-35 MB        |
+| Binary Size   | ~90 MB       | ~15-25 MB       |
+| First Request | Similar      | Slightly faster |
 
 ## Testing AOT Compatibility
 
@@ -137,6 +139,7 @@ dotnet publish -c Release /p:PublishAot=true
 ```
 
 Look for warnings like:
+
 - `IL2026` - Methods that require runtime reflection
 - `IL3050` - Trimming warnings
 
@@ -151,11 +154,13 @@ Look for warnings like:
 ### Issue: JSON Serialization Fails
 
 **Problem:** Type not included in source generation
+
 ```
 System.InvalidOperationException: No metadata for type X
 ```
 
 **Solution:** Add to `AppJsonSerializerContext`:
+
 ```csharp
 [JsonSerializable(typeof(YourType))]
 internal partial class AppJsonSerializerContext : JsonSerializerContext { }

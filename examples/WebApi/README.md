@@ -42,9 +42,11 @@ The API will be available at `http://localhost:5000` (or the port shown in conso
 ## API Endpoints
 
 ### Root
+
 - `GET /` - API information and available endpoints
 
 ### Tasks
+
 - `GET /tasks` - List all tasks
 - `GET /tasks/{id}` - Get a specific task
 - `POST /tasks` - Create a new task
@@ -63,6 +65,7 @@ curl -X POST http://localhost:5000/tasks \
 ```
 
 Response:
+
 ```json
 {
   "taskId": "3fa85f64-5717-4562-b3fc-2c963f66afa6"
@@ -76,6 +79,7 @@ curl http://localhost:5000/tasks
 ```
 
 Response:
+
 ```json
 [
   {
@@ -120,7 +124,8 @@ tasks.MapPost("/", async (
 
 ### 2. Result-to-HTTP Conversion
 
-The `.ToHttpResultAsync()` extension methods (from `UnambitiousFx.Functional.AspNetCore`) automatically convert `Result<T>` to appropriate HTTP responses:
+The `.ToHttpResultAsync()` extension methods (from `UnambitiousFx.Functional.AspNetCore`) automatically convert
+`Result<T>` to appropriate HTTP responses:
 
 - `Success<T>` → `200 OK` with value
 - `Failure` → `400 Bad Request` with error details
@@ -138,24 +143,26 @@ await _emitter.EmitAsync(new TaskCreatedEvent
 ```
 
 Multiple handlers can subscribe to the same event:
+
 - `TaskCreatedLoggingHandler` - Logs the event
 - Other handlers can be added for analytics, notifications, etc.
 
 ### 4. Feature-Based Organization
 
 Instead of organizing by technical layers (Controllers, Services, etc.), we organize by features:
+
 - All task-related code lives in `Features/Tasks/`
 - Easy to find and modify related functionality
 - Better encapsulation and maintainability
 
 ## Comparison with Traditional Architecture
 
-| Traditional MVC | Feature-Based with Synapse |
-|----------------|---------------------------|
-| Controllers/ | Features/Tasks/ |
-| Services/ | (Handlers inline with features) |
-| Models/ | (Commands, Queries, Events inline) |
-| Repositories/ | Infrastructure/ |
+| Traditional MVC | Feature-Based with Synapse         |
+|-----------------|------------------------------------|
+| Controllers/    | Features/Tasks/                    |
+| Services/       | (Handlers inline with features)    |
+| Models/         | (Commands, Queries, Events inline) |
+| Repositories/   | Infrastructure/                    |
 
 ## Next Steps
 

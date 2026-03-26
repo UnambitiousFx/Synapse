@@ -7,10 +7,10 @@ namespace UnambitiousFx.Synapse.Contexts;
 
 internal readonly record struct Context : IContext
 {
+    private readonly IEmitter _emitter;
     private readonly Dictionary<Type, IContextFeature> _features;
     private readonly Dictionary<string, object> _metadata;
     private readonly IOutboxCommit _outboxCommit;
-    private readonly IEmitter _emitter;
 
     public Context(IEmitter emitter,
         IOutboxCommit outboxCommit,
@@ -145,27 +145,17 @@ internal readonly record struct Context : IContext
 
         // Store trace and span IDs for distributed tracing correlation
         if (!string.IsNullOrEmpty(activity.TraceId.ToString()))
-        {
             SetMetadata("Tracing.TraceId", activity.TraceId.ToString());
-        }
 
         if (!string.IsNullOrEmpty(activity.SpanId.ToString()))
-        {
             SetMetadata("Tracing.SpanId", activity.SpanId.ToString());
-        }
 
         if (!string.IsNullOrEmpty(activity.ParentSpanId.ToString()))
-        {
             SetMetadata("Tracing.ParentSpanId", activity.ParentSpanId.ToString());
-        }
 
         // Store baggage for cross-service correlation
         foreach (var baggage in activity.Baggage)
-        {
             if (baggage.Value != null)
-            {
                 SetMetadata($"Tracing.Baggage.{baggage.Key}", baggage.Value);
-            }
-        }
     }
 }

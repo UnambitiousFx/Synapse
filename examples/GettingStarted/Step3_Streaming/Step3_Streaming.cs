@@ -2,16 +2,16 @@ using System.Runtime.CompilerServices;
 using UnambitiousFx.Examples.GettingStarted.Step1_BasicCommands;
 using UnambitiousFx.Functional;
 using UnambitiousFx.Synapse.Abstractions;
+using TaskStatus = UnambitiousFx.Examples.GettingStarted.Domain.TaskStatus;
 
 namespace UnambitiousFx.Examples.GettingStarted.Step3_Streaming;
 
 /// <summary>
-/// Step 3: Streaming Requests
-///
-/// This step demonstrates:
-/// - IStreamRequest for returning large datasets incrementally
-/// - Memory-efficient data streaming
-/// - Cancellation support
+///     Step 3: Streaming Requests
+///     This step demonstrates:
+///     - IStreamRequest for returning large datasets incrementally
+///     - Memory-efficient data streaming
+///     - Cancellation support
 /// </summary>
 public static class Step3_Streaming
 {
@@ -25,7 +25,6 @@ public static class Step3_Streaming
         var count = 0;
 
         await foreach (var result in invoker.InvokeStreamAsync<StreamTasksQuery, TaskDto>(query))
-        {
             if (result.TryGet(out var task, out var error))
             {
                 count++;
@@ -36,7 +35,6 @@ public static class Step3_Streaming
             {
                 Console.WriteLine($"  ✗ Error: {error}");
             }
-        }
 
         Console.WriteLine($"✓ Streamed {count} tasks total\n");
     }
@@ -71,7 +69,7 @@ public sealed class StreamTasksQueryHandler : IStreamRequestHandler<StreamTasksQ
                 Id = Guid.NewGuid(),
                 Title = $"Streamed Task {i + 1}",
                 Description = "Generated for streaming demo",
-                Status = Domain.TaskStatus.Pending,
+                Status = TaskStatus.Pending,
                 CreatedAt = DateTime.UtcNow
             });
         }

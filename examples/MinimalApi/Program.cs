@@ -1,6 +1,5 @@
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Mvc;
-using UnambitiousFx.Examples.MinimalApi;
 using UnambitiousFx.Examples.WebApi.Features.Tasks;
 using UnambitiousFx.Examples.WebApi.Features.Tasks.Handlers;
 using UnambitiousFx.Examples.WebApi.Infrastructure;
@@ -154,6 +153,7 @@ app.Run();
 // ═══════════════════════════════════════════════════════════════
 
 public record CreateTaskRequest(string Title, string Description);
+
 public record UpdateTaskRequest(string Title, string Description);
 
 // ═══════════════════════════════════════════════════════════════
@@ -172,5 +172,5 @@ internal partial class AppJsonSerializerContext : JsonSerializerContext
 // Make Program partial for testing
 namespace UnambitiousFx.Examples.MinimalApi
 {
-    public partial class Program;
+    public class Program;
 }

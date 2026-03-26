@@ -30,7 +30,7 @@ public interface IEventOutboxStorage
     ValueTask<Result> AddAsync<TEvent>(TEvent @event,
         CancellationToken cancellationToken = default)
         where TEvent : class, IEvent;
-    
+
     /// <summary>
     ///     Retrieves all pending events that have not yet been marked as processed.
     /// </summary>

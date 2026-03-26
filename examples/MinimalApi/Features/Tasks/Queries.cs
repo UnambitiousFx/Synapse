@@ -1,5 +1,5 @@
-using UnambitiousFx.Examples.WebApi.Infrastructure;
 using UnambitiousFx.Synapse.Abstractions;
+using TaskStatus = UnambitiousFx.Examples.WebApi.Infrastructure.TaskStatus;
 
 namespace UnambitiousFx.Examples.WebApi.Features.Tasks;
 
@@ -8,7 +8,7 @@ namespace UnambitiousFx.Examples.WebApi.Features.Tasks;
 // ═══════════════════════════════════════════════════════════════
 
 /// <summary>
-/// Query to get a task by ID
+///     Query to get a task by ID
 /// </summary>
 public sealed record GetTaskQuery : IRequest<TaskDto>
 {
@@ -16,7 +16,7 @@ public sealed record GetTaskQuery : IRequest<TaskDto>
 }
 
 /// <summary>
-/// Query to list all tasks
+///     Query to list all tasks
 /// </summary>
 public sealed record ListTasksQuery : IRequest<List<TaskDto>>;
 
@@ -29,7 +29,7 @@ public sealed record TaskDto
     public required Guid Id { get; init; }
     public required string Title { get; init; }
     public required string Description { get; init; }
-    public required Infrastructure.TaskStatus Status { get; init; }
+    public required TaskStatus Status { get; init; }
     public required DateTime CreatedAt { get; init; }
     public DateTime? CompletedAt { get; init; }
 }

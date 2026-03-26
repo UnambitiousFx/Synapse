@@ -183,7 +183,8 @@ public sealed class EventDispatcherTests
 
         handler.HandleAsync(Arg.Any<InheritedEventExample>(), Arg.Any<CancellationToken>())
             .Returns(Result.Success());
-        _eventOrchestrator.RunAsync(Arg.Any<IEventHandler<InheritedEventExample>[]>(), Arg.Any<InheritedEventExample>(), Arg.Any<CancellationToken>())
+        _eventOrchestrator.RunAsync(Arg.Any<IEventHandler<InheritedEventExample>[]>(), Arg.Any<InheritedEventExample>(),
+                Arg.Any<CancellationToken>())
             .Returns(Result.Success());
 
         // Act (When) - Dispatch as base type

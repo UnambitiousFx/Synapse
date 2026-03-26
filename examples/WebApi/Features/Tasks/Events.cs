@@ -7,7 +7,7 @@ namespace UnambitiousFx.Examples.WebApi.Features.Tasks;
 // ═══════════════════════════════════════════════════════════════
 
 /// <summary>
-/// Event raised when a task is created
+///     Event raised when a task is created
 /// </summary>
 public sealed record TaskCreatedEvent : IEvent
 {
@@ -17,7 +17,7 @@ public sealed record TaskCreatedEvent : IEvent
 }
 
 /// <summary>
-/// Event raised when a task is completed
+///     Event raised when a task is completed
 /// </summary>
 public sealed record TaskCompletedEvent : IEvent
 {
@@ -27,7 +27,7 @@ public sealed record TaskCompletedEvent : IEvent
 }
 
 /// <summary>
-/// Event raised when a task is deleted
+///     Event raised when a task is deleted
 /// </summary>
 public sealed record TaskDeletedEvent : IEvent
 {

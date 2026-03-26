@@ -104,7 +104,8 @@ public interface IDependencyInjectionBuilder
     ///     The type of the response returned by the handler.
     /// </typeparam>
     /// <param name="condition">
-    ///     A predicate that determines whether the handler should be registered. Evaluated when building the service collection.
+    ///     A predicate that determines whether the handler should be registered. Evaluated when building the service
+    ///     collection.
     /// </param>
     /// <remarks>
     ///     Useful for registering handlers based on environment variables, feature flags, or configuration values.
@@ -127,7 +128,8 @@ public interface IDependencyInjectionBuilder
     ///     The type of the request being handled.
     /// </typeparam>
     /// <param name="condition">
-    ///     A predicate that determines whether the handler should be registered. Evaluated when building the service collection.
+    ///     A predicate that determines whether the handler should be registered. Evaluated when building the service
+    ///     collection.
     /// </param>
     /// <remarks>
     ///     Useful for registering handlers based on environment variables, feature flags, or configuration values.
@@ -148,7 +150,8 @@ public interface IDependencyInjectionBuilder
     ///     The type of the event that the handler processes.
     /// </typeparam>
     /// <param name="condition">
-    ///     A predicate that determines whether the handler should be registered. Evaluated when building the service collection.
+    ///     A predicate that determines whether the handler should be registered. Evaluated when building the service
+    ///     collection.
     /// </param>
     /// <remarks>
     ///     Useful for registering handlers based on environment variables, feature flags, or configuration values.
@@ -160,7 +163,8 @@ public interface IDependencyInjectionBuilder
         where TEvent : class, IEvent;
 
     /// <summary>
-    ///     Registers a streaming request handler conditionally based on a predicate evaluated at service collection build time.
+    ///     Registers a streaming request handler conditionally based on a predicate evaluated at service collection build
+    ///     time.
     /// </summary>
     /// <typeparam name="TStreamRequestHandler">
     ///     The type of the streaming request handler to be registered.
@@ -172,7 +176,8 @@ public interface IDependencyInjectionBuilder
     ///     The type of items yielded by the stream.
     /// </typeparam>
     /// <param name="condition">
-    ///     A predicate that determines whether the handler should be registered. Evaluated when building the service collection.
+    ///     A predicate that determines whether the handler should be registered. Evaluated when building the service
+    ///     collection.
     /// </param>
     /// <remarks>
     ///     Useful for registering handlers based on environment variables, feature flags, or configuration values.

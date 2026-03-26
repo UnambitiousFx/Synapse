@@ -1,17 +1,10 @@
 namespace UnambitiousFx.Examples.GettingStarted.Domain;
 
 /// <summary>
-/// Domain entity representing a task
+///     Domain entity representing a task
 /// </summary>
 public sealed class Task
 {
-    public Guid Id { get; }
-    public string Title { get; private set; }
-    public string Description { get; private set; }
-    public TaskStatus Status { get; private set; }
-    public DateTime CreatedAt { get; }
-    public DateTime? CompletedAt { get; private set; }
-
     public Task(Guid id, string title, string description)
     {
         Id = id;
@@ -20,6 +13,13 @@ public sealed class Task
         Status = TaskStatus.Pending;
         CreatedAt = DateTime.UtcNow;
     }
+
+    public Guid Id { get; }
+    public string Title { get; private set; }
+    public string Description { get; private set; }
+    public TaskStatus Status { get; private set; }
+    public DateTime CreatedAt { get; }
+    public DateTime? CompletedAt { get; private set; }
 
     public void Complete()
     {

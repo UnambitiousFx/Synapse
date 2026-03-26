@@ -62,10 +62,7 @@ internal sealed class DefaultDependencyInjectionBuilder : IDependencyInjectionBu
     {
         _actions.Add(services =>
         {
-            if (condition())
-            {
-                services.RegisterRequestHandler<TRequestHandler, TRequest, TResponse>();
-            }
+            if (condition()) services.RegisterRequestHandler<TRequestHandler, TRequest, TResponse>();
         });
         return this;
     }
@@ -78,10 +75,7 @@ internal sealed class DefaultDependencyInjectionBuilder : IDependencyInjectionBu
     {
         _actions.Add(services =>
         {
-            if (condition())
-            {
-                services.RegisterRequestHandler<TRequestHandler, TRequest>();
-            }
+            if (condition()) services.RegisterRequestHandler<TRequestHandler, TRequest>();
         });
         return this;
     }
@@ -94,10 +88,7 @@ internal sealed class DefaultDependencyInjectionBuilder : IDependencyInjectionBu
     {
         _actions.Add(services =>
         {
-            if (condition())
-            {
-                services.RegisterEventHandler<TEventHandler, TEvent>();
-            }
+            if (condition()) services.RegisterEventHandler<TEventHandler, TEvent>();
         });
         return this;
     }
@@ -112,10 +103,7 @@ internal sealed class DefaultDependencyInjectionBuilder : IDependencyInjectionBu
     {
         _actions.Add(services =>
         {
-            if (condition())
-            {
-                services.RegisterStreamRequestHandler<TStreamRequestHandler, TRequest, TItem>();
-            }
+            if (condition()) services.RegisterStreamRequestHandler<TStreamRequestHandler, TRequest, TItem>();
         });
         return this;
     }

@@ -12,9 +12,9 @@ namespace UnambitiousFx.Synapse.Tests.Publishers;
 [TestSubject(typeof(Emitter))]
 public sealed class EmitterTests
 {
+    private readonly Emitter _emitter;
     private readonly IEventDispatcher _eventDispatcher;
     private readonly IOutboxManager _outboxManager;
-    private readonly Emitter _emitter;
 
     public EmitterTests()
     {

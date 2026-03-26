@@ -8,8 +8,8 @@ namespace UnambitiousFx.Examples.Application.Application.Payments;
 [RequestHandler<ProcessPaymentCommand>]
 public sealed class ProcessPaymentCommandHandler : IRequestHandler<ProcessPaymentCommand>
 {
-    private readonly ILogger<ProcessPaymentCommandHandler> _logger;
     private readonly IEmitter _emitter;
+    private readonly ILogger<ProcessPaymentCommandHandler> _logger;
 
     public ProcessPaymentCommandHandler(ILogger<ProcessPaymentCommandHandler> logger, IEmitter emitter)
     {

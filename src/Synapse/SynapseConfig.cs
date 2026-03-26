@@ -13,7 +13,7 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
 {
     private readonly List<Action<IServiceCollection>> _actions = new();
     private readonly Dictionary<Type, DispatchEventDelegate> _eventDispatchers = new();
-    
+
     private DefaultDependencyInjectionBuilder _builder = new();
 
     [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
@@ -171,10 +171,7 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
     {
         _actions.Add(scv =>
         {
-            if (condition())
-            {
-                scv.RegisterRequestHandler<THandler, TRequest, TResponse>();
-            }
+            if (condition()) scv.RegisterRequestHandler<THandler, TRequest, TResponse>();
         });
         return this;
     }
@@ -187,10 +184,7 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
     {
         _actions.Add(scv =>
         {
-            if (condition())
-            {
-                scv.RegisterRequestHandler<THandler, TRequest>();
-            }
+            if (condition()) scv.RegisterRequestHandler<THandler, TRequest>();
         });
         return this;
     }
@@ -285,13 +279,9 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
         where TRegistration : class, IEventDispatcherRegistration, new()
     {
         var registration = new TRegistration();
-        registration.RegisterDispatchers((type, dispatchDelegate) =>
-        {
-            _eventDispatchers[type] = dispatchDelegate;
-        });
+        registration.RegisterDispatchers((type, dispatchDelegate) => { _eventDispatchers[type] = dispatchDelegate; });
         return this;
     }
-
 
 
     public void Apply()
@@ -309,14 +299,10 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
         {
             options.DispatchStrategy = DispatchStrategy.Immediate;
             if (options.Dispatchers.Count != 0)
-            {
                 options.Dispatchers = options.Dispatchers.Concat(_eventDispatchers)
                     .ToDictionary(x => x.Key, x => x.Value);
-            }
             else
-            {
                 options.Dispatchers = _eventDispatchers;
-            }
         });
         services.Configure<OutboxOptions>(options => { _outboxConfigure(options); });
     }

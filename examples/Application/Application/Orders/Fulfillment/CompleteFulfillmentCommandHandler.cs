@@ -10,9 +10,9 @@ namespace UnambitiousFx.Examples.Application.Application.Orders.Fulfillment;
 [RequestHandler<CompleteFulfillmentCommand>]
 public sealed class CompleteFulfillmentCommandHandler : IRequestHandler<CompleteFulfillmentCommand>
 {
+    private readonly IEmitter _emitter;
     private readonly IFulfillmentService _fulfillmentService;
     private readonly ILogger<CompleteFulfillmentCommandHandler> _logger;
-    private readonly IEmitter _emitter;
 
     public CompleteFulfillmentCommandHandler(
         ILogger<CompleteFulfillmentCommandHandler> logger,

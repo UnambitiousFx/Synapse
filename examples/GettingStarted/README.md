@@ -7,6 +7,7 @@ This tutorial demonstrates core Synapse features through a simple task managemen
 This example is organized as a step-by-step tutorial:
 
 ### Step 1: Basic Commands and Queries
+
 - Commands without responses (`IRequest`)
 - Commands with responses (`IRequest<TResponse>`)
 - Queries for read operations
@@ -14,16 +15,19 @@ This example is organized as a step-by-step tutorial:
 - Working with `Result<T>` types
 
 ### Step 2: Events and Event Handlers
+
 - Publishing events with `IEmitter`
 - Multiple handlers subscribing to the same event
 - Independent event handler execution
 
 ### Step 3: Streaming Requests
+
 - `IStreamRequest<T>` for large datasets
 - Memory-efficient streaming
 - Async enumerable patterns
 
 ### Step 4-7: Advanced Topics
+
 - Pipeline behaviors for cross-cutting concerns
 - Context features and metadata
 - Error handling patterns
@@ -53,6 +57,7 @@ GettingStarted/
 ## Key Concepts Demonstrated
 
 ### 1. **Request/Response Pattern**
+
 ```csharp
 // Command without response
 await invoker.InvokeAsync(new CreateTaskCommand { ... });
@@ -62,11 +67,13 @@ var result = await invoker.InvokeAsync<CreateTaskCommand, Guid>(command);
 ```
 
 ### 2. **Event Publishing**
+
 ```csharp
 await emitter.EmitAsync(new TaskCompletedEvent { ... });
 ```
 
 ### 3. **Streaming**
+
 ```csharp
 await foreach (var result in invoker.InvokeStreamAsync<Query, Item>(query))
 {
@@ -75,7 +82,9 @@ await foreach (var result in invoker.InvokeStreamAsync<Query, Item>(query))
 ```
 
 ### 4. **Result Types**
+
 All handlers return `Result` or `Result<T>` for explicit error handling:
+
 ```csharp
 if (result.TryGet(out var value, out var error))
     Console.WriteLine($"Success: {value}");

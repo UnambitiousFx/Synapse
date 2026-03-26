@@ -7,7 +7,7 @@ namespace UnambitiousFx.Examples.WebApi.Features.Tasks;
 // ═══════════════════════════════════════════════════════════════
 
 /// <summary>
-/// Command to create a new task
+///     Command to create a new task
 /// </summary>
 public sealed record CreateTaskCommand : IRequest<Guid>
 {
@@ -16,7 +16,7 @@ public sealed record CreateTaskCommand : IRequest<Guid>
 }
 
 /// <summary>
-/// Command to update an existing task
+///     Command to update an existing task
 /// </summary>
 public sealed record UpdateTaskCommand : IRequest
 {
@@ -26,7 +26,7 @@ public sealed record UpdateTaskCommand : IRequest
 }
 
 /// <summary>
-/// Command to complete a task
+///     Command to complete a task
 /// </summary>
 public sealed record CompleteTaskCommand : IRequest
 {
@@ -34,7 +34,7 @@ public sealed record CompleteTaskCommand : IRequest
 }
 
 /// <summary>
-/// Command to delete a task
+///     Command to delete a task
 /// </summary>
 public sealed record DeleteTaskCommand : IRequest
 {

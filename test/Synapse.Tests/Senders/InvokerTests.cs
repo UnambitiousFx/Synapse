@@ -8,8 +8,8 @@ namespace UnambitiousFx.Synapse.Tests.Senders;
 
 public sealed class InvokerTests
 {
-    private readonly IDependencyResolver _resolver;
     private readonly Invoker _invoker;
+    private readonly IDependencyResolver _resolver;
 
     public InvokerTests()
     {

@@ -35,7 +35,8 @@ internal static class EventDispatcherRegistrationFactory
         sb.AppendLine("    /// </summary>");
         sb.AppendLine(
             "    /// <param name=\"register\">A callback to register each event type with its dispatcher delegate.</param>");
-        sb.AppendLine("    public void RegisterDispatchers(Action<Type, global::UnambitiousFx.Synapse.Abstractions.DispatchEventDelegate> register)");
+        sb.AppendLine(
+            "    public void RegisterDispatchers(Action<Type, global::UnambitiousFx.Synapse.Abstractions.DispatchEventDelegate> register)");
         sb.AppendLine("    {");
 
         foreach (var eventType in eventInfo.EventTypes)

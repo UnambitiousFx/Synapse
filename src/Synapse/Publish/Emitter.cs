@@ -28,7 +28,6 @@ internal sealed class Emitter : IEmitter
     }
 
 
-
     public ValueTask<Result> EmitAsync<TEvent>(TEvent @event,
         EmitMode emitMode,
         CancellationToken cancellationToken = default)
@@ -61,10 +60,7 @@ internal sealed class Emitter : IEmitter
     {
         var eventsList = events as IList<TEvent> ?? events.ToList();
 
-        if (eventsList.Count == 0)
-        {
-            return Result.Success();
-        }
+        if (eventsList.Count == 0) return Result.Success();
 
         var resolvedMode = emitMode == EmitMode.Default ? _defaultMode : emitMode;
 
@@ -81,7 +77,8 @@ internal sealed class Emitter : IEmitter
             // Return aggregated result
             return results.All(r => r.IsSuccess)
                 ? Result.Success()
-                : Result.Failure($"{results.Count(r => !r.IsSuccess)} out of {results.Count} events failed to store in outbox");
+                : Result.Failure(
+                    $"{results.Count(r => !r.IsSuccess)} out of {results.Count} events failed to store in outbox");
         }
 
         // For immediate dispatch, dispatch all events
@@ -97,7 +94,8 @@ internal sealed class Emitter : IEmitter
             // Return aggregated result
             return results.All(r => r.IsSuccess)
                 ? Result.Success()
-                : Result.Failure($"{results.Count(r => !r.IsSuccess)} out of {results.Count} events failed to dispatch");
+                : Result.Failure(
+                    $"{results.Count(r => !r.IsSuccess)} out of {results.Count} events failed to dispatch");
         }
 
         throw new InvalidOperationException(

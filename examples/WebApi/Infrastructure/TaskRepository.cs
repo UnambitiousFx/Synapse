@@ -3,8 +3,8 @@ using System.Collections.Concurrent;
 namespace UnambitiousFx.Examples.WebApi.Infrastructure;
 
 /// <summary>
-/// In-memory repository for tasks (for demo purposes)
-/// In a real application, this would be replaced with EF Core or another ORM
+///     In-memory repository for tasks (for demo purposes)
+///     In a real application, this would be replaced with EF Core or another ORM
 /// </summary>
 public sealed class TaskRepository
 {
@@ -58,17 +58,10 @@ public sealed class TaskRepository
 }
 
 /// <summary>
-/// Domain entity representing a task
+///     Domain entity representing a task
 /// </summary>
 public sealed class TaskEntity
 {
-    public Guid Id { get; }
-    public string Title { get; private set; }
-    public string Description { get; private set; }
-    public TaskStatus Status { get; private set; }
-    public DateTime CreatedAt { get; }
-    public DateTime? CompletedAt { get; private set; }
-
     public TaskEntity(Guid id, string title, string description)
     {
         Id = id;
@@ -77,6 +70,13 @@ public sealed class TaskEntity
         Status = TaskStatus.Pending;
         CreatedAt = DateTime.UtcNow;
     }
+
+    public Guid Id { get; }
+    public string Title { get; private set; }
+    public string Description { get; private set; }
+    public TaskStatus Status { get; private set; }
+    public DateTime CreatedAt { get; }
+    public DateTime? CompletedAt { get; private set; }
 
     public void Update(string title, string description)
     {

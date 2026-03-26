@@ -3,7 +3,7 @@ using System.Collections.Concurrent;
 namespace UnambitiousFx.Examples.GettingStarted.Domain;
 
 /// <summary>
-/// In-memory repository for tasks (for demo purposes)
+///     In-memory repository for tasks (for demo purposes)
 /// </summary>
 public sealed class TaskRepository
 {

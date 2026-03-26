@@ -1,5 +1,3 @@
-using Microsoft.Extensions.DependencyInjection;
-
 namespace UnambitiousFx.Examples.GettingStarted.Step5_Context;
 
 public static class Step5_Context

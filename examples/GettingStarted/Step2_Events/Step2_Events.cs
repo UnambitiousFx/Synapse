@@ -3,12 +3,11 @@ using UnambitiousFx.Synapse.Abstractions;
 namespace UnambitiousFx.Examples.GettingStarted.Step2_Events;
 
 /// <summary>
-/// Step 2: Events and Event Handlers
-///
-/// This step demonstrates:
-/// - Publishing events with IEmitter
-/// - Multiple handlers for the same event
-/// - Event handlers executing independently
+///     Step 2: Events and Event Handlers
+///     This step demonstrates:
+///     - Publishing events with IEmitter
+///     - Multiple handlers for the same event
+///     - Event handlers executing independently
 /// </summary>
 public static class Step2_Events
 {

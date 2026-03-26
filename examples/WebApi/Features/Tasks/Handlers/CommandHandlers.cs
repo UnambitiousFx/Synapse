@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Logging;
 using UnambitiousFx.Examples.WebApi.Infrastructure;
 using UnambitiousFx.Functional;
 using UnambitiousFx.Synapse.Abstractions;
@@ -12,9 +11,9 @@ namespace UnambitiousFx.Examples.WebApi.Features.Tasks.Handlers;
 [RequestHandler<CreateTaskCommand, Guid>]
 public sealed class CreateTaskCommandHandler : IRequestHandler<CreateTaskCommand, Guid>
 {
-    private readonly TaskRepository _repository;
     private readonly IEmitter _emitter;
     private readonly ILogger<CreateTaskCommandHandler> _logger;
+    private readonly TaskRepository _repository;
 
     public CreateTaskCommandHandler(
         TaskRepository repository,
@@ -49,8 +48,8 @@ public sealed class CreateTaskCommandHandler : IRequestHandler<CreateTaskCommand
 [RequestHandler<UpdateTaskCommand>]
 public sealed class UpdateTaskCommandHandler : IRequestHandler<UpdateTaskCommand>
 {
-    private readonly TaskRepository _repository;
     private readonly ILogger<UpdateTaskCommandHandler> _logger;
+    private readonly TaskRepository _repository;
 
     public UpdateTaskCommandHandler(
         TaskRepository repository,
@@ -77,9 +76,9 @@ public sealed class UpdateTaskCommandHandler : IRequestHandler<UpdateTaskCommand
 [RequestHandler<CompleteTaskCommand>]
 public sealed class CompleteTaskCommandHandler : IRequestHandler<CompleteTaskCommand>
 {
-    private readonly TaskRepository _repository;
     private readonly IEmitter _emitter;
     private readonly ILogger<CompleteTaskCommandHandler> _logger;
+    private readonly TaskRepository _repository;
 
     public CompleteTaskCommandHandler(
         TaskRepository repository,
@@ -118,9 +117,9 @@ public sealed class CompleteTaskCommandHandler : IRequestHandler<CompleteTaskCom
 [RequestHandler<DeleteTaskCommand>]
 public sealed class DeleteTaskCommandHandler : IRequestHandler<DeleteTaskCommand>
 {
-    private readonly TaskRepository _repository;
     private readonly IEmitter _emitter;
     private readonly ILogger<DeleteTaskCommandHandler> _logger;
+    private readonly TaskRepository _repository;
 
     public DeleteTaskCommandHandler(
         TaskRepository repository,

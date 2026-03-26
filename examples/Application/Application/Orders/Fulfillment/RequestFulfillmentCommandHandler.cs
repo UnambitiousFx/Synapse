@@ -8,8 +8,8 @@ namespace UnambitiousFx.Examples.Application.Application.Orders.Fulfillment;
 [RequestHandler<RequestFulfillmentCommand, Guid>]
 public sealed class RequestFulfillmentCommandHandler : IRequestHandler<RequestFulfillmentCommand, Guid>
 {
-    private readonly ILogger<RequestFulfillmentCommandHandler> _logger;
     private readonly IEmitter _emitter;
+    private readonly ILogger<RequestFulfillmentCommandHandler> _logger;
 
     public RequestFulfillmentCommandHandler(
         ILogger<RequestFulfillmentCommandHandler> logger,

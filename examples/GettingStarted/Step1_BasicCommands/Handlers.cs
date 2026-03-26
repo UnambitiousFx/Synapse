@@ -9,7 +9,7 @@ namespace UnambitiousFx.Examples.GettingStarted.Step1_BasicCommands;
 // ═══════════════════════════════════════════════════════════════
 
 /// <summary>
-/// Handler for commands without response
+///     Handler for commands without response
 /// </summary>
 [RequestHandler<CreateTaskCommand>]
 public sealed class CreateTaskCommandHandler : IRequestHandler<CreateTaskCommand>
@@ -30,7 +30,7 @@ public sealed class CreateTaskCommandHandler : IRequestHandler<CreateTaskCommand
 }
 
 /// <summary>
-/// Handler for commands with response
+///     Handler for commands with response
 /// </summary>
 [RequestHandler<CreateTaskWithIdCommand, Guid>]
 public sealed class CreateTaskWithIdCommandHandler : IRequestHandler<CreateTaskWithIdCommand, Guid>
@@ -42,7 +42,8 @@ public sealed class CreateTaskWithIdCommandHandler : IRequestHandler<CreateTaskW
         _repository = repository;
     }
 
-    public ValueTask<Result<Guid>> HandleAsync(CreateTaskWithIdCommand request, CancellationToken cancellationToken = default)
+    public ValueTask<Result<Guid>> HandleAsync(CreateTaskWithIdCommand request,
+        CancellationToken cancellationToken = default)
     {
         // Create and return the task ID
         var task = _repository.Create(request.Title, request.Description);
@@ -76,7 +77,7 @@ public sealed class CompleteTaskCommandHandler : IRequestHandler<CompleteTaskCom
 // ═══════════════════════════════════════════════════════════════
 
 /// <summary>
-/// Handler for queries - read-only operations
+///     Handler for queries - read-only operations
 /// </summary>
 [RequestHandler<GetTaskQuery, TaskDto>]
 public sealed class GetTaskQueryHandler : IRequestHandler<GetTaskQuery, TaskDto>
@@ -118,7 +119,8 @@ public sealed class ListTasksQueryHandler : IRequestHandler<ListTasksQuery, List
         _repository = repository;
     }
 
-    public ValueTask<Result<List<TaskDto>>> HandleAsync(ListTasksQuery request, CancellationToken cancellationToken = default)
+    public ValueTask<Result<List<TaskDto>>> HandleAsync(ListTasksQuery request,
+        CancellationToken cancellationToken = default)
     {
         var tasks = _repository.GetAll()
             .Select(t => new TaskDto

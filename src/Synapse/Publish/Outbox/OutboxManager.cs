@@ -92,7 +92,6 @@ internal sealed class OutboxManager : IOutboxManager
 
         try
         {
-
             _logger.LogDebug("Dispatching event {EventType} from outbox", eventType);
 
             // Use the registered dispatcher delegate to maintain type information

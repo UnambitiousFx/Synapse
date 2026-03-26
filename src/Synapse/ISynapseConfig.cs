@@ -259,7 +259,8 @@ public interface ISynapseConfig
     ///     The type of the response returned by the handler.
     /// </typeparam>
     /// <param name="condition">
-    ///     A predicate that determines whether the handler should be registered. Evaluated when building the service collection.
+    ///     A predicate that determines whether the handler should be registered. Evaluated when building the service
+    ///     collection.
     /// </param>
     /// <remarks>
     ///     Useful for registering handlers based on environment variables, feature flags, or configuration values.
@@ -281,7 +282,8 @@ public interface ISynapseConfig
     ///     The type of the request being handled.
     /// </typeparam>
     /// <param name="condition">
-    ///     A predicate that determines whether the handler should be registered. Evaluated when building the service collection.
+    ///     A predicate that determines whether the handler should be registered. Evaluated when building the service
+    ///     collection.
     /// </param>
     /// <remarks>
     ///     Useful for registering handlers based on environment variables, feature flags, or configuration values.
@@ -302,7 +304,8 @@ public interface ISynapseConfig
     ///     The type of the event that the handler processes.
     /// </typeparam>
     /// <param name="condition">
-    ///     A predicate that determines whether the handler should be registered. Evaluated when building the service collection.
+    ///     A predicate that determines whether the handler should be registered. Evaluated when building the service
+    ///     collection.
     /// </param>
     /// <remarks>
     ///     Useful for registering handlers based on environment variables, feature flags, or configuration values.
@@ -399,7 +402,7 @@ public interface ISynapseConfig
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         TContextFactory>()
         where TContextFactory : class, IContextFactory;
-    
+
     /// <summary>
     ///     Registers event dispatcher delegates using a generated registration class.
     ///     This is typically used with source-generated IEventDispatcherRegistration implementations

@@ -56,8 +56,8 @@ public sealed class DependencyInjectionExtensionsTests
         var services = new ServiceCollection()
             .AddSynapse(cfg =>
             {
-                cfg.RegisterRequestHandlerWhen<RequestWithResponseExampleHandler, RequestWithResponseExample, int>(
-                    () => true);
+                cfg.RegisterRequestHandlerWhen<RequestWithResponseExampleHandler, RequestWithResponseExample,
+                    int>(() => true);
             })
             .AddLogging()
             .BuildServiceProvider();
@@ -80,8 +80,8 @@ public sealed class DependencyInjectionExtensionsTests
         var services = new ServiceCollection()
             .AddSynapse(cfg =>
             {
-                cfg.RegisterRequestHandlerWhen<RequestWithResponseExampleHandler, RequestWithResponseExample, int>(
-                    () => false);
+                cfg.RegisterRequestHandlerWhen<RequestWithResponseExampleHandler, RequestWithResponseExample,
+                    int>(() => false);
             })
             .AddLogging()
             .BuildServiceProvider();
@@ -98,10 +98,7 @@ public sealed class DependencyInjectionExtensionsTests
     {
         // Arrange
         var services = new ServiceCollection()
-            .AddSynapse(cfg =>
-            {
-                cfg.RegisterEventHandlerWhen<EventExampleHandler1, EventExample>(() => true);
-            })
+            .AddSynapse(cfg => { cfg.RegisterEventHandlerWhen<EventExampleHandler1, EventExample>(() => true); })
             .AddLogging()
             .BuildServiceProvider();
 
@@ -117,10 +114,7 @@ public sealed class DependencyInjectionExtensionsTests
     {
         // Arrange
         var services = new ServiceCollection()
-            .AddSynapse(cfg =>
-            {
-                cfg.RegisterEventHandlerWhen<EventExampleHandler1, EventExample>(() => false);
-            })
+            .AddSynapse(cfg => { cfg.RegisterEventHandlerWhen<EventExampleHandler1, EventExample>(() => false); })
             .AddLogging()
             .BuildServiceProvider();
 
@@ -140,8 +134,8 @@ public sealed class DependencyInjectionExtensionsTests
         var services = new ServiceCollection()
             .AddSynapse(cfg =>
             {
-                cfg.RegisterRequestHandlerWhen<RequestWithResponseExampleHandler, RequestWithResponseExample, int>(
-                    () => Environment.GetEnvironmentVariable("FEATURE_EXPERIMENTAL_HANDLER") == "true");
+                cfg.RegisterRequestHandlerWhen<RequestWithResponseExampleHandler, RequestWithResponseExample,
+                    int>(() => Environment.GetEnvironmentVariable("FEATURE_EXPERIMENTAL_HANDLER") == "true");
             })
             .AddLogging()
             .BuildServiceProvider();

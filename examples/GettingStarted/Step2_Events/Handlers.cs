@@ -9,7 +9,7 @@ namespace UnambitiousFx.Examples.GettingStarted.Step2_Events;
 // ═══════════════════════════════════════════════════════════════
 
 /// <summary>
-/// First handler - sends notification
+///     First handler - sends notification
 /// </summary>
 [EventHandler<TaskCompletedEvent>]
 public sealed class SendNotificationHandler : IEventHandler<TaskCompletedEvent>
@@ -29,7 +29,7 @@ public sealed class SendNotificationHandler : IEventHandler<TaskCompletedEvent>
 }
 
 /// <summary>
-/// Second handler - updates analytics
+///     Second handler - updates analytics
 /// </summary>
 [EventHandler<TaskCompletedEvent>]
 public sealed class UpdateAnalyticsHandler : IEventHandler<TaskCompletedEvent>
@@ -49,7 +49,7 @@ public sealed class UpdateAnalyticsHandler : IEventHandler<TaskCompletedEvent>
 }
 
 /// <summary>
-/// Third handler - archives the task
+///     Third handler - archives the task
 /// </summary>
 [EventHandler<TaskCompletedEvent>]
 public sealed class ArchiveTaskHandler : IEventHandler<TaskCompletedEvent>

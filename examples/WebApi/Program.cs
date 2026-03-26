@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Mvc;
-using UnambitiousFx.Examples.WebApi;
 using UnambitiousFx.Examples.WebApi.Features.Tasks;
 using UnambitiousFx.Examples.WebApi.Features.Tasks.Handlers;
 using UnambitiousFx.Examples.WebApi.Infrastructure;
@@ -59,96 +58,96 @@ var tasks = app.MapGroup("/tasks").WithTags("Tasks");
 
 // GET /tasks - List all tasks
 tasks.MapGet("/", async (
-    [FromServices] IInvoker invoker,
-    CancellationToken cancellationToken) =>
-{
-    var query = new ListTasksQuery();
-    return await invoker.InvokeAsync<ListTasksQuery, List<TaskDto>>(query, cancellationToken)
-        .ToHttpResultAsync();
-})
-.WithName("ListTasks")
-.WithSummary("List all tasks");
+        [FromServices] IInvoker invoker,
+        CancellationToken cancellationToken) =>
+    {
+        var query = new ListTasksQuery();
+        return await invoker.InvokeAsync<ListTasksQuery, List<TaskDto>>(query, cancellationToken)
+            .ToHttpResultAsync();
+    })
+    .WithName("ListTasks")
+    .WithSummary("List all tasks");
 
 // GET /tasks/{id} - Get task by ID
 tasks.MapGet("/{id:guid}", async (
-    [FromRoute] Guid id,
-    [FromServices] IInvoker invoker,
-    CancellationToken cancellationToken) =>
-{
-    var query = new GetTaskQuery { TaskId = id };
-    return await invoker.InvokeAsync<GetTaskQuery, TaskDto>(query, cancellationToken)
-        .ToHttpResultAsync();
-})
-.WithName("GetTask")
-.WithSummary("Get a task by ID");
+        [FromRoute] Guid id,
+        [FromServices] IInvoker invoker,
+        CancellationToken cancellationToken) =>
+    {
+        var query = new GetTaskQuery { TaskId = id };
+        return await invoker.InvokeAsync<GetTaskQuery, TaskDto>(query, cancellationToken)
+            .ToHttpResultAsync();
+    })
+    .WithName("GetTask")
+    .WithSummary("Get a task by ID");
 
 // POST /tasks - Create a new task
 tasks.MapPost("/", async (
-    [FromBody] CreateTaskRequest request,
-    [FromServices] IInvoker invoker,
-    CancellationToken cancellationToken) =>
-{
-    var command = new CreateTaskCommand
+        [FromBody] CreateTaskRequest request,
+        [FromServices] IInvoker invoker,
+        CancellationToken cancellationToken) =>
     {
-        Title = request.Title,
-        Description = request.Description
-    };
+        var command = new CreateTaskCommand
+        {
+            Title = request.Title,
+            Description = request.Description
+        };
 
-    return await invoker.InvokeAsync<CreateTaskCommand, Guid>(command, cancellationToken)
-        .ToCreatedHttpResultAsync(
-            taskId => $"/tasks/{taskId}",
-            taskId => new { taskId });
-})
-.WithName("CreateTask")
-.WithSummary("Create a new task");
+        return await invoker.InvokeAsync<CreateTaskCommand, Guid>(command, cancellationToken)
+            .ToCreatedHttpResultAsync(
+                taskId => $"/tasks/{taskId}",
+                taskId => new { taskId });
+    })
+    .WithName("CreateTask")
+    .WithSummary("Create a new task");
 
 // PUT /tasks/{id} - Update a task
 tasks.MapPut("/{id:guid}", async (
-    [FromRoute] Guid id,
-    [FromBody] UpdateTaskRequest request,
-    [FromServices] IInvoker invoker,
-    CancellationToken cancellationToken) =>
-{
-    var command = new UpdateTaskCommand
+        [FromRoute] Guid id,
+        [FromBody] UpdateTaskRequest request,
+        [FromServices] IInvoker invoker,
+        CancellationToken cancellationToken) =>
     {
-        TaskId = id,
-        Title = request.Title,
-        Description = request.Description
-    };
+        var command = new UpdateTaskCommand
+        {
+            TaskId = id,
+            Title = request.Title,
+            Description = request.Description
+        };
 
-    return await invoker.InvokeAsync(command, cancellationToken)
-        .ToHttpResultAsync();
-})
-.WithName("UpdateTask")
-.WithSummary("Update a task");
+        return await invoker.InvokeAsync(command, cancellationToken)
+            .ToHttpResultAsync();
+    })
+    .WithName("UpdateTask")
+    .WithSummary("Update a task");
 
 // POST /tasks/{id}/complete - Complete a task
 tasks.MapPost("/{id:guid}/complete", async (
-    [FromRoute] Guid id,
-    [FromServices] IInvoker invoker,
-    CancellationToken cancellationToken) =>
-{
-    var command = new CompleteTaskCommand { TaskId = id };
+        [FromRoute] Guid id,
+        [FromServices] IInvoker invoker,
+        CancellationToken cancellationToken) =>
+    {
+        var command = new CompleteTaskCommand { TaskId = id };
 
-    return await invoker.InvokeAsync(command, cancellationToken)
-        .ToHttpResultAsync(() => new { message = "Task completed successfully" });
-})
-.WithName("CompleteTask")
-.WithSummary("Mark a task as complete");
+        return await invoker.InvokeAsync(command, cancellationToken)
+            .ToHttpResultAsync(() => new { message = "Task completed successfully" });
+    })
+    .WithName("CompleteTask")
+    .WithSummary("Mark a task as complete");
 
 // DELETE /tasks/{id} - Delete a task
 tasks.MapDelete("/{id:guid}", async (
-    [FromRoute] Guid id,
-    [FromServices] IInvoker invoker,
-    CancellationToken cancellationToken) =>
-{
-    var command = new DeleteTaskCommand { TaskId = id };
+        [FromRoute] Guid id,
+        [FromServices] IInvoker invoker,
+        CancellationToken cancellationToken) =>
+    {
+        var command = new DeleteTaskCommand { TaskId = id };
 
-    return await invoker.InvokeAsync(command, cancellationToken)
-        .ToHttpResultAsync();
-})
-.WithName("DeleteTask")
-.WithSummary("Delete a task");
+        return await invoker.InvokeAsync(command, cancellationToken)
+            .ToHttpResultAsync();
+    })
+    .WithName("DeleteTask")
+    .WithSummary("Delete a task");
 
 app.Run();
 
@@ -157,10 +156,11 @@ app.Run();
 // ═══════════════════════════════════════════════════════════════
 
 public record CreateTaskRequest(string Title, string Description);
+
 public record UpdateTaskRequest(string Title, string Description);
 
 // Make Program partial for testing
 namespace UnambitiousFx.Examples.WebApi
 {
-    public partial class Program;
+    public class Program;
 }

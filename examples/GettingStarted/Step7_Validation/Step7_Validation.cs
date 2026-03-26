@@ -1,5 +1,3 @@
-using Microsoft.Extensions.DependencyInjection;
-
 namespace UnambitiousFx.Examples.GettingStarted.Step7_Validation;
 
 public static class Step7_Validation

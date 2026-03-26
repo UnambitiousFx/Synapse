@@ -1,17 +1,17 @@
 <Project>
-  <PropertyGroup>
-    <Authors>Oleexo</Authors>
-    <Product>UnambitiousFx</Product>
-    <RootNamespace>$(Product).$(MSBuildProjectName)</RootNamespace>
-    <AssemblyName>$(Product).$(MSBuildProjectName)</AssemblyName>
-    <WarningsAsErrors>true</WarningsAsErrors>
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <LangVersion>latest</LangVersion>
-    <Copyright>Copyright 2025 (c) Maxime Charles. All rights reserved.</Copyright>
-    <LibraryTargetFrameworks>net8.0;net9.0;net10.0</LibraryTargetFrameworks>
-  </PropertyGroup>
+    <PropertyGroup>
+        <Authors>Oleexo</Authors>
+        <Product>UnambitiousFx</Product>
+        <RootNamespace>$(Product).$(MSBuildProjectName)</RootNamespace>
+        <AssemblyName>$(Product).$(MSBuildProjectName)</AssemblyName>
+        <WarningsAsErrors>true</WarningsAsErrors>
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <LangVersion>latest</LangVersion>
+        <Copyright>Copyright 2025 (c) Maxime Charles. All rights reserved.</Copyright>
+        <LibraryTargetFrameworks>net8.0;net9.0;net10.0</LibraryTargetFrameworks>
+    </PropertyGroup>
 
 
 </Project>
