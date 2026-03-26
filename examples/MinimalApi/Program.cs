@@ -3,7 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using UnambitiousFx.Examples.WebApi.Features.Tasks;
 using UnambitiousFx.Examples.WebApi.Features.Tasks.Handlers;
 using UnambitiousFx.Examples.WebApi.Infrastructure;
-using UnambitiousFx.Functional.AspNetCore.Http.ValueTasks;
+using UnambitiousFx.Functional.AspNetCore.Http;
 using UnambitiousFx.Synapse;
 using UnambitiousFx.Synapse.Abstractions;
 using UnambitiousFx.Synapse.Pipelines;
@@ -72,7 +72,7 @@ tasks.MapGet("/", async (
 {
     var query = new ListTasksQuery();
     return await invoker.InvokeAsync<ListTasksQuery, List<TaskDto>>(query, cancellationToken)
-        .ToHttpResultAsync();
+        .ToHttpResult();
 });
 
 // GET /tasks/{id} - Get task by ID
@@ -83,7 +83,7 @@ tasks.MapGet("/{id:guid}", async (
 {
     var query = new GetTaskQuery { TaskId = id };
     return await invoker.InvokeAsync<GetTaskQuery, TaskDto>(query, cancellationToken)
-        .ToHttpResultAsync();
+        .ToHttpResult();
 });
 
 // POST /tasks - Create a new task
@@ -99,7 +99,7 @@ tasks.MapPost("/", async (
     };
 
     return await invoker.InvokeAsync<CreateTaskCommand, Guid>(command, cancellationToken)
-        .ToCreatedHttpResultAsync(
+        .ToCreatedHttpResult(
             taskId => $"/tasks/{taskId}",
             taskId => new { taskId });
 });
@@ -119,7 +119,7 @@ tasks.MapPut("/{id:guid}", async (
     };
 
     return await invoker.InvokeAsync(command, cancellationToken)
-        .ToHttpResultAsync();
+        .ToHttpResult();
 });
 
 // POST /tasks/{id}/complete - Complete a task
@@ -131,7 +131,7 @@ tasks.MapPost("/{id:guid}/complete", async (
     var command = new CompleteTaskCommand { TaskId = id };
 
     return await invoker.InvokeAsync(command, cancellationToken)
-        .ToHttpResultAsync(() => new { message = "Task completed successfully" });
+        .ToHttpResult(() => new { message = "Task completed successfully" });
 });
 
 // DELETE /tasks/{id} - Delete a task
@@ -143,7 +143,7 @@ tasks.MapDelete("/{id:guid}", async (
     var command = new DeleteTaskCommand { TaskId = id };
 
     return await invoker.InvokeAsync(command, cancellationToken)
-        .ToHttpResultAsync();
+        .ToHttpResult();
 });
 
 app.Run();

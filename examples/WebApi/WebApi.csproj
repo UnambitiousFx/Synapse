@@ -5,7 +5,7 @@
         <ProjectReference Include="..\..\src\Synapse\Synapse.csproj"/>
     </ItemGroup>
     <ItemGroup>
-        <PackageReference Include="UnambitiousFx.Functional.AspNetCore" Version="1.0.6"/>
+        <PackageReference Include="UnambitiousFx.Functional.AspNetCore" Version="2.0.0-draft.20260326201753.9afd2f2" />
     </ItemGroup>
     <ItemGroup>
         <InternalsVisibleTo Include="WebApi.Tests"/>

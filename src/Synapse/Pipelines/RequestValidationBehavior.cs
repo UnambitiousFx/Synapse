@@ -1,5 +1,4 @@
 using UnambitiousFx.Functional;
-using UnambitiousFx.Functional.ValueTasks;
 using UnambitiousFx.Synapse.Abstractions;
 
 namespace UnambitiousFx.Synapse.Pipelines;
@@ -44,7 +43,7 @@ public class RequestValidationBehavior<TRequest, TResponse> : IRequestPipelineBe
         CancellationToken cancellationToken)
     {
         var result = await _validators.Select(x => x.ValidateAsync(request, cancellationToken))
-            .CombineAsync();
+            .Combine();
 
         return await result.Match(() => next(),
             error =>

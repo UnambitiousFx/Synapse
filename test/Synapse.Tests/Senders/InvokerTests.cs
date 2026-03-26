@@ -35,7 +35,7 @@ public sealed class InvokerTests
 
         // Assert
         Assert.True(result.IsSuccess);
-        if (result.TryGet(out int value))
+        if (result.TryGet(out int value, out _))
             Assert.Equal(42, value);
         else
             Assert.Fail("Result should be successful but was marked as failed");

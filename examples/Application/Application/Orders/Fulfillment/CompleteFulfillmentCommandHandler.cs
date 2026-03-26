@@ -2,7 +2,7 @@ using Microsoft.Extensions.Logging;
 using UnambitiousFx.Examples.Application.Domain.Events;
 using UnambitiousFx.Examples.Application.Infrastructure.Services;
 using UnambitiousFx.Functional;
-using UnambitiousFx.Functional.Errors;
+using UnambitiousFx.Functional.Failures;
 using UnambitiousFx.Synapse.Abstractions;
 
 namespace UnambitiousFx.Examples.Application.Application.Orders.Fulfillment;
@@ -30,13 +30,13 @@ public sealed class CompleteFulfillmentCommandHandler : IRequestHandler<Complete
     {
         var fulfillment = _fulfillmentService.GetFulfillment(request.FulfillmentId);
         if (fulfillment == null)
-            return Result.Failure(new NotFoundError(nameof(FulfillmentInfo), request.FulfillmentId.ToString()));
+            return Result.Failure(new NotFoundFailure(nameof(FulfillmentInfo), request.FulfillmentId.ToString()));
 
         if (fulfillment.Status == "Completed")
-            return Result.Failure(new ValidationError([$"Fulfillment {request.FulfillmentId} is already completed"]));
+            return Result.Failure(new ValidationFailure([$"Fulfillment {request.FulfillmentId} is already completed"]));
 
         if (fulfillment.Status == "Cancelled")
-            return Result.Failure(new ValidationError([$"Fulfillment {request.FulfillmentId} is cancelled"]));
+            return Result.Failure(new ValidationFailure([$"Fulfillment {request.FulfillmentId} is cancelled"]));
 
         _fulfillmentService.CompleteFulfillment(request.FulfillmentId);
 

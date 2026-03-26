@@ -143,7 +143,7 @@ public class MediatorVsMediatRBenchmarks
     public async Task<int> Our_Send_Response()
     {
         var res = await _ourInvokerBase.InvokeAsync<RequestWithResponse, int>(RrRequest);
-        return res.TryGet(out int v)
+        return res.TryGet(out int v, out _)
             ? v!
             : -1;
     }
@@ -153,7 +153,7 @@ public class MediatorVsMediatRBenchmarks
     {
         var handler = _ourBaseSp.GetRequiredService<RequestWithResponseHandler>();
         var res = await handler.HandleAsync(RrRequest, CancellationToken.None);
-        return res.TryGet(out int v)
+        return res.TryGet(out int v, out _)
             ? v!
             : -1;
     }
@@ -206,7 +206,7 @@ public class MediatorVsMediatRBenchmarks
     {
         var sender = _our1BehSp.GetRequiredService<IInvoker>();
         var res = await sender.InvokeAsync<RequestWithResponse, int>(RrRequest);
-        return res.TryGet(out int v)
+        return res.TryGet(out int v, out _)
             ? v!
             : -1;
     }
@@ -223,7 +223,7 @@ public class MediatorVsMediatRBenchmarks
     {
         var sender = _our3BehSp.GetRequiredService<IInvoker>();
         var res = await sender.InvokeAsync<RequestWithResponse, int>(RrRequest);
-        return res.TryGet(out int v)
+        return res.TryGet(out int v, out _)
             ? v!
             : -1;
     }

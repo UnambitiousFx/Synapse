@@ -13,5 +13,7 @@
         <LibraryTargetFrameworks>net8.0;net9.0;net10.0</LibraryTargetFrameworks>
     </PropertyGroup>
 
-
+    <PropertyGroup>
+        <NoWarn>$(NoWarn);NU5104</NoWarn>
+    </PropertyGroup>
 </Project>

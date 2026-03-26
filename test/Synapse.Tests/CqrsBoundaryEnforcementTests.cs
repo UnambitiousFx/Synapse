@@ -140,7 +140,7 @@ public sealed class CqrsBoundaryEnforcementTests
         // Act & Assert - Should not throw
         var result = await sender.InvokeAsync<FirstRequestWithResponse, int>(new FirstRequestWithResponse());
         Assert.True(result.IsSuccess);
-        if (result.TryGet(out int value))
+        if (result.TryGet(out int value, out _))
             Assert.Equal(42, value);
         else
             Assert.Fail("Result should be successful");
