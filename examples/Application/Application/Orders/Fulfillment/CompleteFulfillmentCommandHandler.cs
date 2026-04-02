@@ -30,13 +30,19 @@ public sealed class CompleteFulfillmentCommandHandler : IRequestHandler<Complete
     {
         var fulfillment = _fulfillmentService.GetFulfillment(request.FulfillmentId);
         if (fulfillment == null)
+        {
             return Result.Failure(new NotFoundFailure(nameof(FulfillmentInfo), request.FulfillmentId.ToString()));
+        }
 
         if (fulfillment.Status == "Completed")
+        {
             return Result.Failure(new ValidationFailure([$"Fulfillment {request.FulfillmentId} is already completed"]));
+        }
 
         if (fulfillment.Status == "Cancelled")
+        {
             return Result.Failure(new ValidationFailure([$"Fulfillment {request.FulfillmentId} is cancelled"]));
+        }
 
         _fulfillmentService.CompleteFulfillment(request.FulfillmentId);
 

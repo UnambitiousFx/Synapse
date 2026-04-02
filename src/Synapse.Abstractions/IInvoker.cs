@@ -7,12 +7,13 @@ namespace UnambitiousFx.Synapse.Abstractions;
 /// </summary>
 public interface IInvoker
 {
-    /// Sends a request to the appropriate handler and returns the result.
-    /// <typeparam name="TRequest">
-    ///     The type of the request message. Must implement <see cref="IRequest{TResponse}" />.
-    /// </typeparam>
+    /// <summary>
+    ///     Sends a request to the appropriate handler and returns the result.
+    ///     The response type is inferred by the compiler from the request's <see cref="IRequest{TResponse}" />
+    ///     implementation, so no explicit type arguments are required at the call site.
+    /// </summary>
     /// <typeparam name="TResponse">
-    ///     The type of the response message. The response must be a non-nullable type.
+    ///     The type of the response. Inferred from the request argument. Must be a non-nullable type.
     /// </typeparam>
     /// <param name="request">
     ///     The request object to be sent. This parameter cannot be null.
@@ -21,15 +22,16 @@ public interface IInvoker
     ///     A cancellation token that can be used to cancel the operation. Defaults to <see cref="CancellationToken.None" />.
     /// </param>
     /// <returns>
-    ///     A task representing the asynchronous operation. The task result contains a <see cref="Result" />
+    ///     A task representing the asynchronous operation. The task result contains a <see cref="Result{TValue}" />
     ///     holding the response of type <typeparamref name="TResponse" />.
     /// </returns>
-    ValueTask<Result<TResponse>> InvokeAsync<TRequest, TResponse>(TRequest request,
+    ValueTask<Result<TResponse>> InvokeAsync<TResponse>(IRequest<TResponse> request,
         CancellationToken cancellationToken = default)
-        where TResponse : notnull
-        where TRequest : IRequest<TResponse>;
+        where TResponse : notnull;
 
-    /// Sends a request asynchronously and returns a result.
+    /// <summary>
+    ///     Sends a void request asynchronously and returns a result.
+    /// </summary>
     /// <typeparam name="TRequest">The type of the request object. It must implement the <see cref="IRequest" /> interface.</typeparam>
     /// <param name="request">The request object to be processed.</param>
     /// <param name="cancellationToken">An optional cancellation token to cancel the operation.</param>
@@ -38,12 +40,13 @@ public interface IInvoker
         CancellationToken cancellationToken = default)
         where TRequest : IRequest;
 
-    /// Sends a streaming request and returns an async enumerable of results.
-    /// <typeparam name="TRequest">
-    ///     The type of the streaming request message. Must implement <see cref="IStreamRequest{TItem}" />.
-    /// </typeparam>
+    /// <summary>
+    ///     Sends a streaming request and returns an async enumerable of results.
+    ///     The item type is inferred by the compiler from the request's <see cref="IStreamRequest{TResponse}" />
+    ///     implementation.
+    /// </summary>
     /// <typeparam name="TItem">
-    ///     The type of items in the stream. The item type must be a non-nullable type.
+    ///     The type of items in the stream. Inferred from the request argument. Must be a non-nullable type.
     /// </typeparam>
     /// <param name="request">
     ///     The streaming request object to be sent. This parameter cannot be null.
@@ -56,8 +59,7 @@ public interface IInvoker
     ///     An asynchronous enumerable sequence of <see cref="Result{TValue}" /> objects,
     ///     where each result holds an item of type <typeparamref name="TItem" /> or an error.
     /// </returns>
-    IAsyncEnumerable<Result<TItem>> InvokeStreamAsync<TRequest, TItem>(TRequest request,
+    IAsyncEnumerable<Result<TItem>> InvokeStreamAsync<TItem>(IStreamRequest<TItem> request,
         CancellationToken cancellationToken = default)
-        where TRequest : IStreamRequest<TItem>
         where TItem : notnull;
 }

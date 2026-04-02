@@ -1,6 +1,6 @@
 using UnambitiousFx.Synapse.Abstractions;
 
-namespace UnambitiousFx.Examples.WebApi.Features.Tasks;
+namespace UnambitiousFx.Examples.MinimalApi.Features.Tasks;
 
 // ═══════════════════════════════════════════════════════════════
 // Events - Domain events that represent something that happened

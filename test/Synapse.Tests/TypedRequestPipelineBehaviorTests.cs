@@ -37,7 +37,7 @@ public sealed class TypedRequestPipelineBehaviorTests
         var behavior = provider.GetRequiredService<OnlyTypedSampleRequestBehavior>();
         var sender = provider.GetRequiredService<IInvoker>();
 
-        await sender.InvokeAsync<TypedSampleRequestWithResponse, int>(new TypedSampleRequestWithResponse(42));
+        await sender.InvokeAsync(new TypedSampleRequestWithResponse(42));
         Assert.Equal(0, behavior.ExecutionCount);
     }
 
@@ -56,8 +56,8 @@ public sealed class TypedRequestPipelineBehaviorTests
         var sender = provider.GetRequiredService<IInvoker>();
 
         var result =
-            await sender.InvokeAsync<TypedSampleRequestWithResponse, int>(new TypedSampleRequestWithResponse(42));
-        Assert.True(result.TryGet(out int value, out _));
+            await sender.InvokeAsync(new TypedSampleRequestWithResponse(42));
+        Assert.True(result.TryGet(out var value, out _));
         Assert.Equal(42, value);
         Assert.Equal(1, behavior.ExecutionCount);
     }

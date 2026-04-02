@@ -1,8 +1,8 @@
-using UnambitiousFx.Examples.WebApi.Infrastructure;
+using UnambitiousFx.Examples.MinimalApi.Infrastructure;
 using UnambitiousFx.Functional;
 using UnambitiousFx.Synapse.Abstractions;
 
-namespace UnambitiousFx.Examples.WebApi.Features.Tasks.Handlers;
+namespace UnambitiousFx.Examples.MinimalApi.Features.Tasks.Handlers;
 
 // ═══════════════════════════════════════════════════════════════
 // Command Handlers
@@ -98,7 +98,9 @@ public sealed class CompleteTaskCommandHandler : IRequestHandler<CompleteTaskCom
 
         var task = _repository.GetById(request.TaskId);
         if (task == null)
+        {
             return Result.Failure($"Task {request.TaskId} not found");
+        }
 
         _repository.Complete(request.TaskId);
 
@@ -140,7 +142,9 @@ public sealed class DeleteTaskCommandHandler : IRequestHandler<DeleteTaskCommand
         var success = _repository.Delete(request.TaskId);
 
         if (!success)
+        {
             return Result.Failure($"Task {request.TaskId} not found");
+        }
 
         // Publish event
         await _emitter.EmitAsync(new TaskDeletedEvent

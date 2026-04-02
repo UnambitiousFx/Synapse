@@ -15,7 +15,10 @@ public sealed class StreamPipelineBehaviorTests
 
         async IAsyncEnumerable<Result<int>> Handler()
         {
-            for (var i = 0; i < 10; i++) yield return Result.Success(i);
+            for (var i = 0; i < 10; i++)
+            {
+                yield return Result.Success(i);
+            }
 
             await Task.CompletedTask;
         }
@@ -24,7 +27,9 @@ public sealed class StreamPipelineBehaviorTests
         await foreach (var result in behavior.HandleAsync(
                            new TestStreamRequest { Count = 10 },
                            Handler))
+        {
             items.Add(result.Match(v => v, _ => -1));
+        }
 
         // Assert
         Assert.Equal(10, behavior.ItemsProcessed);
@@ -41,10 +46,16 @@ public sealed class StreamPipelineBehaviorTests
         async IAsyncEnumerable<Result<int>> Handler()
         {
             for (var i = 0; i < 10; i++)
+            {
                 if (i % 2 == 0)
+                {
                     yield return Result.Failure<int>($"Error at {i}");
+                }
                 else
+                {
                     yield return Result.Success(i);
+                }
+            }
 
             await Task.CompletedTask;
         }
@@ -53,7 +64,9 @@ public sealed class StreamPipelineBehaviorTests
         await foreach (var result in behavior.HandleAsync(
                            new TestStreamRequest { Count = 10 },
                            Handler))
+        {
             items.Add(result.Match(v => v, _ => -1));
+        }
 
         // Assert
         Assert.Equal(5, items.Count); // Only successful items (odd numbers)
@@ -71,10 +84,16 @@ public sealed class StreamPipelineBehaviorTests
         async IAsyncEnumerable<Result<int>> Handler()
         {
             for (var i = 0; i < 10; i++)
+            {
                 if (i % 3 == 0)
+                {
                     yield return Result.Failure<int>($"Error at {i}");
+                }
                 else
+                {
                     yield return Result.Success(i);
+                }
+            }
 
             await Task.CompletedTask;
         }
@@ -85,7 +104,9 @@ public sealed class StreamPipelineBehaviorTests
                            () => filteringBehavior.HandleAsync(
                                new TestStreamRequest { Count = 10 },
                                Handler)))
+        {
             items.Add(result.Match(v => v, _ => -1));
+        }
 
         // Assert
         // Counting behavior sees filtered items (6 items: 1, 2, 4, 5, 7, 8 - all except 0, 3, 6, 9)
@@ -127,8 +148,12 @@ public sealed class StreamPipelineBehaviorTests
         {
             await foreach (var item in next())
                 // Only yield successful items
+            {
                 if (item.IsSuccess)
+                {
                     yield return item;
+                }
+            }
         }
     }
 }

@@ -15,7 +15,9 @@ internal static class CompilationExtensions
         if (rootNamespaceAttribute != null &&
             rootNamespaceAttribute.ConstructorArguments.Length > 0 &&
             rootNamespaceAttribute.ConstructorArguments[0].Value is string rootNamespace)
+        {
             return rootNamespace;
+        }
 
         // Alternative: try the assembly name as fallback.
         return compilation.AssemblyName ?? string.Empty;

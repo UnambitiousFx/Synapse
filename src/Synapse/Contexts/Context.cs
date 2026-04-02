@@ -40,7 +40,7 @@ internal readonly record struct Context : IContext
         _features = features is not null ? Merge(features, context._features) : context._features;
     }
 
-    public Guid CorrelationId { get; }
+    public Guid CorrelationId { get; private init; }
 
     public void SetMetadata(string key,
         object value)
@@ -71,7 +71,9 @@ internal readonly record struct Context : IContext
     {
         if (_metadata.TryGetValue(key, out var obj) &&
             obj is T tValue)
+        {
             return tValue;
+        }
 
         return default;
     }
@@ -127,13 +129,20 @@ internal readonly record struct Context : IContext
         _features.Remove(typeof(TFeature));
     }
 
+    public IContext WithCorrelationId(Guid correlationId)
+    {
+        return this with { CorrelationId = correlationId };
+    }
+
     private static Dictionary<TKey, TValue> Merge<TKey, TValue>(params IReadOnlyDictionary<TKey, TValue>[] dictionaries)
         where TKey : notnull
     {
         var merged = new Dictionary<TKey, TValue>();
         foreach (var dictionary in dictionaries)
         foreach (var kvp in dictionary)
+        {
             merged[kvp.Key] = kvp.Value;
+        }
 
         return merged;
     }
@@ -141,21 +150,34 @@ internal readonly record struct Context : IContext
     private void CaptureTracingContext()
     {
         var activity = Activity.Current;
-        if (activity == null) return;
+        if (activity == null)
+        {
+            return;
+        }
 
         // Store trace and span IDs for distributed tracing correlation
         if (!string.IsNullOrEmpty(activity.TraceId.ToString()))
+        {
             SetMetadata("Tracing.TraceId", activity.TraceId.ToString());
+        }
 
         if (!string.IsNullOrEmpty(activity.SpanId.ToString()))
+        {
             SetMetadata("Tracing.SpanId", activity.SpanId.ToString());
+        }
 
         if (!string.IsNullOrEmpty(activity.ParentSpanId.ToString()))
+        {
             SetMetadata("Tracing.ParentSpanId", activity.ParentSpanId.ToString());
+        }
 
         // Store baggage for cross-service correlation
         foreach (var baggage in activity.Baggage)
+        {
             if (baggage.Value != null)
+            {
                 SetMetadata($"Tracing.Baggage.{baggage.Key}", baggage.Value);
+            }
+        }
     }
 }

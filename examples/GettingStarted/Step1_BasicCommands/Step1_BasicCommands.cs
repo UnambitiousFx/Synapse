@@ -24,40 +24,56 @@ public static class Step1_BasicCommands
         var createResult = await invoker.InvokeAsync(createCommand);
 
         if (createResult.IsSuccess)
+        {
             Console.WriteLine("   ✓ Task created successfully\n");
+        }
         else
+        {
             Console.WriteLine($"   ✗ Failed: {createResult}\n");
+        }
 
         // Example 2: Command with response
         Console.WriteLine("2. Creating a task and getting its ID (command with response)...");
         var createWithIdCommand = new CreateTaskWithIdCommand
             { Title = "Build an app", Description = "Create a real application" };
-        var idResult = await invoker.InvokeAsync<CreateTaskWithIdCommand, Guid>(createWithIdCommand);
+        var idResult = await invoker.InvokeAsync(createWithIdCommand);
 
         if (idResult.TryGet(out var taskId, out var error))
+        {
             Console.WriteLine($"   ✓ Task created with ID: {taskId}\n");
+        }
         else
+        {
             Console.WriteLine($"   ✗ Failed: {error}\n");
+        }
 
         // Example 3: Query (read operation)
         Console.WriteLine("3. Querying a task by ID...");
         var query = new GetTaskQuery { TaskId = taskId };
-        var taskResult = await invoker.InvokeAsync<GetTaskQuery, TaskDto>(query);
+        var taskResult = await invoker.InvokeAsync(query);
 
         if (taskResult.TryGet(out var task, out var queryError))
+        {
             Console.WriteLine($"   ✓ Found task: '{task.Title}' (Status: {task.Status})\n");
+        }
         else
+        {
             Console.WriteLine($"   ✗ Failed: {queryError}\n");
+        }
 
         // Example 4: Query returning a list
         Console.WriteLine("4. Listing all tasks...");
         var listQuery = new ListTasksQuery();
-        var tasksResult = await invoker.InvokeAsync<ListTasksQuery, List<TaskDto>>(listQuery);
+        var tasksResult = await invoker.InvokeAsync(listQuery);
 
         if (tasksResult.TryGet(out var tasks, out var listError))
+        {
             Console.WriteLine($"   ✓ Found {tasks.Count} tasks\n");
+        }
         else
+        {
             Console.WriteLine($"   ✗ Failed: {listError}\n");
+        }
     }
 }
 

@@ -356,6 +356,29 @@ public interface ISynapseConfig
     ISynapseConfig EnableCqrsBoundaryEnforcement(bool enable = true);
 
     /// <summary>
+    ///     Registers a streaming request handler for the specified request and item types.
+    /// </summary>
+    /// <typeparam name="THandler">
+    ///     The type of the handler that processes the streaming request.
+    ///     Must implement <see cref="IStreamRequestHandler{TRequest, TItem}" />.
+    /// </typeparam>
+    /// <typeparam name="TRequest">
+    ///     The type of the streaming request. Must implement <see cref="IStreamRequest{TItem}" />.
+    /// </typeparam>
+    /// <typeparam name="TItem">
+    ///     The type of each item yielded by the stream. Must be a non-nullable type.
+    /// </typeparam>
+    /// <returns>
+    ///     The current instance of <see cref="ISynapseConfig" />, enabling method chaining for additional configuration.
+    /// </returns>
+    ISynapseConfig RegisterStreamRequestHandler<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+        THandler, TRequest, TItem>()
+        where TItem : notnull
+        where TRequest : IStreamRequest<TItem>
+        where THandler : class, IStreamRequestHandler<TRequest, TItem>;
+
+    /// <summary>
     ///     Adds a request validator to the mediator configuration.
     /// </summary>
     /// <typeparam name="TValidator">
@@ -372,6 +395,28 @@ public interface ISynapseConfig
         TValidator, TRequest>()
         where TValidator : class, IRequestValidator<TRequest>
         where TRequest : IRequest;
+
+    /// <summary>
+    ///     Adds a request validator to the mediator configuration for requests that return a typed response.
+    /// </summary>
+    /// <typeparam name="TValidator">
+    ///     The type of the validator, implementing <see cref="IRequestValidator{TRequest}" />.
+    /// </typeparam>
+    /// <typeparam name="TRequest">
+    ///     The type of the request that the validator applies to, implementing <see cref="IRequest{TResponse}" />.
+    /// </typeparam>
+    /// <typeparam name="TResponse">
+    ///     The type of the response produced by the request. Must be a non-nullable type.
+    /// </typeparam>
+    /// <returns>
+    ///     The current instance of <see cref="ISynapseConfig" />, allowing for fluent configuration.
+    /// </returns>
+    ISynapseConfig AddValidator<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+        TValidator, TRequest, TResponse>()
+        where TValidator : class, IRequestValidator<TRequest>
+        where TRequest : IRequest<TResponse>
+        where TResponse : notnull;
 
     /// <summary>
     ///     Configures the mediator to use the default context factory implementation.

@@ -93,8 +93,10 @@ public sealed class SynapseMetrics : ISynapseMetrics
             new KeyValuePair<string, object?>("success", success));
 
         if (!success)
+        {
             _dispatchFailures.Add(1,
                 new KeyValuePair<string, object?>("event.type", eventType));
+        }
     }
 
     /// <summary>
@@ -162,7 +164,10 @@ public sealed class SynapseMetrics : ISynapseMetrics
 
     private int ObserveOutboxQueueDepth()
     {
-        if (_eventOutboxStorage == null) return 0;
+        if (_eventOutboxStorage == null)
+        {
+            return 0;
+        }
 
         try
         {
@@ -178,7 +183,10 @@ public sealed class SynapseMetrics : ISynapseMetrics
 
     private double ObserveOutboxProcessingLag()
     {
-        if (_eventOutboxStorage == null) return 0;
+        if (_eventOutboxStorage == null)
+        {
+            return 0;
+        }
 
         try
         {
@@ -196,7 +204,10 @@ public sealed class SynapseMetrics : ISynapseMetrics
 
     private int ObserveOutboxFailedCount()
     {
-        if (_eventOutboxStorage == null) return 0;
+        if (_eventOutboxStorage == null)
+        {
+            return 0;
+        }
 
         try
         {

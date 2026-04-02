@@ -65,7 +65,9 @@ public sealed class CompleteTaskCommandHandler : IRequestHandler<CompleteTaskCom
     {
         var task = _repository.GetById(request.TaskId);
         if (task == null)
+        {
             return ValueTask.FromResult(Result.Failure("Task not found"));
+        }
 
         task.Complete();
         return ValueTask.FromResult(Result.Success());
@@ -93,7 +95,9 @@ public sealed class GetTaskQueryHandler : IRequestHandler<GetTaskQuery, TaskDto>
     {
         var task = _repository.GetById(request.TaskId);
         if (task == null)
+        {
             return ValueTask.FromResult(Result.Failure<TaskDto>("Task not found"));
+        }
 
         var dto = new TaskDto
         {

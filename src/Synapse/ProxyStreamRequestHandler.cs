@@ -25,7 +25,10 @@ internal sealed class ProxyStreamRequestHandler<TRequestHandler, TRequest, TItem
     public async IAsyncEnumerable<Result<TItem>> HandleAsync(TRequest request,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        await foreach (var item in ExecutePipelineAsync(request, 0, cancellationToken)) yield return item;
+        await foreach (var item in ExecutePipelineAsync(request, 0, cancellationToken))
+        {
+            yield return item;
+        }
     }
 
     private async IAsyncEnumerable<Result<TItem>> ExecutePipelineAsync(TRequest request,
@@ -34,14 +37,19 @@ internal sealed class ProxyStreamRequestHandler<TRequestHandler, TRequest, TItem
     {
         if (index >= _behaviors.Length)
         {
-            await foreach (var item in handler.HandleAsync(request, cancellationToken)) yield return item;
+            await foreach (var item in handler.HandleAsync(request, cancellationToken))
+            {
+                yield return item;
+            }
 
             yield break;
         }
 
         await foreach (var item in _behaviors[index]
                            .HandleAsync(request, Next, cancellationToken))
+        {
             yield return item;
+        }
 
         IAsyncEnumerable<Result<TItem>> Next()
         {

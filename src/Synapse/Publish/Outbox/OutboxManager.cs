@@ -65,13 +65,17 @@ internal sealed class OutboxManager : IOutboxManager
         var combinedResult = results.Combine();
 
         if (combinedResult.IsSuccess)
+        {
             _logger.LogInformation(
                 "Successfully processed {EventCount} pending events from outbox",
                 events.Count);
+        }
         else
+        {
             _logger.LogWarning(
                 "Completed processing {EventCount} pending events from outbox with failures: {Error}",
                 events.Count, combinedResult.ToString());
+        }
 
         return combinedResult;
     }

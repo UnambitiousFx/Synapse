@@ -24,17 +24,21 @@ public static class Step3_Streaming
         var query = new StreamTasksQuery { PageSize = 5 };
         var count = 0;
 
-        await foreach (var result in invoker.InvokeStreamAsync<StreamTasksQuery, TaskDto>(query))
+        await foreach (var result in invoker.InvokeStreamAsync(query))
+        {
             if (result.TryGet(out var task, out var error))
             {
                 count++;
                 if (count <= 3) // Only show first 3
+                {
                     Console.WriteLine($"  → Received task: {task.Title}");
+                }
             }
             else
             {
                 Console.WriteLine($"  ✗ Error: {error}");
             }
+        }
 
         Console.WriteLine($"✓ Streamed {count} tasks total\n");
     }
@@ -60,7 +64,9 @@ public sealed class StreamTasksQueryHandler : IStreamRequestHandler<StreamTasksQ
         for (var i = 0; i < 10; i++)
         {
             if (cancellationToken.IsCancellationRequested)
+            {
                 yield break;
+            }
 
             await Task.Delay(10, cancellationToken); // Simulate async I/O
 

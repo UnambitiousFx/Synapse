@@ -42,7 +42,10 @@ public sealed class StreamRequestTests
             items.Add(result.Match(v => v, _ => -1));
 
             // Cancel after 5 items
-            if (items.Count == 5) await cts.CancelAsync();
+            if (items.Count == 5)
+            {
+                await cts.CancelAsync();
+            }
         }
 
         // Assert
@@ -58,7 +61,10 @@ public sealed class StreamRequestTests
         var items = new List<int>();
 
         // Act
-        await foreach (var result in handler.HandleAsync(request)) items.Add(result.Match(v => v, _ => -1));
+        await foreach (var result in handler.HandleAsync(request))
+        {
+            items.Add(result.Match(v => v, _ => -1));
+        }
 
         // Assert
         Assert.Empty(items);
@@ -81,18 +87,28 @@ public sealed class StreamRequestTests
                 await Task.Delay(1, cancellationToken);
 
                 if (i % 2 == 0)
+                {
                     yield return Result.Failure<int>($"Error at {i}");
+                }
                 else
+                {
                     yield return Result.Success(i);
+                }
             }
         }
 
         // Act
         await foreach (var result in ErrorProducingHandler())
+        {
             if (result.IsSuccess)
+            {
                 itemCount++;
+            }
             else
+            {
                 errorCount++;
+            }
+        }
 
         // Assert
         Assert.Equal(5, itemCount);
@@ -113,7 +129,10 @@ public sealed class StreamRequestTests
         {
             for (var i = 0; i < request.Count; i++)
             {
-                if (cancellationToken.IsCancellationRequested) yield break;
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    yield break;
+                }
 
                 await Task.Delay(1, cancellationToken);
                 yield return Result.Success(i);

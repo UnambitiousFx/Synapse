@@ -149,4 +149,11 @@ public interface IContext
     /// <typeparam name="TFeature">The type of the feature to remove.</typeparam>
     void RemoveFeature<TFeature>()
         where TFeature : class, IContextFeature;
+
+    /// <summary>
+    ///     Returns a new context that is identical to this one but with the specified correlation ID.
+    /// </summary>
+    /// <param name="correlationId">The correlation ID for the new context.</param>
+    /// <returns>A new <see cref="IContext" /> with the given correlation ID.</returns>
+    IContext WithCorrelationId(Guid correlationId);
 }

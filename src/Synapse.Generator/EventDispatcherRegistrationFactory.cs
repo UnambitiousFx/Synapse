@@ -41,7 +41,10 @@ internal static class EventDispatcherRegistrationFactory
 
         foreach (var eventType in eventInfo.EventTypes)
         {
-            if (string.IsNullOrWhiteSpace(eventType)) continue;
+            if (string.IsNullOrWhiteSpace(eventType))
+            {
+                continue;
+            }
 
             var globalizedType = GlobalizeType(eventType);
 
@@ -80,7 +83,10 @@ internal static class EventDispatcherRegistrationFactory
         // Preserve event types
         foreach (var eventType in eventInfo.EventTypes)
         {
-            if (string.IsNullOrWhiteSpace(eventType)) continue;
+            if (string.IsNullOrWhiteSpace(eventType))
+            {
+                continue;
+            }
 
             var globalizedType = GlobalizeType(eventType);
             sb.AppendLine($"    [DynamicDependency(DynamicallyAccessedMemberTypes.All, typeof({globalizedType}))]");
@@ -89,7 +95,10 @@ internal static class EventDispatcherRegistrationFactory
         // Preserve handler types
         foreach (var handlerType in eventInfo.HandlerTypes)
         {
-            if (string.IsNullOrWhiteSpace(handlerType)) continue;
+            if (string.IsNullOrWhiteSpace(handlerType))
+            {
+                continue;
+            }
 
             var globalizedType = GlobalizeType(handlerType);
             sb.AppendLine($"    [DynamicDependency(DynamicallyAccessedMemberTypes.All, typeof({globalizedType}))]");
@@ -116,7 +125,10 @@ internal static class EventDispatcherRegistrationFactory
             return $"global::{genericType}<global::{underlyingType}>";
         }
 
-        if (input.StartsWith("global::")) return input;
+        if (input.StartsWith("global::"))
+        {
+            return input;
+        }
 
         return $"global::{input}";
     }

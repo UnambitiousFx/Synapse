@@ -1,333 +1,381 @@
+### Synapse Feature Showcase — WebApi (Standard ASP.NET Core)
+### Run `dotnet run` in examples/WebApi, then execute requests top-to-bottom.
+### Each block states which Synapse feature it exercises and what to verify.
 @baseUrl = http://localhost:5175
 
-### ===== Todo Examples =====
+# ═══════════════════════════════════════════════════════════════════════
+# 1. API Info
+# ═══════════════════════════════════════════════════════════════════════
 
-GET {{baseUrl}}/todos/
+### [Feature: Root endpoint] List all available features and endpoints
+GET {{baseUrl}}/
 Accept: application/json
 
 > {%
-    client.test("Response should be empty array", function () {
-        client.assert(response.status === 200, "Response status is OK");
-        client.assert(Array.isArray(response.body), "Response body is array");
-        client.assert(response.body.length === 0, "Array is empty");
+    client.test("API info returns 200", function () {
+        client.assert(response.status === 200, "Expected 200 OK");
+        client.assert(response.body.name !== undefined, "name field present");
+        client.assert(Array.isArray(response.body.features), "features list present");
+        client.assert(Array.isArray(response.body.endpoints), "endpoints list present");
     });
 %}
 
 ###
 
-POST {{baseUrl}}/todos/
+# ═══════════════════════════════════════════════════════════════════════
+# 2. Command with typed response (CreateTask → Guid)
+# ═══════════════════════════════════════════════════════════════════════
+
+### [Feature: Command + Validation] Create a valid task
+### Expect: 201 Created, Location header, X-Correlation-Id header
+### Observe stdout: SimpleLoggingBehavior logs CreateTaskCommand timing
+###                 TaskCreatedLoggingHandler logs the event
+POST {{baseUrl}}/tasks
+Content-Type: application/json
+
+{
+  "title": "Implement Synapse streaming",
+  "description": "Add IStreamRequest<T> support to demonstrate the streaming query pattern"
+}
+
+> {%
+    client.test("Create task returns 201 Created", function () {
+        client.assert(response.status === 201, "Expected 201 Created");
+    });
+
+    client.test("Location header points to new task", function () {
+        const location = response.headers.valueOf("Location");
+        client.assert(location !== undefined, "Location header present");
+        const guidPattern = /\/tasks\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
+        client.assert(guidPattern.test(location), "Location contains a valid task URL");
+        client.global.set("taskId", location.match(guidPattern)[1]);
+    });
+
+    client.test("X-Correlation-Id header is present", function () {
+        client.assert(response.headers.valueOf("X-Correlation-Id") !== undefined,
+            "X-Correlation-Id header present (IContext.CorrelationId)");
+    });
+%}
+
+###
+
+### [Feature: Validation] Create a task with an empty title — should be rejected
+### Expect: failure response (validation error from RequestValidationBehavior)
+### Observe stdout: SimpleLoggingBehavior logs the failure
+POST {{baseUrl}}/tasks
+Content-Type: application/json
+
+{
+  "title": "",
+  "description": "This should fail because title is empty"
+}
+
+> {%
+    client.test("Empty title is rejected", function () {
+        client.assert(response.status !== 201, "Should not create a task with empty title");
+        client.assert(response.status >= 400, "Expected an error status code");
+    });
+%}
+
+###
+
+### [Feature: Validation] Create a task with an empty description — should be rejected
+POST {{baseUrl}}/tasks
+Content-Type: application/json
+
+{
+  "title": "Valid title",
+  "description": ""
+}
+
+> {%
+    client.test("Empty description is rejected", function () {
+        client.assert(response.status >= 400, "Expected an error status code");
+    });
+%}
+
+###
+
+# Create a second task for the streaming and list tests
+POST {{baseUrl}}/tasks
+Content-Type: application/json
+
+{
+  "title": "Write unit tests",
+  "description": "Cover all handler edge cases with the AAA pattern"
+}
+
+> {%
+    client.test("Second task created", function () {
+        client.assert(response.status === 201, "Expected 201 Created");
+        const location = response.headers.valueOf("Location");
+        const guidPattern = /\/tasks\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
+        client.global.set("taskId2", location.match(guidPattern)[1]);
+    });
+%}
+
+###
+
+# ═══════════════════════════════════════════════════════════════════════
+# 3. Query — single item
+# ═══════════════════════════════════════════════════════════════════════
+
+### [Feature: Query returning TaskDto] Get a task by ID
+### Expect: 200 OK with task body, X-Correlation-Id header
+GET {{baseUrl}}/tasks/{{taskId}}
 Accept: application/json
-Content-Type: application/json
-
-{
-  "name": "my todo task 1"
-}
 
 > {%
-    client.test("Response status is Created", function () {
-        client.assert(response.status === 201, "Response status is 201 Created");
+    client.test("Get task returns 200", function () {
+        client.assert(response.status === 200, "Expected 200 OK");
+        client.assert(response.body.id === client.global.get("taskId"), "ID matches");
+        client.assert(response.body.title === "Implement Synapse streaming", "Title matches");
+        client.assert(response.body.createdAt !== undefined, "createdAt present");
     });
 
-    client.test("Response has Location header with valid URL", function () {
-        client.assert(response.headers.valueOf("Location"), "Location header exists");
-        const locationUrl = response.headers.valueOf("Location");
-        const guidPattern = /^\/todo\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
-        client.assert(guidPattern.test(locationUrl), "Location header contains valid URL with GUID");
-
-        const match = locationUrl.match(guidPattern);
-        client.global.set("todoId", match[1]);
+    client.test("X-Correlation-Id header is present", function () {
+        client.assert(response.headers.valueOf("X-Correlation-Id") !== undefined, "Correlation ID set");
     });
 %}
 
 ###
 
-GET {{baseUrl}}/todos/{{todoId}}
+### [Feature: Query failure] Get a non-existent task
+### Expect: failure response (handler returns Result.Failure → IFailureHttpMapper maps it)
+GET {{baseUrl}}/tasks/00000000-0000-0000-0000-000000000000
 Accept: application/json
 
 > {%
-    client.test("Get todo response", function () {
-        client.assert(response.status === 200, "Response status is OK");
-        client.assert(response.body.id === client.global.get("todoId"), "Todo ID matches");
-        client.assert(response.body.name === "my todo task 1", "Todo name matches");
+    client.test("Not-found task returns error status", function () {
+        client.assert(response.status >= 400, "Expected an error status code");
     });
 %}
 
 ###
 
-PUT {{baseUrl}}/todos/{{todoId}}
-Accept: application/json
-Content-Type: application/json
+# ═══════════════════════════════════════════════════════════════════════
+# 4. Query — list
+# ═══════════════════════════════════════════════════════════════════════
 
-{
-  "name": "updated todo task 1"
-}
-
-> {%
-    client.test("Update todo response", function () {
-        client.assert(response.status === 200, "Response status is OK");
-    });
-%}
-
-###
-
-GET {{baseUrl}}/todos/
+### [Feature: Query returning List<TaskDto>] List all tasks
+### Expect: 200 OK with JSON array of tasks
+GET {{baseUrl}}/tasks
 Accept: application/json
 
 > {%
-    client.test("List todos response", function () {
-        client.assert(response.status === 200, "Response status is OK");
-        client.assert(Array.isArray(response.body), "Response body is array");
-        client.assert(response.body.length === 1, "Array contains one item");
-        client.assert(response.body[0].id === client.global.get("todoId"), "Todo ID matches");
-        client.assert(response.body[0].name === "updated todo task 1", "Todo name matches");
+    client.test("List tasks returns 200", function () {
+        client.assert(response.status === 200, "Expected 200 OK");
+        client.assert(Array.isArray(response.body), "Response is an array");
+        client.assert(response.body.length >= 2, "At least 2 tasks present");
     });
 %}
 
 ###
 
+# ═══════════════════════════════════════════════════════════════════════
+# 5. Streaming request
+# ═══════════════════════════════════════════════════════════════════════
 
-
-
-
-
-DELETE {{baseUrl}}/todos/{{todoId}}
+### [Feature: IStreamRequest<T>] Stream all tasks as IAsyncEnumerable
+### The handler yields each TaskDto one by one; ASP.NET Core flushes them as a JSON array.
+### Observe stdout: SimpleLoggingBehavior logs the StreamTasksQuery timing.
+GET {{baseUrl}}/tasks/stream
 Accept: application/json
 
 > {%
-    client.test("Delete todo response", function () {
-        client.assert(response.status === 200, "Response status is OK");
+    client.test("Stream endpoint returns 200", function () {
+        client.assert(response.status === 200, "Expected 200 OK");
+        client.assert(Array.isArray(response.body), "Response is an array");
+        client.assert(response.body.length >= 2, "At least 2 tasks streamed");
     });
 %}
 
 ###
 
-### ===== Transport Examples - Orders =====
+# ═══════════════════════════════════════════════════════════════════════
+# 6. Command without response — Update
+# ═══════════════════════════════════════════════════════════════════════
 
-### Create Order (triggers LOCAL events: OrderCreated, NotificationRequested)
-POST {{baseUrl}}/orders
+### [Feature: Command (IRequest)] Update a task — no typed response
+### Expect: success response
+PUT {{baseUrl}}/tasks/{{taskId}}
 Content-Type: application/json
 
 {
-  "customerName": "John Doe",
-  "totalAmount": 299.99
+  "title": "Implement Synapse streaming (updated)",
+  "description": "Updated description with more detail about the streaming feature"
 }
 
 > {%
-    client.test("Create order response", function () {
-        client.assert(response.status === 201, "Response status is Created");
-        client.assert(response.body.orderId, "Response contains orderId");
-        client.global.set("orderId", response.body.orderId);
+    client.test("Update task succeeds", function () {
+        client.assert(response.status < 400, "Expected success status code");
     });
 %}
 
 ###
 
-### Ship Order
-POST {{baseUrl}}/orders/{{orderId}}/ship
+### Verify the update was applied
+GET {{baseUrl}}/tasks/{{taskId}}
+Accept: application/json
 
 > {%
-    client.test("Ship order response", function () {
-        client.assert(response.status === 200, "Response status is OK");
-        client.assert(response.body.message, "Response contains message");
+    client.test("Updated title is reflected", function () {
+        client.assert(response.status === 200, "Expected 200 OK");
+        client.assert(response.body.title === "Implement Synapse streaming (updated)", "Title updated");
     });
 %}
 
 ###
 
-### Ship Order - with specific ID
-POST {{baseUrl}}/orders/550e8400-e29b-41d4-a716-446655440000/ship
-
-###
-
-### ===== Transport Examples - Payments =====
-
-### Process Payment
-POST {{baseUrl}}/payments
+### [Feature: Command failure] Update a non-existent task
+PUT {{baseUrl}}/tasks/00000000-0000-0000-0000-000000000000
 Content-Type: application/json
 
 {
-  "orderId": "{{orderId}}",
-  "amount": 299.99,
-  "paymentMethod": "CreditCard"
+  "title": "Ghost task",
+  "description": "This task does not exist"
 }
 
 > {%
-    client.test("Process payment response", function () {
-        client.assert(response.status === 200, "Response status is OK");
-        client.assert(response.body.message, "Response contains message");
+    client.test("Update non-existent task returns error", function () {
+        client.assert(response.status >= 400, "Expected an error status code");
     });
 %}
 
 ###
 
-### Process Payment - PayPal
-POST {{baseUrl}}/payments
-Content-Type: application/json
+# ═══════════════════════════════════════════════════════════════════════
+# 7. Events — domain event fan-out with concurrent orchestration
+# ═══════════════════════════════════════════════════════════════════════
 
-{
-  "orderId": "550e8400-e29b-41d4-a716-446655440000",
-  "amount": 599.99,
-  "paymentMethod": "PayPal"
-}
-
-###
-
-### ===== Transport Examples - Inventory =====
-
-### Update Inventory - Decrease 
-POST {{baseUrl}}/inventory/660e8400-e29b-41d4-a716-446655440000/update
-Content-Type: application/json
-
-{
-  "quantityChange": -10
-}
+### [Feature: Events + ConcurrentEventOrchestrator] Complete a task
+### Expect: success response
+### Observe stdout: BOTH of the following run concurrently (ConcurrentEventOrchestrator):
+###   - TaskCompletedLoggingHandler:      "✅ Task completed: ..."
+###   - TaskCompletedNotificationHandler: "📧 Sending notification for ..."
+### Also: SimpleLoggingBehavior logs CompleteTaskCommand timing
+POST {{baseUrl}}/tasks/{{taskId}}/complete
 
 > {%
-    client.test("Update inventory response", function () {
-        client.assert(response.status === 200, "Response status is OK");
-        client.assert(response.body.message, "Response contains message");
+    client.test("Complete task succeeds", function () {
+        client.assert(response.status < 400, "Expected success status code");
     });
 %}
 
 ###
 
-### Update Inventory - Increase
-POST {{baseUrl}}/inventory/660e8400-e29b-41d4-a716-446655440000/update
-Content-Type: application/json
-
-{
-  "quantityChange": 50
-}
-
-###
-
-### ===== Complete Workflow Example =====
-
-### Step 1: Create an order (local events)
-POST {{baseUrl}}/orders
-Content-Type: application/json
-
-{
-  "customerName": "Jane Smith",
-  "totalAmount": 599.99
-}
+### Verify status changed to Completed
+GET {{baseUrl}}/tasks/{{taskId}}
+Accept: application/json
 
 > {%
-    client.test("Workflow - Create order", function () {
-        client.assert(response.status === 201, "Response status is Created");
-        client.global.set("workflowOrderId", response.body.orderId);
+    client.test("Task status is Completed", function () {
+        client.assert(response.status === 200, "Expected 200 OK");
+        client.assert(response.body.status === "Completed", "Status is Completed");
+        client.assert(response.body.completedAt !== undefined, "completedAt is set");
     });
 %}
 
 ###
 
-### Step 2: Process payment for the order
-POST {{baseUrl}}/payments
+### [Feature: Events] Delete the second task
+### Observe stdout: TaskDeletedLoggingHandler logs "🗑️ Task deleted: ..."
+DELETE {{baseUrl}}/tasks/{{taskId2}}
+
+> {%
+    client.test("Delete task succeeds", function () {
+        client.assert(response.status < 400, "Expected success status code");
+    });
+%}
+
+###
+
+### Verify task 2 is gone
+GET {{baseUrl}}/tasks/{{taskId2}}
+Accept: application/json
+
+> {%
+    client.test("Deleted task is no longer found", function () {
+        client.assert(response.status >= 400, "Expected an error status code");
+    });
+%}
+
+###
+
+# ═══════════════════════════════════════════════════════════════════════
+# 8. Full workflow — Create → Update → Complete → Delete
+# ═══════════════════════════════════════════════════════════════════════
+
+### Step 1: Create
+POST {{baseUrl}}/tasks
 Content-Type: application/json
 
 {
-  "orderId": "{{workflowOrderId}}",
-  "amount": 599.99,
-  "paymentMethod": "PayPal"
+  "title": "Full workflow task",
+  "description": "Demonstrates the complete Synapse lifecycle in one sequence"
 }
 
 > {%
-    client.test("Workflow - Process payment", function () {
-        client.assert(response.status === 200, "Response status is OK");
+    client.test("Workflow step 1 — create", function () {
+        client.assert(response.status === 201, "Expected 201 Created");
+        const location = response.headers.valueOf("Location");
+        const guidPattern = /\/tasks\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
+        client.global.set("wfTaskId", location.match(guidPattern)[1]);
     });
 %}
 
 ###
 
-### Step 3: Update inventory
-POST {{baseUrl}}/inventory/770e8400-e29b-41d4-a716-446655440000/update
+### Step 2: Update
+PUT {{baseUrl}}/tasks/{{wfTaskId}}
 Content-Type: application/json
 
 {
-  "quantityChange": -1
+  "title": "Full workflow task (revised)",
+  "description": "Now with an updated description"
 }
 
 > {%
-    client.test("Workflow - Update inventory", function () {
-        client.assert(response.status === 200, "Response status is OK");
+    client.test("Workflow step 2 — update", function () {
+        client.assert(response.status < 400, "Expected success");
     });
 %}
 
 ###
 
-### Step 4: Ship the order
-POST {{baseUrl}}/orders/{{workflowOrderId}}/ship
+### Step 3: Complete (triggers 2 concurrent event handlers)
+POST {{baseUrl}}/tasks/{{wfTaskId}}/complete
 
 > {%
-    client.test("Workflow - Ship order", function () {
-        client.assert(response.status === 200, "Response status is OK");
+    client.test("Workflow step 3 — complete", function () {
+        client.assert(response.status < 400, "Expected success");
     });
 %}
 
 ###
 
-### ===== Cross-Application Communication Examples =====
-
-### Cancel Order
-DELETE {{baseUrl}}/orders/{{orderId}}
-Content-Type: application/json
-
-{
-  "reason": "Customer requested cancellation"
-}
+### Step 4: Delete
+DELETE {{baseUrl}}/tasks/{{wfTaskId}}
 
 > {%
-    client.test("Cancel order response", function () {
-        client.assert(response.status === 200, "Response status is OK");
-        client.assert(response.body.message, "Response contains message");
+    client.test("Workflow step 4 — delete", function () {
+        client.assert(response.status < 400, "Expected success");
     });
 %}
 
 ###
 
-### ===== Cross-App Demo Scenario =====
-
-### Scenario 1: Create Order
-POST {{baseUrl}}/orders
-Content-Type: application/json
-
-{
-  "customerName": "Alice Johnson",
-  "totalAmount": 899.99
-}
+### Final: List should not contain the workflow task
+GET {{baseUrl}}/tasks
+Accept: application/json
 
 > {%
-    client.test("Demo - Create order", function () {
-        client.assert(response.status === 201, "Response status is Created");
-        client.global.set("demoOrderId", response.body.orderId);
+    client.test("Workflow task no longer in list", function () {
+        client.assert(response.status === 200, "Expected 200 OK");
+        const wfId = client.global.get("wfTaskId");
+        const found = response.body.some(t => t.id === wfId);
+        client.assert(!found, "Deleted task is not in the list");
     });
 %}
-
-###
-
-### Scenario 2: Ship Order
-POST {{baseUrl}}/orders/{{demoOrderId}}/ship
-
-> {%
-    client.test("Demo - Ship order", function () {
-        client.assert(response.status === 200, "Response status is OK");
-    });
-%}
-
-###
-
-### Now go to WebApiAot.http to:
-### 1. Request fulfillment (publishes OrderFulfillmentRequested)
-### 2. Complete fulfillment (publishes OrderFulfillmentCompleted back to WebApi)
-
-###
-
-### Alternative: Cancel the order
-DELETE {{baseUrl}}/orders/{{demoOrderId}}
-Content-Type: application/json
-
-{
-  "reason": "Customer changed mind"
-}
 
 ###

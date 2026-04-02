@@ -23,7 +23,10 @@ public sealed class UpdateTodoCommandHandler : IRequestHandler<UpdateTodoCommand
     {
         var todoOpt = await _todoRepository.GetAsync(request.Id, cancellationToken);
 
-        if (!todoOpt.Some(out var todo)) return Result.Failure("Not found");
+        if (!todoOpt.Some(out var todo))
+        {
+            return Result.Failure("Not found");
+        }
 
         todo.Name = request.Name;
 

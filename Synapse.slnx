@@ -18,6 +18,7 @@
         <File Path="examples\Directory.Packages.props" />
     </Folder>
     <Folder Name="/src/">
+        <Project Path="src/Synapse.AspNetCore/Synapse.AspNetCore.csproj" />
         <Project Path="src\Synapse.Abstractions\Synapse.Abstractions.csproj" />
         <Project Path="src\Synapse.Generator\Synapse.Generator.csproj" />
         <Project Path="src\Synapse\Synapse.csproj" />

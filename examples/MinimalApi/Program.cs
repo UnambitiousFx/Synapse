@@ -1,27 +1,34 @@
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Mvc;
-using UnambitiousFx.Examples.WebApi.Features.Tasks;
-using UnambitiousFx.Examples.WebApi.Features.Tasks.Handlers;
-using UnambitiousFx.Examples.WebApi.Infrastructure;
-using UnambitiousFx.Functional.AspNetCore.Http;
+using UnambitiousFx.Examples.MinimalApi;
+using UnambitiousFx.Examples.MinimalApi.Features.Tasks;
+using UnambitiousFx.Examples.MinimalApi.Features.Tasks.Handlers;
+using UnambitiousFx.Examples.MinimalApi.Features.Tasks.Validators;
+using UnambitiousFx.Examples.MinimalApi.Infrastructure;
 using UnambitiousFx.Synapse;
-using UnambitiousFx.Synapse.Abstractions;
+using UnambitiousFx.Synapse.AspNetCore;
+using UnambitiousFx.Synapse.AspNetCore.Http;
 using UnambitiousFx.Synapse.Pipelines;
+using UnambitiousFx.Synapse.Publish.Orchestrators;
 
 // Use CreateSlimBuilder for Native AOT compatibility
 var builder = WebApplication.CreateSlimBuilder(args);
 
-// Configure JSON serialization for Native AOT
+// Configure JSON serialization for Native AOT (all response types must be registered)
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.TypeInfoResolverChain.Insert(0, AppJsonSerializerContext.Default);
 });
 
-// Add services
+// Infrastructure
 builder.Services.AddSingleton<TaskRepository>();
+
+// Synapse ASP.NET Core integration (IHttpInvoker, IMvcInvoker, IFailureHttpMapper)
+builder.Services.AddSynapseAspNetCore();
+
 builder.Services.AddSynapse(cfg =>
 {
-    // Register handlers manually
+    // ── Request handlers ───────────────────────────────────────────────
     cfg.RegisterRequestHandler<CreateTaskCommandHandler, CreateTaskCommand, Guid>();
     cfg.RegisterRequestHandler<UpdateTaskCommandHandler, UpdateTaskCommand>();
     cfg.RegisterRequestHandler<CompleteTaskCommandHandler, CompleteTaskCommand>();
@@ -29,148 +36,170 @@ builder.Services.AddSynapse(cfg =>
     cfg.RegisterRequestHandler<GetTaskQueryHandler, GetTaskQuery, TaskDto>();
     cfg.RegisterRequestHandler<ListTasksQueryHandler, ListTasksQuery, List<TaskDto>>();
 
-    // Register event handlers
+    // ── Streaming request handler ──────────────────────────────────────
+    // Demonstrates IStreamRequest<T> / IStreamRequestHandler<TRequest, TItem>
+    cfg.RegisterStreamRequestHandler<StreamTasksQueryHandler, StreamTasksQuery, TaskDto>();
+
+    // ── Event handlers ─────────────────────────────────────────────────
     cfg.RegisterEventHandler<TaskCreatedLoggingHandler, TaskCreatedEvent>();
+    // Two handlers for the same event — fan-out pattern
     cfg.RegisterEventHandler<TaskCompletedLoggingHandler, TaskCompletedEvent>();
     cfg.RegisterEventHandler<TaskCompletedNotificationHandler, TaskCompletedEvent>();
     cfg.RegisterEventHandler<TaskDeletedLoggingHandler, TaskDeletedEvent>();
 
-    // Add pipeline behaviors
+    // ── Validators ─────────────────────────────────────────────────────
+    // Registers IRequestValidator<CreateTaskCommand> in DI
+    cfg.AddValidator<CreateTaskCommandValidator, CreateTaskCommand, Guid>();
+
+    // ── Pipeline behaviors ─────────────────────────────────────────────
+    // Logging wraps every request and event (observe timings in stdout)
     cfg.RegisterRequestPipelineBehavior<SimpleLoggingBehavior>();
     cfg.RegisterEventPipelineBehavior<SimpleLoggingBehavior>();
+    // Validation runs for CreateTaskCommand before the handler — returns failure on invalid input
+    cfg.RegisterRequestPipelineBehavior<RequestValidationBehavior<CreateTaskCommand, Guid>, CreateTaskCommand, Guid>();
+
+    // ── Event orchestration ────────────────────────────────────────────
+    // Both TaskCompleted handlers run concurrently (observe interleaved logs)
+    cfg.SetEventOrchestrator<ConcurrentEventOrchestrator>();
+
+    // ── CQRS enforcement ───────────────────────────────────────────────
+    cfg.EnableCqrsBoundaryEnforcement();
 });
 
 var app = builder.Build();
 
-// Root endpoint
-app.MapGet("/", () => Results.Ok(new
-{
-    name = "Synapse Minimal API (Native AOT)",
-    description = "Demonstrates Synapse with Native AOT compilation",
-    aotReady = true,
-    endpoints = new[]
-    {
-        "GET /tasks - List all tasks",
-        "GET /tasks/{id} - Get task by ID",
-        "POST /tasks - Create a new task",
-        "PUT /tasks/{id} - Update a task",
-        "POST /tasks/{id}/complete - Complete a task",
-        "DELETE /tasks/{id} - Delete a task"
-    }
-}));
+// ── Correlation ID response header ────────────────────────────────────
+// Reads the Synapse IContext.CorrelationId after the handler runs and adds it
+// to the response so callers can trace requests end-to-end.
+app.UseCorrelationId();
 
-// ═══════════════════════════════════════════════════════════════
-// Task Management Endpoints
-// ═══════════════════════════════════════════════════════════════
+// ── Root ──────────────────────────────────────────────────────────────
+app.MapGet("/", () => Results.Ok(new ApiInfo()));
 
+// ── Task endpoints ────────────────────────────────────────────────────
 var tasks = app.MapGroup("/tasks");
 
-// GET /tasks - List all tasks
+// Feature: Query returning a list
 tasks.MapGet("/", async (
-    [FromServices] IInvoker invoker,
-    CancellationToken cancellationToken) =>
-{
-    var query = new ListTasksQuery();
-    return await invoker.InvokeAsync<ListTasksQuery, List<TaskDto>>(query, cancellationToken)
-        .ToHttpResult();
-});
+        [FromServices] IHttpInvoker invoker,
+        CancellationToken ct) =>
+    await invoker.InvokeAsync(new ListTasksQuery(), ct));
 
-// GET /tasks/{id} - Get task by ID
+// Feature: Streaming request — yields tasks via IAsyncEnumerable
+tasks.MapGet("/stream", (
+        [FromServices] IHttpInvoker invoker,
+        CancellationToken ct) =>
+    invoker.InvokeStreamAsync(new StreamTasksQuery(), ct));
+
+// Feature: Query returning a single item
 tasks.MapGet("/{id:guid}", async (
-    [FromRoute] Guid id,
-    [FromServices] IInvoker invoker,
-    CancellationToken cancellationToken) =>
-{
-    var query = new GetTaskQuery { TaskId = id };
-    return await invoker.InvokeAsync<GetTaskQuery, TaskDto>(query, cancellationToken)
-        .ToHttpResult();
-});
+        [FromRoute] Guid id,
+        [FromServices] IHttpInvoker invoker,
+        CancellationToken ct) =>
+    await invoker.InvokeAsync(new GetTaskQuery { TaskId = id }, ct));
 
-// POST /tasks - Create a new task
+// Feature: Command with typed response + RequestValidationBehavior
+// Valid input → 201 Created with Location header
+// Invalid input (empty title/description) → failure response
 tasks.MapPost("/", async (
     [FromBody] CreateTaskRequest request,
-    [FromServices] IInvoker invoker,
-    CancellationToken cancellationToken) =>
+    [FromServices] IHttpInvoker invoker,
+    CancellationToken ct) =>
 {
-    var command = new CreateTaskCommand
-    {
-        Title = request.Title,
-        Description = request.Description
-    };
-
-    return await invoker.InvokeAsync<CreateTaskCommand, Guid>(command, cancellationToken)
-        .ToCreatedHttpResult(
-            taskId => $"/tasks/{taskId}",
-            taskId => new { taskId });
+    var command = new CreateTaskCommand { Title = request.Title, Description = request.Description };
+    return await invoker.InvokeAsync(
+        command,
+        id => Results.Created($"/tasks/{id}", id),
+        ct);
 });
 
-// PUT /tasks/{id} - Update a task
+// Feature: Command without response
 tasks.MapPut("/{id:guid}", async (
     [FromRoute] Guid id,
     [FromBody] UpdateTaskRequest request,
-    [FromServices] IInvoker invoker,
-    CancellationToken cancellationToken) =>
+    [FromServices] IHttpInvoker invoker,
+    CancellationToken ct) =>
 {
-    var command = new UpdateTaskCommand
-    {
-        TaskId = id,
-        Title = request.Title,
-        Description = request.Description
-    };
-
-    return await invoker.InvokeAsync(command, cancellationToken)
-        .ToHttpResult();
+    var command = new UpdateTaskCommand { TaskId = id, Title = request.Title, Description = request.Description };
+    return await invoker.InvokeAsync(command, ct);
 });
 
-// POST /tasks/{id}/complete - Complete a task
+// Feature: Command that emits an event handled by 2 concurrent handlers
+// Check stdout: both TaskCompletedLoggingHandler and TaskCompletedNotificationHandler run in parallel
 tasks.MapPost("/{id:guid}/complete", async (
-    [FromRoute] Guid id,
-    [FromServices] IInvoker invoker,
-    CancellationToken cancellationToken) =>
-{
-    var command = new CompleteTaskCommand { TaskId = id };
+        [FromRoute] Guid id,
+        [FromServices] IHttpInvoker invoker,
+        CancellationToken ct) =>
+    await invoker.InvokeAsync(new CompleteTaskCommand { TaskId = id }, ct));
 
-    return await invoker.InvokeAsync(command, cancellationToken)
-        .ToHttpResult(() => new { message = "Task completed successfully" });
-});
-
-// DELETE /tasks/{id} - Delete a task
+// Feature: Command that emits a domain event (TaskDeletedEvent → TaskDeletedLoggingHandler)
 tasks.MapDelete("/{id:guid}", async (
-    [FromRoute] Guid id,
-    [FromServices] IInvoker invoker,
-    CancellationToken cancellationToken) =>
-{
-    var command = new DeleteTaskCommand { TaskId = id };
-
-    return await invoker.InvokeAsync(command, cancellationToken)
-        .ToHttpResult();
-});
+        [FromRoute] Guid id,
+        [FromServices] IHttpInvoker invoker,
+        CancellationToken ct) =>
+    await invoker.InvokeAsync(new DeleteTaskCommand { TaskId = id }, ct));
 
 app.Run();
 
-// ═══════════════════════════════════════════════════════════════
-// Request/Response Models
-// ═══════════════════════════════════════════════════════════════
-
-public record CreateTaskRequest(string Title, string Description);
-
-public record UpdateTaskRequest(string Title, string Description);
-
-// ═══════════════════════════════════════════════════════════════
-// JSON Source Generation (Required for Native AOT)
-// ═══════════════════════════════════════════════════════════════
-
-[JsonSerializable(typeof(CreateTaskRequest))]
-[JsonSerializable(typeof(UpdateTaskRequest))]
-[JsonSerializable(typeof(TaskDto))]
-[JsonSerializable(typeof(List<TaskDto>))]
-[JsonSerializable(typeof(Guid))]
-internal partial class AppJsonSerializerContext : JsonSerializerContext
-{
-}
-
-// Make Program partial for testing
 namespace UnambitiousFx.Examples.MinimalApi
 {
+    // ── HTTP request/response models ──────────────────────────────────
+
+    public record CreateTaskRequest(string Title, string Description);
+
+    public record UpdateTaskRequest(string Title, string Description);
+
+    // ── API info (replaces anonymous type for AOT compatibility) ──────
+
+    public sealed record ApiInfo
+    {
+        public string Name { get; init; } = "Synapse Minimal API (Native AOT)";
+        public string Description { get; init; } = "Executable feature tour of UnambitiousFx.Synapse";
+        public bool AotReady { get; init; } = true;
+
+        public string[] Features { get; init; } =
+        [
+            "Commands — with typed response (CreateTask → Guid)",
+            "Commands — without response (UpdateTask, CompleteTask, DeleteTask)",
+            "Queries — single item and list (GetTask, ListTasks)",
+            "Streaming — IStreamRequest<T> yielded via IAsyncEnumerable (StreamTasks)",
+            "Validation — RequestValidationBehavior<TRequest, TResponse> (CreateTask)",
+            "Domain events — fan-out to multiple handlers (TaskCompletedEvent × 2)",
+            "Concurrent event orchestration — ConcurrentEventOrchestrator",
+            "Request pipeline behavior — SimpleLoggingBehavior (timing on every request)",
+            "Event pipeline behavior — SimpleLoggingBehavior (timing on every event)",
+            "Context & correlation — IContext.CorrelationId → X-Correlation-Id header",
+            "CQRS boundary enforcement — EnableCqrsBoundaryEnforcement()"
+        ];
+
+        public string[] Endpoints { get; init; } =
+        [
+            "GET    /                   — API info",
+            "GET    /tasks              — List tasks (Query)",
+            "GET    /tasks/stream       — Stream tasks (IStreamRequest)",
+            "GET    /tasks/{id}         — Get task (Query)",
+            "POST   /tasks              — Create task (Command → Guid, validated)",
+            "PUT    /tasks/{id}         — Update task (Command)",
+            "POST   /tasks/{id}/complete — Complete task (2 concurrent event handlers)",
+            "DELETE /tasks/{id}         — Delete task (domain event)"
+        ];
+    }
+
+    // ── JSON source generation (required for Native AOT) ──────────────
+
+    [JsonSerializable(typeof(ApiInfo))]
+    [JsonSerializable(typeof(CreateTaskRequest))]
+    [JsonSerializable(typeof(UpdateTaskRequest))]
+    [JsonSerializable(typeof(TaskDto))]
+    [JsonSerializable(typeof(List<TaskDto>))]
+    [JsonSerializable(typeof(IAsyncEnumerable<TaskDto>))]
+    [JsonSerializable(typeof(Guid))]
+    [JsonSerializable(typeof(ProblemDetails))]
+    [JsonSerializable(typeof(HttpValidationProblemDetails))]
+    internal partial class AppJsonSerializerContext : JsonSerializerContext
+    {
+    }
+
+    // Make Program accessible for integration tests
     public class Program;
 }

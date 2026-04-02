@@ -23,7 +23,10 @@ internal sealed class ProxyRequestHandler<TRequestHandler, TRequest>(
         int index,
         CancellationToken cancellationToken)
     {
-        if (index >= _behaviors.Length) return handler.HandleAsync(request, cancellationToken);
+        if (index >= _behaviors.Length)
+        {
+            return handler.HandleAsync(request, cancellationToken);
+        }
 
         return _behaviors[index]
             .HandleAsync(request, Next, cancellationToken);
@@ -55,7 +58,10 @@ internal sealed class ProxyRequestHandler<TRequestHandler, TRequest, TResponse>(
         int index,
         CancellationToken cancellationToken)
     {
-        if (index >= _behaviors.Length) return handler.HandleAsync(request, cancellationToken);
+        if (index >= _behaviors.Length)
+        {
+            return handler.HandleAsync(request, cancellationToken);
+        }
 
         return _behaviors[index]
             .HandleAsync(request, Next, cancellationToken);

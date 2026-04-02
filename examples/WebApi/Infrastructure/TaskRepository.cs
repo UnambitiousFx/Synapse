@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Text.Json.Serialization;
 
 namespace UnambitiousFx.Examples.WebApi.Infrastructure;
 
@@ -31,7 +32,9 @@ public sealed class TaskRepository
     public bool Update(Guid id, string title, string description)
     {
         if (!_tasks.TryGetValue(id, out var task))
+        {
             return false;
+        }
 
         task.Update(title, description);
         return true;
@@ -40,7 +43,9 @@ public sealed class TaskRepository
     public bool Complete(Guid id)
     {
         if (!_tasks.TryGetValue(id, out var task))
+        {
             return false;
+        }
 
         task.Complete();
         return true;
@@ -91,6 +96,7 @@ public sealed class TaskEntity
     }
 }
 
+[JsonConverter(typeof(JsonStringEnumConverter<TaskStatus>))]
 public enum TaskStatus
 {
     Pending,

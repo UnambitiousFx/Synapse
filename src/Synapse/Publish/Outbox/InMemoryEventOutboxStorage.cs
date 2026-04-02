@@ -36,7 +36,9 @@ public sealed class InMemoryEventOutboxStorage : IEventOutboxStorage
         var correlationId = CorrelationContext.CurrentCorrelationId;
 
         if (!_scopedItems.TryGetValue(correlationId, out var items))
+        {
             return new ValueTask<IEnumerable<IEvent>>([]);
+        }
 
         return new ValueTask<IEnumerable<IEvent>>(items
             .Where(item =>
@@ -53,11 +55,15 @@ public sealed class InMemoryEventOutboxStorage : IEventOutboxStorage
         var correlationId = CorrelationContext.CurrentCorrelationId;
 
         if (!_scopedItems.TryGetValue(correlationId, out var items))
+        {
             return new ValueTask<Result>(Result.Failure($"Event '{@event}' was not found in the outbox storage"));
+        }
 
         var item = items.FirstOrDefault(i => i.Event.Equals(@event));
         if (item == null)
+        {
             return new ValueTask<Result>(Result.Failure($"Event '{@event}' was not found in the outbox storage"));
+        }
 
         item.Processed = true;
         item.ProcessedAt = DateTimeOffset.UtcNow;
@@ -96,11 +102,15 @@ public sealed class InMemoryEventOutboxStorage : IEventOutboxStorage
         var correlationId = CorrelationContext.CurrentCorrelationId;
 
         if (!_scopedItems.TryGetValue(correlationId, out var items))
+        {
             return new ValueTask<Result>(Result.Failure($"Event '{@event}' was not found in the outbox storage"));
+        }
 
         var item = items.FirstOrDefault(i => i.Event.Equals(@event));
         if (item == null)
+        {
             return new ValueTask<Result>(Result.Failure($"Event '{@event}' was not found in the outbox storage"));
+        }
 
         item.Attempts++;
         item.LastError = reason;
@@ -123,7 +133,9 @@ public sealed class InMemoryEventOutboxStorage : IEventOutboxStorage
         var correlationId = CorrelationContext.CurrentCorrelationId;
 
         if (!_scopedItems.TryGetValue(correlationId, out var items))
+        {
             return new ValueTask<IEnumerable<IEvent>>(Array.Empty<IEvent>());
+        }
 
         return new ValueTask<IEnumerable<IEvent>>(items.Where(i => i.DeadLetter).Select(i => i.Event).ToList());
     }
@@ -135,7 +147,9 @@ public sealed class InMemoryEventOutboxStorage : IEventOutboxStorage
         var correlationId = CorrelationContext.CurrentCorrelationId;
 
         if (!_scopedItems.TryGetValue(correlationId, out var items))
+        {
             return new ValueTask<int?>((int?)null);
+        }
 
         return new ValueTask<int?>(items.FirstOrDefault(i => i.Event.Equals(@event))?.Attempts);
     }
@@ -146,7 +160,9 @@ public sealed class InMemoryEventOutboxStorage : IEventOutboxStorage
         var correlationId = CorrelationContext.CurrentCorrelationId;
 
         if (!_scopedItems.TryGetValue(correlationId, out var items))
+        {
             return new ValueTask<int>(0);
+        }
 
         var count = items.Count(i => i is { Processed: false, DeadLetter: false });
         return new ValueTask<int>(count);
@@ -158,7 +174,9 @@ public sealed class InMemoryEventOutboxStorage : IEventOutboxStorage
         var correlationId = CorrelationContext.CurrentCorrelationId;
 
         if (!_scopedItems.TryGetValue(correlationId, out var items))
+        {
             return new ValueTask<int>(0);
+        }
 
         var count = items.Count(i => i is { Processed: false, DeadLetter: false } && i.Attempts > 0);
         return new ValueTask<int>(count);
@@ -170,7 +188,9 @@ public sealed class InMemoryEventOutboxStorage : IEventOutboxStorage
         var correlationId = CorrelationContext.CurrentCorrelationId;
 
         if (!_scopedItems.TryGetValue(correlationId, out var items))
+        {
             return new ValueTask<TimeSpan?>((TimeSpan?)null);
+        }
 
         var oldestItem = items
             .Where(i => i is { Processed: false, DeadLetter: false })
@@ -178,7 +198,9 @@ public sealed class InMemoryEventOutboxStorage : IEventOutboxStorage
             .FirstOrDefault();
 
         if (oldestItem == null)
+        {
             return new ValueTask<TimeSpan?>((TimeSpan?)null);
+        }
 
         var age = DateTimeOffset.UtcNow - oldestItem.CreatedAt;
         return new ValueTask<TimeSpan?>(age);

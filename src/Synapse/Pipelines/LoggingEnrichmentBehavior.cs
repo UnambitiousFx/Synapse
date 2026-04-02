@@ -53,7 +53,10 @@ public sealed class LoggingEnrichmentBehavior<TRequest, TResponse> : IRequestPip
         };
 
 
-        foreach (var metadata in context.Metadata) state[$"Metadata_{metadata.Key}"] = metadata.Value;
+        foreach (var metadata in context.Metadata)
+        {
+            state[$"Metadata_{metadata.Key}"] = metadata.Value;
+        }
 
         return state;
     }

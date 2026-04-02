@@ -86,7 +86,9 @@ internal sealed class EventDispatcher : IEventDispatcher
         where TEvent : class, IEvent
     {
         if (index >= behaviors.Length)
+        {
             return DispatchToHandlersAsync(@event, handlers, cancellationToken);
+        }
 
         return behaviors[index].HandleAsync(@event, Next, cancellationToken);
 

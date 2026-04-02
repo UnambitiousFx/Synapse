@@ -1,7 +1,7 @@
 using UnambitiousFx.Functional;
 using UnambitiousFx.Synapse.Abstractions;
 
-namespace UnambitiousFx.Examples.WebApi.Features.Tasks.Handlers;
+namespace UnambitiousFx.Examples.MinimalApi.Features.Tasks.Handlers;
 
 // ═══════════════════════════════════════════════════════════════
 // Event Handlers

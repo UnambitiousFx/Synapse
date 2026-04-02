@@ -36,10 +36,14 @@ public sealed class SimpleLoggingBehavior : IRequestPipelineBehavior, IEventPipe
 
         var elapsedTime = Stopwatch.GetElapsedTime(startedAt);
         if (result.TryGetFailure(out var error))
+        {
             _logger.LogWarning("Event {EventName} handled in {ElapsedMilliseconds}ms with error {ErrorMessage}",
                 eventName, elapsedTime, error.ToString());
+        }
         else
+        {
             _logger.LogInformation("Event {EventName} handled in {ElapsedMilliseconds}ms", eventName, elapsedTime);
+        }
 
         return result;
     }
@@ -59,11 +63,15 @@ public sealed class SimpleLoggingBehavior : IRequestPipelineBehavior, IEventPipe
 
         var elapsedTime = Stopwatch.GetElapsedTime(startedAt);
         if (result.TryGetFailure(out var errors))
+        {
             _logger.LogWarning("Request {RequestName} handled in {ElapsedMilliseconds}ms with error {ErrorMessage}",
                 requestName, elapsedTime, errors.ToString());
+        }
         else
+        {
             _logger.LogInformation("Request {RequestName} handled in {ElapsedMilliseconds}ms", requestName,
                 elapsedTime);
+        }
 
         return result;
     }
@@ -83,11 +91,15 @@ public sealed class SimpleLoggingBehavior : IRequestPipelineBehavior, IEventPipe
 
         var elapsedTime = Stopwatch.GetElapsedTime(startedAt);
         if (!result.TryGet(out _, out var error))
+        {
             _logger.LogWarning("Request {RequestName} handled in {ElapsedMilliseconds}ms with error {ErrorMessage}",
                 requestName, elapsedTime, error.ToString());
+        }
         else
+        {
             _logger.LogInformation("Request {RequestName} handled in {ElapsedMilliseconds}ms", requestName,
                 elapsedTime);
+        }
 
         return result;
     }

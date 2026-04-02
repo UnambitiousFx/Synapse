@@ -1,7 +1,7 @@
 using UnambitiousFx.Synapse.Abstractions;
-using TaskStatus = UnambitiousFx.Examples.WebApi.Infrastructure.TaskStatus;
+using TaskStatus = UnambitiousFx.Examples.MinimalApi.Infrastructure.TaskStatus;
 
-namespace UnambitiousFx.Examples.WebApi.Features.Tasks;
+namespace UnambitiousFx.Examples.MinimalApi.Features.Tasks;
 
 // ═══════════════════════════════════════════════════════════════
 // Queries - Read-only operations
@@ -19,6 +19,12 @@ public sealed record GetTaskQuery : IRequest<TaskDto>
 ///     Query to list all tasks
 /// </summary>
 public sealed record ListTasksQuery : IRequest<List<TaskDto>>;
+
+/// <summary>
+///     Streaming query that yields tasks one by one as they become available.
+///     Demonstrates <see cref="IStreamRequest{TResponse}" /> and <c>IInvoker.InvokeStreamAsync</c>.
+/// </summary>
+public sealed record StreamTasksQuery : IStreamRequest<TaskDto>;
 
 // ═══════════════════════════════════════════════════════════════
 // DTOs - Data Transfer Objects

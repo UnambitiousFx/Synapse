@@ -26,9 +26,13 @@ public static class Step2_Events
         var result = await emitter.EmitAsync(@event);
 
         if (result.IsSuccess)
+        {
             Console.WriteLine("✓ Event published and handled by all subscribers\n");
+        }
         else
+        {
             Console.WriteLine($"✗ Failed: {result}\n");
+        }
     }
 }
 

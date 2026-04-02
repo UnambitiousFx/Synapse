@@ -20,7 +20,10 @@ internal sealed class ConditionalUntypedBehaviorWrapper : IRequestPipelineBehavi
         CancellationToken cancellationToken = default)
         where TRequest : IRequest
     {
-        if (_predicate(request)) return _inner.HandleAsync(request, next, cancellationToken);
+        if (_predicate(request))
+        {
+            return _inner.HandleAsync(request, next, cancellationToken);
+        }
 
         return next();
     }
@@ -31,7 +34,10 @@ internal sealed class ConditionalUntypedBehaviorWrapper : IRequestPipelineBehavi
         where TResponse : notnull
         where TRequest : IRequest<TResponse>
     {
-        if (_predicate(request)) return _inner.HandleAsync(request, next, cancellationToken);
+        if (_predicate(request))
+        {
+            return _inner.HandleAsync(request, next, cancellationToken);
+        }
 
         return next();
     }

@@ -1,11 +1,13 @@
 using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.DependencyInjection;
+using UnambitiousFx.Functional;
 using UnambitiousFx.Synapse.Abstractions;
 using UnambitiousFx.Synapse.Contexts;
 using UnambitiousFx.Synapse.Pipelines;
 using UnambitiousFx.Synapse.Publish;
 using UnambitiousFx.Synapse.Publish.Orchestrators;
 using UnambitiousFx.Synapse.Publish.Outbox;
+using UnambitiousFx.Synapse.Resolvers;
 
 namespace UnambitiousFx.Synapse;
 
@@ -13,6 +15,8 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
 {
     private readonly List<Action<IServiceCollection>> _actions = new();
     private readonly Dictionary<Type, DispatchEventDelegate> _eventDispatchers = new();
+    private readonly Dictionary<Type, Delegate> _requestDispatchers = new();
+    private readonly Dictionary<Type, Delegate> _streamRequestDispatchers = new();
 
     private DefaultDependencyInjectionBuilder _builder = new();
 
@@ -129,6 +133,13 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
         where THandler : class, IRequestHandler<TRequest, TResponse>
     {
         _actions.Add(scv => scv.RegisterRequestHandler<THandler, TRequest, TResponse>());
+        _requestDispatchers.TryAdd(typeof(TRequest),
+            (Func<IRequest<TResponse>, IDependencyResolver, CancellationToken, ValueTask<Result<TResponse>>>)(
+                (request, resolver, ct) =>
+                {
+                    var handler = resolver.GetRequiredService<IRequestHandler<TRequest, TResponse>>();
+                    return handler.HandleAsync((TRequest)request, ct);
+                }));
         return this;
     }
 
@@ -155,8 +166,11 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
             cancellationToken) =>
         {
             if (@event is not TEvent typedEvent)
+            {
                 throw new InvalidOperationException(
                     $"Event type mismatch. Expected {typeof(TEvent)}, got {@event.GetType()}");
+            }
+
             return dispatcher.DispatchAsync(typedEvent, cancellationToken);
         });
         return this;
@@ -171,7 +185,10 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
     {
         _actions.Add(scv =>
         {
-            if (condition()) scv.RegisterRequestHandler<THandler, TRequest, TResponse>();
+            if (condition())
+            {
+                scv.RegisterRequestHandler<THandler, TRequest, TResponse>();
+            }
         });
         return this;
     }
@@ -184,7 +201,10 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
     {
         _actions.Add(scv =>
         {
-            if (condition()) scv.RegisterRequestHandler<THandler, TRequest>();
+            if (condition())
+            {
+                scv.RegisterRequestHandler<THandler, TRequest>();
+            }
         });
         return this;
     }
@@ -207,8 +227,11 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
                     cancellationToken) =>
                 {
                     if (@event is not TEvent typedEvent)
+                    {
                         throw new InvalidOperationException(
                             $"Event type mismatch. Expected {typeof(TEvent)}, got {@event.GetType()}");
+                    }
+
                     return dispatcher.DispatchAsync(typedEvent, cancellationToken);
                 });
             }
@@ -239,9 +262,30 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
 
     public ISynapseConfig EnableCqrsBoundaryEnforcement(bool enable = true)
     {
-        if (!enable) return this;
+        if (!enable)
+        {
+            return this;
+        }
 
         return RegisterRequestPipelineBehavior<CqrsBoundaryEnforcementBehavior>();
+    }
+
+    public ISynapseConfig RegisterStreamRequestHandler<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+        THandler, TRequest, TItem>()
+        where TItem : notnull
+        where TRequest : IStreamRequest<TItem>
+        where THandler : class, IStreamRequestHandler<TRequest, TItem>
+    {
+        _actions.Add(svc => svc.RegisterStreamRequestHandler<THandler, TRequest, TItem>());
+        _streamRequestDispatchers.TryAdd(typeof(TRequest),
+            (Func<IStreamRequest<TItem>, IDependencyResolver, CancellationToken, IAsyncEnumerable<Result<TItem>>>)(
+                (request, resolver, ct) =>
+                {
+                    var handler = resolver.GetRequiredService<IStreamRequestHandler<TRequest, TItem>>();
+                    return handler.HandleAsync((TRequest)request, ct);
+                }));
+        return this;
     }
 
     public ISynapseConfig AddValidator<
@@ -249,6 +293,17 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
         TValidator, TRequest>()
         where TValidator : class, IRequestValidator<TRequest>
         where TRequest : IRequest
+    {
+        _actions.Add(scv => scv.AddScoped<IRequestValidator<TRequest>, TValidator>());
+        return this;
+    }
+
+    public ISynapseConfig AddValidator<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+        TValidator, TRequest, TResponse>()
+        where TValidator : class, IRequestValidator<TRequest>
+        where TRequest : IRequest<TResponse>
+        where TResponse : notnull
     {
         _actions.Add(scv => scv.AddScoped<IRequestValidator<TRequest>, TValidator>());
         return this;
@@ -288,7 +343,10 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
     {
         _builder.Apply(services);
 
-        foreach (var action in _actions) action(services);
+        foreach (var action in _actions)
+        {
+            action(services);
+        }
 
         services.AddSingleton(typeof(IEventOutboxStorage), _eventOutBoxStorage);
         services.AddScoped(typeof(IContextFactory), _contextFactory);
@@ -299,11 +357,20 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
         {
             options.DispatchStrategy = DispatchStrategy.Immediate;
             if (options.Dispatchers.Count != 0)
+            {
                 options.Dispatchers = options.Dispatchers.Concat(_eventDispatchers)
                     .ToDictionary(x => x.Key, x => x.Value);
+            }
             else
+            {
                 options.Dispatchers = _eventDispatchers;
+            }
         });
         services.Configure<OutboxOptions>(options => { _outboxConfigure(options); });
+        services.Configure<InvokerOptions>(opts =>
+        {
+            opts.RequestDispatchers = _requestDispatchers;
+            opts.StreamRequestDispatchers = _streamRequestDispatchers;
+        });
     }
 }

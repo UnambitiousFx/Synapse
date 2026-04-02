@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Options;
 using NSubstitute;
 using UnambitiousFx.Functional;
 using UnambitiousFx.Synapse.Abstractions;
@@ -15,13 +16,22 @@ public sealed class InvokerTests
     {
         _resolver = Substitute.For<IDependencyResolver>();
 
-        _invoker = new Invoker(_resolver);
+        var options = Options.Create(new InvokerOptions());
+        options.Value.RequestDispatchers[typeof(RequestWithResponseExample)] =
+            (Func<IRequest<int>, IDependencyResolver, CancellationToken, ValueTask<Result<int>>>)(
+                (request, resolver, ct) =>
+                {
+                    var handler = resolver.GetRequiredService<IRequestHandler<RequestWithResponseExample, int>>();
+                    return handler.HandleAsync((RequestWithResponseExample)request, ct);
+                });
+
+        _invoker = new Invoker(_resolver, options);
     }
 
     [Fact]
     public async Task GivenAValidHandlerWithResponse_WhenHandleAsync_ShouldReturnAResponse()
     {
-        // Arrange
+        // Arrange (Given)
         var request = new RequestWithResponseExample();
         var handler = Substitute.For<IRequestHandler<RequestWithResponseExample, int>>();
 
@@ -30,21 +40,25 @@ public sealed class InvokerTests
         handler.HandleAsync(request, CancellationToken.None)
             .Returns(Result.Success(42));
 
-        // Act
-        var result = await _invoker.InvokeAsync<RequestWithResponseExample, int>(request, CancellationToken.None);
+        // Act (When)
+        var result = await _invoker.InvokeAsync(request, CancellationToken.None);
 
-        // Assert
+        // Assert (Then)
         Assert.True(result.IsSuccess);
-        if (result.TryGet(out int value, out _))
+        if (result.TryGet(out var value, out _))
+        {
             Assert.Equal(42, value);
+        }
         else
+        {
             Assert.Fail("Result should be successful but was marked as failed");
+        }
     }
 
     [Fact]
     public async Task GivenAValidHandlerWithoutResponse_WhenHandleAsync_ShouldReturnAResponse()
     {
-        // Arrange
+        // Arrange (Given)
         var request = new RequestExample();
         var handler = Substitute.For<IRequestHandler<RequestExample>>();
 
@@ -53,10 +67,10 @@ public sealed class InvokerTests
         handler.HandleAsync(request, CancellationToken.None)
             .Returns(Result.Success());
 
-        // Act
+        // Act (When)
         var result = await _invoker.InvokeAsync(request, CancellationToken.None);
 
-        // Assert
+        // Assert (Then)
         Assert.True(result.IsSuccess);
     }
 }

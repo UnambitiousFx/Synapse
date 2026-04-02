@@ -20,6 +20,12 @@ public sealed record GetTaskQuery : IRequest<TaskDto>
 /// </summary>
 public sealed record ListTasksQuery : IRequest<List<TaskDto>>;
 
+/// <summary>
+///     Streaming query that yields tasks one by one as they become available.
+///     Demonstrates <see cref="IStreamRequest{TResponse}" /> and <c>IInvoker.InvokeStreamAsync</c>.
+/// </summary>
+public sealed record StreamTasksQuery : IStreamRequest<TaskDto>;
+
 // ═══════════════════════════════════════════════════════════════
 // DTOs - Data Transfer Objects
 // ═══════════════════════════════════════════════════════════════

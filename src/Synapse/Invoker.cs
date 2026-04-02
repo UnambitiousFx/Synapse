@@ -1,19 +1,28 @@
 using System.Runtime.CompilerServices;
+using Microsoft.Extensions.Options;
 using UnambitiousFx.Functional;
 using UnambitiousFx.Synapse.Abstractions;
 using UnambitiousFx.Synapse.Resolvers;
 
 namespace UnambitiousFx.Synapse;
 
-internal sealed class Invoker(IDependencyResolver resolver) : IInvoker
+internal sealed class Invoker(IDependencyResolver resolver, IOptions<InvokerOptions> options) : IInvoker
 {
-    public ValueTask<Result<TResponse>> InvokeAsync<TRequest, TResponse>(TRequest request,
+    public ValueTask<Result<TResponse>> InvokeAsync<TResponse>(IRequest<TResponse> request,
         CancellationToken cancellationToken = default)
         where TResponse : notnull
-        where TRequest : IRequest<TResponse>
     {
-        var handler = resolver.GetRequiredService<IRequestHandler<TRequest, TResponse>>();
-        return handler.HandleAsync(request, cancellationToken);
+        var requestType = request.GetType();
+        if (!options.Value.RequestDispatchers.TryGetValue(requestType, out var del))
+        {
+            throw new InvalidOperationException(
+                $"No handler registered for request type '{requestType.Name}'. " +
+                $"Ensure it is registered via cfg.RegisterRequestHandler<THandler, {requestType.Name}, TResponse>().");
+        }
+
+        var dispatch =
+            (Func<IRequest<TResponse>, IDependencyResolver, CancellationToken, ValueTask<Result<TResponse>>>)del;
+        return dispatch(request, resolver, cancellationToken);
     }
 
     public ValueTask<Result> InvokeAsync<TRequest>(TRequest request,
@@ -21,16 +30,26 @@ internal sealed class Invoker(IDependencyResolver resolver) : IInvoker
         where TRequest : IRequest
     {
         var handler = resolver.GetRequiredService<IRequestHandler<TRequest>>();
-        var result = handler.HandleAsync(request, cancellationToken);
-        return result;
+        return handler.HandleAsync(request, cancellationToken);
     }
 
-    public async IAsyncEnumerable<Result<TItem>> InvokeStreamAsync<TRequest, TItem>(TRequest request,
+    public async IAsyncEnumerable<Result<TItem>> InvokeStreamAsync<TItem>(IStreamRequest<TItem> request,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
-        where TRequest : IStreamRequest<TItem>
         where TItem : notnull
     {
-        var handler = resolver.GetRequiredService<IStreamRequestHandler<TRequest, TItem>>();
-        await foreach (var item in handler.HandleAsync(request, cancellationToken)) yield return item;
+        var requestType = request.GetType();
+        if (!options.Value.StreamRequestDispatchers.TryGetValue(requestType, out var del))
+        {
+            throw new InvalidOperationException(
+                $"No stream handler registered for request type '{requestType.Name}'. " +
+                $"Ensure it is registered via cfg.RegisterStreamRequestHandler<THandler, {requestType.Name}, TItem>().");
+        }
+
+        var dispatch =
+            (Func<IStreamRequest<TItem>, IDependencyResolver, CancellationToken, IAsyncEnumerable<Result<TItem>>>)del;
+        await foreach (var item in dispatch(request, resolver, cancellationToken))
+        {
+            yield return item;
+        }
     }
 }

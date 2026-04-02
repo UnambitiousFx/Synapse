@@ -20,7 +20,10 @@ internal sealed class ConditionalTypedBehaviorWrapper : IRequestPipelineBehavior
         CancellationToken cancellationToken = default)
         where TReq : IRequest
     {
-        if (_predicate(request)) return _innerAdapter.HandleAsync(request, next, cancellationToken);
+        if (_predicate(request))
+        {
+            return _innerAdapter.HandleAsync(request, next, cancellationToken);
+        }
 
         return next();
     }
@@ -31,7 +34,10 @@ internal sealed class ConditionalTypedBehaviorWrapper : IRequestPipelineBehavior
         where TResponse : notnull
         where TReq : IRequest<TResponse>
     {
-        if (_predicate(request)) return _innerAdapter.HandleAsync(request, next, cancellationToken);
+        if (_predicate(request))
+        {
+            return _innerAdapter.HandleAsync(request, next, cancellationToken);
+        }
 
         return next();
     }

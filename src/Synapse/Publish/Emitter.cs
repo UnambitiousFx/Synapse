@@ -60,7 +60,10 @@ internal sealed class Emitter : IEmitter
     {
         var eventsList = events as IList<TEvent> ?? events.ToList();
 
-        if (eventsList.Count == 0) return Result.Success();
+        if (eventsList.Count == 0)
+        {
+            return Result.Success();
+        }
 
         var resolvedMode = emitMode == EmitMode.Default ? _defaultMode : emitMode;
 
