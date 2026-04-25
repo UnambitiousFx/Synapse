@@ -17,7 +17,7 @@
         <CoverletOutput>./coverage/</CoverletOutput>
         <Exclude>[*.Tests]*,[*.xunit]*,[xunit.*]*</Exclude>
         <ExcludeByFile>**/benchmarks/**/*.cs,**/examples/**/*.cs,**/test/**/*.cs</ExcludeByFile>
-        <ExcludeByAttribute>Obsolete,GeneratedCode,CompilerGenerated</ExcludeByAttribute>
+            <ExcludeByAttribute>Obsolete,GeneratedCode,GeneratedCodeAttribute,CompilerGenerated,CompilerGeneratedAttribute</ExcludeByAttribute>
 
         <!--
           Coverage thresholds configuration:

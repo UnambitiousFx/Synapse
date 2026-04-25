@@ -24,6 +24,7 @@
         <Project Path="src\Synapse\Synapse.csproj" />
     </Folder>
     <Folder Name="/test/">
+        <Project Path="test/Synapse.AspNetCore.Tests/Synapse.AspNetCore.Tests.csproj" />
         <Project Path="test\Synapse.Tests\Synapse.Tests.csproj" />
     </Folder>
     <Folder Name="/_/">

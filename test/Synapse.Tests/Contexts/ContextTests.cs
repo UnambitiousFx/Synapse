@@ -1,0 +1,168 @@
+using System.Diagnostics;
+using NSubstitute;
+using UnambitiousFx.Functional;
+using UnambitiousFx.Synapse.Abstractions;
+using UnambitiousFx.Synapse.Abstractions.Exceptions;
+using UnambitiousFx.Synapse.Contexts;
+
+namespace UnambitiousFx.Synapse.Tests.Contexts;
+
+public sealed class ContextTests
+{
+    [Fact]
+    public async Task Context_MetadataAndFeatureApis_WorkAsExpected()
+    {
+        // Arrange (Given)
+        var emitter = Substitute.For<IEmitter>();
+        var outboxCommit = Substitute.For<IOutboxCommit>();
+        var correlationId = Guid.NewGuid();
+        var context = new Context(emitter, outboxCommit, correlationId);
+
+        var feature = new TestFeature("v1");
+
+        // Act (When)
+        context.SetMetadata("k", "v");
+        var gotByTryGet = context.TryGetMetadata<string>("k", out var metadataValue);
+        var gotByGet = context.GetMetadata<string>("k");
+        var removed = context.RemoveMetadata("k");
+        var removedAgain = context.RemoveMetadata("k");
+
+        context.SetFeature(feature);
+        var hasFeature = context.TryGetFeature<TestFeature>(out var tryFeature);
+        var getFeature = context.GetFeature<TestFeature>();
+        var mustFeature = context.MustGetFeature<TestFeature>();
+        context.RemoveFeature<TestFeature>();
+
+        // Assert (Then)
+        Assert.Equal(correlationId, context.CorrelationId);
+        Assert.True(gotByTryGet);
+        Assert.Equal("v", metadataValue);
+        Assert.Equal("v", gotByGet);
+        Assert.True(removed);
+        Assert.False(removedAgain);
+
+        Assert.True(hasFeature);
+        Assert.Same(feature, tryFeature);
+        Assert.Same(feature, getFeature);
+        Assert.Same(feature, mustFeature);
+        Assert.Null(context.GetFeature<TestFeature>());
+        Assert.False(context.TryGetFeature<TestFeature>(out _));
+    }
+
+    [Fact]
+    public async Task Context_PublishAndCommit_DelegatesToDependencies()
+    {
+        // Arrange (Given)
+        var emitter = Substitute.For<IEmitter>();
+        var outboxCommit = Substitute.For<IOutboxCommit>();
+        var context = new Context(emitter, outboxCommit, Guid.NewGuid());
+        var @event = new TestEvent();
+
+        emitter.EmitAsync(@event, Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(Result.Success()));
+        emitter.EmitAsync(@event, EmitMode.Outbox, Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(Result.Success()));
+        outboxCommit.CommitAsync(Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(Result.Success()));
+
+        // Act (When)
+        var publishResult = await context.PublishEventAsync(@event, CancellationToken.None);
+        var publishWithModeResult = await context.PublishEventAsync(@event, EmitMode.Outbox, CancellationToken.None);
+        var commitResult = await context.CommitEventsAsync(CancellationToken.None);
+
+        // Assert (Then)
+        Assert.True(publishResult.IsSuccess);
+        Assert.True(publishWithModeResult.IsSuccess);
+        Assert.True(commitResult.IsSuccess);
+        await emitter.Received(1).EmitAsync(@event, CancellationToken.None);
+        await emitter.Received(1).EmitAsync(@event, EmitMode.Outbox, CancellationToken.None);
+        await outboxCommit.Received(1).CommitAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public void Context_WithCorrelationId_ReturnsNewContextWithUpdatedId()
+    {
+        // Arrange (Given)
+        var emitter = Substitute.For<IEmitter>();
+        var outboxCommit = Substitute.For<IOutboxCommit>();
+        var original = new Context(emitter, outboxCommit, Guid.NewGuid());
+        var updatedCorrelationId = Guid.NewGuid();
+
+        // Act (When)
+        var updated = original.WithCorrelationId(updatedCorrelationId);
+
+        // Assert (Then)
+        Assert.Equal(updatedCorrelationId, updated.CorrelationId);
+        Assert.NotEqual(original.CorrelationId, updated.CorrelationId);
+    }
+
+    [Fact]
+    public void Context_MustGetFeature_WhenMissing_Throws()
+    {
+        // Arrange (Given)
+        var emitter = Substitute.For<IEmitter>();
+        var outboxCommit = Substitute.For<IOutboxCommit>();
+        var context = new Context(emitter, outboxCommit, Guid.NewGuid());
+
+        // Act (When)
+        var action = () => context.MustGetFeature<TestFeature>();
+
+        // Assert (Then)
+        var exception = Assert.Throws<MissingContextFeatureException>(action);
+        Assert.Contains(nameof(TestFeature), exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Context_CapturesTraceMetadata_WhenActivityIsPresent()
+    {
+        // Arrange (Given)
+        var emitter = Substitute.For<IEmitter>();
+        var outboxCommit = Substitute.For<IOutboxCommit>();
+        using var activity = new Activity("synapse-test");
+        activity.AddBaggage("tenant", "contoso");
+        activity.Start();
+
+        // Act (When)
+        var context = new Context(emitter, outboxCommit, Guid.NewGuid());
+
+        // Assert (Then)
+        Assert.True(context.TryGetMetadata<string>("Tracing.TraceId", out var traceId));
+        Assert.True(context.TryGetMetadata<string>("Tracing.SpanId", out var spanId));
+        Assert.Equal(activity.TraceId.ToString(), traceId);
+        Assert.Equal(activity.SpanId.ToString(), spanId);
+        Assert.True(context.TryGetMetadata<string>("Tracing.Baggage.tenant", out var tenant));
+        Assert.Equal("contoso", tenant);
+    }
+
+    [Fact]
+    public async Task SlimContextFactory_Create_ReturnsContextWithWorkingDependencies()
+    {
+        // Arrange (Given)
+        var emitter = Substitute.For<IEmitter>();
+        var outboxCommit = Substitute.For<IOutboxCommit>();
+        var factory = new SlimContextFactory(emitter, outboxCommit);
+        var @event = new TestEvent();
+
+        emitter.EmitAsync(@event, Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(Result.Success()));
+        outboxCommit.CommitAsync(Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(Result.Success()));
+
+        // Act (When)
+        var context = factory.Create();
+        var publishResult = await context.PublishEventAsync(@event, CancellationToken.None);
+        var commitResult = await context.CommitEventsAsync(CancellationToken.None);
+
+        // Assert (Then)
+        Assert.NotEqual(Guid.Empty, context.CorrelationId);
+        Assert.True(publishResult.IsSuccess);
+        Assert.True(commitResult.IsSuccess);
+    }
+
+    private sealed record TestEvent : IEvent;
+
+    private sealed record TestFeature(string Value) : IContextFeature
+    {
+        public string Name => "TestFeature";
+    }
+}
