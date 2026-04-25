@@ -97,9 +97,9 @@ jobs:
 
       - name: Verify AOT binary
         run: |
-          if [ -f "examples/MinimalApi/bin/Release/net10.0/linux-x64/publish/WebApiAot" ]; then
+          if [ -f "examples/MinimalApi/bin/Release/net10.0/linux-x64/publish/MinimalApi" ]; then
             echo "✓ Native AOT binary created successfully"
-            ls -lh examples/MinimalApi/bin/Release/net10.0/linux-x64/publish/WebApiAot
+            ls -lh examples/MinimalApi/bin/Release/net10.0/linux-x64/publish/MinimalApi
           else
             echo "✗ Native AOT binary not found"
             exit 1
@@ -107,7 +107,7 @@ jobs:
 
       - name: Test AOT binary starts
         run: |
-          timeout 10s examples/MinimalApi/bin/Release/net10.0/linux-x64/publish/WebApiAot &
+          timeout 10s examples/MinimalApi/bin/Release/net10.0/linux-x64/publish/MinimalApi &
           sleep 3
           if curl -f http://localhost:5000/health || curl -f http://localhost:8080/health; then
             echo "✓ Native AOT application started successfully"
