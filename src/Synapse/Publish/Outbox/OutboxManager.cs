@@ -132,6 +132,13 @@ internal sealed class OutboxManager : IOutboxManager
 
             return result;
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogDebug(
+                "Outbox dispatch was canceled while processing event {EventType}",
+                eventType);
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex,
