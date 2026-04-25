@@ -19,7 +19,9 @@ internal static class BaseTypeDeclarationSyntaxExtensions
         while (potentialNamespaceParent != null &&
                potentialNamespaceParent is not NamespaceDeclarationSyntax &&
                potentialNamespaceParent is not FileScopedNamespaceDeclarationSyntax)
+        {
             potentialNamespaceParent = potentialNamespaceParent.Parent;
+        }
 
         // Build up the final namespace by looping until we no longer have a namespace declaration
         if (potentialNamespaceParent is BaseNamespaceDeclarationSyntax namespaceParent)
@@ -31,7 +33,10 @@ internal static class BaseTypeDeclarationSyntaxExtensions
             // run out of nested namespace declarations
             while (true)
             {
-                if (namespaceParent.Parent is not NamespaceDeclarationSyntax parent) break;
+                if (namespaceParent.Parent is not NamespaceDeclarationSyntax parent)
+                {
+                    break;
+                }
 
                 // Add the outer namespace as a prefix to the final namespace
                 nameSpace = $"{namespaceParent.Name}.{nameSpace}";

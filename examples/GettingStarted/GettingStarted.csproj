@@ -1,0 +1,20 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\..\src\Synapse.Abstractions\Synapse.Abstractions.csproj" />
+        <ProjectReference Include="..\..\src\Synapse\Synapse.csproj" />
+        <ProjectReference Include="..\..\src\Synapse.Generator\Synapse.Generator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection"  />
+        <PackageReference Include="Microsoft.Extensions.Diagnostics" />
+        <PackageReference Include="Microsoft.Extensions.Logging"  />
+        <PackageReference Include="Microsoft.Extensions.Logging.Console"  />
+    </ItemGroup>
+
+</Project>

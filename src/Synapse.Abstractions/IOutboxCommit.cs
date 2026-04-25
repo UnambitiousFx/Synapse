@@ -11,7 +11,7 @@ namespace UnambitiousFx.Synapse.Abstractions;
 ///         and outbox transaction management, following the Unit of Work pattern.
 ///     </para>
 ///     <para>
-///         When using the outbox pattern with <see cref="PublishMode.Outbox" />, events
+///         When using the outbox pattern with <see cref="EmitMode.Outbox" />, events
 ///         are stored but not immediately dispatched. The <see cref="CommitAsync" /> method
 ///         processes all pending events in the current scope and dispatches them.
 ///     </para>

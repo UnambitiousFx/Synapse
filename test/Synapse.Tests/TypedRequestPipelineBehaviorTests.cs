@@ -18,9 +18,9 @@ public sealed class TypedRequestPipelineBehaviorTests
         });
         var provider = services.BuildServiceProvider();
         var behavior = provider.GetRequiredService<OnlyTypedSampleRequestBehavior>();
-        var sender = provider.GetRequiredService<ISender>();
+        var sender = provider.GetRequiredService<IInvoker>();
 
-        await sender.SendAsync(new TypedSampleRequest());
+        await sender.InvokeAsync(new TypedSampleRequest());
         Assert.Equal(1, behavior.ExecutionCount);
     }
 
@@ -35,9 +35,9 @@ public sealed class TypedRequestPipelineBehaviorTests
         });
         var provider = services.BuildServiceProvider();
         var behavior = provider.GetRequiredService<OnlyTypedSampleRequestBehavior>();
-        var sender = provider.GetRequiredService<ISender>();
+        var sender = provider.GetRequiredService<IInvoker>();
 
-        await sender.SendAsync<TypedSampleRequestWithResponse, int>(new TypedSampleRequestWithResponse(42));
+        await sender.InvokeAsync(new TypedSampleRequestWithResponse(42));
         Assert.Equal(0, behavior.ExecutionCount);
     }
 
@@ -53,11 +53,11 @@ public sealed class TypedRequestPipelineBehaviorTests
         });
         var provider = services.BuildServiceProvider();
         var behavior = provider.GetRequiredService<OnlyTypedSampleRequestWithResponseBehavior>();
-        var sender = provider.GetRequiredService<ISender>();
+        var sender = provider.GetRequiredService<IInvoker>();
 
         var result =
-            await sender.SendAsync<TypedSampleRequestWithResponse, int>(new TypedSampleRequestWithResponse(42));
-        Assert.True(result.TryGet(out int value));
+            await sender.InvokeAsync(new TypedSampleRequestWithResponse(42));
+        Assert.True(result.TryGet(out var value, out _));
         Assert.Equal(42, value);
         Assert.Equal(1, behavior.ExecutionCount);
     }
@@ -72,9 +72,9 @@ public sealed class TypedRequestPipelineBehaviorTests
             cfg.RegisterRequestPipelineBehavior<InterfaceTypedRequestBehavior, TypedSampleInheritanceRequest>();
         });
         var provider = services.BuildServiceProvider();
-        var sender = provider.GetRequiredService<ISender>();
+        var sender = provider.GetRequiredService<IInvoker>();
 
-        await sender.SendAsync(new TypedSampleInheritanceRequest());
+        await sender.InvokeAsync(new TypedSampleInheritanceRequest());
         var behavior = provider.GetRequiredService<InterfaceTypedRequestBehavior>();
         Assert.Equal(1, behavior.ExecutionCount);
     }
@@ -89,9 +89,9 @@ public sealed class TypedRequestPipelineBehaviorTests
             cfg.RegisterRequestPipelineBehavior<AbstractTypedRequestBehavior, TypedSampleInheritanceRequest>();
         });
         var provider = services.BuildServiceProvider();
-        var sender = provider.GetRequiredService<ISender>();
+        var sender = provider.GetRequiredService<IInvoker>();
 
-        await sender.SendAsync(new TypedSampleInheritanceRequest());
+        await sender.InvokeAsync(new TypedSampleInheritanceRequest());
         var behavior = provider.GetRequiredService<AbstractTypedRequestBehavior>();
         Assert.Equal(1, behavior.ExecutionCount);
     }
@@ -107,9 +107,9 @@ public sealed class TypedRequestPipelineBehaviorTests
                 true);
         });
         var provider = services.BuildServiceProvider();
-        var sender = provider.GetRequiredService<ISender>();
+        var sender = provider.GetRequiredService<IInvoker>();
 
-        await sender.SendAsync(new TypedSampleRequest());
+        await sender.InvokeAsync(new TypedSampleRequest());
         var behavior = provider.GetRequiredService<ConditionalTypedRequestBehavior>();
         Assert.Equal(1, behavior.ExecutionCount);
     }
@@ -125,9 +125,9 @@ public sealed class TypedRequestPipelineBehaviorTests
                 false);
         });
         var provider = services.BuildServiceProvider();
-        var sender = provider.GetRequiredService<ISender>();
+        var sender = provider.GetRequiredService<IInvoker>();
 
-        await sender.SendAsync(new TypedSampleRequest());
+        await sender.InvokeAsync(new TypedSampleRequest());
         var behavior = provider.GetRequiredService<ConditionalTypedRequestBehavior>();
         Assert.Equal(0, behavior.ExecutionCount);
     }

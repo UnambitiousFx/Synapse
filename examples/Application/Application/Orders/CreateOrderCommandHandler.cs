@@ -8,13 +8,13 @@ namespace UnambitiousFx.Examples.Application.Application.Orders;
 [RequestHandler<CreateOrderCommand, Guid>]
 public sealed class CreateOrderCommandHandler : IRequestHandler<CreateOrderCommand, Guid>
 {
+    private readonly IEmitter _emitter;
     private readonly ILogger<CreateOrderCommandHandler> _logger;
-    private readonly IPublisher _publisher;
 
-    public CreateOrderCommandHandler(ILogger<CreateOrderCommandHandler> logger, IPublisher publisher)
+    public CreateOrderCommandHandler(ILogger<CreateOrderCommandHandler> logger, IEmitter emitter)
     {
         _logger = logger;
-        _publisher = publisher;
+        _emitter = emitter;
     }
 
     public async ValueTask<Result<Guid>> HandleAsync(CreateOrderCommand request,
@@ -25,7 +25,7 @@ public sealed class CreateOrderCommandHandler : IRequestHandler<CreateOrderComma
         _logger.LogInformation("Creating order {OrderId} for {CustomerName}", orderId, request.CustomerName);
 
         // Publish LOCAL event - handled within the same process
-        await _publisher.PublishAsync(new OrderCreated
+        await _emitter.EmitAsync(new OrderCreated
         {
             OrderId = orderId,
             CustomerName = request.CustomerName,
@@ -34,7 +34,7 @@ public sealed class CreateOrderCommandHandler : IRequestHandler<CreateOrderComma
         }, cancellationToken);
 
         // Also send a notification (local event)
-        await _publisher.PublishAsync(new NotificationRequested
+        await _emitter.EmitAsync(new NotificationRequested
         {
             RecipientEmail = $"{request.CustomerName.ToLowerInvariant().Replace(" ", ".")}@example.com",
             Subject = "Order Confirmation",

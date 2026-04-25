@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using UnambitiousFx.Functional;
 using UnambitiousFx.Synapse.Abstractions;
 using UnambitiousFx.Synapse.Abstractions.Exceptions;
@@ -6,22 +7,25 @@ namespace UnambitiousFx.Synapse.Contexts;
 
 internal readonly record struct Context : IContext
 {
+    private readonly IEmitter _emitter;
     private readonly Dictionary<Type, IContextFeature> _features;
     private readonly Dictionary<string, object> _metadata;
     private readonly IOutboxCommit _outboxCommit;
-    private readonly IPublisher _publisher;
 
-    public Context(IPublisher publisher,
+    public Context(IEmitter emitter,
         IOutboxCommit outboxCommit,
         Guid correlationId,
         IReadOnlyDictionary<Type, IContextFeature>? features = null,
         IReadOnlyDictionary<string, object>? metadata = null)
     {
-        _publisher = publisher;
+        _emitter = emitter;
         _outboxCommit = outboxCommit;
         CorrelationId = correlationId;
         _metadata = metadata?.ToDictionary() ?? new Dictionary<string, object>();
         _features = features?.ToDictionary() ?? new Dictionary<Type, IContextFeature>();
+
+        // Capture distributed tracing context from current Activity
+        CaptureTracingContext();
     }
 
 
@@ -29,14 +33,14 @@ internal readonly record struct Context : IContext
         IReadOnlyDictionary<Type, IContextFeature>? features = null,
         IReadOnlyDictionary<string, object>? metadata = null)
     {
-        _publisher = context._publisher;
+        _emitter = context._emitter;
         _outboxCommit = context._outboxCommit;
         CorrelationId = context.CorrelationId;
         _metadata = metadata is not null ? Merge(metadata, context._metadata) : context._metadata;
         _features = features is not null ? Merge(features, context._features) : context._features;
     }
 
-    public Guid CorrelationId { get; }
+    public Guid CorrelationId { get; private init; }
 
     public void SetMetadata(string key,
         object value)
@@ -67,7 +71,9 @@ internal readonly record struct Context : IContext
     {
         if (_metadata.TryGetValue(key, out var obj) &&
             obj is T tValue)
+        {
             return tValue;
+        }
 
         return default;
     }
@@ -78,16 +84,15 @@ internal readonly record struct Context : IContext
         CancellationToken cancellationToken = default)
         where TEvent : class, IEvent
     {
-        return _publisher.PublishAsync(@event, cancellationToken);
+        return _emitter.EmitAsync(@event, cancellationToken);
     }
 
     public ValueTask<Result> PublishEventAsync<TEvent>(TEvent @event,
-        PublishMode mode,
-        DistributionMode distributionMode,
+        EmitMode mode,
         CancellationToken cancellationToken = default)
         where TEvent : class, IEvent
     {
-        return _publisher.PublishAsync(@event, mode, distributionMode, cancellationToken);
+        return _emitter.EmitAsync(@event, mode, cancellationToken);
     }
 
     public ValueTask<Result> CommitEventsAsync(CancellationToken cancellationToken = default)
@@ -124,14 +129,55 @@ internal readonly record struct Context : IContext
         _features.Remove(typeof(TFeature));
     }
 
+    public IContext WithCorrelationId(Guid correlationId)
+    {
+        return this with { CorrelationId = correlationId };
+    }
+
     private static Dictionary<TKey, TValue> Merge<TKey, TValue>(params IReadOnlyDictionary<TKey, TValue>[] dictionaries)
         where TKey : notnull
     {
         var merged = new Dictionary<TKey, TValue>();
         foreach (var dictionary in dictionaries)
         foreach (var kvp in dictionary)
+        {
             merged[kvp.Key] = kvp.Value;
+        }
 
         return merged;
+    }
+
+    private void CaptureTracingContext()
+    {
+        var activity = Activity.Current;
+        if (activity == null)
+        {
+            return;
+        }
+
+        // Store trace and span IDs for distributed tracing correlation
+        if (!string.IsNullOrEmpty(activity.TraceId.ToString()))
+        {
+            SetMetadata("Tracing.TraceId", activity.TraceId.ToString());
+        }
+
+        if (!string.IsNullOrEmpty(activity.SpanId.ToString()))
+        {
+            SetMetadata("Tracing.SpanId", activity.SpanId.ToString());
+        }
+
+        if (!string.IsNullOrEmpty(activity.ParentSpanId.ToString()))
+        {
+            SetMetadata("Tracing.ParentSpanId", activity.ParentSpanId.ToString());
+        }
+
+        // Store baggage for cross-service correlation
+        foreach (var baggage in activity.Baggage)
+        {
+            if (baggage.Value != null)
+            {
+                SetMetadata($"Tracing.Baggage.{baggage.Key}", baggage.Value);
+            }
+        }
     }
 }

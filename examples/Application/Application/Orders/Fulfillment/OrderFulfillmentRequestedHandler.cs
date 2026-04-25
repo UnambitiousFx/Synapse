@@ -24,10 +24,6 @@ public sealed class OrderFulfillmentRequestedHandler : IEventHandler<OrderFulfil
         OrderFulfillmentRequested @event,
         CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation(
-            "[EXTERNAL EVENT RECEIVED] Fulfillment {FulfillmentId} requested for order {OrderId} at {WarehouseLocation}",
-            @event.FulfillmentId, @event.OrderId, @event.WarehouseLocation);
-
         _fulfillmentService.AddFulfillment(@event.FulfillmentId, @event.OrderId, @event.WarehouseLocation);
 
         return ValueTask.FromResult(Result.Success());

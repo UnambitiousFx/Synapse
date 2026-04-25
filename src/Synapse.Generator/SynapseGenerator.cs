@@ -136,6 +136,7 @@ public class SynapseGenerator : IIncrementalGenerator
             }
 
             if (details.Length == 0)
+            {
                 ctx.ReportDiagnostic(Diagnostic.Create(
                     new DiagnosticDescriptor(
                         "MDG002",
@@ -145,9 +146,13 @@ public class SynapseGenerator : IIncrementalGenerator
                         DiagnosticSeverity.Info,
                         true),
                     Location.None));
+            }
             else
+            {
                 foreach (var detail in details)
+                {
                     if (detail is null)
+                    {
                         ctx.ReportDiagnostic(Diagnostic.Create(
                             new DiagnosticDescriptor(
                                 "MDG004",
@@ -157,7 +162,9 @@ public class SynapseGenerator : IIncrementalGenerator
                                 DiagnosticSeverity.Warning,
                                 true),
                             Location.None));
+                    }
                     else
+                    {
                         ctx.ReportDiagnostic(Diagnostic.Create(
                             new DiagnosticDescriptor(
                                 "MDG003",
@@ -167,6 +174,9 @@ public class SynapseGenerator : IIncrementalGenerator
                                 DiagnosticSeverity.Info,
                                 true),
                             detail.Value.Location ?? Location.None));
+                    }
+                }
+            }
 
             ctx.AddSource("RegisterGroup.g.cs",
                 RegisterGroupFactory.Create(rootNamespace, AbstractionsNamespace, details));
@@ -182,7 +192,10 @@ public class SynapseGenerator : IIncrementalGenerator
         {
             var (eventInfo, rootNamespace) = tuple;
 
-            if (string.IsNullOrEmpty(rootNamespace)) return;
+            if (string.IsNullOrEmpty(rootNamespace))
+            {
+                return;
+            }
 
             if (eventInfo.EventTypes.Length == 0)
             {
@@ -222,11 +235,15 @@ public class SynapseGenerator : IIncrementalGenerator
             if (!(attribute.AttributeClass?.Name is LongRequestStreamHandlerAttributeName
                     or ShortRequestStreamHandlerAttributeName))
                 // wrong attribute
+            {
                 continue;
+            }
 
             if (ctx.TargetNode is not ClassDeclarationSyntax classDeclaration)
                 // not a class
+            {
                 continue;
+            }
 
             var className = classDeclaration.Identifier.ValueText;
             var @namespace = classDeclaration.GetNamespace();
@@ -246,11 +263,15 @@ public class SynapseGenerator : IIncrementalGenerator
             if (!(attribute.AttributeClass?.Name is LongRequestHandlerAttributeName
                     or ShortRequestHandlerAttributeName))
                 // wrong attribute
+            {
                 continue;
+            }
 
             if (ctx.TargetNode is not ClassDeclarationSyntax classDeclaration)
                 // not a class
+            {
                 continue;
+            }
 
             var className = classDeclaration.Identifier.ValueText;
             var @namespace = classDeclaration.GetNamespace();
@@ -271,11 +292,15 @@ public class SynapseGenerator : IIncrementalGenerator
         {
             if (!(attribute.AttributeClass?.Name is LongEventHandlerAttributeName or ShortEventHandlerAttributeName))
                 // wrong attribute
+            {
                 continue;
+            }
 
             if (ctx.TargetNode is not ClassDeclarationSyntax classDeclaration)
                 // not a class
+            {
                 continue;
+            }
 
             var className = classDeclaration.Identifier.ValueText;
             var @namespace = classDeclaration.GetNamespace();
@@ -296,7 +321,9 @@ public class SynapseGenerator : IIncrementalGenerator
         var typeArgs = attribute.AttributeClass?.TypeArguments;
         if (typeArgs is null ||
             typeArgs.Value.Length == 0)
+        {
             return (string.Empty, null);
+        }
 
 
         // Get the fully qualified name of the request type
@@ -306,8 +333,10 @@ public class SynapseGenerator : IIncrementalGenerator
         // Check if there's a response type (generic attribute with 2 type parameters)
         string? responseType = null;
         if (typeArgs.Value.Length > 1)
+        {
             responseType = typeArgs.Value[1]
                 .ToDisplayString();
+        }
 
         return (requestType, responseType);
     }
@@ -324,7 +353,10 @@ public class SynapseGenerator : IIncrementalGenerator
         var iEventSymbol = compilation.GetTypeByMetadataName($"{AbstractionsNamespace}.IEvent");
         var iEventHandlerSymbol = compilation.GetTypeByMetadataName($"{AbstractionsNamespace}.IEventHandler`1");
 
-        if (iEventSymbol == null) return new EventInfo(ImmutableArray<string>.Empty, ImmutableArray<string>.Empty);
+        if (iEventSymbol == null)
+        {
+            return new EventInfo(ImmutableArray<string>.Empty, ImmutableArray<string>.Empty);
+        }
 
         // Iterate through all named types in the compilation
         var visitor = new EventInfoSymbolVisitor(iEventSymbol, iEventHandlerSymbol, eventTypes, handlerTypes);
@@ -357,31 +389,49 @@ public class SynapseGenerator : IIncrementalGenerator
 
         public override void VisitNamespace(INamespaceSymbol symbol)
         {
-            foreach (var member in symbol.GetMembers()) member.Accept(this);
+            foreach (var member in symbol.GetMembers())
+            {
+                member.Accept(this);
+            }
         }
 
         public override void VisitNamedType(INamedTypeSymbol symbol)
         {
             // Check if this type implements IEvent
-            if (ImplementsIEvent(symbol)) _eventTypes.Add(symbol.ToDisplayString());
+            if (ImplementsIEvent(symbol))
+            {
+                _eventTypes.Add(symbol.ToDisplayString());
+            }
 
             // Check if this type implements IEventHandler<T>
             if (_iEventHandlerSymbol != null && ImplementsIEventHandler(symbol))
+            {
                 _handlerTypes.Add(symbol.ToDisplayString());
+            }
 
             // Visit nested types
-            foreach (var nestedType in symbol.GetTypeMembers()) nestedType.Accept(this);
+            foreach (var nestedType in symbol.GetTypeMembers())
+            {
+                nestedType.Accept(this);
+            }
         }
 
         private bool ImplementsIEvent(INamedTypeSymbol typeSymbol)
         {
             // Skip abstract types and interfaces
-            if (typeSymbol.IsAbstract || typeSymbol.TypeKind == TypeKind.Interface) return false;
+            if (typeSymbol.IsAbstract || typeSymbol.TypeKind == TypeKind.Interface)
+            {
+                return false;
+            }
 
             // Check all interfaces
             foreach (var @interface in typeSymbol.AllInterfaces)
+            {
                 if (SymbolEqualityComparer.Default.Equals(@interface, _iEventSymbol))
+                {
                     return true;
+                }
+            }
 
             return false;
         }
@@ -389,13 +439,20 @@ public class SynapseGenerator : IIncrementalGenerator
         private bool ImplementsIEventHandler(INamedTypeSymbol typeSymbol)
         {
             // Skip abstract types and interfaces
-            if (typeSymbol.IsAbstract || typeSymbol.TypeKind == TypeKind.Interface) return false;
+            if (typeSymbol.IsAbstract || typeSymbol.TypeKind == TypeKind.Interface)
+            {
+                return false;
+            }
 
             // Check all interfaces
             foreach (var @interface in typeSymbol.AllInterfaces)
+            {
                 if (@interface.IsGenericType &&
                     SymbolEqualityComparer.Default.Equals(@interface.ConstructedFrom, _iEventHandlerSymbol))
+                {
                     return true;
+                }
+            }
 
             return false;
         }

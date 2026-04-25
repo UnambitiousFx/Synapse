@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RunSettings>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="XPlat code coverage">
+        <Configuration>
+          <Format>cobertura,opencover,json</Format>
+          <Exclude>[*.Tests]*,[*.xunit]*,[xunit.*]*</Exclude>
+          <ExcludeByFile>**/benchmarks/**/*.cs,**/examples/**/*.cs,**/test/**/*.cs</ExcludeByFile>
+          <ExcludeByAttribute>Obsolete,GeneratedCode,GeneratedCodeAttribute,CompilerGenerated,CompilerGeneratedAttribute</ExcludeByAttribute>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>

@@ -62,17 +62,17 @@ builder.Services.AddSynapse(cfg =>
 
 ### Send requests
 
-Use `ISender` to dispatch requests to handlers:
+Use `IInvoker` to dispatch requests to handlers:
 
 ```csharp
 // Send a command that returns a value
-var result = await sender.SendAsync<CreateTodoCommand, Guid>(command);
+var result = await invoker.InvokeAsync<CreateTodoCommand, Guid>(command);
 
 // Send a command without a response
-var result = await sender.SendAsync<UpdateTodoCommand>(command);
+var result = await invoker.InvokeAsync<UpdateTodoCommand>(command);
 
 // Stream results from an IStreamRequest
-await foreach (var itemResult in sender.SendStreamAsync<ListItemsRequest, Item>(request))
+await foreach (var itemResult in invoker.InvokeStreamAsync<ListItemsRequest, Item>(request))
 {
     // itemResult is Result<Item>
 }

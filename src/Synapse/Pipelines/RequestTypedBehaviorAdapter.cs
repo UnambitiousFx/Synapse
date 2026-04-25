@@ -18,7 +18,10 @@ internal sealed class RequestTypedBehaviorAdapter<TRequest> : IRequestPipelineBe
         CancellationToken cancellationToken = default)
         where TReq : IRequest
     {
-        if (request is TRequest typed) return _inner.HandleAsync(typed, next, cancellationToken);
+        if (request is TRequest typed)
+        {
+            return _inner.HandleAsync(typed, next, cancellationToken);
+        }
 
         return next();
     }

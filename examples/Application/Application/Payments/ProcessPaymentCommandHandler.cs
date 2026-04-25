@@ -8,13 +8,13 @@ namespace UnambitiousFx.Examples.Application.Application.Payments;
 [RequestHandler<ProcessPaymentCommand>]
 public sealed class ProcessPaymentCommandHandler : IRequestHandler<ProcessPaymentCommand>
 {
+    private readonly IEmitter _emitter;
     private readonly ILogger<ProcessPaymentCommandHandler> _logger;
-    private readonly IPublisher _publisher;
 
-    public ProcessPaymentCommandHandler(ILogger<ProcessPaymentCommandHandler> logger, IPublisher publisher)
+    public ProcessPaymentCommandHandler(ILogger<ProcessPaymentCommandHandler> logger, IEmitter emitter)
     {
         _logger = logger;
-        _publisher = publisher;
+        _emitter = emitter;
     }
 
     public async ValueTask<Result> HandleAsync(ProcessPaymentCommand request,
@@ -24,8 +24,7 @@ public sealed class ProcessPaymentCommandHandler : IRequestHandler<ProcessPaymen
 
         _logger.LogInformation("Processing payment {PaymentId} for order {OrderId}", paymentId, request.OrderId);
 
-        // Publish EXTERNAL event - will be sent through transport layer
-        await _publisher.PublishAsync(new PaymentProcessed
+        await _emitter.EmitAsync(new PaymentProcessed
         {
             PaymentId = paymentId,
             OrderId = request.OrderId,

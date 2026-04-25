@@ -1,5 +1,9 @@
 <Project>
-    <Import Project="$([MSBuild]::GetPathOfFileAbove(&#39;build.props&#39;))"/>
+    <Import Project="$([MSBuild]::GetPathOfFileAbove(&#39;build.props&#39;))" />
+
+    <PropertyGroup>
+        <TargetFrameworks>$(LibraryTargetFrameworks)</TargetFrameworks>
+    </PropertyGroup>
 
     <PropertyGroup>
         <IsPackable>false</IsPackable>
@@ -12,7 +16,8 @@
         <CoverletOutputFormat>opencover,cobertura,json</CoverletOutputFormat>
         <CoverletOutput>./coverage/</CoverletOutput>
         <Exclude>[*.Tests]*,[*.xunit]*,[xunit.*]*</Exclude>
-        <ExcludeByAttribute>Obsolete,GeneratedCode,CompilerGenerated</ExcludeByAttribute>
+        <ExcludeByFile>**/benchmarks/**/*.cs,**/examples/**/*.cs,**/test/**/*.cs</ExcludeByFile>
+            <ExcludeByAttribute>Obsolete,GeneratedCode,GeneratedCodeAttribute,CompilerGenerated,CompilerGeneratedAttribute</ExcludeByAttribute>
 
         <!--
           Coverage thresholds configuration:
@@ -30,7 +35,7 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <Using Include="Xunit"/>
+        <Using Include="Xunit" />
     </ItemGroup>
 
     <ItemGroup>
@@ -42,12 +47,12 @@
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
-        <PackageReference Include="xunit"/>
+        <PackageReference Include="xunit" />
         <PackageReference Include="xunit.runner.visualstudio">
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
-        <PackageReference Include="Microsoft.NET.Test.Sdk"/>
-        <PackageReference Include="JetBrains.Annotations"/>
+        <PackageReference Include="Microsoft.NET.Test.Sdk" />
+        <PackageReference Include="JetBrains.Annotations" />
     </ItemGroup>
 </Project>

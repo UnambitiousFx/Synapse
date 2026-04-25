@@ -7,7 +7,7 @@ using UnambitiousFx.Synapse.Observability;
 namespace UnambitiousFx.Synapse.Publish.Outbox;
 
 /// <summary>
-///     Manages outbox storage and dispatch strategies for both local and external events.
+///     Manages outbox storage and dispatch strategies
 ///     Coordinates event storage, retry logic, and distribution mode-based dispatch.
 /// </summary>
 internal sealed class OutboxManager : IOutboxManager
@@ -65,23 +65,26 @@ internal sealed class OutboxManager : IOutboxManager
         var combinedResult = results.Combine();
 
         if (combinedResult.IsSuccess)
+        {
             _logger.LogInformation(
                 "Successfully processed {EventCount} pending events from outbox",
                 events.Count);
+        }
         else
+        {
             _logger.LogWarning(
                 "Completed processing {EventCount} pending events from outbox with failures: {Error}",
                 events.Count, combinedResult.ToString());
+        }
 
         return combinedResult;
     }
 
     public ValueTask<Result> StoreAsync<TEvent>(TEvent @event,
-        DistributionMode distributionMode,
         CancellationToken cancellationToken)
         where TEvent : class, IEvent
     {
-        return _outboxStorage.AddAsync(@event, distributionMode, cancellationToken);
+        return _outboxStorage.AddAsync(@event, cancellationToken);
     }
 
 
@@ -93,11 +96,7 @@ internal sealed class OutboxManager : IOutboxManager
 
         try
         {
-            var distributionMode = await _outboxStorage.GetDistributionModeAsync(@event, cancellationToken);
-
-            _logger.LogDebug(
-                "Dispatching event {EventType} from outbox with distribution mode {DistributionMode}",
-                eventType, distributionMode);
+            _logger.LogDebug("Dispatching event {EventType} from outbox", eventType);
 
             // Use the registered dispatcher delegate to maintain type information
             // This delegate is registered at startup via source generation or explicit registration
@@ -127,11 +126,18 @@ internal sealed class OutboxManager : IOutboxManager
                 _logger.LogWarning(
                     "Event {EventType} dispatch from outbox failed: {Error}",
                     eventType, result.ToString());
-                await HandleDispatchFailureAsync(@event, result.ToString()!, cancellationToken);
+                await HandleDispatchFailureAsync(@event, result.ToString(), cancellationToken);
                 _metrics.RecordOutboxEventProcessed(eventType, false);
             }
 
             return result;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogDebug(
+                "Outbox dispatch was canceled while processing event {EventType}",
+                eventType);
+            throw;
         }
         catch (Exception ex)
         {

@@ -35,22 +35,26 @@ internal static class EventDispatcherRegistrationFactory
         sb.AppendLine("    /// </summary>");
         sb.AppendLine(
             "    /// <param name=\"register\">A callback to register each event type with its dispatcher delegate.</param>");
-        sb.AppendLine("    public void RegisterDispatchers(Action<Type, global::UnambitiousFx.Synapse.Abstractions.DispatchEventDelegate> register)");
+        sb.AppendLine(
+            "    public void RegisterDispatchers(Action<Type, global::UnambitiousFx.Synapse.Abstractions.DispatchEventDelegate> register)");
         sb.AppendLine("    {");
 
         foreach (var eventType in eventInfo.EventTypes)
         {
-            if (string.IsNullOrWhiteSpace(eventType)) continue;
+            if (string.IsNullOrWhiteSpace(eventType))
+            {
+                continue;
+            }
 
             var globalizedType = GlobalizeType(eventType);
 
             sb.AppendLine(
                 $"        register(typeof({globalizedType}), new global::UnambitiousFx.Synapse.Abstractions.DispatchEventDelegate(");
-            sb.AppendLine("            async (@event, dispatcher, ct) =>");
+            sb.AppendLine("            (@event, dispatcher, ct) =>");
             sb.AppendLine("            {");
             sb.AppendLine($"                var typedEvent = ({globalizedType})@event;");
             sb.AppendLine(
-                "                return await dispatcher.DispatchAsync(typedEvent, global::UnambitiousFx.Synapse.Abstractions.DistributionMode.Undefined, ct);");
+                "                return dispatcher.DispatchAsync(typedEvent, ct);");
             sb.AppendLine("            }));");
             sb.AppendLine();
         }
@@ -79,7 +83,10 @@ internal static class EventDispatcherRegistrationFactory
         // Preserve event types
         foreach (var eventType in eventInfo.EventTypes)
         {
-            if (string.IsNullOrWhiteSpace(eventType)) continue;
+            if (string.IsNullOrWhiteSpace(eventType))
+            {
+                continue;
+            }
 
             var globalizedType = GlobalizeType(eventType);
             sb.AppendLine($"    [DynamicDependency(DynamicallyAccessedMemberTypes.All, typeof({globalizedType}))]");
@@ -88,7 +95,10 @@ internal static class EventDispatcherRegistrationFactory
         // Preserve handler types
         foreach (var handlerType in eventInfo.HandlerTypes)
         {
-            if (string.IsNullOrWhiteSpace(handlerType)) continue;
+            if (string.IsNullOrWhiteSpace(handlerType))
+            {
+                continue;
+            }
 
             var globalizedType = GlobalizeType(handlerType);
             sb.AppendLine($"    [DynamicDependency(DynamicallyAccessedMemberTypes.All, typeof({globalizedType}))]");
@@ -115,7 +125,10 @@ internal static class EventDispatcherRegistrationFactory
             return $"global::{genericType}<global::{underlyingType}>";
         }
 
-        if (input.StartsWith("global::")) return input;
+        if (input.StartsWith("global::"))
+        {
+            return input;
+        }
 
         return $"global::{input}";
     }

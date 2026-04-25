@@ -27,38 +27,7 @@ public interface IEventOutboxStorage
     ///     A task that represents the asynchronous operation. The task result contains a <see cref="Result" /> indicating
     ///     whether the event was successfully added.
     /// </returns>
-    /// <remarks>
-    ///     This overload defaults to <see cref="DistributionMode.Local" /> for backward compatibility.
-    ///     Use the overload with <see cref="DistributionMode" /> parameter to specify distribution behavior explicitly.
-    /// </remarks>
     ValueTask<Result> AddAsync<TEvent>(TEvent @event,
-        CancellationToken cancellationToken = default)
-        where TEvent : class, IEvent;
-
-    /// <summary>
-    ///     Adds an event to the outbox storage with a specified distribution mode for later processing.
-    /// </summary>
-    /// <typeparam name="TEvent">The type of the event being added. Must implement the <see cref="IEvent" /> interface.</typeparam>
-    /// <param name="event">The event to be added to the outbox storage.</param>
-    /// <param name="distributionMode">
-    ///     The distribution mode that determines how the event should be processed
-    ///     (LocalOnly, ExternalOnly, or Hybrid).
-    /// </param>
-    /// <param name="cancellationToken">
-    ///     A token to observe while waiting for the task to complete. Defaults to
-    ///     <see cref="CancellationToken.None" />.
-    /// </param>
-    /// <returns>
-    ///     A task that represents the asynchronous operation. The task result contains a <see cref="Result" /> indicating
-    ///     whether the event was successfully added.
-    /// </returns>
-    /// <remarks>
-    ///     The distribution mode is persisted alongside the event to ensure correct behavior during retry and replay
-    ///     scenarios.
-    ///     This enables the outbox to maintain the intended distribution strategy even after application restarts.
-    /// </remarks>
-    ValueTask<Result> AddAsync<TEvent>(TEvent @event,
-        DistributionMode distributionMode,
         CancellationToken cancellationToken = default)
         where TEvent : class, IEvent;
 
@@ -126,21 +95,23 @@ public interface IEventOutboxStorage
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    ///     Retrieves the distribution mode for a stored event.
+    ///     Gets the count of pending events in the outbox.
     /// </summary>
-    /// <param name="event">The event whose distribution mode should be retrieved.</param>
-    /// <param name="cancellationToken">
-    ///     A token to monitor for cancellation requests.
-    /// </param>
-    /// <returns>
-    ///     A task that represents the asynchronous operation. The task result contains the
-    ///     <see cref="DistributionMode" /> that was stored with the event.
-    /// </returns>
-    /// <remarks>
-    ///     This method is essential for outbox replay scenarios where the system needs to know
-    ///     how an event should be distributed (locally, externally, or both) when retrying or
-    ///     processing pending events after application restart.
-    /// </remarks>
-    ValueTask<DistributionMode> GetDistributionModeAsync(IEvent @event,
-        CancellationToken cancellationToken = default);
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The number of pending events.</returns>
+    ValueTask<int> GetPendingCountAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    ///     Gets the count of failed events in the outbox (not yet in dead-letter).
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The number of failed events.</returns>
+    ValueTask<int> GetFailedCountAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    ///     Gets the age of the oldest pending event in the outbox.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The age of the oldest pending event, or null if no pending events exist.</returns>
+    ValueTask<TimeSpan?> GetOldestPendingAgeAsync(CancellationToken cancellationToken = default);
 }

@@ -1,5 +1,5 @@
 <Project>
-    <Import Project="$([MSBuild]::GetPathOfFileAbove(&#39;build.props&#39;))"/>
+    <Import Project="$([MSBuild]::GetPathOfFileAbove(&#39;build.props&#39;))" />
     <PropertyGroup>
         <IsAotCompatible>true</IsAotCompatible>
         <PackageOutputPath>$(SolutionDir)local_packages</PackageOutputPath>
@@ -26,7 +26,7 @@
         <SymbolPackageFormat>snupkg</SymbolPackageFormat>
 
         <!-- Build configuration -->
-        <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+        <GeneratePackageOnBuild Condition="'$(CI)' == 'true'">true</GeneratePackageOnBuild>
         <GenerateDocumentationFile>true</GenerateDocumentationFile>
         <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
         <Deterministic>true</Deterministic>
@@ -40,23 +40,23 @@
     </PropertyGroup>
 
     <ItemGroup Condition="$(CI) == 'true'">
-        <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="All"/>
+        <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="All" />
     </ItemGroup>
 
     <ItemGroup Condition="!Exists('README.md')">
-        <None Include="$([MSBuild]::GetPathOfFileAbove('README.md'))" Pack="true" PackagePath="\"/>
+        <None Include="$([MSBuild]::GetPathOfFileAbove('README.md'))" Pack="true" PackagePath="\" />
     </ItemGroup>
     <ItemGroup Condition="Exists('README.md')">
-        <None Include="README.md" Pack="true" PackagePath="\"/>
+        <None Include="README.md" Pack="true" PackagePath="\" />
     </ItemGroup>
 
     <ItemGroup>
-        <None Include="$([MSBuild]::GetPathOfFileAbove('icon.png'))" Pack="true" PackagePath="\"/>
+        <None Include="$([MSBuild]::GetPathOfFileAbove('icon.png'))" Pack="true" PackagePath="\" />
     </ItemGroup>
 
     <ItemGroup>
-        <InternalsVisibleTo Include="$(AssemblyName).Tests"/>
-        <InternalsVisibleTo Include="DynamicProxyGenAssembly2"/>
+        <InternalsVisibleTo Include="$(AssemblyName).Tests" />
+        <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
     </ItemGroup>
 
     <PropertyGroup Condition="'$(TargetFramework)' == 'net9.0'">

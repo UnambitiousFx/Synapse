@@ -9,7 +9,6 @@ using UnambitiousFx.Synapse.Pipelines;
 using UnambitiousFx.Synapse.Publish;
 using UnambitiousFx.Synapse.Publish.Outbox;
 using UnambitiousFx.Synapse.Resolvers;
-using UnambitiousFx.Synapse.Send;
 
 namespace UnambitiousFx.Synapse;
 
@@ -35,8 +34,8 @@ public static class DependencyInjectionExtensions
         services.TryAddScoped<IOutboxManager, OutboxManager>();
         services.TryAddScoped<IOutboxCommit, OutboxCommit>();
         services.TryAddScoped<IEventDispatcher, EventDispatcher>();
-        services.TryAddScoped<ISender, Sender>();
-        services.TryAddScoped<IPublisher, Publisher>();
+        services.TryAddScoped<IInvoker, Invoker>();
+        services.TryAddScoped<IEmitter, Emitter>();
         services.TryAddScoped<IContextFactory, DefaultContextFactory>();
         services.TryAddScoped(sp =>
         {

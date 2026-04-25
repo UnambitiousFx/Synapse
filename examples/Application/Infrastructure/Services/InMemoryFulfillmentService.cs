@@ -26,21 +26,25 @@ public sealed class InMemoryFulfillmentService : IFulfillmentService
     public void CompleteFulfillment(Guid fulfillmentId)
     {
         if (_fulfillments.TryGetValue(fulfillmentId, out var fulfillment))
+        {
             _fulfillments[fulfillmentId] = fulfillment with
             {
                 Status = "Completed",
                 CompletedAt = DateTime.UtcNow
             };
+        }
     }
 
     public void CancelFulfillment(Guid orderId)
     {
         var fulfillment = _fulfillments.Values.FirstOrDefault(f => f.OrderId == orderId && f.Status == "Pending");
         if (fulfillment != null)
+        {
             _fulfillments[fulfillment.FulfillmentId] = fulfillment with
             {
                 Status = "Cancelled"
             };
+        }
     }
 
     public IEnumerable<FulfillmentInfo> GetAllFulfillments()

@@ -72,8 +72,10 @@ public sealed class CqrsBoundaryEnforcementBehavior : IRequestPipelineBehavior
     private static void RemoveBoundaryMetadata(IContext context)
     {
         if (!context.RemoveMetadata(CQRSBoundaryEnforcementKey))
+        {
             throw new CqrsBoundaryViolationException(
                 "CQRS boundary enforcement metadata was missing when trying to remove it. This indicates a violation of the CQRS boundary enforcement behavior.");
+        }
 
         context.RemoveMetadata(CQRSBoundaryEnforcementNameKey);
     }
@@ -90,7 +92,9 @@ public sealed class CqrsBoundaryEnforcementBehavior : IRequestPipelineBehavior
     {
         if (!context.TryGetMetadata<bool>(CQRSBoundaryEnforcementKey, out var isInRequest) ||
             !isInRequest)
+        {
             return;
+        }
 
         var previousRequestName = context.GetMetadata<string>(CQRSBoundaryEnforcementNameKey);
 

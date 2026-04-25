@@ -2,14 +2,11 @@
 
 
     <ItemGroup>
-        <ProjectReference Include="..\..\src\Synapse\Synapse.csproj"/>
-        <ProjectReference Include="..\Application\Application.csproj"/>
+        <ProjectReference Include="..\..\src\Synapse.AspNetCore\Synapse.AspNetCore.csproj" />
+        <ProjectReference Include="..\..\src\Synapse\Synapse.csproj" />
     </ItemGroup>
     <ItemGroup>
-        <PackageReference Include="UnambitiousFx.Functional.AspNetCore" Version="1.0.0"/>
-    </ItemGroup>
-    <ItemGroup>
-        <InternalsVisibleTo Include="WebApi.Tests"/>
+        <InternalsVisibleTo Include="WebApi.Tests" />
     </ItemGroup>
 
 

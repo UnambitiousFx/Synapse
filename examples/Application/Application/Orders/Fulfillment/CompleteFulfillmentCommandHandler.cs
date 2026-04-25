@@ -2,7 +2,7 @@ using Microsoft.Extensions.Logging;
 using UnambitiousFx.Examples.Application.Domain.Events;
 using UnambitiousFx.Examples.Application.Infrastructure.Services;
 using UnambitiousFx.Functional;
-using UnambitiousFx.Functional.Errors;
+using UnambitiousFx.Functional.Failures;
 using UnambitiousFx.Synapse.Abstractions;
 
 namespace UnambitiousFx.Examples.Application.Application.Orders.Fulfillment;
@@ -10,17 +10,17 @@ namespace UnambitiousFx.Examples.Application.Application.Orders.Fulfillment;
 [RequestHandler<CompleteFulfillmentCommand>]
 public sealed class CompleteFulfillmentCommandHandler : IRequestHandler<CompleteFulfillmentCommand>
 {
+    private readonly IEmitter _emitter;
     private readonly IFulfillmentService _fulfillmentService;
     private readonly ILogger<CompleteFulfillmentCommandHandler> _logger;
-    private readonly IPublisher _publisher;
 
     public CompleteFulfillmentCommandHandler(
         ILogger<CompleteFulfillmentCommandHandler> logger,
-        IPublisher publisher,
+        IEmitter emitter,
         IFulfillmentService fulfillmentService)
     {
         _logger = logger;
-        _publisher = publisher;
+        _emitter = emitter;
         _fulfillmentService = fulfillmentService;
     }
 
@@ -30,13 +30,19 @@ public sealed class CompleteFulfillmentCommandHandler : IRequestHandler<Complete
     {
         var fulfillment = _fulfillmentService.GetFulfillment(request.FulfillmentId);
         if (fulfillment == null)
-            return Result.Failure(new NotFoundError(nameof(FulfillmentInfo), request.FulfillmentId.ToString()));
+        {
+            return Result.Failure(new NotFoundFailure(nameof(FulfillmentInfo), request.FulfillmentId.ToString()));
+        }
 
         if (fulfillment.Status == "Completed")
-            return Result.Failure(new ValidationError([$"Fulfillment {request.FulfillmentId} is already completed"]));
+        {
+            return Result.Failure(new ValidationFailure([$"Fulfillment {request.FulfillmentId} is already completed"]));
+        }
 
         if (fulfillment.Status == "Cancelled")
-            return Result.Failure(new ValidationError([$"Fulfillment {request.FulfillmentId} is cancelled"]));
+        {
+            return Result.Failure(new ValidationFailure([$"Fulfillment {request.FulfillmentId} is cancelled"]));
+        }
 
         _fulfillmentService.CompleteFulfillment(request.FulfillmentId);
 
@@ -44,8 +50,7 @@ public sealed class CompleteFulfillmentCommandHandler : IRequestHandler<Complete
             "Completing fulfillment {FulfillmentId} for order {OrderId}",
             request.FulfillmentId, fulfillment.OrderId);
 
-        // Publish EXTERNAL event
-        await _publisher.PublishAsync(new OrderFulfillmentCompleted
+        await _emitter.EmitAsync(new OrderFulfillmentCompleted
         {
             OrderId = fulfillment.OrderId,
             FulfillmentId = request.FulfillmentId,

@@ -1,256 +1,189 @@
 using Microsoft.AspNetCore.Mvc;
-using UnambitiousFx.Examples.Application.Application.Inventory;
-using UnambitiousFx.Examples.Application.Application.Notifications;
-using UnambitiousFx.Examples.Application.Application.Orders;
-using UnambitiousFx.Examples.Application.Application.Orders.Fulfillment;
-using UnambitiousFx.Examples.Application.Application.Payments;
-using UnambitiousFx.Examples.Application.Application.Todos;
-using UnambitiousFx.Examples.Application.Domain.Entities;
-using UnambitiousFx.Examples.Application.Domain.Events;
-using UnambitiousFx.Examples.Application.Domain.Repositories;
-using UnambitiousFx.Examples.Application.Infrastructure.Repositories;
-using UnambitiousFx.Examples.Application.Infrastructure.Services;
-using UnambitiousFx.Examples.WebApi.Models;
-using UnambitiousFx.Functional.AspNetCore.Http.ValueTasks;
+using UnambitiousFx.Examples.WebApi;
+using UnambitiousFx.Examples.WebApi.Features.Tasks;
+using UnambitiousFx.Examples.WebApi.Features.Tasks.Handlers;
+using UnambitiousFx.Examples.WebApi.Features.Tasks.Validators;
+using UnambitiousFx.Examples.WebApi.Infrastructure;
 using UnambitiousFx.Synapse;
-using UnambitiousFx.Synapse.Abstractions;
+using UnambitiousFx.Synapse.AspNetCore;
+using UnambitiousFx.Synapse.AspNetCore.Http;
 using UnambitiousFx.Synapse.Pipelines;
-
-const string applicationName = "WebApi";
+using UnambitiousFx.Synapse.Publish.Orchestrators;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Infrastructure
+builder.Services.AddSingleton<TaskRepository>();
+
+// Synapse ASP.NET Core integration (IHttpInvoker, IMvcInvoker, IFailureHttpMapper)
+builder.Services.AddSynapseAspNetCore();
+
 builder.Services.AddSynapse(cfg =>
 {
-    cfg.AddRegisterGroup(new ManualRegisterGroup());
+    // ── Request handlers ───────────────────────────────────────────────
+    cfg.RegisterRequestHandler<CreateTaskCommandHandler, CreateTaskCommand, Guid>();
+    cfg.RegisterRequestHandler<UpdateTaskCommandHandler, UpdateTaskCommand>();
+    cfg.RegisterRequestHandler<CompleteTaskCommandHandler, CompleteTaskCommand>();
+    cfg.RegisterRequestHandler<DeleteTaskCommandHandler, DeleteTaskCommand>();
+    cfg.RegisterRequestHandler<GetTaskQueryHandler, GetTaskQuery, TaskDto>();
+    cfg.RegisterRequestHandler<ListTasksQueryHandler, ListTasksQuery, List<TaskDto>>();
 
-    // Todo handlers
-    cfg.RegisterRequestHandler<CreateTodoCommandHandler, CreateTodoCommand, Guid>()
-        .RegisterRequestHandler<ListTodoQueryHandler, ListTodoQuery, IEnumerable<Todo>>()
-        .RegisterRequestHandler<UpdateTodoCommandHandler, UpdateTodoCommand>()
-        .RegisterEventHandler<TodoUpdatedHandler, TodoUpdated>()
-        .RegisterEventHandler<TodoDeletedHandler, TodoDeleted>();
+    // ── Streaming request handler ──────────────────────────────────────
+    // Demonstrates IStreamRequest<T> / IStreamRequestHandler<TRequest, TItem>
+    cfg.RegisterStreamRequestHandler<StreamTasksQueryHandler, StreamTasksQuery, TaskDto>();
 
-    // Order handlers
-    cfg.RegisterRequestHandler<CreateOrderCommandHandler, CreateOrderCommand, Guid>()
-        .RegisterRequestHandler<ShipOrderCommandHandler, ShipOrderCommand>()
-        .RegisterRequestHandler<CancelOrderCommandHandler, CancelOrderCommand>()
-        .RegisterEventHandler<OrderCreatedHandler, OrderCreated>()
-        .RegisterEventHandler<OrderShippedHandler, OrderShipped>()
-        .RegisterEventHandler<OrderShippedNotificationHandler, OrderShipped>();
+    // ── Event handlers ─────────────────────────────────────────────────
+    cfg.RegisterEventHandler<TaskCreatedLoggingHandler, TaskCreatedEvent>();
+    // Two handlers for the same event — fan-out pattern
+    cfg.RegisterEventHandler<TaskCompletedLoggingHandler, TaskCompletedEvent>();
+    cfg.RegisterEventHandler<TaskCompletedNotificationHandler, TaskCompletedEvent>();
+    cfg.RegisterEventHandler<TaskDeletedLoggingHandler, TaskDeletedEvent>();
 
-    // Fulfillment handlers (for cross-app communication)
-    cfg.RegisterEventHandler<OrderFulfillmentRequestedHandler, OrderFulfillmentRequested>()
-        .RegisterEventHandler<OrderFulfillmentCompletedHandler, OrderFulfillmentCompleted>();
+    // ── Validators ─────────────────────────────────────────────────────
+    // Registers IRequestValidator<CreateTaskCommand> in DI
+    cfg.AddValidator<CreateTaskCommandValidator, CreateTaskCommand, Guid>();
 
-    // Payment handlers
-    cfg.RegisterRequestHandler<ProcessPaymentCommandHandler, ProcessPaymentCommand>()
-        .RegisterEventHandler<PaymentProcessedHandler, PaymentProcessed>()
-        .RegisterEventHandler<PaymentAnalyticsHandler, PaymentProcessed>();
-
-    // Inventory handlers
-    cfg.RegisterRequestHandler<UpdateInventoryCommandHandler, UpdateInventoryCommand>()
-        .RegisterEventHandler<InventoryUpdatedHandler, InventoryUpdated>();
-
-    // Notification handlers
-    cfg.RegisterEventHandler<NotificationRequestedHandler, NotificationRequested>();
-
+    // ── Pipeline behaviors ─────────────────────────────────────────────
+    // Logging wraps every request and event (observe timings in stdout)
     cfg.RegisterRequestPipelineBehavior<SimpleLoggingBehavior>();
     cfg.RegisterEventPipelineBehavior<SimpleLoggingBehavior>();
+    // Validation runs for CreateTaskCommand before the handler — returns failure on invalid input
+    cfg.RegisterRequestPipelineBehavior<RequestValidationBehavior<CreateTaskCommand, Guid>, CreateTaskCommand, Guid>();
 
-    // Enable distributed messaging with transports
-    cfg.EnableDistributedEvent(distributedConfig =>
-            // Todo replace with working transport
-            null!,
-        //distributedConfig.ConfigureMessagingAsTransport(msgCfg =>
-        //{
-        //    msgCfg.ApplicationName(applicationName);
-        //    msgCfg.UseAwsNameFormatter();
-        //    msgCfg.UseBackgroundService();
-        //    msgCfg.UseAws(awsConfig => { awsConfig.UseCredentialBuilder<LocalstackCredentialBuilder>(); });
-        //    msgCfg.UseJsonSerializer(o =>
-        //    {
-        //        // todo register json source generator context
-        //    });
-        //}),
-        transport =>
-        {
-            // ===== EXTERNAL EVENTS (sent through transport) =====
-            // These will be automatically registered as publications in the messaging system
+    // ── Event orchestration ────────────────────────────────────────────
+    // Both TaskCompleted handlers run concurrently (observe interleaved logs)
+    cfg.SetEventOrchestrator<ConcurrentEventOrchestrator>();
 
-            // Order Management publishes these:
-            transport.ConfigureEvent<OrderShipped>(opts => opts.AsExternal());
-            transport.ConfigureEvent<OrderCancelled>(opts => opts.AsExternal());
-
-            // Other external events:
-            transport.ConfigureEvent<PaymentProcessed>(opts => opts.AsExternal());
-            transport.ConfigureEvent<InventoryUpdated>(opts => opts.AsExternal());
-
-            // Fulfillment events (published by WebApiAot):
-            transport.ConfigureEvent<OrderFulfillmentRequested>(opts => opts.AsExternal());
-            transport.ConfigureEvent<OrderFulfillmentCompleted>(opts => opts.AsExternal());
-
-            // ===== LOCAL EVENTS (in-process only) =====
-            transport.ConfigureEvent<OrderCreated>(opts => opts.AsLocal());
-            transport.ConfigureEvent<NotificationRequested>(opts => opts.AsLocal());
-            transport.ConfigureEvent<TodoUpdated>(opts => opts.AsLocal());
-            transport.ConfigureEvent<TodoDeleted>(opts => opts.AsLocal());
-
-            // ===== SUBSCRIPTIONS (consume from transport) =====
-            // These will be automatically registered as subscriptions in the messaging system
-
-            // Subscribe to fulfillment events from WebApiAot:
-            transport.Subscribe<OrderFulfillmentRequested>();
-            transport.Subscribe<OrderFulfillmentCompleted>();
-
-            // Subscribe to other events (demo purposes):
-            transport.Subscribe<PaymentProcessed>();
-            transport.Subscribe<InventoryUpdated>();
-        });
+    // ── CQRS enforcement ───────────────────────────────────────────────
+    cfg.EnableCqrsBoundaryEnforcement();
 });
-builder.Services.AddScoped<ITodoRepository, TodoRepository>();
-builder.Services.AddSingleton<IFulfillmentService, InMemoryFulfillmentService>();
+
 var app = builder.Build();
-app.MapGet("/", () => "Hello World!");
 
-var todoEndpoints = app.MapGroup("/todos");
+// ── Correlation ID response header ────────────────────────────────────
+// Reads the Synapse IContext.CorrelationId after the handler runs and adds it
+// to the response so callers can trace requests end-to-end.
+app.UseCorrelationId();
 
-todoEndpoints.MapGet("/{id:guid}", async ([FromRoute] Guid id,
-    [FromServices] ISender sender,
-    CancellationToken cancellationToken) =>
+// ── Root ──────────────────────────────────────────────────────────────
+app.MapGet("/", () => Results.Ok(new
 {
-    var query = new TodoQuery { Id = id };
-    return await sender.SendAsync<TodoQuery, Todo>(query, cancellationToken)
-        .ToHttpResultAsync();
-});
-
-todoEndpoints.MapGet("/", async ([FromServices] IRequestHandler<ListTodoQuery, IEnumerable<Todo>> handler,
-    [FromServices] IContextFactory contextFactory,
-    CancellationToken cancellationToken) =>
-{
-    var query = new ListTodoQuery();
-
-    return await handler.HandleAsync(query, cancellationToken)
-        .ToHttpResultAsync();
-});
-
-todoEndpoints.MapPost("/", async ([FromServices] ISender sender,
-    [FromBody] CreateTodoModel input,
-    CancellationToken cancellationToken) =>
-{
-    var command = new CreateTodoCommand { Name = input.Name };
-
-    return await sender.SendAsync<CreateTodoCommand, Guid>(command, cancellationToken)
-        .ToHttpResultAsync();
-});
-
-todoEndpoints.MapPut("/{id:guid}", async ([FromServices] IRequestHandler<UpdateTodoCommand> handler,
-    [FromServices] IContextFactory contextFactory,
-    [FromRoute] Guid id,
-    [FromBody] UpdateTodoModel input,
-    CancellationToken cancellationToken) =>
-{
-    var command = new UpdateTodoCommand
+    name = "Synapse WebApi Example",
+    description = "Executable feature tour of UnambitiousFx.Synapse",
+    features = new[]
     {
-        Id = id,
-        Name = input.Name
-    };
-
-    return await handler.HandleAsync(command, cancellationToken)
-        .ToHttpResultAsync();
-});
-
-todoEndpoints.MapDelete("/{id:guid}", async ([FromServices] ISender sender,
-    [FromRoute] Guid id,
-    CancellationToken cancellationToken) =>
-{
-    var command = new DeleteTodoCommand { Id = id };
-
-    return await sender.SendAsync(command, cancellationToken)
-        .ToHttpResultAsync();
-});
-
-// ===== Transport Examples =====
-
-var orderEndpoints = app.MapGroup("/orders");
-
-orderEndpoints.MapPost("/", async ([FromServices] ISender sender,
-    [FromBody] CreateOrderModel input,
-    CancellationToken cancellationToken) =>
-{
-    var command = new CreateOrderCommand
+        "Commands — with typed response (CreateTask → Guid)",
+        "Commands — without response (UpdateTask, CompleteTask, DeleteTask)",
+        "Queries — single item and list (GetTask, ListTasks)",
+        "Streaming — IStreamRequest<T> yielded via IAsyncEnumerable (StreamTasks)",
+        "Validation — RequestValidationBehavior<TRequest, TResponse> (CreateTask)",
+        "Domain events — fan-out to multiple handlers (TaskCompletedEvent × 2)",
+        "Concurrent event orchestration — ConcurrentEventOrchestrator",
+        "Request pipeline behavior — SimpleLoggingBehavior (timing on every request)",
+        "Event pipeline behavior — SimpleLoggingBehavior (timing on every event)",
+        "Context & correlation — IContext.CorrelationId → X-Correlation-Id header",
+        "CQRS boundary enforcement — EnableCqrsBoundaryEnforcement()"
+    },
+    endpoints = new[]
     {
-        CustomerName = input.CustomerName,
-        TotalAmount = input.TotalAmount
-    };
+        "GET    /                    — API info",
+        "GET    /tasks               — List tasks (Query)",
+        "GET    /tasks/stream        — Stream tasks (IStreamRequest)",
+        "GET    /tasks/{id}          — Get task (Query)",
+        "POST   /tasks               — Create task (Command → Guid, validated)",
+        "PUT    /tasks/{id}          — Update task (Command)",
+        "POST   /tasks/{id}/complete — Complete task (2 concurrent event handlers)",
+        "DELETE /tasks/{id}          — Delete task (domain event)"
+    }
+}));
 
-    return await sender.SendAsync<CreateOrderCommand, Guid>(command, cancellationToken)
-        .ToCreatedHttpResultAsync(orderId => $"/orders/{orderId}",
-            orderId => new { orderId });
-});
+// ── Task endpoints ────────────────────────────────────────────────────
+var tasks = app.MapGroup("/tasks").WithTags("Tasks");
 
-orderEndpoints.MapPost("/{id:guid}/ship", async ([FromServices] ISender sender,
-    [FromRoute] Guid id,
-    CancellationToken cancellationToken) =>
-{
-    var command = new ShipOrderCommand { OrderId = id };
+// Feature: Query returning a list
+tasks.MapGet("/", async (
+            [FromServices] IHttpInvoker invoker,
+            CancellationToken ct) =>
+        await invoker.InvokeAsync(new ListTasksQuery(), ct))
+    .WithName("ListTasks")
+    .WithSummary("List all tasks");
 
-    return await sender.SendAsync(command, cancellationToken)
-        .ToHttpResultAsync(() => new { message = "Order shipped successfully (EXTERNAL event sent to WebApiAot)" });
-});
+// Feature: Streaming request — yields tasks via IAsyncEnumerable
+tasks.MapGet("/stream", (
+            [FromServices] IHttpInvoker invoker,
+            CancellationToken ct) =>
+        invoker.InvokeStreamAsync(new StreamTasksQuery(), ct))
+    .WithName("StreamTasks")
+    .WithSummary("Stream tasks one by one (IStreamRequest<T>)");
 
-orderEndpoints.MapDelete("/{id:guid}", async ([FromServices] ISender sender,
-    [FromRoute] Guid id,
-    [FromBody] CancelOrderModel input,
-    CancellationToken cancellationToken) =>
-{
-    var command = new CancelOrderCommand
+// Feature: Query returning a single item
+tasks.MapGet("/{id:guid}", async (
+            [FromRoute] Guid id,
+            [FromServices] IHttpInvoker invoker,
+            CancellationToken ct) =>
+        await invoker.InvokeAsync(new GetTaskQuery { TaskId = id }, ct))
+    .WithName("GetTask")
+    .WithSummary("Get a task by ID");
+
+// Feature: Command with typed response + RequestValidationBehavior
+// Valid input → 201 Created with Location header
+// Invalid input (empty title/description) → failure response
+tasks.MapPost("/", async (
+        [FromBody] CreateTaskRequest request,
+        [FromServices] IHttpInvoker invoker,
+        CancellationToken ct) =>
     {
-        OrderId = id,
-        Reason = input.Reason
-    };
+        var command = new CreateTaskCommand { Title = request.Title, Description = request.Description };
+        return await invoker.InvokeAsync(
+            command,
+            id => Results.Created($"/tasks/{id}", id),
+            ct);
+    })
+    .WithName("CreateTask")
+    .WithSummary("Create a new task (validated)");
 
-    return await sender.SendAsync(command, cancellationToken)
-        .ToHttpResultAsync(() => new { message = "Order cancelled (EXTERNAL event sent to WebApiAot)" });
-});
-
-var paymentEndpoints = app.MapGroup("/payments");
-
-paymentEndpoints.MapPost("/", async ([FromServices] ISender sender,
-    [FromBody] ProcessPaymentModel input,
-    CancellationToken cancellationToken) =>
-{
-    var command = new ProcessPaymentCommand
+// Feature: Command without response
+tasks.MapPut("/{id:guid}", async (
+        [FromRoute] Guid id,
+        [FromBody] UpdateTaskRequest request,
+        [FromServices] IHttpInvoker invoker,
+        CancellationToken ct) =>
     {
-        OrderId = input.OrderId,
-        Amount = input.Amount,
-        PaymentMethod = input.PaymentMethod
-    };
+        var command = new UpdateTaskCommand { TaskId = id, Title = request.Title, Description = request.Description };
+        return await invoker.InvokeAsync(command, ct);
+    })
+    .WithName("UpdateTask")
+    .WithSummary("Update a task");
 
-    return await sender.SendAsync(command, cancellationToken)
-        .ToHttpResultAsync(() => new { message = "Payment processed (event sent to transport)" });
-});
+// Feature: Command that emits an event handled by 2 concurrent handlers
+// Check stdout: both TaskCompletedLoggingHandler and TaskCompletedNotificationHandler run in parallel
+tasks.MapPost("/{id:guid}/complete", async (
+            [FromRoute] Guid id,
+            [FromServices] IHttpInvoker invoker,
+            CancellationToken ct) =>
+        await invoker.InvokeAsync(new CompleteTaskCommand { TaskId = id }, ct))
+    .WithName("CompleteTask")
+    .WithSummary("Mark a task as complete (triggers 2 concurrent event handlers)");
 
-var inventoryEndpoints = app.MapGroup("/inventory");
-
-inventoryEndpoints.MapPost("/{productId:guid}/update", async ([FromServices] ISender sender,
-    [FromRoute] Guid productId,
-    [FromBody] UpdateInventoryModel input,
-    CancellationToken cancellationToken) =>
-{
-    var command = new UpdateInventoryCommand
-    {
-        ProductId = productId,
-        QuantityChange = input.QuantityChange
-    };
-
-    return await sender.SendAsync(command, cancellationToken)
-        .ToHttpResultAsync(() => new { message = "Inventory updated (event sent to transport)" });
-});
+// Feature: Command that emits a domain event (TaskDeletedEvent → TaskDeletedLoggingHandler)
+tasks.MapDelete("/{id:guid}", async (
+            [FromRoute] Guid id,
+            [FromServices] IHttpInvoker invoker,
+            CancellationToken ct) =>
+        await invoker.InvokeAsync(new DeleteTaskCommand { TaskId = id }, ct))
+    .WithName("DeleteTask")
+    .WithSummary("Delete a task");
 
 app.Run();
 
 namespace UnambitiousFx.Examples.WebApi
 {
+    // ── HTTP request/response models ──────────────────────────────────
+
+    public record CreateTaskRequest(string Title, string Description);
+
+    public record UpdateTaskRequest(string Title, string Description);
+
+    // Make Program accessible for integration tests
     public class Program;
 }

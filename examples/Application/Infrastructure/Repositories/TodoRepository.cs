@@ -25,7 +25,10 @@ public sealed class TodoRepository : ITodoRepository
     public ValueTask<Maybe<Todo>> GetAsync(Guid id,
         CancellationToken cancellationToken = default)
     {
-        if (Todos.TryGetValue(id, out var todo)) return ValueTask.FromResult(Maybe<Todo>.Some(todo));
+        if (Todos.TryGetValue(id, out var todo))
+        {
+            return ValueTask.FromResult(Maybe<Todo>.Some(todo));
+        }
 
         return ValueTask.FromResult(Maybe<Todo>.None());
     }

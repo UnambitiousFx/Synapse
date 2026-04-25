@@ -8,27 +8,26 @@ namespace UnambitiousFx.Examples.Application.Application.Inventory;
 [RequestHandler<UpdateInventoryCommand>]
 public sealed class UpdateInventoryCommandHandler : IRequestHandler<UpdateInventoryCommand>
 {
+    private readonly IEmitter _emitter;
     private readonly ILogger<UpdateInventoryCommandHandler> _logger;
-    private readonly IPublisher _publisher;
 
-    public UpdateInventoryCommandHandler(IPublisher publisher, ILogger<UpdateInventoryCommandHandler> logger)
+    public UpdateInventoryCommandHandler(IEmitter emitter, ILogger<UpdateInventoryCommandHandler> logger)
     {
         _logger = logger;
-        _publisher = publisher;
+        _emitter = emitter;
     }
 
     public async ValueTask<Result> HandleAsync(UpdateInventoryCommand request,
         CancellationToken cancellationToken = default)
     {
         // Simulate current inventory (in real app, would query from database)
-        var currentQuantity = 100;
+        const int currentQuantity = 100;
         var newQuantity = currentQuantity + request.QuantityChange;
 
         _logger.LogInformation("Updating inventory for product {ProductId}: {QuantityChange:+#;-#;0}",
             request.ProductId, request.QuantityChange);
 
-        // Publish EXTERNAL event - will be sent through transport layer
-        await _publisher.PublishAsync(new InventoryUpdated
+        await _emitter.EmitAsync(new InventoryUpdated
         {
             ProductId = request.ProductId,
             QuantityChange = request.QuantityChange,

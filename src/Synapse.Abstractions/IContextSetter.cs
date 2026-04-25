@@ -1,7 +1,7 @@
 namespace UnambitiousFx.Synapse.Abstractions;
 
 /// <summary>
-/// Provides a mechanism to set the current <see cref="IContext" />.
+///     Provides a mechanism to set the current <see cref="IContext" />.
 /// </summary>
 public interface IContextSetter
 {

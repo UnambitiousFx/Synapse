@@ -21,7 +21,10 @@ internal static class RegisterGroupFactory
         sb.AppendLine("    {");
         foreach (var detail in details)
         {
-            if (detail is null) continue;
+            if (detail is null)
+            {
+                continue;
+            }
 
             switch (detail.Value.HandlerType)
             {
@@ -55,11 +58,15 @@ internal static class RegisterGroupFactory
         HandlerDetail detail)
     {
         if (detail.FullResponseType is null)
+        {
             sb.AppendLine(
                 $"        builder.RegisterRequestHandler<{GlobalizeType(detail.FullHandlerTypeName)}, {GlobalizeType(detail.FullTargetTypeName)}>();");
+        }
         else
+        {
             sb.AppendLine(
                 $"        builder.RegisterRequestHandler<{GlobalizeType(detail.FullHandlerTypeName)}, {GlobalizeType(detail.FullTargetTypeName)}, {GlobalizeType(detail.FullResponseType)}>();");
+        }
     }
 
     private static void RegisterStreamRequestHandler(StringBuilder sb,
@@ -67,8 +74,10 @@ internal static class RegisterGroupFactory
     {
         // Streaming handlers always have a response type (the item type)
         if (detail.FullResponseType is not null)
+        {
             sb.AppendLine(
                 $"        builder.RegisterStreamRequestHandler<{GlobalizeType(detail.FullHandlerTypeName)}, {GlobalizeType(detail.FullTargetTypeName)}, {GlobalizeType(detail.FullResponseType)}>();");
+        }
     }
 
     private static string GlobalizeType(string input)
@@ -81,7 +90,10 @@ internal static class RegisterGroupFactory
             return $"global::{genericType}<global::{underlyingType}>";
         }
 
-        if (input.StartsWith("global::")) return input;
+        if (input.StartsWith("global::"))
+        {
+            return input;
+        }
 
         return $"global::{input}";
     }

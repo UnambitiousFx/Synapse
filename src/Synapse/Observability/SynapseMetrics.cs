@@ -8,22 +8,20 @@ namespace UnambitiousFx.Synapse.Observability;
 /// </summary>
 public sealed class SynapseMetrics : ISynapseMetrics
 {
-    private readonly Histogram<double> _consumeLatency;
     private readonly Counter<long> _dispatchFailures;
     private readonly Histogram<double> _dispatchLatency;
     private readonly IEventOutboxStorage? _eventOutboxStorage;
+    private readonly Counter<long> _outboxMetricReadFailures;
+    private int _lastKnownFailedCount;
+    private double _lastKnownProcessingLagSeconds;
+    private int _lastKnownQueueDepth;
 
     // Event dispatch metrics
     private readonly Counter<long> _eventsDispatched;
-    private readonly Counter<long> _messagesConsumed;
-    private readonly Counter<long> _messagesDeadLettered;
-    private readonly Counter<long> _messagesPublished;
-    private readonly Counter<long> _messagesRetried;
     private readonly Counter<long> _outboxDeadLettered;
 
     // Outbox metrics
     private readonly Counter<long> _outboxEventsProcessed;
-    private readonly Histogram<double> _publishLatency;
 
     /// <summary>
     ///     Initializes a new instance of the <see cref="SynapseMetrics" /> class.
@@ -36,38 +34,6 @@ public sealed class SynapseMetrics : ISynapseMetrics
     {
         _eventOutboxStorage = eventOutboxStorage;
         var meter = meterFactory.Create("Unambitious.Synapse", "1.0.0");
-
-        // Counters
-        _messagesPublished = meter.CreateCounter<long>(
-            "mediator.messages.published",
-            "{message}",
-            "Number of messages published to transports");
-
-        _messagesConsumed = meter.CreateCounter<long>(
-            "mediator.messages.consumed",
-            "{message}",
-            "Number of messages consumed from transports");
-
-        _messagesRetried = meter.CreateCounter<long>(
-            "mediator.messages.retried",
-            "{message}",
-            "Number of message processing retries");
-
-        _messagesDeadLettered = meter.CreateCounter<long>(
-            "mediator.messages.dead_lettered",
-            "{message}",
-            "Number of messages sent to dead-letter queue");
-
-        // Histograms
-        _publishLatency = meter.CreateHistogram<double>(
-            "mediator.publish.duration",
-            "ms",
-            "Duration of message publish operations in milliseconds");
-
-        _consumeLatency = meter.CreateHistogram<double>(
-            "mediator.consume.duration",
-            "ms",
-            "Duration of message consume operations in milliseconds");
 
         // Event dispatch metrics
         _eventsDispatched = meter.CreateCounter<long>(
@@ -96,96 +62,28 @@ public sealed class SynapseMetrics : ISynapseMetrics
             "{event}",
             "Number of events moved to dead-letter queue");
 
-        // Observable Gauge for event outbox queue depth
-        if (_eventOutboxStorage != null)
-            meter.CreateObservableGauge(
-                "mediator.outbox.queue_depth",
-                ObserveEventOutboxQueueDepth,
-                "{event}",
-                "Number of pending events in the event outbox");
-    }
-
-    /// <summary>
-    ///     Records a message published to a transport.
-    /// </summary>
-    /// <param name="messageType">The type of message published.</param>
-    /// <param name="transportName">The name of the transport.</param>
-    public void RecordPublished(string messageType, string transportName)
-    {
-        _messagesPublished.Add(1, new KeyValuePair<string, object?>("message.type", messageType),
-            new KeyValuePair<string, object?>("transport.name", transportName));
-    }
-
-    /// <summary>
-    ///     Records a message consumed from a transport.
-    /// </summary>
-    /// <param name="messageType">The type of message consumed.</param>
-    /// <param name="transportName">The name of the transport.</param>
-    public void RecordConsumed(string messageType, string transportName)
-    {
-        _messagesConsumed.Add(1, new KeyValuePair<string, object?>("message.type", messageType),
-            new KeyValuePair<string, object?>("transport.name", transportName));
-    }
-
-    /// <summary>
-    ///     Records a message retry attempt.
-    /// </summary>
-    /// <param name="messageType">The type of message being retried.</param>
-    public void RecordRetry(string messageType)
-    {
-        _messagesRetried.Add(1, new KeyValuePair<string, object?>("message.type", messageType));
-    }
-
-    /// <summary>
-    ///     Records a message sent to dead-letter queue.
-    /// </summary>
-    /// <param name="messageType">The type of message dead-lettered.</param>
-    public void RecordDeadLettered(string messageType)
-    {
-        _messagesDeadLettered.Add(1, new KeyValuePair<string, object?>("message.type", messageType));
-    }
-
-    /// <summary>
-    ///     Records the latency of a publish operation.
-    /// </summary>
-    /// <param name="durationMs">The duration in milliseconds.</param>
-    /// <param name="messageType">The type of message published.</param>
-    /// <param name="transportName">The name of the transport.</param>
-    public void RecordPublishLatency(double durationMs, string messageType, string transportName)
-    {
-        _publishLatency.Record(durationMs, new KeyValuePair<string, object?>("message.type", messageType),
-            new KeyValuePair<string, object?>("transport.name", transportName));
-    }
-
-    /// <summary>
-    ///     Records the latency of a consume operation.
-    /// </summary>
-    /// <param name="durationMs">The duration in milliseconds.</param>
-    /// <param name="messageType">The type of message consumed.</param>
-    /// <param name="transportName">The name of the transport.</param>
-    public void RecordConsumeLatency(double durationMs, string messageType, string transportName)
-    {
-        _consumeLatency.Record(durationMs, new KeyValuePair<string, object?>("message.type", messageType),
-            new KeyValuePair<string, object?>("transport.name", transportName));
+        _outboxMetricReadFailures = meter.CreateCounter<long>(
+            "mediator.outbox.metrics.read_failures",
+            "{count}",
+            "Number of failures while reading outbox observable metrics");
     }
 
     /// <summary>
     ///     Records an event dispatch operation.
     /// </summary>
     /// <param name="eventType">The type of event dispatched.</param>
-    /// <param name="distributionMode">The distribution mode used for dispatch.</param>
     /// <param name="success">Whether the dispatch was successful.</param>
-    public void RecordEventDispatched(string eventType, string distributionMode, bool success)
+    public void RecordEventDispatched(string eventType, bool success)
     {
         _eventsDispatched.Add(1,
             new KeyValuePair<string, object?>("event.type", eventType),
-            new KeyValuePair<string, object?>("distribution.mode", distributionMode),
             new KeyValuePair<string, object?>("success", success));
 
         if (!success)
+        {
             _dispatchFailures.Add(1,
-                new KeyValuePair<string, object?>("event.type", eventType),
-                new KeyValuePair<string, object?>("distribution.mode", distributionMode));
+                new KeyValuePair<string, object?>("event.type", eventType));
+        }
     }
 
     /// <summary>
@@ -193,12 +91,10 @@ public sealed class SynapseMetrics : ISynapseMetrics
     /// </summary>
     /// <param name="durationMs">The duration in milliseconds.</param>
     /// <param name="eventType">The type of event dispatched.</param>
-    /// <param name="distributionMode">The distribution mode used for dispatch.</param>
-    public void RecordDispatchLatency(double durationMs, string eventType, string distributionMode)
+    public void RecordDispatchLatency(double durationMs, string eventType)
     {
         _dispatchLatency.Record(durationMs,
-            new KeyValuePair<string, object?>("event.type", eventType),
-            new KeyValuePair<string, object?>("distribution.mode", distributionMode));
+            new KeyValuePair<string, object?>("event.type", eventType));
     }
 
     /// <summary>
@@ -223,25 +119,108 @@ public sealed class SynapseMetrics : ISynapseMetrics
             new KeyValuePair<string, object?>("event.type", eventType));
     }
 
-    private long ObserveEventOutboxQueueDepth()
+    /// <summary>
+    ///     Records the current queue depth of the outbox.
+    /// </summary>
+    /// <param name="count">The number of pending events.</param>
+    public void RecordOutboxQueueDepth(int count)
     {
-        if (_eventOutboxStorage == null) return 0;
+        // This is recorded via observable gauge, no manual recording needed
+        // Method kept for interface compatibility
+    }
+
+    /// <summary>
+    ///     Records the processing lag of the outbox.
+    /// </summary>
+    /// <param name="lagSeconds">The age of the oldest pending event in seconds.</param>
+    public void RecordOutboxProcessingLag(double lagSeconds)
+    {
+        // This is recorded via observable gauge, no manual recording needed
+        // Method kept for interface compatibility
+    }
+
+    /// <summary>
+    ///     Records the number of failed events in the outbox.
+    /// </summary>
+    /// <param name="count">The number of failed events.</param>
+    public void RecordOutboxFailedCount(int count)
+    {
+        // This is recorded via observable gauge, no manual recording needed
+        // Method kept for interface compatibility
+    }
+
+    private int ObserveOutboxQueueDepth()
+    {
+        if (_eventOutboxStorage == null)
+        {
+            return 0;
+        }
 
         try
         {
-            // Get pending events count
-            // Note: This is a synchronous call in an observable callback
-            // GetPendingEventsAsync should be fast for counting purposes
-            var pendingEvents = _eventOutboxStorage.GetPendingEventsAsync(CancellationToken.None)
-                .GetAwaiter()
-                .GetResult();
+            var pendingCount = _eventOutboxStorage.GetPendingCountAsync(CancellationToken.None);
+            if (pendingCount.IsCompletedSuccessfully)
+            {
+                _lastKnownQueueDepth = pendingCount.Result;
+            }
 
-            return pendingEvents.Count();
+            return _lastKnownQueueDepth;
         }
         catch
         {
-            // Return 0 if unable to get queue depth
+            _outboxMetricReadFailures.Add(1,
+                new KeyValuePair<string, object?>("metric.name", "queue_depth"));
+            return _lastKnownQueueDepth;
+        }
+    }
+
+    private double ObserveOutboxProcessingLag()
+    {
+        if (_eventOutboxStorage == null)
+        {
             return 0;
+        }
+
+        try
+        {
+            var lag = _eventOutboxStorage.GetOldestPendingAgeAsync(CancellationToken.None);
+            if (lag.IsCompletedSuccessfully)
+            {
+                _lastKnownProcessingLagSeconds = lag.Result?.TotalSeconds ?? 0;
+            }
+
+            return _lastKnownProcessingLagSeconds;
+        }
+        catch
+        {
+            _outboxMetricReadFailures.Add(1,
+                new KeyValuePair<string, object?>("metric.name", "processing_lag"));
+            return _lastKnownProcessingLagSeconds;
+        }
+    }
+
+    private int ObserveOutboxFailedCount()
+    {
+        if (_eventOutboxStorage == null)
+        {
+            return 0;
+        }
+
+        try
+        {
+            var failedCount = _eventOutboxStorage.GetFailedCountAsync(CancellationToken.None);
+            if (failedCount.IsCompletedSuccessfully)
+            {
+                _lastKnownFailedCount = failedCount.Result;
+            }
+
+            return _lastKnownFailedCount;
+        }
+        catch
+        {
+            _outboxMetricReadFailures.Add(1,
+                new KeyValuePair<string, object?>("metric.name", "failed_count"));
+            return _lastKnownFailedCount;
         }
     }
 }

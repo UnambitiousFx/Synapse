@@ -5,9 +5,6 @@ using UnambitiousFx.Synapse.Abstractions;
 
 namespace UnambitiousFx.Examples.Application.Application.Notifications;
 
-/// <summary>
-///     Local handler - sends notifications within the same process
-/// </summary>
 [EventHandler<NotificationRequested>]
 public sealed class NotificationRequestedHandler : IEventHandler<NotificationRequested>
 {

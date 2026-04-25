@@ -247,6 +247,76 @@ public interface ISynapseConfig
         where TEvent : class, IEvent;
 
     /// <summary>
+    ///     Registers a request handler conditionally based on a predicate evaluated at service collection build time.
+    /// </summary>
+    /// <typeparam name="THandler">
+    ///     The type of the request handler to be registered.
+    /// </typeparam>
+    /// <typeparam name="TRequest">
+    ///     The type of the request being handled.
+    /// </typeparam>
+    /// <typeparam name="TResponse">
+    ///     The type of the response returned by the handler.
+    /// </typeparam>
+    /// <param name="condition">
+    ///     A predicate that determines whether the handler should be registered. Evaluated when building the service
+    ///     collection.
+    /// </param>
+    /// <remarks>
+    ///     Useful for registering handlers based on environment variables, feature flags, or configuration values.
+    /// </remarks>
+    ISynapseConfig RegisterRequestHandlerWhen<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+        THandler, TRequest, TResponse>(Func<bool> condition)
+        where TResponse : notnull
+        where TRequest : IRequest<TResponse>
+        where THandler : class, IRequestHandler<TRequest, TResponse>;
+
+    /// <summary>
+    ///     Registers a request handler conditionally based on a predicate evaluated at service collection build time.
+    /// </summary>
+    /// <typeparam name="THandler">
+    ///     The type of the request handler to be registered.
+    /// </typeparam>
+    /// <typeparam name="TRequest">
+    ///     The type of the request being handled.
+    /// </typeparam>
+    /// <param name="condition">
+    ///     A predicate that determines whether the handler should be registered. Evaluated when building the service
+    ///     collection.
+    /// </param>
+    /// <remarks>
+    ///     Useful for registering handlers based on environment variables, feature flags, or configuration values.
+    /// </remarks>
+    ISynapseConfig RegisterRequestHandlerWhen<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+        THandler, TRequest>(Func<bool> condition)
+        where TRequest : IRequest
+        where THandler : class, IRequestHandler<TRequest>;
+
+    /// <summary>
+    ///     Registers an event handler conditionally based on a predicate evaluated at service collection build time.
+    /// </summary>
+    /// <typeparam name="THandler">
+    ///     The type of the event handler to be registered.
+    /// </typeparam>
+    /// <typeparam name="TEvent">
+    ///     The type of the event that the handler processes.
+    /// </typeparam>
+    /// <param name="condition">
+    ///     A predicate that determines whether the handler should be registered. Evaluated when building the service
+    ///     collection.
+    /// </param>
+    /// <remarks>
+    ///     Useful for registering handlers based on environment variables, feature flags, or configuration values.
+    /// </remarks>
+    ISynapseConfig RegisterEventHandlerWhen<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+        THandler, TEvent>(Func<bool> condition)
+        where THandler : class, IEventHandler<TEvent>
+        where TEvent : class, IEvent;
+
+    /// <summary>
     ///     Configures the mediator to use the specified implementation for event outbox storage.
     ///     The event outbox storage is responsible for persisting events and tracking their delivery status.
     /// </summary>
@@ -264,9 +334,9 @@ public interface ISynapseConfig
     /// <summary>
     ///     Sets the default publishing mode for events in the mediator configuration.
     /// </summary>
-    /// <param name="mode">The <see cref="PublishMode" /> to set as the default publishing mode.</param>
+    /// <param name="mode">The <see cref="EmitMode" /> to set as the default publishing mode.</param>
     /// <returns>An instance of <see cref="ISynapseConfig" /> to allow for method chaining.</returns>
-    ISynapseConfig SetDefaultPublishingMode(PublishMode mode);
+    ISynapseConfig SetDefaultPublishingMode(EmitMode mode);
 
     /// <summary>
     ///     Configures options for the outbox retry, dead-letter and batch processing features.
@@ -286,6 +356,29 @@ public interface ISynapseConfig
     ISynapseConfig EnableCqrsBoundaryEnforcement(bool enable = true);
 
     /// <summary>
+    ///     Registers a streaming request handler for the specified request and item types.
+    /// </summary>
+    /// <typeparam name="THandler">
+    ///     The type of the handler that processes the streaming request.
+    ///     Must implement <see cref="IStreamRequestHandler{TRequest, TItem}" />.
+    /// </typeparam>
+    /// <typeparam name="TRequest">
+    ///     The type of the streaming request. Must implement <see cref="IStreamRequest{TItem}" />.
+    /// </typeparam>
+    /// <typeparam name="TItem">
+    ///     The type of each item yielded by the stream. Must be a non-nullable type.
+    /// </typeparam>
+    /// <returns>
+    ///     The current instance of <see cref="ISynapseConfig" />, enabling method chaining for additional configuration.
+    /// </returns>
+    ISynapseConfig RegisterStreamRequestHandler<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+        THandler, TRequest, TItem>()
+        where TItem : notnull
+        where TRequest : IStreamRequest<TItem>
+        where THandler : class, IStreamRequestHandler<TRequest, TItem>;
+
+    /// <summary>
     ///     Adds a request validator to the mediator configuration.
     /// </summary>
     /// <typeparam name="TValidator">
@@ -302,6 +395,28 @@ public interface ISynapseConfig
         TValidator, TRequest>()
         where TValidator : class, IRequestValidator<TRequest>
         where TRequest : IRequest;
+
+    /// <summary>
+    ///     Adds a request validator to the mediator configuration for requests that return a typed response.
+    /// </summary>
+    /// <typeparam name="TValidator">
+    ///     The type of the validator, implementing <see cref="IRequestValidator{TRequest}" />.
+    /// </typeparam>
+    /// <typeparam name="TRequest">
+    ///     The type of the request that the validator applies to, implementing <see cref="IRequest{TResponse}" />.
+    /// </typeparam>
+    /// <typeparam name="TResponse">
+    ///     The type of the response produced by the request. Must be a non-nullable type.
+    /// </typeparam>
+    /// <returns>
+    ///     The current instance of <see cref="ISynapseConfig" />, allowing for fluent configuration.
+    /// </returns>
+    ISynapseConfig AddValidator<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+        TValidator, TRequest, TResponse>()
+        where TValidator : class, IRequestValidator<TRequest>
+        where TRequest : IRequest<TResponse>
+        where TResponse : notnull;
 
     /// <summary>
     ///     Configures the mediator to use the default context factory implementation.
@@ -332,42 +447,6 @@ public interface ISynapseConfig
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         TContextFactory>()
         where TContextFactory : class, IContextFactory;
-
-    /// <summary>
-    ///     Registers an event routing filter that determines how events should be distributed.
-    ///     Filters are evaluated in order of their <see cref="IEventRoutingFilter.Order" /> property.
-    /// </summary>
-    /// <typeparam name="TEventRoutingFilter">
-    ///     The type of the routing filter to register. Must implement <see cref="IEventRoutingFilter" />.
-    /// </typeparam>
-    /// <returns>
-    ///     The current instance of <see cref="ISynapseConfig" />, enabling method chaining.
-    /// </returns>
-    /// <remarks>
-    ///     Multiple routing filters can be registered. They will be evaluated in ascending order
-    ///     of their Order property. The first filter that returns a non-null distribution mode
-    ///     determines how the event is routed.
-    /// </remarks>
-    ISynapseConfig RegisterEventRoutingFilter<
-        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
-        TEventRoutingFilter>()
-        where TEventRoutingFilter : class, IEventRoutingFilter;
-
-    /// <summary>
-    ///     Configures the mediator to enable distributed event functionality using the specified transport dispatcher.
-    /// </summary>
-    /// <param name="defineTransport">
-    ///     A function that defines the transport configuration by providing an instance of
-    ///     <see cref="IDistributedEventConfig" /> and returning an instance of <see cref="ITransportConfig" />.
-    /// </param>
-    /// <param name="configureTransport">
-    ///     An action that configures the transport using an instance of <see cref="ITransportConfig" />.
-    /// </param>
-    /// <returns>
-    ///     The current instance of <see cref="ISynapseConfig" />, allowing for fluent configuration.
-    /// </returns>
-    ISynapseConfig EnableDistributedEvent(Func<IDistributedEventConfig, ITransportConfig> defineTransport,
-        Action<ITransportConfig> configureTransport);
 
     /// <summary>
     ///     Registers event dispatcher delegates using a generated registration class.

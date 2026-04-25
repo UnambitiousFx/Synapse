@@ -52,8 +52,79 @@ internal sealed class DefaultDependencyInjectionBuilder : IDependencyInjectionBu
         return this;
     }
 
+    public IDependencyInjectionBuilder RegisterRequestHandlerWhen<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+        TRequestHandler, TRequest,
+        TResponse>(Func<bool> condition)
+        where TRequestHandler : class, IRequestHandler<TRequest, TResponse>
+        where TRequest : IRequest<TResponse>
+        where TResponse : notnull
+    {
+        _actions.Add(services =>
+        {
+            if (condition())
+            {
+                services.RegisterRequestHandler<TRequestHandler, TRequest, TResponse>();
+            }
+        });
+        return this;
+    }
+
+    public IDependencyInjectionBuilder RegisterRequestHandlerWhen<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+        TRequestHandler, TRequest>(Func<bool> condition)
+        where TRequestHandler : class, IRequestHandler<TRequest>
+        where TRequest : IRequest
+    {
+        _actions.Add(services =>
+        {
+            if (condition())
+            {
+                services.RegisterRequestHandler<TRequestHandler, TRequest>();
+            }
+        });
+        return this;
+    }
+
+    public IDependencyInjectionBuilder RegisterEventHandlerWhen<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+        TEventHandler, TEvent>(Func<bool> condition)
+        where TEventHandler : class, IEventHandler<TEvent>
+        where TEvent : class, IEvent
+    {
+        _actions.Add(services =>
+        {
+            if (condition())
+            {
+                services.RegisterEventHandler<TEventHandler, TEvent>();
+            }
+        });
+        return this;
+    }
+
+    public IDependencyInjectionBuilder RegisterStreamRequestHandlerWhen<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+        TStreamRequestHandler,
+        TRequest, TItem>(Func<bool> condition)
+        where TStreamRequestHandler : class, IStreamRequestHandler<TRequest, TItem>
+        where TItem : notnull
+        where TRequest : IStreamRequest<TItem>
+    {
+        _actions.Add(services =>
+        {
+            if (condition())
+            {
+                services.RegisterStreamRequestHandler<TStreamRequestHandler, TRequest, TItem>();
+            }
+        });
+        return this;
+    }
+
     public void Apply(IServiceCollection services)
     {
-        foreach (var action in _actions) action(services);
+        foreach (var action in _actions)
+        {
+            action(services);
+        }
     }
 }
