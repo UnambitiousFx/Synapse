@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 env:
-  DOTNET_VERSION: '10.0.x'
+  DOTNET_VERSION: "10.0.x"
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
 
@@ -84,11 +84,11 @@ jobs:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Restore dependencies
-        run: dotnet restore examples/WebApiAot/WebApiAot.csproj
+        run: dotnet restore examples/MinimalApi/MinimalApi.csproj
 
       - name: Publish Native AOT
         run: >
-          dotnet publish examples/WebApiAot/WebApiAot.csproj
+          dotnet publish examples/MinimalApi/MinimalApi.csproj
           --configuration Release
           --runtime linux-x64
           --self-contained
@@ -97,9 +97,9 @@ jobs:
 
       - name: Verify AOT binary
         run: |
-          if [ -f "examples/WebApiAot/bin/Release/net10.0/linux-x64/publish/WebApiAot" ]; then
+          if [ -f "examples/MinimalApi/bin/Release/net10.0/linux-x64/publish/WebApiAot" ]; then
             echo "✓ Native AOT binary created successfully"
-            ls -lh examples/WebApiAot/bin/Release/net10.0/linux-x64/publish/WebApiAot
+            ls -lh examples/MinimalApi/bin/Release/net10.0/linux-x64/publish/WebApiAot
           else
             echo "✗ Native AOT binary not found"
             exit 1
@@ -107,7 +107,7 @@ jobs:
 
       - name: Test AOT binary starts
         run: |
-          timeout 10s examples/WebApiAot/bin/Release/net10.0/linux-x64/publish/WebApiAot &
+          timeout 10s examples/MinimalApi/bin/Release/net10.0/linux-x64/publish/WebApiAot &
           sleep 3
           if curl -f http://localhost:5000/health || curl -f http://localhost:8080/health; then
             echo "✓ Native AOT application started successfully"
