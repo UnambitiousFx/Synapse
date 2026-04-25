@@ -110,11 +110,24 @@ jobs:
 
       - name: Test AOT binary starts
         run: |
-          timeout 10s examples/MinimalApi/bin/Release/net10.0/linux-x64/publish/UnambitiousFx.Examples.MinimalApi &
-          sleep 3
-          if curl -f http://localhost:5000/health || curl -f http://localhost:8080/health; then
+          AOT_BINARY="examples/MinimalApi/bin/Release/net10.0/linux-x64/publish/UnambitiousFx.Examples.MinimalApi"
+          timeout 15s "$AOT_BINARY" &
+
+          started=false
+          for port in 5000 8080; do
+            for _ in {1..10}; do
+              if curl -fsS "http://localhost:${port}/" > /dev/null; then
+                started=true
+                break 2
+              fi
+              sleep 1
+            done
+          done
+
+          if [ "$started" = true ]; then
             echo "✓ Native AOT application started successfully"
           else
             echo "✗ Native AOT application failed to start"
+            echo "Tried: http://localhost:5000/ and http://localhost:8080/"
             exit 1
           fi
