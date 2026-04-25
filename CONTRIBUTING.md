@@ -18,6 +18,7 @@ This project and everyone participating in it is expected to uphold our values o
 Before creating a bug report, please check existing issues to avoid duplicates. When creating a bug report, include as many details as possible:
 
 **Use the bug report template** which includes:
+
 - A clear and descriptive title
 - Steps to reproduce the behavior
 - Expected behavior vs actual behavior
@@ -29,6 +30,7 @@ Before creating a bug report, please check existing issues to avoid duplicates. 
 Enhancement suggestions are tracked as GitHub issues. When creating an enhancement suggestion:
 
 **Use the feature request template** which includes:
+
 - A clear description of the feature
 - The use case or problem it solves
 - Proposed solution or API design
@@ -63,6 +65,7 @@ We actively welcome your pull requests! Here's how to submit one:
 - **Link related issues**: Reference issues in your PR description
 
 Example commit message:
+
 ```
 feat: add Retry extension method for Result<T>
 
@@ -83,22 +86,26 @@ Closes #123
 ### Getting Started
 
 1. **Clone the repository**
+
    ```bash
    git clone https://github.com/UnambitiousFx/Synapse.git
    cd Synapse
    ```
 
 2. **Restore dependencies**
+
    ```bash
    dotnet restore
    ```
 
 3. **Build the solution**
+
    ```bash
    dotnet build
    ```
 
 4. **Run the tests**
+
    ```bash
    dotnet test
    ```
@@ -133,12 +140,13 @@ Synapse/
 We use `.editorconfig` to enforce consistent code style. Your IDE should automatically respect these settings.
 
 Key conventions:
+
 - **Indentation**: 4 spaces (no tabs)
 - **Braces**: Always use braces for control flow, even single statements
 - **Naming**:
   - PascalCase for public members, types, and methods
   - camelCase for parameters and local variables
-  - _camelCase for private fields
+  - \_camelCase for private fields
   - IPascalCase for interfaces
 - **Namespaces**: Use file-scoped namespaces (`namespace UnambitiousFx.Synapse;`)
 - **Usings**: Place outside namespace, sort System directives first
@@ -153,6 +161,7 @@ Key conventions:
 - Use proper grammar and punctuation
 
 Example:
+
 ```csharp
 /// <summary>
 ///     Transforms the success value of a result using the specified function.
@@ -185,6 +194,7 @@ public static Result<TOut> Map<TIn, TOut>(
 - **Aim for high coverage**: Minimum 80% line coverage
 
 Example:
+
 ```csharp
 [Fact]
 public void Map_WithSuccessResult_TransformsValue()
@@ -235,8 +245,8 @@ dotnet test
 # Run specific test project
 dotnet test test/Synapse.Tests/
 
-# Run tests with coverage
-dotnet test --collect:"XPlat Code Coverage"
+# Run tests with coverage (shared exclusions)
+dotnet test --settings coverage.runsettings --collect:"XPlat Code Coverage"
 
 # Run tests with verbose output
 dotnet test --logger "console;verbosity=detailed"
@@ -248,7 +258,7 @@ We aim for at least 80% code coverage. To generate a coverage report:
 
 ```bash
 # Run tests with coverage
-dotnet test --collect:"XPlat Code Coverage" --results-directory ./coverage
+dotnet test --settings coverage.runsettings --collect:"XPlat Code Coverage" --results-directory ./coverage
 
 # Install ReportGenerator (if not already installed)
 dotnet tool install -g dotnet-reportgenerator-globaltool
@@ -259,6 +269,48 @@ reportgenerator -reports:./coverage/**/coverage.cobertura.xml -targetdir:./cover
 # Open report (macOS)
 open ./coverage/report/index.html
 ```
+
+The shared `coverage.runsettings` file excludes source files under:
+
+- `benchmarks/**`
+- `examples/**`
+- `test/**`
+
+### Rider Coverage Setup
+
+Rider can use either dotCover or the VSTest data collector. They are separate engines and do not share all filters.
+
+#### Option A: dotCover filters (Rider-native coverage)
+
+Use this if you want to keep using Rider's built-in dotCover runner:
+
+1. Open `Settings/Preferences` -> `Build, Execution, Deployment` -> `dotCover`.
+2. Add module/class filters to exclude assemblies that should not affect product coverage (for example test/example/benchmark assemblies).
+3. Save as a shared team profile if your Rider version supports shared settings layers.
+
+Note: dotCover filters are assembly/type based, not file-glob based like Coverlet.
+
+#### Option B (recommended): VSTest + runsettings for consistent CLI/Rider behavior
+
+Use this when you want Rider coverage to match `dotnet test` coverage:
+
+1. Open `Run` -> `Edit Configurations...`.
+2. Create or duplicate a test run configuration that uses the `dotnet test`/VSTest path.
+3. Add arguments:
+
+```text
+--settings coverage.runsettings --collect:"XPlat Code Coverage"
+```
+
+4. Run coverage from this configuration.
+
+If your Rider version does not expose a runsettings field directly, use a `.NET` run configuration that executes:
+
+```bash
+dotnet test --settings coverage.runsettings --collect:"XPlat Code Coverage"
+```
+
+This ensures Rider and CLI both use the same exclusion rules.
 
 ### Running Benchmarks
 
@@ -288,6 +340,7 @@ By contributing to UnambitiousFx.Synapse, you agree that your contributions will
 ## Questions?
 
 Feel free to:
+
 - Open a [Discussion](https://github.com/UnambitiousFx/Synapse/discussions) for questions
 - Join our community chat (if available)
 - Reach out to maintainers

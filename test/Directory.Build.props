@@ -16,6 +16,7 @@
         <CoverletOutputFormat>opencover,cobertura,json</CoverletOutputFormat>
         <CoverletOutput>./coverage/</CoverletOutput>
         <Exclude>[*.Tests]*,[*.xunit]*,[xunit.*]*</Exclude>
+        <ExcludeByFile>**/benchmarks/**/*.cs,**/examples/**/*.cs,**/test/**/*.cs</ExcludeByFile>
         <ExcludeByAttribute>Obsolete,GeneratedCode,CompilerGenerated</ExcludeByAttribute>
 
         <!--
