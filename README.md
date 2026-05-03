@@ -89,6 +89,10 @@ Synapse exposes hooks for recording metrics and integrates with OpenTelemetry tr
 and metric interfaces. Consumers can provide their own `ISynapseMetrics` implementation or use the default which
 integrates with `IMeterFactory`.
 
+## 📚 Documentation
+
+Full documentation is available at https://unambitiousfx.com/lib-synapse/
+
 ## 🧪 Examples & Benchmarks
 
 - Examples are under the `examples/` folder (Web API, Console, Native AOT example).
