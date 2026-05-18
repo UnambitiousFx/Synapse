@@ -34,7 +34,7 @@ public sealed class LoggingEnrichmentBehaviorTests
 
         var behavior = new LoggingEnrichmentBehavior<RequestWithResponseExample, int>(context, logger);
 
-        RequestHandlerDelegate<int> next = async () =>
+        RequestHandlerDelegate<RequestWithResponseExample, int> next = async (_, _) =>
         {
             Assert.False(disposed);
             await Task.Yield();

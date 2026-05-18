@@ -17,7 +17,7 @@ public sealed class SimpleLoggingBehaviorTests
 
         // Act (When)
         var result = await behavior.HandleAsync(new TestEvent(),
-            () => ValueTask.FromResult(Result.Success()),
+            (_, _) => ValueTask.FromResult(Result.Success()),
             CancellationToken.None);
 
         // Assert (Then)
@@ -33,7 +33,7 @@ public sealed class SimpleLoggingBehaviorTests
 
         // Act (When)
         var result = await behavior.HandleAsync(new TestEvent(),
-            () => ValueTask.FromResult(Result.Failure("event failure")),
+            (_, _) => ValueTask.FromResult(Result.Failure("event failure")),
             CancellationToken.None);
 
         // Assert (Then)
@@ -49,7 +49,7 @@ public sealed class SimpleLoggingBehaviorTests
 
         // Act (When)
         var result = await behavior.HandleAsync(new RequestWithoutResponse(),
-            () => ValueTask.FromResult(Result.Success()),
+            (_, _) => ValueTask.FromResult(Result.Success()),
             CancellationToken.None);
 
         // Assert (Then)
@@ -65,7 +65,7 @@ public sealed class SimpleLoggingBehaviorTests
 
         // Act (When)
         var result = await behavior.HandleAsync(new RequestWithoutResponse(),
-            () => ValueTask.FromResult(Result.Failure("request failure")),
+            (_, _) => ValueTask.FromResult(Result.Failure("request failure")),
             CancellationToken.None);
 
         // Assert (Then)
@@ -81,7 +81,7 @@ public sealed class SimpleLoggingBehaviorTests
 
         // Act (When)
         var result = await behavior.HandleAsync<RequestWithResponse, int>(new RequestWithResponse(),
-            () => ValueTask.FromResult(Result.Success(7)),
+            (_, _) => ValueTask.FromResult(Result.Success(7)),
             CancellationToken.None);
 
         // Assert (Then)
@@ -97,7 +97,7 @@ public sealed class SimpleLoggingBehaviorTests
 
         // Act (When)
         var result = await behavior.HandleAsync<RequestWithResponse, int>(new RequestWithResponse(),
-            () => ValueTask.FromResult(Result.Failure<int>("typed request failure")),
+            (_, _) => ValueTask.FromResult(Result.Failure<int>("typed request failure")),
             CancellationToken.None);
 
         // Assert (Then)

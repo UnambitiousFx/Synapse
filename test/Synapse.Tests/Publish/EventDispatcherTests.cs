@@ -135,11 +135,11 @@ public sealed class EventDispatcherTests
         _dependencyResolver.GetServices<IEventPipelineBehavior>()
             .Returns(new[] { behavior });
 
-        behavior.HandleAsync(@event, Arg.Any<EventHandlerDelegate>(), Arg.Any<CancellationToken>())
+        behavior.HandleAsync(@event, Arg.Any<EventHandlerDelegate<EventExample>>(), Arg.Any<CancellationToken>())
             .Returns(callInfo =>
             {
-                var next = callInfo.Arg<EventHandlerDelegate>();
-                return next();
+                var next = callInfo.Arg<EventHandlerDelegate<EventExample>>();
+                return next(@event, CancellationToken.None);
             });
 
         _eventOrchestrator.RunAsync(Arg.Any<IEventHandler<EventExample>[]>(), @event, Arg.Any<CancellationToken>())
@@ -150,7 +150,7 @@ public sealed class EventDispatcherTests
 
         // Assert (Then)
         Assert.True(result.IsSuccess);
-        await behavior.Received(1).HandleAsync(@event, Arg.Any<EventHandlerDelegate>(), Arg.Any<CancellationToken>());
+        await behavior.Received(1).HandleAsync(@event, Arg.Any<EventHandlerDelegate<EventExample>>(), Arg.Any<CancellationToken>());
         await _eventOrchestrator.Received(1).RunAsync(
             Arg.Any<IEventHandler<EventExample>[]>(),
             @event,

@@ -15,16 +15,16 @@ internal sealed class RequestTypedBehaviorAdapter<TRequest, TResponse> : IReques
     }
 
     public ValueTask<Result> HandleAsync<TReq>(TReq request,
-        RequestHandlerDelegate next,
+        RequestHandlerDelegate<TReq> next,
         CancellationToken cancellationToken = default)
         where TReq : IRequest
     {
         // This typed behavior only applies to requests with a response.
-        return next();
+        return next(request, cancellationToken);
     }
 
     public ValueTask<Result<TRes>> HandleAsync<TReq, TRes>(TReq request,
-        RequestHandlerDelegate<TRes> next,
+        RequestHandlerDelegate<TReq, TRes> next,
         CancellationToken cancellationToken = default)
         where TRes : notnull
         where TReq : IRequest<TRes>
@@ -33,11 +33,11 @@ internal sealed class RequestTypedBehaviorAdapter<TRequest, TResponse> : IReques
             typeof(TRes) == typeof(TResponse))
         {
             // Cast delegates/results through object (safe because we checked type match above).
-            var castedNext = (RequestHandlerDelegate<TResponse>)(object)next;
+            var castedNext = (RequestHandlerDelegate<TRequest, TResponse>)(object)next;
             var vt = _inner.HandleAsync(typed, castedNext, cancellationToken);
             return (ValueTask<Result<TRes>>)(object)vt;
         }
 
-        return next();
+        return next(request, cancellationToken);
     }
 }

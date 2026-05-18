@@ -69,7 +69,7 @@ public sealed class TypedRequestPipelineBehaviorTests
         services.AddSynapse(cfg =>
         {
             cfg.RegisterRequestHandler<TypedSampleInheritanceRequestHandler, TypedSampleInheritanceRequest>();
-            cfg.RegisterRequestPipelineBehavior<InterfaceTypedRequestBehavior, TypedSampleInheritanceRequest>();
+            cfg.RegisterRequestPipelineBehavior<InterfaceTypedRequestBehavior, IBaseRequest>();
         });
         var provider = services.BuildServiceProvider();
         var sender = provider.GetRequiredService<IInvoker>();
@@ -86,7 +86,7 @@ public sealed class TypedRequestPipelineBehaviorTests
         services.AddSynapse(cfg =>
         {
             cfg.RegisterRequestHandler<TypedSampleInheritanceRequestHandler, TypedSampleInheritanceRequest>();
-            cfg.RegisterRequestPipelineBehavior<AbstractTypedRequestBehavior, TypedSampleInheritanceRequest>();
+            cfg.RegisterRequestPipelineBehavior<AbstractTypedRequestBehavior, BaseRequest>();
         });
         var provider = services.BuildServiceProvider();
         var sender = provider.GetRequiredService<IInvoker>();

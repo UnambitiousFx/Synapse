@@ -44,22 +44,22 @@ public sealed class ConditionalRequestPipelineBehaviorTests
         public int ExecutionCount { get; private set; }
 
         public ValueTask<Result> HandleAsync<TRequest>(TRequest request,
-            RequestHandlerDelegate next,
+            RequestHandlerDelegate<TRequest> next,
             CancellationToken cancellationToken = default)
             where TRequest : IRequest
         {
             ExecutionCount++;
-            return next();
+            return next(request, cancellationToken);
         }
 
         public ValueTask<Result<TResponse>> HandleAsync<TRequest, TResponse>(TRequest request,
-            RequestHandlerDelegate<TResponse> next,
+            RequestHandlerDelegate<TRequest, TResponse> next,
             CancellationToken cancellationToken = default)
             where TResponse : notnull
             where TRequest : IRequest<TResponse>
         {
             ExecutionCount++;
-            return next();
+            return next(request, cancellationToken);
         }
     }
 }

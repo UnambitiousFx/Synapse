@@ -20,7 +20,7 @@ public sealed class RequestValidationBehaviorTests
         var nextCalled = false;
 
         // Act (When)
-        var result = await behavior.HandleAsync(new ValidatedRequest(), () =>
+        var result = await behavior.HandleAsync(new ValidatedRequest(), (_, _) =>
         {
             nextCalled = true;
             return ValueTask.FromResult(Result.Success(42));
@@ -45,7 +45,7 @@ public sealed class RequestValidationBehaviorTests
         var nextCalled = false;
 
         // Act (When)
-        var result = await behavior.HandleAsync(new ValidatedRequest(), () =>
+        var result = await behavior.HandleAsync(new ValidatedRequest(), (_, _) =>
         {
             nextCalled = true;
             return ValueTask.FromResult(Result.Success(42));

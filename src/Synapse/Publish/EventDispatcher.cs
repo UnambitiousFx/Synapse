@@ -92,10 +92,10 @@ internal sealed class EventDispatcher : IEventDispatcher
 
         return behaviors[index].HandleAsync(@event, Next, cancellationToken);
 
-        ValueTask<Result> Next()
+        ValueTask<Result> Next(TEvent inEvent, CancellationToken inCancellationToken)
         {
-            return ExecutePipelineAsync(@event, handlers, behaviors, index + 1,
-                cancellationToken);
+            return ExecutePipelineAsync(inEvent, handlers, behaviors, index + 1,
+                inCancellationToken);
         }
     }
 

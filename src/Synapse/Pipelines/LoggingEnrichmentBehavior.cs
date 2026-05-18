@@ -36,12 +36,12 @@ public sealed class LoggingEnrichmentBehavior<TRequest, TResponse> : IRequestPip
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A result containing the response.</returns>
     public async ValueTask<Result<TResponse>> HandleAsync(TRequest request,
-        RequestHandlerDelegate<TResponse> next,
+        RequestHandlerDelegate<TRequest, TResponse> next,
         CancellationToken cancellationToken = default)
     {
         using (_logger.BeginScope(CreateState(_context)))
         {
-            return await next();
+            return await next(request, cancellationToken);
         }
     }
 

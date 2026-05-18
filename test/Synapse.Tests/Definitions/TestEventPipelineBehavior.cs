@@ -11,7 +11,7 @@ public sealed class TestEventPipelineBehavior : IEventPipelineBehavior
     public Action? OnExecuted { get; set; }
 
     public ValueTask<Result> HandleAsync<TEvent>(TEvent @event,
-        EventHandlerDelegate next,
+        EventHandlerDelegate<TEvent> next,
         CancellationToken cancellationToken = default)
         where TEvent : IEvent
     {
@@ -19,6 +19,6 @@ public sealed class TestEventPipelineBehavior : IEventPipelineBehavior
         EventExecuted = @event;
         ExecutionCount++;
         OnExecuted?.Invoke();
-        return next();
+        return next(@event, cancellationToken);
     }
 }

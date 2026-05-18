@@ -18,11 +18,11 @@ public sealed class OnlyTypedSampleRequestBehavior : IRequestPipelineBehavior<Ty
     public int ExecutionCount { get; private set; }
 
     public ValueTask<Result> HandleAsync(TypedSampleRequest request,
-        RequestHandlerDelegate next,
+        RequestHandlerDelegate<TypedSampleRequest> next,
         CancellationToken cancellationToken = default)
     {
         ExecutionCount++;
-        return next();
+        return next(request, cancellationToken);
     }
 }
 
@@ -32,11 +32,11 @@ public sealed class
     public int ExecutionCount { get; private set; }
 
     public ValueTask<Result<int>> HandleAsync(TypedSampleRequestWithResponse request,
-        RequestHandlerDelegate<int> next,
+        RequestHandlerDelegate<TypedSampleRequestWithResponse, int> next,
         CancellationToken cancellationToken = default)
     {
         ExecutionCount++;
-        return next();
+        return next(request, cancellationToken);
     }
 }
 
@@ -46,11 +46,11 @@ public sealed class ConditionalTypedRequestBehavior : IRequestPipelineBehavior<T
     public int ExecutionCount { get; private set; }
 
     public ValueTask<Result> HandleAsync(TypedSampleRequest request,
-        RequestHandlerDelegate next,
+        RequestHandlerDelegate<TypedSampleRequest> next,
         CancellationToken cancellationToken = default)
     {
         ExecutionCount++;
-        return next();
+        return next(request, cancellationToken);
     }
 }
 
@@ -59,11 +59,11 @@ public sealed class InterfaceTypedRequestBehavior : IRequestPipelineBehavior<IBa
     public int ExecutionCount { get; private set; }
 
     public ValueTask<Result> HandleAsync(IBaseRequest request,
-        RequestHandlerDelegate next,
+        RequestHandlerDelegate<IBaseRequest> next,
         CancellationToken cancellationToken = default)
     {
         ExecutionCount++;
-        return next();
+        return next(request, cancellationToken);
     }
 }
 
@@ -72,10 +72,10 @@ public sealed class AbstractTypedRequestBehavior : IRequestPipelineBehavior<Base
     public int ExecutionCount { get; private set; }
 
     public ValueTask<Result> HandleAsync(BaseRequest request,
-        RequestHandlerDelegate next,
+        RequestHandlerDelegate<BaseRequest> next,
         CancellationToken cancellationToken = default)
     {
         ExecutionCount++;
-        return next();
+        return next(request, cancellationToken);
     }
 }
