@@ -44,7 +44,7 @@ public interface IRequestPipelineBehavior
     ///     of the request handling process.
     /// </returns>
     ValueTask<Result<TResponse>> HandleAsync<TRequest, TResponse>(TRequest request,
-        RequestHandlerDelegate<TRequest,TResponse> next,
+        RequestHandlerDelegate<TRequest, TResponse> next,
         CancellationToken cancellationToken = default)
         where TResponse : notnull
         where TRequest : IRequest<TResponse>;
