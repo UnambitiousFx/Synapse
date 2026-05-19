@@ -45,7 +45,7 @@ public sealed class ConditionalRequestPipelineBehaviorTests
         var services = new ServiceCollection();
         services.AddSynapse(cfg =>
         {
-            cfg.RegisterRequestHandler<RequestWithResponseExampleHandler, RequestWithResponseExample>();
+            cfg.RegisterRequestHandler<RequestWithResponseExampleHandler, RequestWithResponseExample, int>();
             cfg.RegisterConditionalRequestPipelineBehavior<UntypedConditionalBehavior>(_ => true);
         });
         var provider = services.BuildServiceProvider();
@@ -61,7 +61,7 @@ public sealed class ConditionalRequestPipelineBehaviorTests
         var services = new ServiceCollection();
         services.AddSynapse(cfg =>
         {
-            cfg.RegisterRequestHandler<RequestWithResponseExampleHandler, RequestWithResponseExample>();
+            cfg.RegisterRequestHandler<RequestWithResponseExampleHandler, RequestWithResponseExample, int>();
             cfg.RegisterConditionalRequestPipelineBehavior<UntypedConditionalBehavior>(_ => false);
         });
         var provider = services.BuildServiceProvider();
