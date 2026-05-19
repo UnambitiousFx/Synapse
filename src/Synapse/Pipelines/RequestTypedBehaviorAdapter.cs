@@ -20,8 +20,19 @@ internal sealed class RequestTypedBehaviorAdapter<TRequest> : IRequestPipelineBe
     {
         if (request is TRequest typed)
         {
-            // Wrap next to bridge TReq -> TRequest; safe because the runtime object is TReq.
-            RequestHandlerDelegate<TRequest> adaptedNext = (req, ct) => next((TReq)(object)req, ct);
+            // Guard the bridge so typed behaviors cannot call next with an incompatible request instance.
+            RequestHandlerDelegate<TRequest> adaptedNext = (req, ct) =>
+            {
+                if (req is not TReq concrete)
+                {
+                    throw new InvalidOperationException(
+                        $"Typed behavior for '{typeof(TRequest).Name}' invoked next with '{req.GetType().Name}', " +
+                        $"which is not assignable to '{typeof(TReq).Name}'.");
+                }
+
+                return next(concrete, ct);
+            };
+
             return _inner.HandleAsync(typed, adaptedNext, cancellationToken);
         }
 
