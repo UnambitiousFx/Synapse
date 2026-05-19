@@ -24,14 +24,14 @@ public sealed class SimpleLoggingBehavior : IRequestPipelineBehavior, IEventPipe
 
     /// <inheritdoc />
     public async ValueTask<Result> HandleAsync<TEvent>(TEvent @event,
-        EventHandlerDelegate next,
+        EventHandlerDelegate<TEvent> next,
         CancellationToken cancellationToken = default)
         where TEvent : IEvent
     {
         var startedAt = Stopwatch.GetTimestamp();
         var eventName = typeof(TEvent).Name;
 
-        var result = await next();
+        var result = await next(@event, cancellationToken);
 
 
         var elapsedTime = Stopwatch.GetElapsedTime(startedAt);
@@ -50,7 +50,7 @@ public sealed class SimpleLoggingBehavior : IRequestPipelineBehavior, IEventPipe
 
     /// <inheritdoc />
     public async ValueTask<Result> HandleAsync<TRequest>(TRequest request,
-        RequestHandlerDelegate next,
+        RequestHandlerDelegate<TRequest> next,
         CancellationToken cancellationToken = default)
         where TRequest : IRequest
     {
@@ -58,7 +58,7 @@ public sealed class SimpleLoggingBehavior : IRequestPipelineBehavior, IEventPipe
         var requestName = typeof(TRequest).Name;
 
 
-        var result = await next();
+        var result = await next(request, cancellationToken);
 
 
         var elapsedTime = Stopwatch.GetElapsedTime(startedAt);
@@ -78,7 +78,7 @@ public sealed class SimpleLoggingBehavior : IRequestPipelineBehavior, IEventPipe
 
     /// <inheritdoc />
     public async ValueTask<Result<TResponse>> HandleAsync<TRequest, TResponse>(TRequest request,
-        RequestHandlerDelegate<TResponse> next,
+        RequestHandlerDelegate<TRequest, TResponse> next,
         CancellationToken cancellationToken = default)
         where TRequest : IRequest<TResponse>
         where TResponse : notnull
@@ -87,7 +87,7 @@ public sealed class SimpleLoggingBehavior : IRequestPipelineBehavior, IEventPipe
         var requestName = typeof(TRequest).Name;
 
 
-        var result = await next();
+        var result = await next(request, cancellationToken);
 
         var elapsedTime = Stopwatch.GetElapsedTime(startedAt);
         if (!result.TryGet(out _, out var error))

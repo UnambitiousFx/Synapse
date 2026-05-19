@@ -6,7 +6,7 @@ namespace UnambitiousFx.Synapse.Abstractions;
 ///     Typed request pipeline behavior that only applies to a specific request type (without response).
 /// </summary>
 /// <typeparam name="TRequest">The request type.</typeparam>
-public interface IRequestPipelineBehavior<in TRequest>
+public interface IRequestPipelineBehavior<TRequest>
     where TRequest : IRequest
 {
     /// <summary>
@@ -17,7 +17,7 @@ public interface IRequestPipelineBehavior<in TRequest>
     /// <param name="cancellationToken">Token for cancelling the operation.</param>
     /// <returns>A task containing the result of the operation.</returns>
     ValueTask<Result> HandleAsync(TRequest request,
-        RequestHandlerDelegate next,
+        RequestHandlerDelegate<TRequest> next,
         CancellationToken cancellationToken = default);
 }
 
@@ -26,7 +26,7 @@ public interface IRequestPipelineBehavior<in TRequest>
 /// </summary>
 /// <typeparam name="TRequest">Request type.</typeparam>
 /// <typeparam name="TResponse">Response type.</typeparam>
-public interface IRequestPipelineBehavior<in TRequest, TResponse>
+public interface IRequestPipelineBehavior<TRequest, TResponse>
     where TRequest : IRequest<TResponse>
     where TResponse : notnull
 {
@@ -39,6 +39,6 @@ public interface IRequestPipelineBehavior<in TRequest, TResponse>
     /// <param name="cancellationToken">Token for cancelling the operation.</param>
     /// <returns>A task containing the result of the operation.</returns>
     ValueTask<Result<TResponse>> HandleAsync(TRequest request,
-        RequestHandlerDelegate<TResponse> next,
+        RequestHandlerDelegate<TRequest, TResponse> next,
         CancellationToken cancellationToken = default);
 }

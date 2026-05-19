@@ -69,7 +69,7 @@ public sealed class TypedRequestPipelineBehaviorTests
         services.AddSynapse(cfg =>
         {
             cfg.RegisterRequestHandler<TypedSampleInheritanceRequestHandler, TypedSampleInheritanceRequest>();
-            cfg.RegisterRequestPipelineBehavior<InterfaceTypedRequestBehavior, TypedSampleInheritanceRequest>();
+            cfg.RegisterRequestPipelineBehavior<InterfaceTypedRequestBehavior, IBaseRequest>();
         });
         var provider = services.BuildServiceProvider();
         var sender = provider.GetRequiredService<IInvoker>();
@@ -86,7 +86,7 @@ public sealed class TypedRequestPipelineBehaviorTests
         services.AddSynapse(cfg =>
         {
             cfg.RegisterRequestHandler<TypedSampleInheritanceRequestHandler, TypedSampleInheritanceRequest>();
-            cfg.RegisterRequestPipelineBehavior<AbstractTypedRequestBehavior, TypedSampleInheritanceRequest>();
+            cfg.RegisterRequestPipelineBehavior<AbstractTypedRequestBehavior, BaseRequest>();
         });
         var provider = services.BuildServiceProvider();
         var sender = provider.GetRequiredService<IInvoker>();
@@ -132,6 +132,43 @@ public sealed class TypedRequestPipelineBehaviorTests
         Assert.Equal(0, behavior.ExecutionCount);
     }
 
+    [Fact]
+    public async Task Typed_behavior_without_response_throws_when_next_invoked_with_incompatible_request_type()
+    {
+        var services = new ServiceCollection();
+        services.AddSynapse(cfg =>
+        {
+            cfg.RegisterRequestHandler<UnsafeFirstRequestHandler, UnsafeFirstRequest>();
+            cfg.RegisterRequestPipelineBehavior<InvalidForwardingBehavior, IUnsafeBaseRequest>();
+        });
+
+        var provider = services.BuildServiceProvider();
+        var sender = provider.GetRequiredService<IInvoker>();
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => sender.InvokeAsync(new UnsafeFirstRequest())
+            .AsTask());
+        Assert.Contains("not assignable", ex.Message);
+    }
+
+    [Fact]
+    public async Task Typed_behavior_with_response_throws_when_next_invoked_with_incompatible_request_type()
+    {
+        var services = new ServiceCollection();
+        services.AddSynapse(cfg =>
+        {
+            cfg.RegisterRequestHandler<UnsafeResponseFirstRequestHandler, UnsafeResponseFirstRequest, int>();
+            cfg.RegisterRequestPipelineBehavior<InvalidForwardingWithResponseBehavior, IUnsafeResponseBaseRequest, int>();
+        });
+
+        var provider = services.BuildServiceProvider();
+        var sender = provider.GetRequiredService<IInvoker>();
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => sender
+            .InvokeAsync(new UnsafeResponseFirstRequest())
+            .AsTask());
+        Assert.Contains("not assignable", ex.Message);
+    }
+
     private sealed class TypedSampleRequestHandler : IRequestHandler<TypedSampleRequest>
     {
         public ValueTask<Result> HandleAsync(TypedSampleRequest request,
@@ -156,6 +193,57 @@ public sealed class TypedRequestPipelineBehaviorTests
             CancellationToken cancellationToken = default)
         {
             return new ValueTask<Result>(Result.Success());
+        }
+    }
+
+    private interface IUnsafeBaseRequest : IRequest;
+
+    private sealed record UnsafeFirstRequest : IUnsafeBaseRequest;
+
+    private sealed record UnsafeSecondRequest : IUnsafeBaseRequest;
+
+    private sealed class InvalidForwardingBehavior : IRequestPipelineBehavior<IUnsafeBaseRequest>
+    {
+        public ValueTask<Result> HandleAsync(IUnsafeBaseRequest request,
+            RequestHandlerDelegate<IUnsafeBaseRequest> next,
+            CancellationToken cancellationToken = default)
+        {
+            return next(new UnsafeSecondRequest(), cancellationToken);
+        }
+    }
+
+    private sealed class UnsafeFirstRequestHandler : IRequestHandler<UnsafeFirstRequest>
+    {
+        public ValueTask<Result> HandleAsync(UnsafeFirstRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            return new ValueTask<Result>(Result.Success());
+        }
+    }
+
+    private interface IUnsafeResponseBaseRequest : IRequest<int>;
+
+    private sealed record UnsafeResponseFirstRequest : IUnsafeResponseBaseRequest;
+
+    private sealed record UnsafeResponseSecondRequest : IUnsafeResponseBaseRequest;
+
+    private sealed class InvalidForwardingWithResponseBehavior :
+        IRequestPipelineBehavior<IUnsafeResponseBaseRequest, int>
+    {
+        public ValueTask<Result<int>> HandleAsync(IUnsafeResponseBaseRequest request,
+            RequestHandlerDelegate<IUnsafeResponseBaseRequest, int> next,
+            CancellationToken cancellationToken = default)
+        {
+            return next(new UnsafeResponseSecondRequest(), cancellationToken);
+        }
+    }
+
+    private sealed class UnsafeResponseFirstRequestHandler : IRequestHandler<UnsafeResponseFirstRequest, int>
+    {
+        public ValueTask<Result<int>> HandleAsync(UnsafeResponseFirstRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            return new ValueTask<Result<int>>(Result.Success(1));
         }
     }
 }

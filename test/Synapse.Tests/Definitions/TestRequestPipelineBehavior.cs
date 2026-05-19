@@ -11,7 +11,7 @@ public sealed class TestRequestPipelineBehavior : IRequestPipelineBehavior
     public Action? OnExecuted { get; set; }
 
     public ValueTask<Result> HandleAsync<TRequest>(TRequest request,
-        RequestHandlerDelegate next,
+        RequestHandlerDelegate<TRequest> next,
         CancellationToken cancellationToken = default)
         where TRequest : IRequest
     {
@@ -19,11 +19,11 @@ public sealed class TestRequestPipelineBehavior : IRequestPipelineBehavior
         RequestExecuted = request;
         ExecutionCount++;
         OnExecuted?.Invoke();
-        return next();
+        return next(request, cancellationToken);
     }
 
     public ValueTask<Result<TResponse>> HandleAsync<TRequest, TResponse>(TRequest request,
-        RequestHandlerDelegate<TResponse> next,
+        RequestHandlerDelegate<TRequest, TResponse> next,
         CancellationToken cancellationToken = default)
         where TRequest : IRequest<TResponse>
         where TResponse : notnull
@@ -32,6 +32,6 @@ public sealed class TestRequestPipelineBehavior : IRequestPipelineBehavior
         RequestExecuted = request;
         ExecutionCount++;
         OnExecuted?.Invoke();
-        return next();
+        return next(request, cancellationToken);
     }
 }

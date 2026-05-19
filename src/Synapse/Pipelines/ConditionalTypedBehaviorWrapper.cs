@@ -16,7 +16,7 @@ internal sealed class ConditionalTypedBehaviorWrapper : IRequestPipelineBehavior
     }
 
     public ValueTask<Result> HandleAsync<TReq>(TReq request,
-        RequestHandlerDelegate next,
+        RequestHandlerDelegate<TReq> next,
         CancellationToken cancellationToken = default)
         where TReq : IRequest
     {
@@ -25,11 +25,11 @@ internal sealed class ConditionalTypedBehaviorWrapper : IRequestPipelineBehavior
             return _innerAdapter.HandleAsync(request, next, cancellationToken);
         }
 
-        return next();
+        return next(request, cancellationToken);
     }
 
     public ValueTask<Result<TResponse>> HandleAsync<TReq, TResponse>(TReq request,
-        RequestHandlerDelegate<TResponse> next,
+        RequestHandlerDelegate<TReq, TResponse> next,
         CancellationToken cancellationToken = default)
         where TResponse : notnull
         where TReq : IRequest<TResponse>
@@ -39,6 +39,6 @@ internal sealed class ConditionalTypedBehaviorWrapper : IRequestPipelineBehavior
             return _innerAdapter.HandleAsync(request, next, cancellationToken);
         }
 
-        return next();
+        return next(request, cancellationToken);
     }
 }

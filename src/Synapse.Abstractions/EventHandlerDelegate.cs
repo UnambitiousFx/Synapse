@@ -14,4 +14,5 @@ namespace UnambitiousFx.Synapse.Abstractions;
 ///     - A failed execution should return a `Result.Failure()` with detailed error information.
 ///     Commonly used in conjunction with pipeline behaviors and event handlers in the mediator framework.
 /// </summary>
-public delegate ValueTask<Result> EventHandlerDelegate();
+public delegate ValueTask<Result> EventHandlerDelegate<TEvent>(TEvent @event, CancellationToken cancellationToken)
+    where TEvent : IEvent;

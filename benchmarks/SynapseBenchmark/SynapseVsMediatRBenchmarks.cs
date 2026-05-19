@@ -276,60 +276,60 @@ public class SynapseVsMediatRBenchmarks
     public sealed class OurNoOpBehavior1 : IRequestPipelineBehavior
     {
         public ValueTask<Result> HandleAsync<TRequest>(TRequest request,
-            RequestHandlerDelegate next,
+            Synapse.Abstractions.RequestHandlerDelegate<TRequest> next,
             CancellationToken cancellationToken = default)
             where TRequest : Synapse.Abstractions.IRequest
         {
-            return next();
+            return next(request, cancellationToken);
         }
 
         public ValueTask<Result<TResponse>> HandleAsync<TRequest, TResponse>(TRequest request,
-            Synapse.Abstractions.RequestHandlerDelegate<TResponse> next,
+            Synapse.Abstractions.RequestHandlerDelegate<TRequest, TResponse> next,
             CancellationToken cancellationToken = default)
             where TResponse : notnull
             where TRequest : Synapse.Abstractions.IRequest<TResponse>
         {
-            return next();
+            return next(request, cancellationToken);
         }
     }
 
     public sealed class OurNoOpBehavior2 : IRequestPipelineBehavior
     {
         public ValueTask<Result> HandleAsync<TRequest>(TRequest request,
-            RequestHandlerDelegate next,
+            Synapse.Abstractions.RequestHandlerDelegate<TRequest> next,
             CancellationToken cancellationToken = default)
             where TRequest : Synapse.Abstractions.IRequest
         {
-            return next();
+            return next(request, cancellationToken);
         }
 
         public ValueTask<Result<TResponse>> HandleAsync<TRequest, TResponse>(TRequest request,
-            Synapse.Abstractions.RequestHandlerDelegate<TResponse> next,
+            Synapse.Abstractions.RequestHandlerDelegate<TRequest, TResponse> next,
             CancellationToken cancellationToken = default)
             where TResponse : notnull
             where TRequest : Synapse.Abstractions.IRequest<TResponse>
         {
-            return next();
+            return next(request, cancellationToken);
         }
     }
 
     public sealed class OurNoOpBehavior3 : IRequestPipelineBehavior
     {
         public ValueTask<Result> HandleAsync<TRequest>(TRequest request,
-            RequestHandlerDelegate next,
+            Synapse.Abstractions.RequestHandlerDelegate<TRequest> next,
             CancellationToken cancellationToken = default)
             where TRequest : Synapse.Abstractions.IRequest
         {
-            return next();
+            return next(request, cancellationToken);
         }
 
         public ValueTask<Result<TResponse>> HandleAsync<TRequest, TResponse>(TRequest request,
-            Synapse.Abstractions.RequestHandlerDelegate<TResponse> next,
+            Synapse.Abstractions.RequestHandlerDelegate<TRequest, TResponse> next,
             CancellationToken cancellationToken = default)
             where TResponse : notnull
             where TRequest : Synapse.Abstractions.IRequest<TResponse>
         {
-            return next();
+            return next(request, cancellationToken);
         }
     }
 

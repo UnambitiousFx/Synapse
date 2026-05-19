@@ -32,7 +32,7 @@ public sealed class CqrsBoundaryEnforcementBehavior : IRequestPipelineBehavior
     /// <typeparam name="TRequest"></typeparam>
     /// <returns></returns>
     public async ValueTask<Result> HandleAsync<TRequest>(TRequest request,
-        RequestHandlerDelegate next,
+        RequestHandlerDelegate<TRequest> next,
         CancellationToken cancellationToken = default)
         where TRequest : IRequest
     {
@@ -41,7 +41,7 @@ public sealed class CqrsBoundaryEnforcementBehavior : IRequestPipelineBehavior
 
         AddBoundaryMetadata(_context, requestName);
 
-        var response = await next();
+        var response = await next(request, cancellationToken);
         RemoveBoundaryMetadata(_context);
         return response;
     }
@@ -55,7 +55,7 @@ public sealed class CqrsBoundaryEnforcementBehavior : IRequestPipelineBehavior
     /// <typeparam name="TResponse"></typeparam>
     /// <returns></returns>
     public async ValueTask<Result<TResponse>> HandleAsync<TRequest, TResponse>(TRequest request,
-        RequestHandlerDelegate<TResponse> next,
+        RequestHandlerDelegate<TRequest, TResponse> next,
         CancellationToken cancellationToken = default)
         where TRequest : IRequest<TResponse>
         where TResponse : notnull
@@ -64,7 +64,7 @@ public sealed class CqrsBoundaryEnforcementBehavior : IRequestPipelineBehavior
         ValidateBoundaries(_context, requestName);
 
         AddBoundaryMetadata(_context, requestName);
-        var response = await next();
+        var response = await next(request, cancellationToken);
         RemoveBoundaryMetadata(_context);
         return response;
     }

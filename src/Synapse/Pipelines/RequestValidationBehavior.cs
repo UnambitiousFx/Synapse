@@ -39,13 +39,13 @@ public class RequestValidationBehavior<TRequest, TResponse> : IRequestPipelineBe
     ///     If validation fails, a failed result with validation errors is returned.
     /// </returns>
     public async ValueTask<Result<TResponse>> HandleAsync(TRequest request,
-        RequestHandlerDelegate<TResponse> next,
+        RequestHandlerDelegate<TRequest, TResponse> next,
         CancellationToken cancellationToken)
     {
         var result = await _validators.Select(x => x.ValidateAsync(request, cancellationToken))
             .Combine();
 
-        return await result.Match(() => next(),
+        return await result.Match(() => next(request, cancellationToken),
             error =>
             {
                 var r = Result.Failure<TResponse>(error);

@@ -27,7 +27,7 @@ public interface IEventPipelineBehavior
     ///     failure.
     /// </returns>
     ValueTask<Result> HandleAsync<TEvent>(TEvent @event,
-        EventHandlerDelegate next,
+        EventHandlerDelegate<TEvent> next,
         CancellationToken cancellationToken = default)
         where TEvent : IEvent;
 }
