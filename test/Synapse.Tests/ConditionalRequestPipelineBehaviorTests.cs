@@ -39,6 +39,38 @@ public sealed class ConditionalRequestPipelineBehaviorTests
         Assert.Equal(0, behavior.ExecutionCount);
     }
 
+    [Fact]
+    public async Task Conditional_untyped_behavior_with_response_executes_when_predicate_true()
+    {
+        var services = new ServiceCollection();
+        services.AddSynapse(cfg =>
+        {
+            cfg.RegisterRequestHandler<RequestWithResponseExampleHandler, RequestWithResponseExample>();
+            cfg.RegisterConditionalRequestPipelineBehavior<UntypedConditionalBehavior>(_ => true);
+        });
+        var provider = services.BuildServiceProvider();
+        var sender = provider.GetRequiredService<IInvoker>();
+        await sender.InvokeAsync(new RequestWithResponseExample());
+        var behavior = provider.GetRequiredService<UntypedConditionalBehavior>();
+        Assert.Equal(1, behavior.ExecutionCount);
+    }
+
+    [Fact]
+    public async Task Conditional_untyped_behavior_with_response_skips_when_predicate_false()
+    {
+        var services = new ServiceCollection();
+        services.AddSynapse(cfg =>
+        {
+            cfg.RegisterRequestHandler<RequestWithResponseExampleHandler, RequestWithResponseExample>();
+            cfg.RegisterConditionalRequestPipelineBehavior<UntypedConditionalBehavior>(_ => false);
+        });
+        var provider = services.BuildServiceProvider();
+        var sender = provider.GetRequiredService<IInvoker>();
+        await sender.InvokeAsync(new RequestWithResponseExample());
+        var behavior = provider.GetRequiredService<UntypedConditionalBehavior>();
+        Assert.Equal(0, behavior.ExecutionCount);
+    }
+
     private sealed class UntypedConditionalBehavior : IRequestPipelineBehavior
     {
         public int ExecutionCount { get; private set; }
