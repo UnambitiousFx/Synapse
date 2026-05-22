@@ -95,6 +95,13 @@ internal sealed class DefaultDependencyInjectionBuilder : IDependencyInjectionBu
             if (condition())
             {
                 services.RegisterRequestHandler<TRequestHandler, TRequest, TResponse>();
+                RequestDispatchers.TryAdd(typeof(TRequest),
+                    (Func<IRequest<TResponse>, IDependencyResolver, CancellationToken, ValueTask<Result<TResponse>>>)(
+                        (request, resolver, ct) =>
+                        {
+                            var handler = resolver.GetRequiredService<IRequestHandler<TRequest, TResponse>>();
+                            return handler.HandleAsync((TRequest)request, ct);
+                        }));
             }
         });
         return this;
@@ -127,6 +134,16 @@ internal sealed class DefaultDependencyInjectionBuilder : IDependencyInjectionBu
             if (condition())
             {
                 services.RegisterEventHandler<TEventHandler, TEvent>();
+                EventDispatchers.TryAdd(typeof(TEvent), (@event, dispatcher, cancellationToken) =>
+                {
+                    if (@event is not TEvent typedEvent)
+                    {
+                        throw new InvalidOperationException(
+                            $"Event type mismatch. Expected {typeof(TEvent)}, got {@event.GetType()}");
+                    }
+
+                    return dispatcher.DispatchAsync(typedEvent, cancellationToken);
+                });
             }
         });
         return this;
@@ -145,6 +162,13 @@ internal sealed class DefaultDependencyInjectionBuilder : IDependencyInjectionBu
             if (condition())
             {
                 services.RegisterStreamRequestHandler<TStreamRequestHandler, TRequest, TItem>();
+                StreamRequestDispatchers.TryAdd(typeof(TRequest),
+                    (Func<IStreamRequest<TItem>, IDependencyResolver, CancellationToken, IAsyncEnumerable<Result<TItem>>>)(
+                        (request, resolver, ct) =>
+                        {
+                            var handler = resolver.GetRequiredService<IStreamRequestHandler<TRequest, TItem>>();
+                            return handler.HandleAsync((TRequest)request, ct);
+                        }));
             }
         });
         return this;

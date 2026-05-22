@@ -18,8 +18,6 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
     private readonly Dictionary<Type, Delegate> _requestDispatchers = new();
     private readonly Dictionary<Type, Delegate> _streamRequestDispatchers = new();
 
-    private DefaultDependencyInjectionBuilder _builder = new();
-
     [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
     private Type _contextFactory = typeof(DefaultContextFactory);
 
@@ -120,22 +118,28 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
 
     public ISynapseConfig AddRegisterGroup(IRegisterGroup group)
     {
-        _builder = new DefaultDependencyInjectionBuilder();
-        group.Register(_builder);
-        foreach (var (type, dispatcher) in _builder.RequestDispatchers)
-        {
-            _requestDispatchers.TryAdd(type, dispatcher);
-        }
+        var builder = new DefaultDependencyInjectionBuilder();
+        group.Register(builder);
 
-        foreach (var (type, dispatcher) in _builder.EventDispatchers)
+        _actions.Add(svc =>
         {
-            _eventDispatchers.TryAdd(type, dispatcher);
-        }
+            builder.Apply(svc);
 
-        foreach (var (type, dispatcher) in _builder.StreamRequestDispatchers)
-        {
-            _streamRequestDispatchers.TryAdd(type, dispatcher);
-        }
+            foreach (var (type, dispatcher) in builder.RequestDispatchers)
+            {
+                _requestDispatchers.TryAdd(type, dispatcher);
+            }
+
+            foreach (var (type, dispatcher) in builder.EventDispatchers)
+            {
+                _eventDispatchers.TryAdd(type, dispatcher);
+            }
+
+            foreach (var (type, dispatcher) in builder.StreamRequestDispatchers)
+            {
+                _streamRequestDispatchers.TryAdd(type, dispatcher);
+            }
+        });
 
         return this;
     }
@@ -203,6 +207,13 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
             if (condition())
             {
                 scv.RegisterRequestHandler<THandler, TRequest, TResponse>();
+                _requestDispatchers.TryAdd(typeof(TRequest),
+                    (Func<IRequest<TResponse>, IDependencyResolver, CancellationToken, ValueTask<Result<TResponse>>>)(
+                        (request, resolver, ct) =>
+                        {
+                            var handler = resolver.GetRequiredService<IRequestHandler<TRequest, TResponse>>();
+                            return handler.HandleAsync((TRequest)request, ct);
+                        }));
             }
         });
         return this;
@@ -356,8 +367,6 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
 
     public void Apply()
     {
-        _builder.Apply(services);
-
         foreach (var action in _actions)
         {
             action(services);
