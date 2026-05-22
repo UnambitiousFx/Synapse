@@ -173,4 +173,34 @@ public sealed class DefaultDependencyInjectionBuilderTests
         // Assert (Then)
         Assert.Single(builder.RequestDispatchers);
     }
+
+    [Fact]
+    public void RegisterRequestHandlerWhen_ConditionTrue_PopulatesRequestDispatchersAfterApply()
+    {
+        // Arrange (Given)
+        var services = new ServiceCollection();
+        var builder = new DefaultDependencyInjectionBuilder();
+        builder.RegisterRequestHandlerWhen<TestRequestWithResponseHandler, TestRequestWithResponse, int>(() => true);
+
+        // Act (When)
+        builder.Apply(services);
+
+        // Assert (Then)
+        Assert.Contains(typeof(TestRequestWithResponse), builder.RequestDispatchers.Keys);
+    }
+
+    [Fact]
+    public void RegisterRequestHandlerWhen_ConditionFalse_DoesNotPopulateRequestDispatchersAfterApply()
+    {
+        // Arrange (Given)
+        var services = new ServiceCollection();
+        var builder = new DefaultDependencyInjectionBuilder();
+        builder.RegisterRequestHandlerWhen<TestRequestWithResponseHandler, TestRequestWithResponse, int>(() => false);
+
+        // Act (When)
+        builder.Apply(services);
+
+        // Assert (Then)
+        Assert.DoesNotContain(typeof(TestRequestWithResponse), builder.RequestDispatchers.Keys);
+    }
 }
