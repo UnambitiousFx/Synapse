@@ -9,10 +9,13 @@ namespace UnambitiousFx.Synapse;
 internal sealed class DefaultDependencyInjectionBuilder : IDependencyInjectionBuilder
 {
     private readonly List<Action<IServiceCollection>> _actions = [];
+    private readonly Dictionary<Type, Delegate> _requestDispatchers = new();
+    private readonly Dictionary<Type, DispatchEventDelegate> _eventDispatchers = new();
+    private readonly Dictionary<Type, Delegate> _streamRequestDispatchers = new();
 
-    public readonly Dictionary<Type, Delegate> RequestDispatchers = new();
-    public readonly Dictionary<Type, DispatchEventDelegate> EventDispatchers = new();
-    public readonly Dictionary<Type, Delegate> StreamRequestDispatchers = new();
+    public IReadOnlyDictionary<Type, Delegate> RequestDispatchers => _requestDispatchers;
+    public IReadOnlyDictionary<Type, DispatchEventDelegate> EventDispatchers => _eventDispatchers;
+    public IReadOnlyDictionary<Type, Delegate> StreamRequestDispatchers => _streamRequestDispatchers;
 
     public IDependencyInjectionBuilder RegisterRequestHandler<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
@@ -23,7 +26,7 @@ internal sealed class DefaultDependencyInjectionBuilder : IDependencyInjectionBu
         where TResponse : notnull
     {
         _actions.Add(services => services.RegisterRequestHandler<TRequestHandler, TRequest, TResponse>());
-        RequestDispatchers.TryAdd(typeof(TRequest),
+        _requestDispatchers.TryAdd(typeof(TRequest),
             (Func<IRequest<TResponse>, IDependencyResolver, CancellationToken, ValueTask<Result<TResponse>>>)(
                 (request, resolver, ct) =>
                 {
@@ -50,7 +53,7 @@ internal sealed class DefaultDependencyInjectionBuilder : IDependencyInjectionBu
         where TEvent : class, IEvent
     {
         _actions.Add(services => services.RegisterEventHandler<TEventHandler, TEvent>());
-        EventDispatchers.TryAdd(typeof(TEvent), (@event, dispatcher, cancellationToken) =>
+        _eventDispatchers.TryAdd(typeof(TEvent), (@event, dispatcher, cancellationToken) =>
         {
             if (@event is not TEvent typedEvent)
             {
@@ -72,7 +75,7 @@ internal sealed class DefaultDependencyInjectionBuilder : IDependencyInjectionBu
         where TRequest : IStreamRequest<TItem>
     {
         _actions.Add(services => services.RegisterStreamRequestHandler<TStreamRequestHandler, TRequest, TItem>());
-        StreamRequestDispatchers.TryAdd(typeof(TRequest),
+        _streamRequestDispatchers.TryAdd(typeof(TRequest),
             (Func<IStreamRequest<TItem>, IDependencyResolver, CancellationToken, IAsyncEnumerable<Result<TItem>>>)(
                 (request, resolver, ct) =>
                 {
@@ -95,7 +98,7 @@ internal sealed class DefaultDependencyInjectionBuilder : IDependencyInjectionBu
             if (condition())
             {
                 services.RegisterRequestHandler<TRequestHandler, TRequest, TResponse>();
-                RequestDispatchers.TryAdd(typeof(TRequest),
+                _requestDispatchers.TryAdd(typeof(TRequest),
                     (Func<IRequest<TResponse>, IDependencyResolver, CancellationToken, ValueTask<Result<TResponse>>>)(
                         (request, resolver, ct) =>
                         {
@@ -134,7 +137,7 @@ internal sealed class DefaultDependencyInjectionBuilder : IDependencyInjectionBu
             if (condition())
             {
                 services.RegisterEventHandler<TEventHandler, TEvent>();
-                EventDispatchers.TryAdd(typeof(TEvent), (@event, dispatcher, cancellationToken) =>
+                _eventDispatchers.TryAdd(typeof(TEvent), (@event, dispatcher, cancellationToken) =>
                 {
                     if (@event is not TEvent typedEvent)
                     {
@@ -162,7 +165,7 @@ internal sealed class DefaultDependencyInjectionBuilder : IDependencyInjectionBu
             if (condition())
             {
                 services.RegisterStreamRequestHandler<TStreamRequestHandler, TRequest, TItem>();
-                StreamRequestDispatchers.TryAdd(typeof(TRequest),
+                _streamRequestDispatchers.TryAdd(typeof(TRequest),
                     (Func<IStreamRequest<TItem>, IDependencyResolver, CancellationToken, IAsyncEnumerable<Result<TItem>>>)(
                         (request, resolver, ct) =>
                         {

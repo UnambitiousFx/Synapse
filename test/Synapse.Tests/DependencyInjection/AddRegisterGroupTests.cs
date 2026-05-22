@@ -74,6 +74,27 @@ public sealed class AddRegisterGroupTests
         Assert.True(items[0].IsSuccess);
     }
 
+    [Fact]
+    public async Task GivenRegisterGroup_WhenDerivedEventDispatchedAsBaseType_ThenUsesDispatcherDictionary()
+    {
+        // Arrange (Given)
+        var services = new ServiceCollection()
+            .AddSynapse(cfg =>
+            {
+                cfg.AddRegisterGroup(new PolymorphicTestRegisterGroup());
+            })
+            .AddLogging()
+            .BuildServiceProvider();
+
+        var emitter = services.GetRequiredService<IEmitter>();
+
+        // Act (When) — TEvent=TestBaseEvent but runtime type is TestDerivedEvent, forcing dictionary lookup
+        var result = await emitter.EmitAsync<TestBaseEvent>(new TestDerivedEvent());
+
+        // Assert (Then)
+        Assert.True(result.IsSuccess);
+    }
+
     private sealed class TestRegisterGroup : IRegisterGroup
     {
         public void Register(IDependencyInjectionBuilder builder)
@@ -81,6 +102,14 @@ public sealed class AddRegisterGroupTests
             builder.RegisterRequestHandler<TestRequestHandler, TestRequest, int>();
             builder.RegisterEventHandler<TestEventHandler, TestEvent>();
             builder.RegisterStreamRequestHandler<TestStreamRequestHandler, TestStreamRequest, int>();
+        }
+    }
+
+    private sealed class PolymorphicTestRegisterGroup : IRegisterGroup
+    {
+        public void Register(IDependencyInjectionBuilder builder)
+        {
+            builder.RegisterEventHandler<TestDerivedEventHandler, TestDerivedEvent>();
         }
     }
 
@@ -113,6 +142,18 @@ public sealed class AddRegisterGroupTests
         {
             yield return Result.Success(1);
             await Task.CompletedTask;
+        }
+    }
+
+    private abstract class TestBaseEvent : IEvent;
+
+    private sealed class TestDerivedEvent : TestBaseEvent;
+
+    private sealed class TestDerivedEventHandler : IEventHandler<TestDerivedEvent>
+    {
+        public ValueTask<Result> HandleAsync(TestDerivedEvent @event, CancellationToken cancellationToken = default)
+        {
+            return ValueTask.FromResult(Result.Success());
         }
     }
 }
