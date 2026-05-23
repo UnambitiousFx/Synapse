@@ -126,6 +126,48 @@ public sealed class DependencyInjectionExtensionsTests
     }
 
     [Fact]
+    public async Task GivenConditionalRequestHandler_WhenConditionIsTrue_ThenInvokerCanDispatch()
+    {
+        // Arrange (Given)
+        var services = new ServiceCollection()
+            .AddSynapse(cfg =>
+            {
+                cfg.RegisterRequestHandlerWhen<RequestWithResponseExampleHandler, RequestWithResponseExample,
+                    int>(() => true);
+            })
+            .AddLogging()
+            .BuildServiceProvider();
+
+        var invoker = services.GetRequiredService<IInvoker>();
+
+        // Act (When)
+        var result = await invoker.InvokeAsync(new RequestWithResponseExample(), CancellationToken.None);
+
+        // Assert (Then)
+        Assert.True(result.IsSuccess);
+    }
+
+    [Fact]
+    public async Task GivenConditionalRequestHandler_WhenConditionIsFalse_ThenInvokerThrowsNoHandlerException()
+    {
+        // Arrange (Given)
+        var services = new ServiceCollection()
+            .AddSynapse(cfg =>
+            {
+                cfg.RegisterRequestHandlerWhen<RequestWithResponseExampleHandler, RequestWithResponseExample,
+                    int>(() => false);
+            })
+            .AddLogging()
+            .BuildServiceProvider();
+
+        var invoker = services.GetRequiredService<IInvoker>();
+
+        // Act & Assert (When & Then)
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            invoker.InvokeAsync(new RequestWithResponseExample(), CancellationToken.None).AsTask());
+    }
+
+    [Fact]
     public void GivenConditionalRegistration_WhenBasedOnEnvironmentVariable_ThenRegistersCorrectly()
     {
         // Arrange

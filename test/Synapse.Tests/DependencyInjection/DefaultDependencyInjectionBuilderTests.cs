@@ -107,4 +107,100 @@ public sealed class DefaultDependencyInjectionBuilderTests
             await Task.CompletedTask;
         }
     }
+
+    [Fact]
+    public void RegisterRequestHandler_WithResponse_PopulatesRequestDispatchers()
+    {
+        // Arrange (Given)
+        var builder = new DefaultDependencyInjectionBuilder();
+
+        // Act (When)
+        builder.RegisterRequestHandler<TestRequestWithResponseHandler, TestRequestWithResponse, int>();
+
+        // Assert (Then)
+        Assert.Contains(typeof(TestRequestWithResponse), builder.RequestDispatchers.Keys);
+    }
+
+    [Fact]
+    public void RegisterRequestHandler_WithoutResponse_DoesNotPopulateRequestDispatchers()
+    {
+        // Arrange (Given)
+        var builder = new DefaultDependencyInjectionBuilder();
+
+        // Act (When)
+        builder.RegisterRequestHandler<TestRequestHandler, TestRequest>();
+
+        // Assert (Then)
+        Assert.DoesNotContain(typeof(TestRequest), builder.RequestDispatchers.Keys);
+    }
+
+    [Fact]
+    public void RegisterEventHandler_PopulatesEventDispatchers()
+    {
+        // Arrange (Given)
+        var builder = new DefaultDependencyInjectionBuilder();
+
+        // Act (When)
+        builder.RegisterEventHandler<TestEventHandler, TestEvent>();
+
+        // Assert (Then)
+        Assert.Contains(typeof(TestEvent), builder.EventDispatchers.Keys);
+    }
+
+    [Fact]
+    public void RegisterStreamRequestHandler_PopulatesStreamRequestDispatchers()
+    {
+        // Arrange (Given)
+        var builder = new DefaultDependencyInjectionBuilder();
+
+        // Act (When)
+        builder.RegisterStreamRequestHandler<TestStreamRequestHandler, TestStreamRequest, int>();
+
+        // Assert (Then)
+        Assert.Contains(typeof(TestStreamRequest), builder.StreamRequestDispatchers.Keys);
+    }
+
+    [Fact]
+    public void RegisterRequestHandler_MultipleCallsSameType_DoesNotDuplicateDispatchers()
+    {
+        // Arrange (Given)
+        var builder = new DefaultDependencyInjectionBuilder();
+
+        // Act (When)
+        builder.RegisterRequestHandler<TestRequestWithResponseHandler, TestRequestWithResponse, int>();
+        builder.RegisterRequestHandler<TestRequestWithResponseHandler, TestRequestWithResponse, int>();
+
+        // Assert (Then)
+        Assert.Single(builder.RequestDispatchers);
+    }
+
+    [Fact]
+    public void RegisterRequestHandlerWhen_ConditionTrue_PopulatesRequestDispatchersAfterApply()
+    {
+        // Arrange (Given)
+        var services = new ServiceCollection();
+        var builder = new DefaultDependencyInjectionBuilder();
+        builder.RegisterRequestHandlerWhen<TestRequestWithResponseHandler, TestRequestWithResponse, int>(() => true);
+
+        // Act (When)
+        builder.Apply(services);
+
+        // Assert (Then)
+        Assert.Contains(typeof(TestRequestWithResponse), builder.RequestDispatchers.Keys);
+    }
+
+    [Fact]
+    public void RegisterRequestHandlerWhen_ConditionFalse_DoesNotPopulateRequestDispatchersAfterApply()
+    {
+        // Arrange (Given)
+        var services = new ServiceCollection();
+        var builder = new DefaultDependencyInjectionBuilder();
+        builder.RegisterRequestHandlerWhen<TestRequestWithResponseHandler, TestRequestWithResponse, int>(() => false);
+
+        // Act (When)
+        builder.Apply(services);
+
+        // Assert (Then)
+        Assert.DoesNotContain(typeof(TestRequestWithResponse), builder.RequestDispatchers.Keys);
+    }
 }

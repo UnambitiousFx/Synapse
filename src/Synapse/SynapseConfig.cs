@@ -18,8 +18,6 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
     private readonly Dictionary<Type, Delegate> _requestDispatchers = new();
     private readonly Dictionary<Type, Delegate> _streamRequestDispatchers = new();
 
-    private DefaultDependencyInjectionBuilder _builder = new();
-
     [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
     private Type _contextFactory = typeof(DefaultContextFactory);
 
@@ -36,7 +34,7 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
 
     public ISynapseConfig RegisterRequestPipelineBehavior<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
-        TRequestPipelineBehavior>()
+    TRequestPipelineBehavior>()
         where TRequestPipelineBehavior : class, IRequestPipelineBehavior
     {
         _actions.Add(svc => svc.RegisterRequestPipelineBehavior<TRequestPipelineBehavior>());
@@ -45,7 +43,7 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
 
     public ISynapseConfig RegisterRequestPipelineBehavior<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
-        TBehavior, TRequest>()
+    TBehavior, TRequest>()
         where TBehavior : class, IRequestPipelineBehavior<TRequest>
         where TRequest : IRequest
     {
@@ -55,7 +53,7 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
 
     public ISynapseConfig RegisterRequestPipelineBehavior<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
-        TBehavior, TRequest,
+    TBehavior, TRequest,
         TResponse>()
         where TBehavior : class, IRequestPipelineBehavior<TRequest, TResponse>
         where TRequest : IRequest<TResponse>
@@ -67,7 +65,7 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
 
     public ISynapseConfig RegisterConditionalRequestPipelineBehavior<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
-        TBehavior>(
+    TBehavior>(
         Func<object, bool> predicate)
         where TBehavior : class, IRequestPipelineBehavior
     {
@@ -77,7 +75,7 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
 
     public ISynapseConfig RegisterConditionalRequestPipelineBehavior<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
-        TBehavior, TRequest>(
+    TBehavior, TRequest>(
         Func<TRequest, bool> predicate)
         where TBehavior : class, IRequestPipelineBehavior<TRequest>
         where TRequest : IRequest
@@ -89,7 +87,7 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
 
     public ISynapseConfig RegisterConditionalRequestPipelineBehavior<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
-        TBehavior, TRequest,
+    TBehavior, TRequest,
         TResponse>(Func<TRequest, bool> predicate)
         where TBehavior : class, IRequestPipelineBehavior<TRequest, TResponse>
         where TRequest : IRequest<TResponse>
@@ -102,7 +100,7 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
 
     public ISynapseConfig RegisterEventPipelineBehavior<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
-        TEventPipelineBehavior>()
+    TEventPipelineBehavior>()
         where TEventPipelineBehavior : class, IEventPipelineBehavior
     {
         _actions.Add(scv => scv.RegisterEventPipelineBehavior<TEventPipelineBehavior>());
@@ -111,7 +109,7 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
 
     public ISynapseConfig SetEventOrchestrator<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
-        TEventOrchestrator>()
+    TEventOrchestrator>()
         where TEventOrchestrator : class, IEventOrchestrator
     {
         _eventOrchestrator = typeof(TEventOrchestrator);
@@ -120,14 +118,35 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
 
     public ISynapseConfig AddRegisterGroup(IRegisterGroup group)
     {
-        _builder = new DefaultDependencyInjectionBuilder();
-        group.Register(_builder);
+        var builder = new DefaultDependencyInjectionBuilder();
+        group.Register(builder);
+
+        _actions.Add(svc =>
+        {
+            builder.Apply(svc);
+
+            foreach (var (type, dispatcher) in builder.RequestDispatchers)
+            {
+                _requestDispatchers.TryAdd(type, dispatcher);
+            }
+
+            foreach (var (type, dispatcher) in builder.EventDispatchers)
+            {
+                _eventDispatchers.TryAdd(type, dispatcher);
+            }
+
+            foreach (var (type, dispatcher) in builder.StreamRequestDispatchers)
+            {
+                _streamRequestDispatchers.TryAdd(type, dispatcher);
+            }
+        });
+
         return this;
     }
 
     public ISynapseConfig RegisterRequestHandler<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
-        THandler, TRequest, TResponse>()
+    THandler, TRequest, TResponse>()
         where TResponse : notnull
         where TRequest : IRequest<TResponse>
         where THandler : class, IRequestHandler<TRequest, TResponse>
@@ -145,7 +164,7 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
 
     public ISynapseConfig RegisterRequestHandler<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
-        THandler, TRequest>()
+    THandler, TRequest>()
         where TRequest : IRequest
         where THandler : class, IRequestHandler<TRequest>
     {
@@ -155,7 +174,7 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
 
     public ISynapseConfig RegisterEventHandler<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
-        THandler, TEvent>()
+    THandler, TEvent>()
         where THandler : class, IEventHandler<TEvent>
         where TEvent : class, IEvent
     {
@@ -178,7 +197,7 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
 
     public ISynapseConfig RegisterRequestHandlerWhen<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
-        THandler, TRequest, TResponse>(Func<bool> condition)
+    THandler, TRequest, TResponse>(Func<bool> condition)
         where TResponse : notnull
         where TRequest : IRequest<TResponse>
         where THandler : class, IRequestHandler<TRequest, TResponse>
@@ -188,6 +207,13 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
             if (condition())
             {
                 scv.RegisterRequestHandler<THandler, TRequest, TResponse>();
+                _requestDispatchers.TryAdd(typeof(TRequest),
+                    (Func<IRequest<TResponse>, IDependencyResolver, CancellationToken, ValueTask<Result<TResponse>>>)(
+                        (request, resolver, ct) =>
+                        {
+                            var handler = resolver.GetRequiredService<IRequestHandler<TRequest, TResponse>>();
+                            return handler.HandleAsync((TRequest)request, ct);
+                        }));
             }
         });
         return this;
@@ -195,7 +221,7 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
 
     public ISynapseConfig RegisterRequestHandlerWhen<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
-        THandler, TRequest>(Func<bool> condition)
+    THandler, TRequest>(Func<bool> condition)
         where TRequest : IRequest
         where THandler : class, IRequestHandler<TRequest>
     {
@@ -211,7 +237,7 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
 
     public ISynapseConfig RegisterEventHandlerWhen<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
-        THandler, TEvent>(Func<bool> condition)
+    THandler, TEvent>(Func<bool> condition)
         where THandler : class, IEventHandler<TEvent>
         where TEvent : class, IEvent
     {
@@ -241,7 +267,7 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
 
     public ISynapseConfig SetEventOutboxStorage<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
-        TEventOutboxStorage>()
+    TEventOutboxStorage>()
         where TEventOutboxStorage : class, IEventOutboxStorage
     {
         _eventOutBoxStorage = typeof(TEventOutboxStorage);
@@ -272,7 +298,7 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
 
     public ISynapseConfig RegisterStreamRequestHandler<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
-        THandler, TRequest, TItem>()
+    THandler, TRequest, TItem>()
         where TItem : notnull
         where TRequest : IStreamRequest<TItem>
         where THandler : class, IStreamRequestHandler<TRequest, TItem>
@@ -290,7 +316,7 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
 
     public ISynapseConfig AddValidator<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
-        TValidator, TRequest>()
+    TValidator, TRequest>()
         where TValidator : class, IRequestValidator<TRequest>
         where TRequest : IRequest
     {
@@ -300,7 +326,7 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
 
     public ISynapseConfig AddValidator<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
-        TValidator, TRequest, TResponse>()
+    TValidator, TRequest, TResponse>()
         where TValidator : class, IRequestValidator<TRequest>
         where TRequest : IRequest<TResponse>
         where TResponse : notnull
@@ -321,7 +347,7 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
 
     public ISynapseConfig UseContextFactory<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
-        TContextFactory>()
+    TContextFactory>()
         where TContextFactory : class, IContextFactory
     {
         _contextFactory = typeof(TContextFactory);
@@ -330,7 +356,7 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
 
     public ISynapseConfig UseEventDispatcherRegistration<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
-        TRegistration>()
+    TRegistration>()
         where TRegistration : class, IEventDispatcherRegistration, new()
     {
         var registration = new TRegistration();
@@ -341,8 +367,6 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
 
     public void Apply()
     {
-        _builder.Apply(services);
-
         foreach (var action in _actions)
         {
             action(services);
