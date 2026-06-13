@@ -79,20 +79,23 @@ public class SynapseVsMediatRBenchmarks
             cfg.RegisterEventHandler<OurEventHandler4, SynapseEvent>();
             cfg.RegisterEventHandler<OurEventHandler5, SynapseEvent>();
 
-            // Request pipeline behaviors (untyped so they apply to both)
+            // Request pipeline behaviors (open-generic so they apply to both request kinds)
             if (behaviors >= 1)
             {
-                cfg.RegisterRequestPipelineBehavior<OurNoOpBehavior1>();
+                cfg.AddOpenGenericRequestPipelineBehavior(typeof(OurNoOpBehavior1<>));
+                cfg.AddOpenGenericRequestWithResponsePipelineBehavior(typeof(OurNoOpBehavior1<,>));
             }
 
             if (behaviors >= 2)
             {
-                cfg.RegisterRequestPipelineBehavior<OurNoOpBehavior2>();
+                cfg.AddOpenGenericRequestPipelineBehavior(typeof(OurNoOpBehavior2<>));
+                cfg.AddOpenGenericRequestWithResponsePipelineBehavior(typeof(OurNoOpBehavior2<,>));
             }
 
             if (behaviors >= 3)
             {
-                cfg.RegisterRequestPipelineBehavior<OurNoOpBehavior3>();
+                cfg.AddOpenGenericRequestPipelineBehavior(typeof(OurNoOpBehavior3<>));
+                cfg.AddOpenGenericRequestWithResponsePipelineBehavior(typeof(OurNoOpBehavior3<,>));
             }
 
             if (slimContext)
@@ -273,64 +276,61 @@ public class SynapseVsMediatRBenchmarks
         }
     }
 
-    public sealed class OurNoOpBehavior1 : IRequestPipelineBehavior
+    public sealed class OurNoOpBehavior1<TRequest> : IRequestPipelineBehavior<TRequest>
+        where TRequest : Synapse.Abstractions.IRequest
     {
-        public ValueTask<Result> HandleAsync<TRequest>(TRequest request,
+        public ValueTask<Result> HandleAsync(TRequest request,
             Synapse.Abstractions.RequestHandlerDelegate<TRequest> next,
             CancellationToken cancellationToken = default)
-            where TRequest : Synapse.Abstractions.IRequest
-        {
-            return next(request, cancellationToken);
-        }
-
-        public ValueTask<Result<TResponse>> HandleAsync<TRequest, TResponse>(TRequest request,
-            Synapse.Abstractions.RequestHandlerDelegate<TRequest, TResponse> next,
-            CancellationToken cancellationToken = default)
-            where TResponse : notnull
-            where TRequest : Synapse.Abstractions.IRequest<TResponse>
-        {
-            return next(request, cancellationToken);
-        }
+            => next(request, cancellationToken);
     }
 
-    public sealed class OurNoOpBehavior2 : IRequestPipelineBehavior
+    public sealed class OurNoOpBehavior1<TRequest, TResponse> : IRequestPipelineBehavior<TRequest, TResponse>
+        where TRequest : Synapse.Abstractions.IRequest<TResponse>
+        where TResponse : notnull
     {
-        public ValueTask<Result> HandleAsync<TRequest>(TRequest request,
-            Synapse.Abstractions.RequestHandlerDelegate<TRequest> next,
-            CancellationToken cancellationToken = default)
-            where TRequest : Synapse.Abstractions.IRequest
-        {
-            return next(request, cancellationToken);
-        }
-
-        public ValueTask<Result<TResponse>> HandleAsync<TRequest, TResponse>(TRequest request,
+        public ValueTask<Result<TResponse>> HandleAsync(TRequest request,
             Synapse.Abstractions.RequestHandlerDelegate<TRequest, TResponse> next,
             CancellationToken cancellationToken = default)
-            where TResponse : notnull
-            where TRequest : Synapse.Abstractions.IRequest<TResponse>
-        {
-            return next(request, cancellationToken);
-        }
+            => next(request, cancellationToken);
     }
 
-    public sealed class OurNoOpBehavior3 : IRequestPipelineBehavior
+    public sealed class OurNoOpBehavior2<TRequest> : IRequestPipelineBehavior<TRequest>
+        where TRequest : Synapse.Abstractions.IRequest
     {
-        public ValueTask<Result> HandleAsync<TRequest>(TRequest request,
+        public ValueTask<Result> HandleAsync(TRequest request,
             Synapse.Abstractions.RequestHandlerDelegate<TRequest> next,
             CancellationToken cancellationToken = default)
-            where TRequest : Synapse.Abstractions.IRequest
-        {
-            return next(request, cancellationToken);
-        }
+            => next(request, cancellationToken);
+    }
 
-        public ValueTask<Result<TResponse>> HandleAsync<TRequest, TResponse>(TRequest request,
+    public sealed class OurNoOpBehavior2<TRequest, TResponse> : IRequestPipelineBehavior<TRequest, TResponse>
+        where TRequest : Synapse.Abstractions.IRequest<TResponse>
+        where TResponse : notnull
+    {
+        public ValueTask<Result<TResponse>> HandleAsync(TRequest request,
             Synapse.Abstractions.RequestHandlerDelegate<TRequest, TResponse> next,
             CancellationToken cancellationToken = default)
-            where TResponse : notnull
-            where TRequest : Synapse.Abstractions.IRequest<TResponse>
-        {
-            return next(request, cancellationToken);
-        }
+            => next(request, cancellationToken);
+    }
+
+    public sealed class OurNoOpBehavior3<TRequest> : IRequestPipelineBehavior<TRequest>
+        where TRequest : Synapse.Abstractions.IRequest
+    {
+        public ValueTask<Result> HandleAsync(TRequest request,
+            Synapse.Abstractions.RequestHandlerDelegate<TRequest> next,
+            CancellationToken cancellationToken = default)
+            => next(request, cancellationToken);
+    }
+
+    public sealed class OurNoOpBehavior3<TRequest, TResponse> : IRequestPipelineBehavior<TRequest, TResponse>
+        where TRequest : Synapse.Abstractions.IRequest<TResponse>
+        where TResponse : notnull
+    {
+        public ValueTask<Result<TResponse>> HandleAsync(TRequest request,
+            Synapse.Abstractions.RequestHandlerDelegate<TRequest, TResponse> next,
+            CancellationToken cancellationToken = default)
+            => next(request, cancellationToken);
     }
 
     public sealed class SynapseEvent : IEvent

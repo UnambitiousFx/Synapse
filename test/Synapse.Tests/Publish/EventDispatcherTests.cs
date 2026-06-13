@@ -53,8 +53,8 @@ public sealed class EventDispatcherTests
 
         _dependencyResolver.GetServices<IEventHandler<EventExample>>()
             .Returns(new[] { handler });
-        _dependencyResolver.GetServices<IEventPipelineBehavior>()
-            .Returns(Array.Empty<IEventPipelineBehavior>());
+        _dependencyResolver.GetServices<IEventPipelineBehavior<EventExample>>()
+            .Returns(Array.Empty<IEventPipelineBehavior<EventExample>>());
         _eventOrchestrator.RunAsync(Arg.Any<IEventHandler<EventExample>[]>(), @event, Arg.Any<CancellationToken>())
             .Returns(Result.Success());
 
@@ -80,8 +80,8 @@ public sealed class EventDispatcherTests
 
         _dependencyResolver.GetServices<IEventHandler<EventExample>>()
             .Returns(new IEventHandler<EventExample>[] { handler1, handler2 });
-        _dependencyResolver.GetServices<IEventPipelineBehavior>()
-            .Returns(Array.Empty<IEventPipelineBehavior>());
+        _dependencyResolver.GetServices<IEventPipelineBehavior<EventExample>>()
+            .Returns(Array.Empty<IEventPipelineBehavior<EventExample>>());
         _eventOrchestrator.RunAsync(Arg.Any<IEventHandler<EventExample>[]>(), @event, Arg.Any<CancellationToken>())
             .Returns(Result.Success());
 
@@ -105,8 +105,8 @@ public sealed class EventDispatcherTests
 
         _dependencyResolver.GetServices<IEventHandler<EventExample>>()
             .Returns(Array.Empty<IEventHandler<EventExample>>());
-        _dependencyResolver.GetServices<IEventPipelineBehavior>()
-            .Returns(Array.Empty<IEventPipelineBehavior>());
+        _dependencyResolver.GetServices<IEventPipelineBehavior<EventExample>>()
+            .Returns(Array.Empty<IEventPipelineBehavior<EventExample>>());
         _eventOrchestrator.RunAsync(Arg.Any<IEventHandler<EventExample>[]>(), @event, Arg.Any<CancellationToken>())
             .Returns(Result.Success());
 
@@ -127,12 +127,12 @@ public sealed class EventDispatcherTests
         // Arrange (Given)
         var @event = new EventExample("Test Event");
         var handler = new EventExampleHandler1();
-        var behavior = Substitute.For<IEventPipelineBehavior>();
+        var behavior = Substitute.For<IEventPipelineBehavior<EventExample>>();
         var dispatcher = CreateDispatcher();
 
         _dependencyResolver.GetServices<IEventHandler<EventExample>>()
             .Returns(new[] { handler });
-        _dependencyResolver.GetServices<IEventPipelineBehavior>()
+        _dependencyResolver.GetServices<IEventPipelineBehavior<EventExample>>()
             .Returns(new[] { behavior });
 
         behavior.HandleAsync(@event, Arg.Any<EventHandlerDelegate<EventExample>>(), Arg.Any<CancellationToken>())
@@ -178,8 +178,8 @@ public sealed class EventDispatcherTests
 
         _dependencyResolver.GetServices<IEventHandler<InheritedEventExample>>()
             .Returns(new[] { handler });
-        _dependencyResolver.GetServices<IEventPipelineBehavior>()
-            .Returns(Array.Empty<IEventPipelineBehavior>());
+        _dependencyResolver.GetServices<IEventPipelineBehavior<InheritedEventExample>>()
+            .Returns(Array.Empty<IEventPipelineBehavior<InheritedEventExample>>());
 
         handler.HandleAsync(Arg.Any<InheritedEventExample>(), Arg.Any<CancellationToken>())
             .Returns(Result.Success());
@@ -208,8 +208,8 @@ public sealed class EventDispatcherTests
 
         _dependencyResolver.GetServices<IEventHandler<EventExample>>()
             .Returns(new[] { handler });
-        _dependencyResolver.GetServices<IEventPipelineBehavior>()
-            .Returns(Array.Empty<IEventPipelineBehavior>());
+        _dependencyResolver.GetServices<IEventPipelineBehavior<EventExample>>()
+            .Returns(Array.Empty<IEventPipelineBehavior<EventExample>>());
         _eventOrchestrator.RunAsync(Arg.Any<IEventHandler<EventExample>[]>(), @event, Arg.Any<CancellationToken>())
             .Returns(Result.Success());
 
@@ -232,8 +232,8 @@ public sealed class EventDispatcherTests
 
         _dependencyResolver.GetServices<IEventHandler<EventExample>>()
             .Returns(new[] { handler });
-        _dependencyResolver.GetServices<IEventPipelineBehavior>()
-            .Returns(Array.Empty<IEventPipelineBehavior>());
+        _dependencyResolver.GetServices<IEventPipelineBehavior<EventExample>>()
+            .Returns(Array.Empty<IEventPipelineBehavior<EventExample>>());
         _eventOrchestrator.RunAsync(Arg.Any<IEventHandler<EventExample>[]>(), @event, Arg.Any<CancellationToken>())
             .Returns(Result.Failure("Test failure"));
 

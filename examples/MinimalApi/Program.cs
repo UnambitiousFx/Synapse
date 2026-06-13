@@ -52,9 +52,10 @@ builder.Services.AddSynapse(cfg =>
     cfg.AddValidator<CreateTaskCommandValidator, CreateTaskCommand, Guid>();
 
     // ── Pipeline behaviors ─────────────────────────────────────────────
-    // Logging wraps every request and event (observe timings in stdout)
-    cfg.RegisterRequestPipelineBehavior<SimpleLoggingBehavior>();
-    cfg.RegisterEventPipelineBehavior<SimpleLoggingBehavior>();
+    // Open-generic logging wraps every request and event (observe timings in stdout)
+    cfg.AddOpenGenericRequestPipelineBehavior(typeof(SimpleLoggingBehavior<>));
+    cfg.AddOpenGenericRequestWithResponsePipelineBehavior(typeof(SimpleLoggingBehavior<,>));
+    cfg.AddOpenGenericEventPipelineBehavior(typeof(SimpleLoggingEventBehavior<>));
     // Validation runs for CreateTaskCommand before the handler — returns failure on invalid input
     cfg.RegisterRequestPipelineBehavior<RequestValidationBehavior<CreateTaskCommand, Guid>, CreateTaskCommand, Guid>();
 

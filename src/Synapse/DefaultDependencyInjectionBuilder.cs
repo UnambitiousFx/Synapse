@@ -177,6 +177,48 @@ internal sealed class DefaultDependencyInjectionBuilder : IDependencyInjectionBu
         return this;
     }
 
+    public IDependencyInjectionBuilder RegisterRequestPipelineBehavior<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+    TBehavior, TRequest>()
+        where TBehavior : class, IRequestPipelineBehavior<TRequest>
+        where TRequest : IRequest
+    {
+        _actions.Add(services => services.RegisterRequestPipelineBehavior<TBehavior, TRequest>());
+        return this;
+    }
+
+    public IDependencyInjectionBuilder RegisterRequestPipelineBehavior<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+    TBehavior, TRequest, TResponse>()
+        where TBehavior : class, IRequestPipelineBehavior<TRequest, TResponse>
+        where TRequest : IRequest<TResponse>
+        where TResponse : notnull
+    {
+        _actions.Add(services => services.RegisterRequestPipelineBehavior<TBehavior, TRequest, TResponse>());
+        return this;
+    }
+
+    public IDependencyInjectionBuilder RegisterEventPipelineBehavior<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+    TBehavior, TEvent>()
+        where TBehavior : class, IEventPipelineBehavior<TEvent>
+        where TEvent : class, IEvent
+    {
+        _actions.Add(services => services.RegisterEventPipelineBehavior<TBehavior, TEvent>());
+        return this;
+    }
+
+    public IDependencyInjectionBuilder RegisterStreamRequestPipelineBehavior<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+    TBehavior, TRequest, TItem>()
+        where TBehavior : class, IStreamRequestPipelineBehavior<TRequest, TItem>
+        where TRequest : IStreamRequest<TItem>
+        where TItem : notnull
+    {
+        _actions.Add(services => services.RegisterStreamRequestPipelineBehavior<TBehavior, TRequest, TItem>());
+        return this;
+    }
+
     public void Apply(IServiceCollection services)
     {
         foreach (var action in _actions)

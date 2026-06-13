@@ -99,101 +99,52 @@ public static class DependencyInjectionExtensions
 
     internal static IServiceCollection RegisterRequestPipelineBehavior<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
-        TRequestPipelineBehavior>(
-        this IServiceCollection services,
-        ServiceLifetime lifetime = ServiceLifetime.Scoped)
-        where TRequestPipelineBehavior : class, IRequestPipelineBehavior
-    {
-        services.Add(
-            new ServiceDescriptor(typeof(IRequestPipelineBehavior), typeof(TRequestPipelineBehavior), lifetime));
-        return services;
-    }
-
-    internal static IServiceCollection RegisterEventPipelineBehavior<
-        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
-        TEventPipelineBehavior>(
-        this IServiceCollection services,
-        ServiceLifetime lifetime = ServiceLifetime.Scoped)
-        where TEventPipelineBehavior : class, IEventPipelineBehavior
-    {
-        services.Add(new ServiceDescriptor(typeof(IEventPipelineBehavior), typeof(TEventPipelineBehavior), lifetime));
-        return services;
-    }
-
-    internal static IServiceCollection RegisterTypedRequestPipelineBehavior<
-        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         TBehavior, TRequest>(
         this IServiceCollection services,
         ServiceLifetime lifetime = ServiceLifetime.Scoped)
         where TBehavior : class, IRequestPipelineBehavior<TRequest>
         where TRequest : IRequest
     {
-        services.Add(new ServiceDescriptor(typeof(TBehavior), typeof(TBehavior), lifetime));
-        services.Add(new ServiceDescriptor(typeof(IRequestPipelineBehavior),
-            sp => new RequestTypedBehaviorAdapter<TRequest>(sp.GetRequiredService<TBehavior>()), lifetime));
+        services.Add(new ServiceDescriptor(typeof(IRequestPipelineBehavior<TRequest>), typeof(TBehavior), lifetime));
         return services;
     }
 
-    internal static IServiceCollection RegisterTypedRequestPipelineBehavior<
+    internal static IServiceCollection RegisterRequestPipelineBehavior<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
-        TBehavior, TRequest,
-        TResponse>(this IServiceCollection services,
-        ServiceLifetime lifetime = ServiceLifetime.Scoped)
-        where TBehavior : class, IRequestPipelineBehavior<TRequest, TResponse>
-        where TRequest : IRequest<TResponse>
-        where TResponse : notnull
-    {
-        services.Add(new ServiceDescriptor(typeof(TBehavior), typeof(TBehavior), lifetime));
-        services.Add(new ServiceDescriptor(typeof(IRequestPipelineBehavior),
-            sp => new RequestTypedBehaviorAdapter<TRequest, TResponse>(sp.GetRequiredService<TBehavior>()),
-            lifetime));
-        return services;
-    }
-
-    internal static IServiceCollection RegisterConditionalRequestPipelineBehavior<
-        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
-        TBehavior>(
+        TBehavior, TRequest, TResponse>(
         this IServiceCollection services,
-        Func<object, bool> predicate,
-        ServiceLifetime lifetime = ServiceLifetime.Scoped)
-        where TBehavior : class, IRequestPipelineBehavior
-    {
-        services.Add(new ServiceDescriptor(typeof(TBehavior), typeof(TBehavior), lifetime));
-        services.Add(new ServiceDescriptor(typeof(IRequestPipelineBehavior),
-            sp => new ConditionalUntypedBehaviorWrapper(sp.GetRequiredService<TBehavior>(), predicate), lifetime));
-        return services;
-    }
-
-    internal static IServiceCollection RegisterConditionalTypedRequestPipelineBehavior<
-        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
-        TBehavior,
-        TRequest>(this IServiceCollection services,
-        Func<TRequest, bool> predicate,
-        ServiceLifetime lifetime = ServiceLifetime.Scoped)
-        where TBehavior : class, IRequestPipelineBehavior<TRequest>
-        where TRequest : IRequest
-    {
-        services.Add(new ServiceDescriptor(typeof(TBehavior), typeof(TBehavior), lifetime));
-        services.Add(new ServiceDescriptor(typeof(IRequestPipelineBehavior), sp => new ConditionalTypedBehaviorWrapper(
-            new RequestTypedBehaviorAdapter<TRequest>(sp.GetRequiredService<TBehavior>()),
-            o => o is TRequest r && predicate(r)), lifetime));
-        return services;
-    }
-
-    internal static IServiceCollection RegisterConditionalTypedRequestPipelineBehavior<
-        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
-        TBehavior,
-        TRequest, TResponse>(this IServiceCollection services,
-        Func<TRequest, bool> predicate,
         ServiceLifetime lifetime = ServiceLifetime.Scoped)
         where TBehavior : class, IRequestPipelineBehavior<TRequest, TResponse>
         where TRequest : IRequest<TResponse>
         where TResponse : notnull
     {
-        services.Add(new ServiceDescriptor(typeof(TBehavior), typeof(TBehavior), lifetime));
-        services.Add(new ServiceDescriptor(typeof(IRequestPipelineBehavior), sp => new ConditionalTypedBehaviorWrapper(
-                new RequestTypedBehaviorAdapter<TRequest, TResponse>(sp.GetRequiredService<TBehavior>()),
-                o => o is TRequest r && predicate(r)),
+        services.Add(
+            new ServiceDescriptor(typeof(IRequestPipelineBehavior<TRequest, TResponse>), typeof(TBehavior), lifetime));
+        return services;
+    }
+
+    internal static IServiceCollection RegisterEventPipelineBehavior<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+        TBehavior, TEvent>(
+        this IServiceCollection services,
+        ServiceLifetime lifetime = ServiceLifetime.Scoped)
+        where TBehavior : class, IEventPipelineBehavior<TEvent>
+        where TEvent : class, IEvent
+    {
+        services.Add(new ServiceDescriptor(typeof(IEventPipelineBehavior<TEvent>), typeof(TBehavior), lifetime));
+        return services;
+    }
+
+    internal static IServiceCollection RegisterStreamRequestPipelineBehavior<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+        TBehavior, TRequest, TItem>(
+        this IServiceCollection services,
+        ServiceLifetime lifetime = ServiceLifetime.Scoped)
+        where TBehavior : class, IStreamRequestPipelineBehavior<TRequest, TItem>
+        where TRequest : IStreamRequest<TItem>
+        where TItem : notnull
+    {
+        services.Add(new ServiceDescriptor(typeof(IStreamRequestPipelineBehavior<TRequest, TItem>), typeof(TBehavior),
             lifetime));
         return services;
     }
@@ -210,17 +161,6 @@ public static class DependencyInjectionExtensions
         services.Add(new ServiceDescriptor(typeof(THandler), typeof(THandler), lifetime));
         services.Add(new ServiceDescriptor(typeof(IStreamRequestHandler<TRequest, TItem>),
             typeof(ProxyStreamRequestHandler<THandler, TRequest, TItem>), lifetime));
-        return services;
-    }
-
-    internal static IServiceCollection RegisterStreamRequestPipelineBehavior<
-        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
-        TStreamPipelineBehavior>(this IServiceCollection services,
-        ServiceLifetime lifetime = ServiceLifetime.Scoped)
-        where TStreamPipelineBehavior : class, IStreamRequestPipelineBehavior
-    {
-        services.Add(new ServiceDescriptor(typeof(IStreamRequestPipelineBehavior), typeof(TStreamPipelineBehavior),
-            lifetime));
         return services;
     }
 }

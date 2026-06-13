@@ -3,17 +3,18 @@ using UnambitiousFx.Synapse.Abstractions;
 
 namespace UnambitiousFx.Synapse.Tests.Definitions;
 
-public sealed class TestRequestPipelineBehavior : IRequestPipelineBehavior
+/// <summary>Generic test behavior for requests without a response.</summary>
+public sealed class TestRequestPipelineBehavior<TRequest> : IRequestPipelineBehavior<TRequest>
+    where TRequest : IRequest
 {
     public bool Executed { get; private set; }
     public object? RequestExecuted { get; private set; }
     public int ExecutionCount { get; private set; }
     public Action? OnExecuted { get; set; }
 
-    public ValueTask<Result> HandleAsync<TRequest>(TRequest request,
+    public ValueTask<Result> HandleAsync(TRequest request,
         RequestHandlerDelegate<TRequest> next,
         CancellationToken cancellationToken = default)
-        where TRequest : IRequest
     {
         Executed = true;
         RequestExecuted = request;
@@ -21,12 +22,21 @@ public sealed class TestRequestPipelineBehavior : IRequestPipelineBehavior
         OnExecuted?.Invoke();
         return next(request, cancellationToken);
     }
+}
 
-    public ValueTask<Result<TResponse>> HandleAsync<TRequest, TResponse>(TRequest request,
+/// <summary>Generic test behavior for requests with a response.</summary>
+public sealed class TestRequestPipelineBehavior<TRequest, TResponse> : IRequestPipelineBehavior<TRequest, TResponse>
+    where TRequest : IRequest<TResponse>
+    where TResponse : notnull
+{
+    public bool Executed { get; private set; }
+    public object? RequestExecuted { get; private set; }
+    public int ExecutionCount { get; private set; }
+    public Action? OnExecuted { get; set; }
+
+    public ValueTask<Result<TResponse>> HandleAsync(TRequest request,
         RequestHandlerDelegate<TRequest, TResponse> next,
         CancellationToken cancellationToken = default)
-        where TRequest : IRequest<TResponse>
-        where TResponse : notnull
     {
         Executed = true;
         RequestExecuted = request;

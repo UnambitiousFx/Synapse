@@ -27,9 +27,17 @@ public class SynapseGenerator : IIncrementalGenerator
     private const string LongRequestStreamHandlerAttributeName = $"{ShortRequestStreamHandlerAttributeName}Attribute";
     private const string FullRequestHandlerAttributeName = $"{AbstractionsNamespace}.{LongRequestHandlerAttributeName}";
     private const string FullEventHandlerAttributeName = $"{AbstractionsNamespace}.{LongEventHandlerAttributeName}";
+    private const string FullPipelineBehaviorAttributeName = $"{AbstractionsNamespace}.PipelineBehaviorAttribute";
 
     private const string FullRequestStreamHandlerAttributeName =
         $"{AbstractionsNamespace}.{LongRequestStreamHandlerAttributeName}";
+
+    // Pipeline interface metadata names (without arity suffix — appended when matching)
+    private const string RequestPipelineBehaviorInterfaceName = $"{AbstractionsNamespace}.IRequestPipelineBehavior";
+    private const string EventPipelineBehaviorInterfaceName = $"{AbstractionsNamespace}.IEventPipelineBehavior";
+
+    private const string StreamRequestPipelineBehaviorInterfaceName =
+        $"{AbstractionsNamespace}.IStreamRequestPipelineBehavior";
 
     /// <summary>
     ///     Initializes the SynapseGenerator by registering post-initialization output with the provided
@@ -104,12 +112,21 @@ public class SynapseGenerator : IIncrementalGenerator
             .Select(static (tuple,
                 _) => tuple.Left.AddRange(tuple.Right));
 
-        var combinedProvider = allHandlerDetails.Combine(rootNamespaceProvider);
+        // Collect [PipelineBehavior]-decorated classes
+        var behaviorDetails = context.SyntaxProvider.ForAttributeWithMetadataName(
+            FullPipelineBehaviorAttributeName,
+            static (node, _) => node is ClassDeclarationSyntax,
+            static (ctx, _) => GetBehaviorDetail(ctx))
+            .Collect();
 
-        context.RegisterSourceOutput(combinedProvider, static (ctx,
-            tuple) =>
+        var combinedProvider = allHandlerDetails
+            .Combine(rootNamespaceProvider)
+            .Combine(behaviorDetails);
+
+        context.RegisterSourceOutput(combinedProvider, static (ctx, tuple) =>
         {
-            var (details, rootNamespace) = tuple;
+            var ((details, rootNamespace), behaviors) = tuple;
+
             ctx.ReportDiagnostic(Diagnostic.Create(
                 new DiagnosticDescriptor(
                     "MDG005",
@@ -178,8 +195,25 @@ public class SynapseGenerator : IIncrementalGenerator
                 }
             }
 
+            // Validate behaviors — warn if a [PipelineBehavior] class implements no pipeline interface
+            foreach (var behavior in behaviors)
+            {
+                if (behavior is null)
+                {
+                    ctx.ReportDiagnostic(Diagnostic.Create(
+                        new DiagnosticDescriptor(
+                            "MDG008",
+                            "Invalid pipeline behavior",
+                            "[PipelineBehavior] is applied to a class that does not implement any known pipeline interface. Ensure the class implements IRequestPipelineBehavior<>, IEventPipelineBehavior<>, or IStreamRequestPipelineBehavior<,>.",
+                            "Synapse.Generator",
+                            DiagnosticSeverity.Warning,
+                            true),
+                        Location.None));
+                }
+            }
+
             ctx.AddSource("RegisterGroup.g.cs",
-                RegisterGroupFactory.Create(rootNamespace, AbstractionsNamespace, details));
+                RegisterGroupFactory.Create(rootNamespace, AbstractionsNamespace, details, behaviors));
         });
 
         // Generate event dispatcher registrations for NativeAOT support
@@ -312,6 +346,95 @@ public class SynapseGenerator : IIncrementalGenerator
                 location);
         }
 
+        return null;
+    }
+
+    private static BehaviorDetail? GetBehaviorDetail(GeneratorAttributeSyntaxContext ctx)
+    {
+        if (ctx.TargetNode is not ClassDeclarationSyntax classDeclaration)
+        {
+            return null;
+        }
+
+        if (ctx.TargetSymbol is not INamedTypeSymbol classSymbol)
+        {
+            return null;
+        }
+
+        // Read Order from attribute
+        var order = 0;
+        foreach (var attr in ctx.Attributes)
+        {
+            foreach (var named in attr.NamedArguments)
+            {
+                if (named.Key == "Order" && named.Value.Value is int o)
+                {
+                    order = o;
+                }
+            }
+        }
+
+        var isOpenGeneric = classSymbol.IsGenericType;
+        var className = classDeclaration.Identifier.ValueText;
+        var @namespace = classDeclaration.GetNamespace();
+        var location = classDeclaration.GetLocation();
+
+        // Find the pipeline interface this class implements
+        foreach (var iface in classSymbol.AllInterfaces)
+        {
+            if (!iface.IsGenericType)
+            {
+                continue;
+            }
+
+            var ifaceNamespace = iface.ContainingNamespace?.ToDisplayString() ?? string.Empty;
+            var ifaceFullName = $"{ifaceNamespace}.{iface.MetadataName}";
+
+            if (ifaceFullName == $"{RequestPipelineBehaviorInterfaceName}`1" && iface.TypeArguments.Length == 1)
+            {
+                var requestType = isOpenGeneric
+                    ? iface.TypeArguments[0].Name
+                    : iface.TypeArguments[0].ToDisplayString();
+                return new BehaviorDetail(className, @namespace, BehaviorKind.Request, isOpenGeneric,
+                    requestType, null, order, location);
+            }
+
+            if (ifaceFullName == $"{RequestPipelineBehaviorInterfaceName}`2" && iface.TypeArguments.Length == 2)
+            {
+                var requestType = isOpenGeneric
+                    ? iface.TypeArguments[0].Name
+                    : iface.TypeArguments[0].ToDisplayString();
+                var responseType = isOpenGeneric
+                    ? iface.TypeArguments[1].Name
+                    : iface.TypeArguments[1].ToDisplayString();
+                return new BehaviorDetail(className, @namespace, BehaviorKind.RequestWithResponse, isOpenGeneric,
+                    requestType, responseType, order, location);
+            }
+
+            if (ifaceFullName == $"{EventPipelineBehaviorInterfaceName}`1" && iface.TypeArguments.Length == 1)
+            {
+                var eventType = isOpenGeneric
+                    ? iface.TypeArguments[0].Name
+                    : iface.TypeArguments[0].ToDisplayString();
+                return new BehaviorDetail(className, @namespace, BehaviorKind.Event, isOpenGeneric,
+                    eventType, null, order, location);
+            }
+
+            if (ifaceFullName == $"{StreamRequestPipelineBehaviorInterfaceName}`2" &&
+                iface.TypeArguments.Length == 2)
+            {
+                var requestType = isOpenGeneric
+                    ? iface.TypeArguments[0].Name
+                    : iface.TypeArguments[0].ToDisplayString();
+                var itemType = isOpenGeneric
+                    ? iface.TypeArguments[1].Name
+                    : iface.TypeArguments[1].ToDisplayString();
+                return new BehaviorDetail(className, @namespace, BehaviorKind.StreamRequest, isOpenGeneric,
+                    requestType, itemType, order, location);
+            }
+        }
+
+        // No matching interface found — return null so MDG008 fires
         return null;
     }
 

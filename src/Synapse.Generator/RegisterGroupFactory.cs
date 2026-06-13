@@ -8,7 +8,8 @@ internal static class RegisterGroupFactory
 {
     public static SourceText Create(string? rootNamespace,
         string abstractionsNamespace,
-        ImmutableArray<HandlerDetail?> details)
+        ImmutableArray<HandlerDetail?> details,
+        ImmutableArray<BehaviorDetail?> behaviors)
     {
         var sb = new StringBuilder();
 
@@ -19,6 +20,8 @@ internal static class RegisterGroupFactory
         sb.AppendLine("{");
         sb.AppendLine($"    public void Register(global::{abstractionsNamespace}.IDependencyInjectionBuilder builder)");
         sb.AppendLine("    {");
+
+        // Emit handler registrations
         foreach (var detail in details)
         {
             if (detail is null)
@@ -42,9 +45,110 @@ internal static class RegisterGroupFactory
             }
         }
 
+        // Emit behavior registrations (sorted by Order, then by original declaration order)
+        var validBehaviors = behaviors
+            .Where(b => b is not null)
+            .Select(b => b!.Value)
+            .OrderBy(b => b.Order)
+            .ToArray();
+
+        foreach (var behavior in validBehaviors)
+        {
+            if (behavior.IsOpenGeneric)
+            {
+                // Cross-product: emit one registration per matching handler
+                EmitOpenGenericBehaviorRegistrations(sb, behavior, details);
+            }
+            else
+            {
+                // Closed behavior: emit a single explicit registration
+                EmitClosedBehaviorRegistration(sb, behavior);
+            }
+        }
+
         sb.AppendLine("    }");
         sb.AppendLine("}");
         return SourceText.From(sb.ToString(), Encoding.UTF8);
+    }
+
+    private static void EmitClosedBehaviorRegistration(StringBuilder sb, BehaviorDetail behavior)
+    {
+        var behaviorType = GlobalizeType(behavior.FullBehaviorTypeName);
+        var requestType = GlobalizeType(behavior.FullRequestTypeName);
+
+        switch (behavior.Kind)
+        {
+            case BehaviorKind.Request:
+                sb.AppendLine(
+                    $"        builder.RegisterRequestPipelineBehavior<{behaviorType}, {requestType}>();");
+                break;
+            case BehaviorKind.RequestWithResponse when behavior.FullResponseOrItemTypeName is { } responseType:
+                sb.AppendLine(
+                    $"        builder.RegisterRequestPipelineBehavior<{behaviorType}, {requestType}, {GlobalizeType(responseType)}>();");
+                break;
+            case BehaviorKind.Event:
+                sb.AppendLine(
+                    $"        builder.RegisterEventPipelineBehavior<{behaviorType}, {requestType}>();");
+                break;
+            case BehaviorKind.StreamRequest when behavior.FullResponseOrItemTypeName is { } itemType:
+                sb.AppendLine(
+                    $"        builder.RegisterStreamRequestPipelineBehavior<{behaviorType}, {requestType}, {GlobalizeType(itemType)}>();");
+                break;
+        }
+    }
+
+    private static void EmitOpenGenericBehaviorRegistrations(StringBuilder sb,
+        BehaviorDetail behavior,
+        ImmutableArray<HandlerDetail?> handlers)
+    {
+        var behaviorBaseName = GlobalizeType(behavior.FullBehaviorTypeName);
+
+        foreach (var handler in handlers)
+        {
+            if (handler is null)
+            {
+                continue;
+            }
+
+            switch (behavior.Kind)
+            {
+                case BehaviorKind.Request when handler.Value.HandlerType == HandlerType.RequestHandler
+                                               && handler.Value.FullResponseType is null:
+                {
+                    var req = GlobalizeType(handler.Value.FullTargetTypeName);
+                    var closedBehavior = $"{behaviorBaseName}<{req}>";
+                    sb.AppendLine($"        builder.RegisterRequestPipelineBehavior<{closedBehavior}, {req}>();");
+                    break;
+                }
+                case BehaviorKind.RequestWithResponse when handler.Value.HandlerType == HandlerType.RequestHandler
+                                                          && handler.Value.FullResponseType is { } resp:
+                {
+                    var req = GlobalizeType(handler.Value.FullTargetTypeName);
+                    var respType = GlobalizeType(resp);
+                    var closedBehavior = $"{behaviorBaseName}<{req}, {respType}>";
+                    sb.AppendLine(
+                        $"        builder.RegisterRequestPipelineBehavior<{closedBehavior}, {req}, {respType}>();");
+                    break;
+                }
+                case BehaviorKind.Event when handler.Value.HandlerType == HandlerType.EventHandler:
+                {
+                    var evt = GlobalizeType(handler.Value.FullTargetTypeName);
+                    var closedBehavior = $"{behaviorBaseName}<{evt}>";
+                    sb.AppendLine($"        builder.RegisterEventPipelineBehavior<{closedBehavior}, {evt}>();");
+                    break;
+                }
+                case BehaviorKind.StreamRequest when handler.Value.HandlerType == HandlerType.StreamRequestHandler
+                                                    && handler.Value.FullResponseType is { } item:
+                {
+                    var req = GlobalizeType(handler.Value.FullTargetTypeName);
+                    var itemType = GlobalizeType(item);
+                    var closedBehavior = $"{behaviorBaseName}<{req}, {itemType}>";
+                    sb.AppendLine(
+                        $"        builder.RegisterStreamRequestPipelineBehavior<{closedBehavior}, {req}, {itemType}>();");
+                    break;
+                }
+            }
+        }
     }
 
     private static void RegisterEventHandler(StringBuilder sb,
@@ -84,10 +188,12 @@ internal static class RegisterGroupFactory
     {
         if (input.Contains("<"))
         {
-            var genericType = input.Substring(0, input.IndexOf("<", StringComparison.Ordinal));
-            var underlyingType = input.Substring(input.IndexOf("<", StringComparison.Ordinal) + 1,
-                input.IndexOf(">", StringComparison.Ordinal) - input.IndexOf("<", StringComparison.Ordinal) - 1);
-            return $"global::{genericType}<global::{underlyingType}>";
+            // Already contains generic args — globalize the base and recurse on args
+            var openIdx = input.IndexOf("<", StringComparison.Ordinal);
+            var closeIdx = input.LastIndexOf(">", StringComparison.Ordinal);
+            var baseType = input.Substring(0, openIdx);
+            var innerArgs = input.Substring(openIdx + 1, closeIdx - openIdx - 1);
+            return $"global::{baseType}<{innerArgs}>";
         }
 
         if (input.StartsWith("global::"))

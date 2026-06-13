@@ -1,5 +1,4 @@
-using Microsoft.Extensions.Logging;
-using NSubstitute;
+using Microsoft.Extensions.Logging.Abstractions;
 using UnambitiousFx.Functional;
 using UnambitiousFx.Synapse.Abstractions;
 using UnambitiousFx.Synapse.Pipelines;
@@ -12,8 +11,7 @@ public sealed class SimpleLoggingBehaviorTests
     public async Task HandleAsync_Event_Success_ReturnsSuccess()
     {
         // Arrange (Given)
-        var logger = Substitute.For<ILogger<SimpleLoggingBehavior>>();
-        var behavior = new SimpleLoggingBehavior(logger);
+        var behavior = new SimpleLoggingEventBehavior<TestEvent>(NullLogger<SimpleLoggingEventBehavior<TestEvent>>.Instance);
 
         // Act (When)
         var result = await behavior.HandleAsync(new TestEvent(),
@@ -28,8 +26,7 @@ public sealed class SimpleLoggingBehaviorTests
     public async Task HandleAsync_Event_Failure_ReturnsFailure()
     {
         // Arrange (Given)
-        var logger = Substitute.For<ILogger<SimpleLoggingBehavior>>();
-        var behavior = new SimpleLoggingBehavior(logger);
+        var behavior = new SimpleLoggingEventBehavior<TestEvent>(NullLogger<SimpleLoggingEventBehavior<TestEvent>>.Instance);
 
         // Act (When)
         var result = await behavior.HandleAsync(new TestEvent(),
@@ -44,8 +41,7 @@ public sealed class SimpleLoggingBehaviorTests
     public async Task HandleAsync_RequestWithoutResponse_Success_ReturnsSuccess()
     {
         // Arrange (Given)
-        var logger = Substitute.For<ILogger<SimpleLoggingBehavior>>();
-        var behavior = new SimpleLoggingBehavior(logger);
+        var behavior = new SimpleLoggingBehavior<RequestWithoutResponse>(NullLogger<SimpleLoggingBehavior<RequestWithoutResponse>>.Instance);
 
         // Act (When)
         var result = await behavior.HandleAsync(new RequestWithoutResponse(),
@@ -60,8 +56,7 @@ public sealed class SimpleLoggingBehaviorTests
     public async Task HandleAsync_RequestWithoutResponse_Failure_ReturnsFailure()
     {
         // Arrange (Given)
-        var logger = Substitute.For<ILogger<SimpleLoggingBehavior>>();
-        var behavior = new SimpleLoggingBehavior(logger);
+        var behavior = new SimpleLoggingBehavior<RequestWithoutResponse>(NullLogger<SimpleLoggingBehavior<RequestWithoutResponse>>.Instance);
 
         // Act (When)
         var result = await behavior.HandleAsync(new RequestWithoutResponse(),
@@ -76,11 +71,10 @@ public sealed class SimpleLoggingBehaviorTests
     public async Task HandleAsync_RequestWithResponse_Success_ReturnsSuccessResult()
     {
         // Arrange (Given)
-        var logger = Substitute.For<ILogger<SimpleLoggingBehavior>>();
-        var behavior = new SimpleLoggingBehavior(logger);
+        var behavior = new SimpleLoggingBehavior<RequestWithResponse, int>(NullLogger<SimpleLoggingBehavior<RequestWithResponse, int>>.Instance);
 
         // Act (When)
-        var result = await behavior.HandleAsync<RequestWithResponse, int>(new RequestWithResponse(),
+        var result = await behavior.HandleAsync(new RequestWithResponse(),
             (_, _) => ValueTask.FromResult(Result.Success(7)),
             CancellationToken.None);
 
@@ -92,11 +86,10 @@ public sealed class SimpleLoggingBehaviorTests
     public async Task HandleAsync_RequestWithResponse_Failure_ReturnsFailureResult()
     {
         // Arrange (Given)
-        var logger = Substitute.For<ILogger<SimpleLoggingBehavior>>();
-        var behavior = new SimpleLoggingBehavior(logger);
+        var behavior = new SimpleLoggingBehavior<RequestWithResponse, int>(NullLogger<SimpleLoggingBehavior<RequestWithResponse, int>>.Instance);
 
         // Act (When)
-        var result = await behavior.HandleAsync<RequestWithResponse, int>(new RequestWithResponse(),
+        var result = await behavior.HandleAsync(new RequestWithResponse(),
             (_, _) => ValueTask.FromResult(Result.Failure<int>("typed request failure")),
             CancellationToken.None);
 

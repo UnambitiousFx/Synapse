@@ -3,17 +3,18 @@ using UnambitiousFx.Synapse.Abstractions;
 
 namespace UnambitiousFx.Synapse.Tests.Definitions;
 
-public sealed class TestEventPipelineBehavior : IEventPipelineBehavior
+/// <summary>Generic test behavior for events.</summary>
+public sealed class TestEventPipelineBehavior<TEvent> : IEventPipelineBehavior<TEvent>
+    where TEvent : IEvent
 {
     public bool Executed { get; private set; }
     public object? EventExecuted { get; private set; }
     public int ExecutionCount { get; private set; }
     public Action? OnExecuted { get; set; }
 
-    public ValueTask<Result> HandleAsync<TEvent>(TEvent @event,
+    public ValueTask<Result> HandleAsync(TEvent @event,
         EventHandlerDelegate<TEvent> next,
         CancellationToken cancellationToken = default)
-        where TEvent : IEvent
     {
         Executed = true;
         EventExecuted = @event;

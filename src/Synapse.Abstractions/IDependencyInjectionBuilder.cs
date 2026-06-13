@@ -189,4 +189,42 @@ public interface IDependencyInjectionBuilder
         where TStreamRequestHandler : class, IStreamRequestHandler<TRequest, TItem>
         where TItem : notnull
         where TRequest : IStreamRequest<TItem>;
+
+    /// <summary>
+    ///     Registers a typed request pipeline behavior for a specific request type (without response).
+    /// </summary>
+    IDependencyInjectionBuilder RegisterRequestPipelineBehavior<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+        TBehavior, TRequest>()
+        where TBehavior : class, IRequestPipelineBehavior<TRequest>
+        where TRequest : IRequest;
+
+    /// <summary>
+    ///     Registers a typed request pipeline behavior for a specific request/response pair.
+    /// </summary>
+    IDependencyInjectionBuilder RegisterRequestPipelineBehavior<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+        TBehavior, TRequest, TResponse>()
+        where TBehavior : class, IRequestPipelineBehavior<TRequest, TResponse>
+        where TRequest : IRequest<TResponse>
+        where TResponse : notnull;
+
+    /// <summary>
+    ///     Registers a typed event pipeline behavior for a specific event type.
+    /// </summary>
+    IDependencyInjectionBuilder RegisterEventPipelineBehavior<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+        TBehavior, TEvent>()
+        where TBehavior : class, IEventPipelineBehavior<TEvent>
+        where TEvent : class, IEvent;
+
+    /// <summary>
+    ///     Registers a typed stream request pipeline behavior for a specific request/item pair.
+    /// </summary>
+    IDependencyInjectionBuilder RegisterStreamRequestPipelineBehavior<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+        TBehavior, TRequest, TItem>()
+        where TBehavior : class, IStreamRequestPipelineBehavior<TRequest, TItem>
+        where TRequest : IStreamRequest<TItem>
+        where TItem : notnull;
 }

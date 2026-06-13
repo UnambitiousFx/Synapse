@@ -31,15 +31,7 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
 
     private Action<OutboxOptions> _outboxConfigure = _ => { };
 
-
-    public ISynapseConfig RegisterRequestPipelineBehavior<
-        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
-    TRequestPipelineBehavior>()
-        where TRequestPipelineBehavior : class, IRequestPipelineBehavior
-    {
-        _actions.Add(svc => svc.RegisterRequestPipelineBehavior<TRequestPipelineBehavior>());
-        return this;
-    }
+    // ── Pipeline behaviors ───────────────────────────────────────────────────
 
     public ISynapseConfig RegisterRequestPipelineBehavior<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
@@ -47,102 +39,79 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
         where TBehavior : class, IRequestPipelineBehavior<TRequest>
         where TRequest : IRequest
     {
-        _actions.Add(scv => scv.RegisterTypedRequestPipelineBehavior<TBehavior, TRequest>());
+        _actions.Add(svc => svc.RegisterRequestPipelineBehavior<TBehavior, TRequest>());
         return this;
     }
 
     public ISynapseConfig RegisterRequestPipelineBehavior<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
-    TBehavior, TRequest,
-        TResponse>()
+    TBehavior, TRequest, TResponse>()
         where TBehavior : class, IRequestPipelineBehavior<TRequest, TResponse>
         where TRequest : IRequest<TResponse>
         where TResponse : notnull
     {
-        _actions.Add(scv => scv.RegisterTypedRequestPipelineBehavior<TBehavior, TRequest, TResponse>());
-        return this;
-    }
-
-    public ISynapseConfig RegisterConditionalRequestPipelineBehavior<
-        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
-    TBehavior>(
-        Func<object, bool> predicate)
-        where TBehavior : class, IRequestPipelineBehavior
-    {
-        _actions.Add(scv => scv.RegisterConditionalRequestPipelineBehavior<TBehavior>(predicate));
-        return this;
-    }
-
-    public ISynapseConfig RegisterConditionalRequestPipelineBehavior<
-        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
-    TBehavior, TRequest>(
-        Func<TRequest, bool> predicate)
-        where TBehavior : class, IRequestPipelineBehavior<TRequest>
-        where TRequest : IRequest
-    {
-        _actions.Add(scv =>
-            scv.RegisterConditionalTypedRequestPipelineBehavior<TBehavior, TRequest>(predicate));
-        return this;
-    }
-
-    public ISynapseConfig RegisterConditionalRequestPipelineBehavior<
-        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
-    TBehavior, TRequest,
-        TResponse>(Func<TRequest, bool> predicate)
-        where TBehavior : class, IRequestPipelineBehavior<TRequest, TResponse>
-        where TRequest : IRequest<TResponse>
-        where TResponse : notnull
-    {
-        _actions.Add(scv =>
-            scv.RegisterConditionalTypedRequestPipelineBehavior<TBehavior, TRequest, TResponse>(predicate));
+        _actions.Add(svc => svc.RegisterRequestPipelineBehavior<TBehavior, TRequest, TResponse>());
         return this;
     }
 
     public ISynapseConfig RegisterEventPipelineBehavior<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
-    TEventPipelineBehavior>()
-        where TEventPipelineBehavior : class, IEventPipelineBehavior
+    TBehavior, TEvent>()
+        where TBehavior : class, IEventPipelineBehavior<TEvent>
+        where TEvent : class, IEvent
     {
-        _actions.Add(scv => scv.RegisterEventPipelineBehavior<TEventPipelineBehavior>());
+        _actions.Add(svc => svc.RegisterEventPipelineBehavior<TBehavior, TEvent>());
         return this;
     }
 
-    public ISynapseConfig SetEventOrchestrator<
+    public ISynapseConfig RegisterStreamRequestPipelineBehavior<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
-    TEventOrchestrator>()
-        where TEventOrchestrator : class, IEventOrchestrator
+    TBehavior, TRequest, TItem>()
+        where TBehavior : class, IStreamRequestPipelineBehavior<TRequest, TItem>
+        where TRequest : IStreamRequest<TItem>
+        where TItem : notnull
     {
-        _eventOrchestrator = typeof(TEventOrchestrator);
+        _actions.Add(svc => svc.RegisterStreamRequestPipelineBehavior<TBehavior, TRequest, TItem>());
         return this;
     }
 
-    public ISynapseConfig AddRegisterGroup(IRegisterGroup group)
+    public ISynapseConfig AddOpenGenericRequestPipelineBehavior(
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+        Type openGenericBehaviorType)
     {
-        var builder = new DefaultDependencyInjectionBuilder();
-        group.Register(builder);
-
         _actions.Add(svc =>
-        {
-            builder.Apply(svc);
-
-            foreach (var (type, dispatcher) in builder.RequestDispatchers)
-            {
-                _requestDispatchers.TryAdd(type, dispatcher);
-            }
-
-            foreach (var (type, dispatcher) in builder.EventDispatchers)
-            {
-                _eventDispatchers.TryAdd(type, dispatcher);
-            }
-
-            foreach (var (type, dispatcher) in builder.StreamRequestDispatchers)
-            {
-                _streamRequestDispatchers.TryAdd(type, dispatcher);
-            }
-        });
-
+            svc.AddScoped(typeof(IRequestPipelineBehavior<>), openGenericBehaviorType));
         return this;
     }
+
+    public ISynapseConfig AddOpenGenericRequestWithResponsePipelineBehavior(
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+        Type openGenericBehaviorType)
+    {
+        _actions.Add(svc =>
+            svc.AddScoped(typeof(IRequestPipelineBehavior<,>), openGenericBehaviorType));
+        return this;
+    }
+
+    public ISynapseConfig AddOpenGenericEventPipelineBehavior(
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+        Type openGenericBehaviorType)
+    {
+        _actions.Add(svc =>
+            svc.AddScoped(typeof(IEventPipelineBehavior<>), openGenericBehaviorType));
+        return this;
+    }
+
+    public ISynapseConfig AddOpenGenericStreamRequestPipelineBehavior(
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+        Type openGenericBehaviorType)
+    {
+        _actions.Add(svc =>
+            svc.AddScoped(typeof(IStreamRequestPipelineBehavior<,>), openGenericBehaviorType));
+        return this;
+    }
+
+    // ── Handlers ────────────────────────────────────────────────────────────
 
     public ISynapseConfig RegisterRequestHandler<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
@@ -179,7 +148,6 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
         where TEvent : class, IEvent
     {
         _actions.Add(scv => scv.RegisterEventHandler<THandler, TEvent>());
-        // Ensure only one dispatcher per event type; multiple handler registrations should not create duplicate dictionary entries
         _eventDispatchers.TryAdd(typeof(TEvent), (@event,
             dispatcher,
             cancellationToken) =>
@@ -194,6 +162,26 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
         });
         return this;
     }
+
+    public ISynapseConfig RegisterStreamRequestHandler<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+    THandler, TRequest, TItem>()
+        where TItem : notnull
+        where TRequest : IStreamRequest<TItem>
+        where THandler : class, IStreamRequestHandler<TRequest, TItem>
+    {
+        _actions.Add(svc => svc.RegisterStreamRequestHandler<THandler, TRequest, TItem>());
+        _streamRequestDispatchers.TryAdd(typeof(TRequest),
+            (Func<IStreamRequest<TItem>, IDependencyResolver, CancellationToken, IAsyncEnumerable<Result<TItem>>>)(
+                (request, resolver, ct) =>
+                {
+                    var handler = resolver.GetRequiredService<IStreamRequestHandler<TRequest, TItem>>();
+                    return handler.HandleAsync((TRequest)request, ct);
+                }));
+        return this;
+    }
+
+    // ── Conditional handler registration ────────────────────────────────────
 
     public ISynapseConfig RegisterRequestHandlerWhen<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
@@ -246,8 +234,6 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
             if (condition())
             {
                 scv.RegisterEventHandler<THandler, TEvent>();
-
-                // Ensure only one dispatcher per event type; multiple handler registrations should not create duplicate dictionary entries
                 _eventDispatchers.TryAdd(typeof(TEvent), (@event,
                     dispatcher,
                     cancellationToken) =>
@@ -262,6 +248,45 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
                 });
             }
         });
+        return this;
+    }
+
+    // ── Infrastructure ───────────────────────────────────────────────────────
+
+    public ISynapseConfig SetEventOrchestrator<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+    TEventOrchestrator>()
+        where TEventOrchestrator : class, IEventOrchestrator
+    {
+        _eventOrchestrator = typeof(TEventOrchestrator);
+        return this;
+    }
+
+    public ISynapseConfig AddRegisterGroup(IRegisterGroup group)
+    {
+        var builder = new DefaultDependencyInjectionBuilder();
+        group.Register(builder);
+
+        _actions.Add(svc =>
+        {
+            builder.Apply(svc);
+
+            foreach (var (type, dispatcher) in builder.RequestDispatchers)
+            {
+                _requestDispatchers.TryAdd(type, dispatcher);
+            }
+
+            foreach (var (type, dispatcher) in builder.EventDispatchers)
+            {
+                _eventDispatchers.TryAdd(type, dispatcher);
+            }
+
+            foreach (var (type, dispatcher) in builder.StreamRequestDispatchers)
+            {
+                _streamRequestDispatchers.TryAdd(type, dispatcher);
+            }
+        });
+
         return this;
     }
 
@@ -293,24 +318,9 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
             return this;
         }
 
-        return RegisterRequestPipelineBehavior<CqrsBoundaryEnforcementBehavior>();
-    }
-
-    public ISynapseConfig RegisterStreamRequestHandler<
-        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
-    THandler, TRequest, TItem>()
-        where TItem : notnull
-        where TRequest : IStreamRequest<TItem>
-        where THandler : class, IStreamRequestHandler<TRequest, TItem>
-    {
-        _actions.Add(svc => svc.RegisterStreamRequestHandler<THandler, TRequest, TItem>());
-        _streamRequestDispatchers.TryAdd(typeof(TRequest),
-            (Func<IStreamRequest<TItem>, IDependencyResolver, CancellationToken, IAsyncEnumerable<Result<TItem>>>)(
-                (request, resolver, ct) =>
-                {
-                    var handler = resolver.GetRequiredService<IStreamRequestHandler<TRequest, TItem>>();
-                    return handler.HandleAsync((TRequest)request, ct);
-                }));
+        // Register open-generic behaviors so the container closes them for every request type.
+        AddOpenGenericRequestPipelineBehavior(typeof(CqrsBoundaryEnforcementBehavior<>));
+        AddOpenGenericRequestWithResponsePipelineBehavior(typeof(CqrsBoundaryEnforcementBehavior<,>));
         return this;
     }
 
@@ -363,7 +373,6 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
         registration.RegisterDispatchers((type, dispatchDelegate) => { _eventDispatchers[type] = dispatchDelegate; });
         return this;
     }
-
 
     public void Apply()
     {

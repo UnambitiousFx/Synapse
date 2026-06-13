@@ -35,7 +35,8 @@ public sealed class DependencyInjectionExtensionsTests
             .AddSynapse(cfg =>
             {
                 cfg.RegisterRequestHandler<RequestWithResponseExampleHandler, RequestWithResponseExample, int>();
-                cfg.RegisterRequestPipelineBehavior<TestRequestPipelineBehavior>();
+                cfg.RegisterRequestPipelineBehavior<TestRequestPipelineBehavior<RequestWithResponseExample, int>,
+                    RequestWithResponseExample, int>();
             })
             .AddLogging()
             .BuildServiceProvider();

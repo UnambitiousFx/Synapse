@@ -61,12 +61,14 @@ internal sealed class EventDispatcher : IEventDispatcher
         }
 
 
-        // Get handlers and behaviors as arrays to avoid repeated enumeration
-        // Note: This materializes the enumerable once to prevent multiple DI container queries
+        // Get handlers and behaviors as arrays to avoid repeated enumeration.
+        // Behaviors are resolved as IEventPipelineBehavior<TEvent> so only behaviors declared
+        // for this exact event type are returned — no runtime type-filtering needed.
         var handlersArray = _dependencyResolver.GetServices<IEventHandler<TEvent>>() as IEventHandler<TEvent>[] ??
                             _dependencyResolver.GetServices<IEventHandler<TEvent>>().ToArray();
-        var behaviorsArray = _dependencyResolver.GetServices<IEventPipelineBehavior>() as IEventPipelineBehavior[] ??
-                             _dependencyResolver.GetServices<IEventPipelineBehavior>().ToArray();
+        var behaviorsArray =
+            _dependencyResolver.GetServices<IEventPipelineBehavior<TEvent>>() as IEventPipelineBehavior<TEvent>[] ??
+            _dependencyResolver.GetServices<IEventPipelineBehavior<TEvent>>().ToArray();
 
         return ExecutePipelineAsync(
             @event,
@@ -80,7 +82,7 @@ internal sealed class EventDispatcher : IEventDispatcher
     private ValueTask<Result> ExecutePipelineAsync<TEvent>(
         TEvent @event,
         IEventHandler<TEvent>[] handlers,
-        IEventPipelineBehavior[] behaviors,
+        IEventPipelineBehavior<TEvent>[] behaviors,
         int index,
         CancellationToken cancellationToken)
         where TEvent : class, IEvent
