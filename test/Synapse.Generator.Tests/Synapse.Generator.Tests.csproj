@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <!-- Override Directory.Build.props multi-targeting: generator tests only need net9.0 -->
+        <TargetFrameworks>net9.0</TargetFrameworks>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\..\src\Synapse.Abstractions\Synapse.Abstractions.csproj" />
+        <ProjectReference Include="..\..\src\Synapse.Generator\Synapse.Generator.csproj" />
+    </ItemGroup>
+
+</Project>

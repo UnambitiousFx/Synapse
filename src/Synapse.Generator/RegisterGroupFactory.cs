@@ -184,6 +184,13 @@ internal static class RegisterGroupFactory
         }
     }
 
+    // C# predefined type keywords — global:: prefix is not valid for these.
+    private static readonly HashSet<string> CSharpKeywordTypes = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "bool", "byte", "char", "decimal", "double", "float", "int", "long",
+        "nint", "nuint", "object", "sbyte", "short", "string", "uint", "ulong", "ushort", "void"
+    };
+
     private static string GlobalizeType(string input)
     {
         if (input.Contains("<"))
@@ -196,7 +203,7 @@ internal static class RegisterGroupFactory
             return $"global::{baseType}<{innerArgs}>";
         }
 
-        if (input.StartsWith("global::"))
+        if (input.StartsWith("global::") || CSharpKeywordTypes.Contains(input))
         {
             return input;
         }
