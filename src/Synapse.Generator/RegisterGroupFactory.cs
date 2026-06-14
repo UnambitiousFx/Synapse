@@ -9,7 +9,7 @@ internal static class RegisterGroupFactory
     public static SourceText Create(string? rootNamespace,
         string abstractionsNamespace,
         ImmutableArray<HandlerDetail?> details,
-        ImmutableArray<BehaviorDetail?> behaviors)
+        ImmutableArray<BehaviorDetail> behaviors)
     {
         var sb = new StringBuilder();
 
@@ -45,11 +45,13 @@ internal static class RegisterGroupFactory
             }
         }
 
-        // Emit behavior registrations (sorted by Order, then by original declaration order)
+        // Emit behavior registrations. Sort by Order, then by a deterministic secondary key
+        // (namespace + class name) so behaviors that share an Order have a stable, reproducible
+        // pipeline position independent of discovery order across (incremental) compilations.
         var validBehaviors = behaviors
-            .Where(b => b is not null)
-            .Select(b => b!.Value)
             .OrderBy(b => b.Order)
+            .ThenBy(b => b.Namespace, StringComparer.Ordinal)
+            .ThenBy(b => b.ClassName, StringComparer.Ordinal)
             .ToArray();
 
         foreach (var behavior in validBehaviors)
@@ -113,7 +115,9 @@ internal static class RegisterGroupFactory
             switch (behavior.Kind)
             {
                 case BehaviorKind.Request when handler.Value.HandlerType == HandlerType.RequestHandler
-                                               && handler.Value.FullResponseType is null:
+                                               && handler.Value.FullResponseType is null
+                                               && Satisfies(behavior.RequestConstraints,
+                                                   handler.Value.TargetSatisfyingTypes):
                 {
                     var req = GlobalizeType(handler.Value.FullTargetTypeName);
                     var closedBehavior = $"{behaviorBaseName}<{req}>";
@@ -121,7 +125,11 @@ internal static class RegisterGroupFactory
                     break;
                 }
                 case BehaviorKind.RequestWithResponse when handler.Value.HandlerType == HandlerType.RequestHandler
-                                                          && handler.Value.FullResponseType is { } resp:
+                                                          && handler.Value.FullResponseType is { } resp
+                                                          && Satisfies(behavior.RequestConstraints,
+                                                              handler.Value.TargetSatisfyingTypes)
+                                                          && Satisfies(behavior.ResponseConstraints,
+                                                              handler.Value.ResponseSatisfyingTypes):
                 {
                     var req = GlobalizeType(handler.Value.FullTargetTypeName);
                     var respType = GlobalizeType(resp);
@@ -130,7 +138,9 @@ internal static class RegisterGroupFactory
                         $"        builder.RegisterRequestPipelineBehavior<{closedBehavior}, {req}, {respType}>();");
                     break;
                 }
-                case BehaviorKind.Event when handler.Value.HandlerType == HandlerType.EventHandler:
+                case BehaviorKind.Event when handler.Value.HandlerType == HandlerType.EventHandler
+                                             && Satisfies(behavior.RequestConstraints,
+                                                 handler.Value.TargetSatisfyingTypes):
                 {
                     var evt = GlobalizeType(handler.Value.FullTargetTypeName);
                     var closedBehavior = $"{behaviorBaseName}<{evt}>";
@@ -138,7 +148,11 @@ internal static class RegisterGroupFactory
                     break;
                 }
                 case BehaviorKind.StreamRequest when handler.Value.HandlerType == HandlerType.StreamRequestHandler
-                                                    && handler.Value.FullResponseType is { } item:
+                                                    && handler.Value.FullResponseType is { } item
+                                                    && Satisfies(behavior.RequestConstraints,
+                                                        handler.Value.TargetSatisfyingTypes)
+                                                    && Satisfies(behavior.ResponseConstraints,
+                                                        handler.Value.ResponseSatisfyingTypes):
                 {
                     var req = GlobalizeType(handler.Value.FullTargetTypeName);
                     var itemType = GlobalizeType(item);
@@ -184,6 +198,38 @@ internal static class RegisterGroupFactory
         }
     }
 
+    /// <summary>
+    ///     Returns true when every named-type constraint is present in the candidate type's set of
+    ///     satisfying types (itself + base types + interfaces). No constraints means every type qualifies.
+    /// </summary>
+    private static bool Satisfies(EquatableArray<string> constraints, EquatableArray<string> satisfyingTypes)
+    {
+        if (constraints.Count == 0)
+        {
+            return true;
+        }
+
+        foreach (var constraint in constraints)
+        {
+            var matched = false;
+            foreach (var candidate in satisfyingTypes)
+            {
+                if (string.Equals(candidate, constraint, StringComparison.Ordinal))
+                {
+                    matched = true;
+                    break;
+                }
+            }
+
+            if (!matched)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     // C# predefined type keywords — global:: prefix is not valid for these.
     private static readonly HashSet<string> CSharpKeywordTypes = new HashSet<string>(StringComparer.Ordinal)
     {
@@ -193,21 +239,68 @@ internal static class RegisterGroupFactory
 
     private static string GlobalizeType(string input)
     {
-        if (input.Contains("<"))
+        input = input.Trim();
+
+        var openIdx = input.IndexOf('<');
+        if (openIdx >= 0)
         {
-            // Already contains generic args — globalize the base and recurse on args
-            var openIdx = input.IndexOf("<", StringComparison.Ordinal);
-            var closeIdx = input.LastIndexOf(">", StringComparison.Ordinal);
+            // Generic type: globalize the base, recurse into each top-level type argument, and
+            // preserve any trailing decorators (e.g. nullable '?' or array '[]') after the '>'.
+            var closeIdx = input.LastIndexOf('>');
             var baseType = input.Substring(0, openIdx);
-            var innerArgs = input.Substring(openIdx + 1, closeIdx - openIdx - 1);
-            return $"global::{baseType}<{innerArgs}>";
+            var argsText = input.Substring(openIdx + 1, closeIdx - openIdx - 1);
+            var suffix = input.Substring(closeIdx + 1);
+            var args = string.Join(", ", SplitTopLevelArgs(argsText).Select(GlobalizeType));
+            return $"{GlobalizeSimpleType(baseType)}<{args}>{suffix}";
         }
 
-        if (input.StartsWith("global::") || CSharpKeywordTypes.Contains(input))
+        return GlobalizeSimpleType(input);
+    }
+
+    private static string GlobalizeSimpleType(string input)
+    {
+        // Split trailing decorators ('?', '[]') from the core type name so keyword detection works.
+        var coreLength = input.Length;
+        while (coreLength > 0 && (input[coreLength - 1] == '?' || input[coreLength - 1] == '[' ||
+                                  input[coreLength - 1] == ']'))
         {
-            return input;
+            coreLength--;
         }
 
-        return $"global::{input}";
+        var core = input.Substring(0, coreLength);
+        var suffix = input.Substring(coreLength);
+
+        if (core.StartsWith("global::", StringComparison.Ordinal) || CSharpKeywordTypes.Contains(core))
+        {
+            return core + suffix;
+        }
+
+        return $"global::{core}{suffix}";
+    }
+
+    private static IEnumerable<string> SplitTopLevelArgs(string args)
+    {
+        var result = new List<string>();
+        var depth = 0;
+        var start = 0;
+        for (var i = 0; i < args.Length; i++)
+        {
+            switch (args[i])
+            {
+                case '<':
+                    depth++;
+                    break;
+                case '>':
+                    depth--;
+                    break;
+                case ',' when depth == 0:
+                    result.Add(args.Substring(start, i - start));
+                    start = i + 1;
+                    break;
+            }
+        }
+
+        result.Add(args.Substring(start));
+        return result;
     }
 }

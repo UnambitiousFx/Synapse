@@ -79,35 +79,36 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         Type openGenericBehaviorType)
     {
-        _actions.Add(svc =>
-            svc.AddScoped(typeof(IRequestPipelineBehavior<>), openGenericBehaviorType));
-        return this;
+        return AddOpenGenericBehavior(typeof(IRequestPipelineBehavior<>), openGenericBehaviorType);
     }
 
     public ISynapseConfig AddOpenGenericRequestWithResponsePipelineBehavior(
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         Type openGenericBehaviorType)
     {
-        _actions.Add(svc =>
-            svc.AddScoped(typeof(IRequestPipelineBehavior<,>), openGenericBehaviorType));
-        return this;
+        return AddOpenGenericBehavior(typeof(IRequestPipelineBehavior<,>), openGenericBehaviorType);
     }
 
     public ISynapseConfig AddOpenGenericEventPipelineBehavior(
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         Type openGenericBehaviorType)
     {
-        _actions.Add(svc =>
-            svc.AddScoped(typeof(IEventPipelineBehavior<>), openGenericBehaviorType));
-        return this;
+        return AddOpenGenericBehavior(typeof(IEventPipelineBehavior<>), openGenericBehaviorType);
     }
 
     public ISynapseConfig AddOpenGenericStreamRequestPipelineBehavior(
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         Type openGenericBehaviorType)
     {
-        _actions.Add(svc =>
-            svc.AddScoped(typeof(IStreamRequestPipelineBehavior<,>), openGenericBehaviorType));
+        return AddOpenGenericBehavior(typeof(IStreamRequestPipelineBehavior<,>), openGenericBehaviorType);
+    }
+
+    private ISynapseConfig AddOpenGenericBehavior(
+        Type pipelineInterfaceType,
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+        Type openGenericBehaviorType)
+    {
+        _actions.Add(svc => svc.AddScoped(pipelineInterfaceType, openGenericBehaviorType));
         return this;
     }
 
@@ -318,9 +319,20 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
             return this;
         }
 
-        // Register open-generic behaviors so the container closes them for every request type.
-        AddOpenGenericRequestPipelineBehavior(typeof(CqrsBoundaryEnforcementBehavior<>));
-        AddOpenGenericRequestWithResponsePipelineBehavior(typeof(CqrsBoundaryEnforcementBehavior<,>));
+        // Boundary enforcement must wrap every other behavior (it tracks entering/leaving a handler and
+        // rejects nested sends), so it has to be the outermost behavior regardless of the order in which
+        // other behaviors are registered. The pipeline runs behaviors in service-registration order, so we
+        // insert these open-generic descriptors at the front of the collection rather than appending them
+        // — making the position deterministic instead of dependent on the call order of AddSynapse config.
+        _actions.Add(svc =>
+        {
+            svc.Insert(0,
+                new ServiceDescriptor(typeof(IRequestPipelineBehavior<,>), typeof(CqrsBoundaryEnforcementBehavior<,>),
+                    ServiceLifetime.Scoped));
+            svc.Insert(0,
+                new ServiceDescriptor(typeof(IRequestPipelineBehavior<>), typeof(CqrsBoundaryEnforcementBehavior<>),
+                    ServiceLifetime.Scoped));
+        });
         return this;
     }
 

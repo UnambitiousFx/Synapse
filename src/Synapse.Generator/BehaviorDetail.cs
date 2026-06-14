@@ -1,5 +1,3 @@
-using Microsoft.CodeAnalysis;
-
 namespace UnambitiousFx.Synapse.Generator;
 
 /// <summary>
@@ -15,7 +13,8 @@ public readonly record struct BehaviorDetail
         string fullRequestTypeName,
         string? fullResponseOrItemTypeName,
         int order,
-        Location? location)
+        EquatableArray<string> requestConstraints,
+        EquatableArray<string> responseConstraints)
     {
         ClassName = className;
         Namespace = @namespace;
@@ -24,7 +23,8 @@ public readonly record struct BehaviorDetail
         FullRequestTypeName = fullRequestTypeName;
         FullResponseOrItemTypeName = fullResponseOrItemTypeName;
         Order = order;
-        Location = location;
+        RequestConstraints = requestConstraints;
+        ResponseConstraints = responseConstraints;
     }
 
     /// <summary>Simple class name (without namespace).</summary>
@@ -55,9 +55,38 @@ public readonly record struct BehaviorDetail
     /// <summary>Controls pipeline ordering; lower runs first (outermost).</summary>
     public int Order { get; }
 
-    public Location? Location { get; }
+    /// <summary>
+    ///     Named-type constraints on the first (request) type parameter of an open-generic behavior, as
+    ///     fully-qualified display strings. A handler is only cross-producted with this behavior when its
+    ///     request type satisfies all of these. Empty for closed behaviors.
+    /// </summary>
+    public EquatableArray<string> RequestConstraints { get; }
+
+    /// <summary>
+    ///     Named-type constraints on the second (response / item) type parameter of an open-generic behavior.
+    ///     Empty for closed behaviors and for single-parameter behaviors.
+    /// </summary>
+    public EquatableArray<string> ResponseConstraints { get; }
 
     public string FullBehaviorTypeName => $"{Namespace}.{ClassName}";
+}
+
+/// <summary>
+///     Result of scanning a single <c>[PipelineBehavior]</c>-decorated class. A class may implement more than
+///     one pipeline interface, so it can yield multiple <see cref="BehaviorDetail" />s. An empty
+///     <see cref="Behaviors" /> collection means the class implements no known pipeline interface (MDG008).
+/// </summary>
+public readonly record struct BehaviorScan
+{
+    public BehaviorScan(LocationInfo? location, EquatableArray<BehaviorDetail> behaviors)
+    {
+        Location = location;
+        Behaviors = behaviors;
+    }
+
+    public LocationInfo? Location { get; }
+
+    public EquatableArray<BehaviorDetail> Behaviors { get; }
 }
 
 /// <summary>The pipeline interface kind a behavior implements.</summary>

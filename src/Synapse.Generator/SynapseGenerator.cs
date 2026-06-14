@@ -190,15 +190,23 @@ public class SynapseGenerator : IIncrementalGenerator
                                 "Synapse.Generator",
                                 DiagnosticSeverity.Info,
                                 true),
-                            detail.Value.Location ?? Location.None));
+                            detail.Value.Location?.ToLocation() ?? Location.None));
                     }
                 }
             }
 
-            // Validate behaviors — warn if a [PipelineBehavior] class implements no pipeline interface
-            foreach (var behavior in behaviors)
+            // Validate behaviors — warn if a [PipelineBehavior] class implements no pipeline interface,
+            // and flatten the per-class scans into the list of behaviors to emit. A single class can
+            // implement several pipeline interfaces, so each scan may contribute multiple behaviors.
+            var behaviorList = ImmutableArray.CreateBuilder<BehaviorDetail>();
+            foreach (var scan in behaviors)
             {
-                if (behavior is null)
+                if (scan is null)
+                {
+                    continue;
+                }
+
+                if (scan.Value.Behaviors.Count == 0)
                 {
                     ctx.ReportDiagnostic(Diagnostic.Create(
                         new DiagnosticDescriptor(
@@ -208,12 +216,18 @@ public class SynapseGenerator : IIncrementalGenerator
                             "Synapse.Generator",
                             DiagnosticSeverity.Warning,
                             true),
-                        Location.None));
+                        scan.Value.Location?.ToLocation() ?? Location.None));
+                    continue;
+                }
+
+                foreach (var behavior in scan.Value.Behaviors)
+                {
+                    behaviorList.Add(behavior);
                 }
             }
 
             ctx.AddSource("RegisterGroup.g.cs",
-                RegisterGroupFactory.Create(rootNamespace, AbstractionsNamespace, details, behaviors));
+                RegisterGroupFactory.Create(rootNamespace, AbstractionsNamespace, details, behaviorList.ToImmutable()));
         });
 
         // Generate event dispatcher registrations for NativeAOT support
@@ -281,10 +295,11 @@ public class SynapseGenerator : IIncrementalGenerator
 
             var className = classDeclaration.Identifier.ValueText;
             var @namespace = classDeclaration.GetNamespace();
-            var (requestType, responseType) = GetRequestInfo(attribute);
-            var location = classDeclaration.GetLocation();
+            var (requestType, responseType, requestSatisfying, responseSatisfying) = GetRequestInfo(attribute);
+            var location = LocationInfo.CreateFrom(classDeclaration.GetLocation());
             var handlerType = HandlerType.StreamRequestHandler;
-            return new HandlerDetail(handlerType, className, @namespace, requestType, responseType, location);
+            return new HandlerDetail(handlerType, className, @namespace, requestType, responseType, location,
+                requestSatisfying, responseSatisfying);
         }
 
         return null;
@@ -309,12 +324,13 @@ public class SynapseGenerator : IIncrementalGenerator
 
             var className = classDeclaration.Identifier.ValueText;
             var @namespace = classDeclaration.GetNamespace();
-            var (requestType, responseType) = GetRequestInfo(attribute);
+            var (requestType, responseType, requestSatisfying, responseSatisfying) = GetRequestInfo(attribute);
 
 
-            var location = classDeclaration.GetLocation();
+            var location = LocationInfo.CreateFrom(classDeclaration.GetLocation());
             var handlerType = HandlerType.RequestHandler;
-            return new HandlerDetail(handlerType, className, @namespace, requestType, responseType, location);
+            return new HandlerDetail(handlerType, className, @namespace, requestType, responseType, location,
+                requestSatisfying, responseSatisfying);
         }
 
         return null;
@@ -338,18 +354,18 @@ public class SynapseGenerator : IIncrementalGenerator
 
             var className = classDeclaration.Identifier.ValueText;
             var @namespace = classDeclaration.GetNamespace();
-            var (requestType, responseType) = GetRequestInfo(attribute);
+            var (requestType, responseType, requestSatisfying, responseSatisfying) = GetRequestInfo(attribute);
 
-            var location = classDeclaration.GetLocation();
+            var location = LocationInfo.CreateFrom(classDeclaration.GetLocation());
 
             return new HandlerDetail(HandlerType.EventHandler, className, @namespace, requestType, responseType,
-                location);
+                location, requestSatisfying, responseSatisfying);
         }
 
         return null;
     }
 
-    private static BehaviorDetail? GetBehaviorDetail(GeneratorAttributeSyntaxContext ctx)
+    private static BehaviorScan? GetBehaviorDetail(GeneratorAttributeSyntaxContext ctx)
     {
         if (ctx.TargetNode is not ClassDeclarationSyntax classDeclaration)
         {
@@ -377,9 +393,11 @@ public class SynapseGenerator : IIncrementalGenerator
         var isOpenGeneric = classSymbol.IsGenericType;
         var className = classDeclaration.Identifier.ValueText;
         var @namespace = classDeclaration.GetNamespace();
-        var location = classDeclaration.GetLocation();
+        var location = LocationInfo.CreateFrom(classDeclaration.GetLocation());
 
-        // Find the pipeline interface this class implements
+        // A class may implement more than one pipeline interface — emit a behavior for each, rather
+        // than arbitrarily picking the first one found in AllInterfaces.
+        var behaviors = new List<BehaviorDetail>();
         foreach (var iface in classSymbol.AllInterfaces)
         {
             if (!iface.IsGenericType)
@@ -395,11 +413,10 @@ public class SynapseGenerator : IIncrementalGenerator
                 var requestType = isOpenGeneric
                     ? iface.TypeArguments[0].Name
                     : iface.TypeArguments[0].ToDisplayString();
-                return new BehaviorDetail(className, @namespace, BehaviorKind.Request, isOpenGeneric,
-                    requestType, null, order, location);
+                behaviors.Add(new BehaviorDetail(className, @namespace, BehaviorKind.Request, isOpenGeneric,
+                    requestType, null, order, GetConstraintNames(iface.TypeArguments[0]), default));
             }
-
-            if (ifaceFullName == $"{RequestPipelineBehaviorInterfaceName}`2" && iface.TypeArguments.Length == 2)
+            else if (ifaceFullName == $"{RequestPipelineBehaviorInterfaceName}`2" && iface.TypeArguments.Length == 2)
             {
                 var requestType = isOpenGeneric
                     ? iface.TypeArguments[0].Name
@@ -407,21 +424,20 @@ public class SynapseGenerator : IIncrementalGenerator
                 var responseType = isOpenGeneric
                     ? iface.TypeArguments[1].Name
                     : iface.TypeArguments[1].ToDisplayString();
-                return new BehaviorDetail(className, @namespace, BehaviorKind.RequestWithResponse, isOpenGeneric,
-                    requestType, responseType, order, location);
+                behaviors.Add(new BehaviorDetail(className, @namespace, BehaviorKind.RequestWithResponse, isOpenGeneric,
+                    requestType, responseType, order, GetConstraintNames(iface.TypeArguments[0]),
+                    GetConstraintNames(iface.TypeArguments[1])));
             }
-
-            if (ifaceFullName == $"{EventPipelineBehaviorInterfaceName}`1" && iface.TypeArguments.Length == 1)
+            else if (ifaceFullName == $"{EventPipelineBehaviorInterfaceName}`1" && iface.TypeArguments.Length == 1)
             {
                 var eventType = isOpenGeneric
                     ? iface.TypeArguments[0].Name
                     : iface.TypeArguments[0].ToDisplayString();
-                return new BehaviorDetail(className, @namespace, BehaviorKind.Event, isOpenGeneric,
-                    eventType, null, order, location);
+                behaviors.Add(new BehaviorDetail(className, @namespace, BehaviorKind.Event, isOpenGeneric,
+                    eventType, null, order, GetConstraintNames(iface.TypeArguments[0]), default));
             }
-
-            if (ifaceFullName == $"{StreamRequestPipelineBehaviorInterfaceName}`2" &&
-                iface.TypeArguments.Length == 2)
+            else if (ifaceFullName == $"{StreamRequestPipelineBehaviorInterfaceName}`2" &&
+                     iface.TypeArguments.Length == 2)
             {
                 var requestType = isOpenGeneric
                     ? iface.TypeArguments[0].Name
@@ -429,39 +445,115 @@ public class SynapseGenerator : IIncrementalGenerator
                 var itemType = isOpenGeneric
                     ? iface.TypeArguments[1].Name
                     : iface.TypeArguments[1].ToDisplayString();
-                return new BehaviorDetail(className, @namespace, BehaviorKind.StreamRequest, isOpenGeneric,
-                    requestType, itemType, order, location);
+                behaviors.Add(new BehaviorDetail(className, @namespace, BehaviorKind.StreamRequest, isOpenGeneric,
+                    requestType, itemType, order, GetConstraintNames(iface.TypeArguments[0]),
+                    GetConstraintNames(iface.TypeArguments[1])));
             }
         }
 
-        // No matching interface found — return null so MDG008 fires
-        return null;
+        // An empty Behaviors collection signals MDG008 (no known pipeline interface implemented).
+        return new BehaviorScan(location, EquatableArray<BehaviorDetail>.From(behaviors));
     }
 
-    private static (string RequestType, string? ResponseType) GetRequestInfo(AttributeData attribute)
+    /// <summary>
+    ///     Returns the named-type constraints on an open-generic behavior's type parameter as fully-qualified
+    ///     display strings. Closed type arguments (and parameters with no type constraint) yield an empty array.
+    /// </summary>
+    private static EquatableArray<string> GetConstraintNames(ITypeSymbol typeArgument)
+    {
+        if (typeArgument is not ITypeParameterSymbol { ConstraintTypes.Length: > 0 } typeParameter)
+        {
+            return default;
+        }
+
+        // Only keep concrete named-type constraints (e.g. ICommand). Constraints that reference the
+        // behavior's own type parameters — such as `where TRequest : IRequest<TResponse>` — are satisfied
+        // by construction when the behavior is closed over a matching handler, so filtering on them would
+        // wrongly exclude every handler.
+        var names = typeParameter.ConstraintTypes
+            .Where(c => !ContainsTypeParameter(c))
+            .Select(c => c.ToDisplayString())
+            .ToList();
+
+        return names.Count > 0 ? EquatableArray<string>.From(names) : default;
+    }
+
+    private static bool ContainsTypeParameter(ITypeSymbol type)
+    {
+        switch (type)
+        {
+            case ITypeParameterSymbol:
+                return true;
+            case IArrayTypeSymbol array:
+                return ContainsTypeParameter(array.ElementType);
+            case INamedTypeSymbol named:
+                foreach (var typeArgument in named.TypeArguments)
+                {
+                    if (ContainsTypeParameter(typeArgument))
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
+            default:
+                return false;
+        }
+    }
+
+    private static (string RequestType, string? ResponseType, EquatableArray<string> RequestSatisfying,
+        EquatableArray<string> ResponseSatisfying) GetRequestInfo(AttributeData attribute)
     {
         // Get the attribute constructor's type arguments
         var typeArgs = attribute.AttributeClass?.TypeArguments;
         if (typeArgs is null ||
             typeArgs.Value.Length == 0)
         {
-            return (string.Empty, null);
+            return (string.Empty, null, default, default);
         }
 
 
         // Get the fully qualified name of the request type
-        var requestType = typeArgs.Value[0]
-            .ToDisplayString();
+        var requestSymbol = typeArgs.Value[0];
+        var requestType = requestSymbol.ToDisplayString();
+        var requestSatisfying = GetSatisfyingTypeNames(requestSymbol);
 
         // Check if there's a response type (generic attribute with 2 type parameters)
         string? responseType = null;
+        var responseSatisfying = default(EquatableArray<string>);
         if (typeArgs.Value.Length > 1)
         {
-            responseType = typeArgs.Value[1]
-                .ToDisplayString();
+            var responseSymbol = typeArgs.Value[1];
+            responseType = responseSymbol.ToDisplayString();
+            responseSatisfying = GetSatisfyingTypeNames(responseSymbol);
         }
 
-        return (requestType, responseType);
+        return (requestType, responseType, requestSatisfying, responseSatisfying);
+    }
+
+    /// <summary>
+    ///     Returns the type itself plus all of its base types and implemented interfaces as fully-qualified
+    ///     display strings — the set a constraint type must be a member of for the type to satisfy it.
+    /// </summary>
+    private static EquatableArray<string> GetSatisfyingTypeNames(ITypeSymbol? type)
+    {
+        if (type is null)
+        {
+            return default;
+        }
+
+        var names = new List<string> { type.ToDisplayString() };
+        foreach (var iface in type.AllInterfaces)
+        {
+            names.Add(iface.ToDisplayString());
+        }
+
+        for (var baseType = type.BaseType; baseType is not null; baseType = baseType.BaseType)
+        {
+            names.Add(baseType.ToDisplayString());
+        }
+
+        return EquatableArray<string>.From(names);
     }
 
     /// <summary>
