@@ -245,4 +245,22 @@ public sealed class EventDispatcherTests
         _metrics.Received(1).RecordDispatchLatency(Arg.Any<double>(), Arg.Any<string>());
         _metrics.Received(1).RecordEventDispatched(Arg.Any<string>(), false);
     }
+
+    [Fact]
+    public async Task DispatchAsync_WithPolymorphicEvent_AndNoRegisteredDispatcher_ReturnsFailure()
+    {
+        // Arrange (Given) — empty Dispatchers map: no delegate registered for InheritedEventExample
+        var @event = new InheritedEventExample("Test Event");
+        var dispatcher = CreateDispatcher(new EventDispatcherOptions
+        {
+            DispatchStrategy = DispatchStrategy.Immediate,
+            Dispatchers = new Dictionary<Type, DispatchEventDelegate>()
+        });
+
+        // Act (When) — dispatch as base type so runtimeType != genericType path is taken
+        var result = await dispatcher.DispatchAsync<BaseEventExample>(@event, CancellationToken.None);
+
+        // Assert (Then) — no dispatcher registered → Result.Failure
+        Assert.False(result.IsSuccess);
+    }
 }

@@ -392,12 +392,213 @@ public sealed class GeneratorBehaviorTests
         Assert.DoesNotContain("NoResponseBehavior", generated);
     }
 
+    // ── Closed (concrete-type) with-response request behavior ────────────
+
+    [Fact]
+    public void ClosedWithResponseBehavior_EmitsSingleRegistration()
+    {
+        // Arrange (Given)
+        const string source = """
+            using System.Threading;
+            using System.Threading.Tasks;
+            using UnambitiousFx.Functional;
+            using UnambitiousFx.Synapse.Abstractions;
+
+            namespace TestNs;
+
+            public sealed record MyRequest : IRequest<int>;
+
+            [RequestHandler<MyRequest, int>]
+            public sealed class MyHandler : IRequestHandler<MyRequest, int>
+            {
+                public ValueTask<Result<int>> HandleAsync(MyRequest request, CancellationToken ct = default)
+                    => ValueTask.FromResult(Result.Success(42));
+            }
+
+            [PipelineBehavior]
+            public sealed class SpecificWithResponseBehavior : IRequestPipelineBehavior<MyRequest, int>
+            {
+                public ValueTask<Result<int>> HandleAsync(MyRequest request, RequestHandlerDelegate<MyRequest, int> next, CancellationToken ct = default)
+                    => next(request, ct);
+            }
+            """;
+
+        // Act (When)
+        var generated = RunGeneratorAndGetRegistrationGroup(source);
+
+        // Assert (Then) — one explicit closed registration, no cross-product
+        Assert.Contains(
+            "builder.RegisterRequestPipelineBehavior<global::TestNs.SpecificWithResponseBehavior, global::TestNs.MyRequest, int>()",
+            generated);
+    }
+
+    // ── Closed (concrete-type) event behavior ─────────────────────────────
+
+    [Fact]
+    public void ClosedEventBehavior_EmitsSingleRegistration()
+    {
+        // Arrange (Given)
+        const string source = """
+            using System.Threading;
+            using System.Threading.Tasks;
+            using UnambitiousFx.Functional;
+            using UnambitiousFx.Synapse.Abstractions;
+
+            namespace TestNs;
+
+            public sealed record UserCreated : IEvent;
+
+            [EventHandler<UserCreated>]
+            public sealed class UserCreatedHandler : IEventHandler<UserCreated>
+            {
+                public ValueTask<Result> HandleAsync(UserCreated @event, CancellationToken ct = default)
+                    => ValueTask.FromResult(Result.Success());
+            }
+
+            [PipelineBehavior]
+            public sealed class SpecificEventBehavior : IEventPipelineBehavior<UserCreated>
+            {
+                public ValueTask<Result> HandleAsync(UserCreated @event, EventHandlerDelegate<UserCreated> next, CancellationToken ct = default)
+                    => next(@event, ct);
+            }
+            """;
+
+        // Act (When)
+        var generated = RunGeneratorAndGetRegistrationGroup(source);
+
+        // Assert (Then)
+        Assert.Contains(
+            "builder.RegisterEventPipelineBehavior<global::TestNs.SpecificEventBehavior, global::TestNs.UserCreated>()",
+            generated);
+    }
+
+    // ── Closed (concrete-type) stream behavior ────────────────────────────
+
+    [Fact]
+    public void ClosedStreamBehavior_EmitsSingleRegistration()
+    {
+        // Arrange (Given)
+        const string source = """
+            using System.Collections.Generic;
+            using System.Runtime.CompilerServices;
+            using System.Threading;
+            using System.Threading.Tasks;
+            using UnambitiousFx.Functional;
+            using UnambitiousFx.Synapse.Abstractions;
+
+            namespace TestNs;
+
+            public sealed record DataStream : IStreamRequest<string>;
+
+            [StreamRequestHandler<DataStream, string>]
+            public sealed class DataStreamHandler : IStreamRequestHandler<DataStream, string>
+            {
+                public async IAsyncEnumerable<Result<string>> HandleAsync(DataStream request, [EnumeratorCancellation] CancellationToken ct = default)
+                {
+                    yield return Result.Success("a");
+                    await Task.CompletedTask;
+                }
+            }
+
+            [PipelineBehavior]
+            public sealed class SpecificStreamBehavior : IStreamRequestPipelineBehavior<DataStream, string>
+            {
+                public async IAsyncEnumerable<Result<string>> HandleAsync(DataStream request, StreamRequestHandlerDelegate<string> next, [EnumeratorCancellation] CancellationToken ct = default)
+                {
+                    await foreach (var item in next()) yield return item;
+                }
+            }
+            """;
+
+        // Act (When)
+        var generated = RunGeneratorAndGetRegistrationGroup(source);
+
+        // Assert (Then)
+        Assert.Contains(
+            "builder.RegisterStreamRequestPipelineBehavior<global::TestNs.SpecificStreamBehavior, global::TestNs.DataStream, string>()",
+            generated);
+    }
+
+    // ── MDG002: no handler types found in assembly ────────────────────────
+
+    [Fact]
+    public void NoHandlers_EmitsMDG002Diagnostic()
+    {
+        // Arrange (Given) — a class that is not a handler (no handler attribute)
+        const string source = """
+            namespace TestNs;
+
+            public sealed class SomeService { }
+            """;
+
+        // Act (When)
+        var (diagnostics, _) = RunGenerator(source);
+
+        // Assert (Then)
+        Assert.Contains(diagnostics, d => d.Id == "MDG002");
+    }
+
+    // ── EventDispatcherRegistration.g.cs is generated for IEvent types ───
+
+    [Fact]
+    public void EventDispatcherRegistration_IsGenerated()
+    {
+        // Arrange (Given) — source that contains an IEvent implementation and its handler
+        const string source = """
+            using System.Threading;
+            using System.Threading.Tasks;
+            using UnambitiousFx.Functional;
+            using UnambitiousFx.Synapse.Abstractions;
+
+            namespace TestNs;
+
+            public sealed record UserCreated : IEvent;
+
+            [EventHandler<UserCreated>]
+            public sealed class UserCreatedHandler : IEventHandler<UserCreated>
+            {
+                public ValueTask<Result> HandleAsync(UserCreated @event, CancellationToken ct = default)
+                    => ValueTask.FromResult(Result.Success());
+            }
+            """;
+
+        // Act (When)
+        var generated = RunGeneratorAndGetFile(source, "EventDispatcherRegistration.g.cs");
+
+        // Assert (Then)
+        Assert.NotNull(generated);
+        Assert.Contains("UserCreated", generated);
+        Assert.Contains("EventDispatcherRegistration", generated);
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────
 
     private static string RunGeneratorAndGetRegistrationGroup(string source)
     {
         var (_, generated) = RunGenerator(source);
         return generated ?? string.Empty;
+    }
+
+    private static string? RunGeneratorAndGetFile(string source, string fileName)
+    {
+        var syntaxTree = CSharpSyntaxTree.ParseText(source);
+
+        var compilation = CSharpCompilation.Create(
+            "TestAssembly",
+            [syntaxTree],
+            GetMetadataReferences(),
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, nullableContextOptions: NullableContextOptions.Enable));
+
+        var generator = new SynapseGenerator();
+        var driver = CSharpGeneratorDriver
+            .Create(generator)
+            .RunGenerators(compilation);
+
+        var result = driver.GetRunResult();
+        var generatedFile = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.EndsWith(fileName, StringComparison.Ordinal));
+
+        return generatedFile?.GetText().ToString();
     }
 
     private static (ImmutableArray<Diagnostic> diagnostics, string? generatedSource) RunGenerator(string source)

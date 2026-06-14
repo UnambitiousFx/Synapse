@@ -203,4 +203,105 @@ public sealed class DefaultDependencyInjectionBuilderTests
         // Assert (Then)
         Assert.DoesNotContain(typeof(TestRequestWithResponse), builder.RequestDispatchers.Keys);
     }
+
+    // ── Pipeline behavior registration methods ───────────────────────────────
+
+    [Fact]
+    public void RegisterRequestPipelineBehavior_NoResponse_RegistersBehaviorInServiceCollection()
+    {
+        // Arrange (Given)
+        var services = new ServiceCollection();
+        var builder = new DefaultDependencyInjectionBuilder();
+
+        // Act (When)
+        builder.RegisterRequestPipelineBehavior<TestNoResponseBehavior, TestRequest>();
+        builder.Apply(services);
+
+        // Assert (Then)
+        Assert.Contains(services, x =>
+            x.ServiceType == typeof(IRequestPipelineBehavior<TestRequest>) &&
+            x.ImplementationType == typeof(TestNoResponseBehavior));
+    }
+
+    [Fact]
+    public void RegisterRequestPipelineBehavior_WithResponse_RegistersBehaviorInServiceCollection()
+    {
+        // Arrange (Given)
+        var services = new ServiceCollection();
+        var builder = new DefaultDependencyInjectionBuilder();
+
+        // Act (When)
+        builder.RegisterRequestPipelineBehavior<TestWithResponseBehavior, TestRequestWithResponse, int>();
+        builder.Apply(services);
+
+        // Assert (Then)
+        Assert.Contains(services, x =>
+            x.ServiceType == typeof(IRequestPipelineBehavior<TestRequestWithResponse, int>) &&
+            x.ImplementationType == typeof(TestWithResponseBehavior));
+    }
+
+    [Fact]
+    public void RegisterEventPipelineBehavior_RegistersBehaviorInServiceCollection()
+    {
+        // Arrange (Given)
+        var services = new ServiceCollection();
+        var builder = new DefaultDependencyInjectionBuilder();
+
+        // Act (When)
+        builder.RegisterEventPipelineBehavior<TestEventBehavior, TestEvent>();
+        builder.Apply(services);
+
+        // Assert (Then)
+        Assert.Contains(services, x =>
+            x.ServiceType == typeof(IEventPipelineBehavior<TestEvent>) &&
+            x.ImplementationType == typeof(TestEventBehavior));
+    }
+
+    [Fact]
+    public void RegisterStreamRequestPipelineBehavior_RegistersBehaviorInServiceCollection()
+    {
+        // Arrange (Given)
+        var services = new ServiceCollection();
+        var builder = new DefaultDependencyInjectionBuilder();
+
+        // Act (When)
+        builder.RegisterStreamRequestPipelineBehavior<TestStreamBehavior, TestStreamRequest, int>();
+        builder.Apply(services);
+
+        // Assert (Then)
+        Assert.Contains(services, x =>
+            x.ServiceType == typeof(IStreamRequestPipelineBehavior<TestStreamRequest, int>) &&
+            x.ImplementationType == typeof(TestStreamBehavior));
+    }
+
+    // ── Behavior fixtures ────────────────────────────────────────────────────
+
+    private sealed class TestNoResponseBehavior : IRequestPipelineBehavior<TestRequest>
+    {
+        public ValueTask<Result> HandleAsync(TestRequest request, RequestHandlerDelegate<TestRequest> next,
+            CancellationToken cancellationToken = default) => next(request, cancellationToken);
+    }
+
+    private sealed class TestWithResponseBehavior : IRequestPipelineBehavior<TestRequestWithResponse, int>
+    {
+        public ValueTask<Result<int>> HandleAsync(TestRequestWithResponse request,
+            RequestHandlerDelegate<TestRequestWithResponse, int> next,
+            CancellationToken cancellationToken = default) => next(request, cancellationToken);
+    }
+
+    private sealed class TestEventBehavior : IEventPipelineBehavior<TestEvent>
+    {
+        public ValueTask<Result> HandleAsync(TestEvent @event, EventHandlerDelegate<TestEvent> next,
+            CancellationToken cancellationToken = default) => next(@event, cancellationToken);
+    }
+
+    private sealed class TestStreamBehavior : IStreamRequestPipelineBehavior<TestStreamRequest, int>
+    {
+        public async IAsyncEnumerable<Result<int>> HandleAsync(TestStreamRequest request,
+            StreamRequestHandlerDelegate<int> next,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            await foreach (var item in next()) yield return item;
+        }
+    }
 }
