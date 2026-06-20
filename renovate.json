@@ -1,0 +1,42 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "schedule": [
+    "before 4am on monday"
+  ],
+  "prConcurrentLimit": 10,
+  "packageRules": [
+    {
+      "matchManagers": ["nuget"],
+      "matchPackageNames": ["Microsoft.**"],
+      "groupName": "microsoft"
+    },
+    {
+      "matchManagers": ["nuget"],
+      "matchPackageNames": ["BenchmarkDotNet**"],
+      "groupName": "benchmarkdotnet"
+    },
+    {
+      "matchManagers": ["nuget"],
+      "matchPackageNames": ["xunit**", "NSubstitute**", "coverlet**"],
+      "groupName": "testing"
+    },
+    {
+      "matchManagers": ["nuget"],
+      "matchPackageNames": ["UnambitiousFx.**"],
+      "groupName": "unambitiousfx"
+    },
+    {
+      "matchManagers": ["nuget"],
+      "matchPackageNames": ["JetBrains.**"],
+      "groupName": "jetbrains"
+    },
+    {
+      "matchManagers": ["nuget"],
+      "matchPackageNames": ["System.**"],
+      "groupName": "system"
+    }
+  ]
+}
