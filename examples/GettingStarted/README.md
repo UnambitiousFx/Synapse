@@ -96,9 +96,8 @@ else
 
 After completing this tutorial:
 
-1. **WebApi Example** - See how to integrate Synapse with ASP.NET Core
-2. **MinimalApi Example** - Learn about Native AOT compatibility
-3. **OutboxPattern Example** - Implement transactional event publishing
+1. **MinimalApi Example** - See how to integrate Synapse with ASP.NET Core (Native AOT-ready)
+2. **OutboxPattern Example** - Implement transactional event publishing
 
 ## Learn More
 

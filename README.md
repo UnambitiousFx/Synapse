@@ -14,7 +14,7 @@ A lightweight, **high-performance** mediator implementation for .NET with first-
 ## 🔧 Compatibility & support
 
 - **Dependency-free at runtime:** No external runtime dependencies.
-- **Native AOT-compatible:** Designed to work well in Native AOT scenarios (see the `examples/WebApiAot`).
+- **Native AOT-compatible:** Designed to work well in Native AOT scenarios (see the `examples/MinimalApi`).
 - **Supported .NET versions:** Supports Microsoft LTS releases and the latest non-LTS release. See CI matrix for exact
   versions.
 

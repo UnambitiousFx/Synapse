@@ -78,26 +78,32 @@ app.UseCorrelationId();
 app.MapGet("/", () => Results.Ok(new ApiInfo()));
 
 // ── Task endpoints ────────────────────────────────────────────────────
-var tasks = app.MapGroup("/tasks");
+var tasks = app.MapGroup("/tasks").WithTags("Tasks");
 
 // Feature: Query returning a list
 tasks.MapGet("/", async (
         [FromServices] IHttpInvoker invoker,
         CancellationToken ct) =>
-    await invoker.InvokeAsync(new ListTasksQuery(), ct));
+    await invoker.InvokeAsync(new ListTasksQuery(), ct))
+    .WithName("ListTasks")
+    .WithSummary("List all tasks");
 
 // Feature: Streaming request — yields tasks via IAsyncEnumerable
 tasks.MapGet("/stream", (
         [FromServices] IHttpInvoker invoker,
         CancellationToken ct) =>
-    invoker.InvokeStreamAsync(new StreamTasksQuery(), ct));
+    invoker.InvokeStreamAsync(new StreamTasksQuery(), ct))
+    .WithName("StreamTasks")
+    .WithSummary("Stream tasks one by one (IStreamRequest<T>)");
 
 // Feature: Query returning a single item
 tasks.MapGet("/{id:guid}", async (
         [FromRoute] Guid id,
         [FromServices] IHttpInvoker invoker,
         CancellationToken ct) =>
-    await invoker.InvokeAsync(new GetTaskQuery { TaskId = id }, ct));
+    await invoker.InvokeAsync(new GetTaskQuery { TaskId = id }, ct))
+    .WithName("GetTask")
+    .WithSummary("Get a task by ID");
 
 // Feature: Command with typed response + RequestValidationBehavior
 // Valid input → 201 Created with Location header
@@ -112,7 +118,9 @@ tasks.MapPost("/", async (
         command,
         id => Results.Created($"/tasks/{id}", id),
         ct);
-});
+})
+    .WithName("CreateTask")
+    .WithSummary("Create a new task (validated)");
 
 // Feature: Command without response
 tasks.MapPut("/{id:guid}", async (
@@ -123,7 +131,9 @@ tasks.MapPut("/{id:guid}", async (
 {
     var command = new UpdateTaskCommand { TaskId = id, Title = request.Title, Description = request.Description };
     return await invoker.InvokeAsync(command, ct);
-});
+})
+    .WithName("UpdateTask")
+    .WithSummary("Update a task");
 
 // Feature: Command that emits an event handled by 2 concurrent handlers
 // Check stdout: both TaskCompletedLoggingHandler and TaskCompletedNotificationHandler run in parallel
@@ -131,14 +141,18 @@ tasks.MapPost("/{id:guid}/complete", async (
         [FromRoute] Guid id,
         [FromServices] IHttpInvoker invoker,
         CancellationToken ct) =>
-    await invoker.InvokeAsync(new CompleteTaskCommand { TaskId = id }, ct));
+    await invoker.InvokeAsync(new CompleteTaskCommand { TaskId = id }, ct))
+    .WithName("CompleteTask")
+    .WithSummary("Mark a task as complete (triggers 2 concurrent event handlers)");
 
 // Feature: Command that emits a domain event (TaskDeletedEvent → TaskDeletedLoggingHandler)
 tasks.MapDelete("/{id:guid}", async (
         [FromRoute] Guid id,
         [FromServices] IHttpInvoker invoker,
         CancellationToken ct) =>
-    await invoker.InvokeAsync(new DeleteTaskCommand { TaskId = id }, ct));
+    await invoker.InvokeAsync(new DeleteTaskCommand { TaskId = id }, ct))
+    .WithName("DeleteTask")
+    .WithSummary("Delete a task");
 
 app.Run();
 
@@ -154,7 +168,7 @@ namespace UnambitiousFx.Examples.MinimalApi
 
     public sealed record ApiInfo
     {
-        public string Name { get; init; } = "Synapse Minimal API (Native AOT)";
+        public string Name { get; init; } = "Synapse MinimalApi Example (Native AOT)";
         public string Description { get; init; } = "Executable feature tour of UnambitiousFx.Synapse";
         public bool AotReady { get; init; } = true;
 
@@ -175,14 +189,14 @@ namespace UnambitiousFx.Examples.MinimalApi
 
         public string[] Endpoints { get; init; } =
         [
-            "GET    /                   — API info",
-            "GET    /tasks              — List tasks (Query)",
-            "GET    /tasks/stream       — Stream tasks (IStreamRequest)",
-            "GET    /tasks/{id}         — Get task (Query)",
-            "POST   /tasks              — Create task (Command → Guid, validated)",
-            "PUT    /tasks/{id}         — Update task (Command)",
+            "GET    /                    — API info",
+            "GET    /tasks               — List tasks (Query)",
+            "GET    /tasks/stream        — Stream tasks (IStreamRequest)",
+            "GET    /tasks/{id}          — Get task (Query)",
+            "POST   /tasks               — Create task (Command → Guid, validated)",
+            "PUT    /tasks/{id}          — Update task (Command)",
             "POST   /tasks/{id}/complete — Complete task (2 concurrent event handlers)",
-            "DELETE /tasks/{id}         — Delete task (domain event)"
+            "DELETE /tasks/{id}          — Delete task (domain event)"
         ];
     }
 
