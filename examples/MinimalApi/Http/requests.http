@@ -1,10 +1,10 @@
-### Synapse Feature Showcase — MinimalApi (Native AOT)
+### Synapse MinimalApi — Commands & Queries
+### Demonstrates: IRequest<TResponse>, IRequest (no-response), validation, correlation IDs.
 ### Run `dotnet run` in examples/MinimalApi, then execute requests top-to-bottom.
-### Each block states which Synapse feature it exercises and what to verify.
 @baseUrl = http://localhost:5225
 
 # ═══════════════════════════════════════════════════════════════════════
-# 1. API Info
+# 1. API info
 # ═══════════════════════════════════════════════════════════════════════
 
 ### [Feature: Root endpoint] List all available features and endpoints
@@ -23,13 +23,14 @@ Accept: application/json
 ###
 
 # ═══════════════════════════════════════════════════════════════════════
-# 2. Command with typed response (CreateTask → Guid)
+# 2. Command with typed response — CreateTask → CreateTaskResult { TaskId }
+#    (The endpoint unwraps result.TaskId into the Location header and
+#     response body, so the raw JSON body is still a plain Guid string.)
 # ═══════════════════════════════════════════════════════════════════════
 
 ### [Feature: Command + Validation] Create a valid task
 ### Expect: 201 Created, Location header, X-Correlation-Id header
-### Observe stdout: SimpleLoggingBehavior logs CreateTaskCommand timing
-###                 TaskCreatedLoggingHandler logs the event
+### Observe stdout: MetricsBehavior + AuditBehavior + SimpleLoggingBehavior timing lines
 POST {{baseUrl}}/tasks
 Content-Type: application/json
 
@@ -60,8 +61,8 @@ Content-Type: application/json
 ###
 
 ### [Feature: Validation] Create a task with an empty title — should be rejected
-### Expect: failure response (validation error from RequestValidationBehavior)
-### Observe stdout: SimpleLoggingBehavior logs the failure
+### Expect: failure (RequestValidationBehavior short-circuits; handler never runs)
+### Observe stdout: SimpleLoggingBehavior logs the failure timing
 POST {{baseUrl}}/tasks
 Content-Type: application/json
 
@@ -72,7 +73,6 @@ Content-Type: application/json
 
 > {%
     client.test("Empty title is rejected", function () {
-        client.assert(response.status !== 201, "Should not create a task with empty title");
         client.assert(response.status >= 400, "Expected an error status code");
     });
 %}
@@ -96,7 +96,7 @@ Content-Type: application/json
 
 ###
 
-# Create a second task for the streaming and list tests
+# Create a second task for list and update tests
 POST {{baseUrl}}/tasks
 Content-Type: application/json
 
@@ -122,6 +122,7 @@ Content-Type: application/json
 
 ### [Feature: Query returning TaskDto] Get a task by ID
 ### Expect: 200 OK with task body, X-Correlation-Id header
+### Observe stdout: MetricsBehavior + SimpleLoggingBehavior (NO AuditBehavior — query path)
 GET {{baseUrl}}/tasks/{{taskId}}
 Accept: application/json
 
@@ -159,6 +160,7 @@ Accept: application/json
 
 ### [Feature: Query returning List<TaskDto>] List all tasks
 ### Expect: 200 OK with JSON array of tasks
+### Observe stdout: MetricsBehavior + SimpleLoggingBehavior (NO AuditBehavior — query path)
 GET {{baseUrl}}/tasks
 Accept: application/json
 
@@ -173,31 +175,12 @@ Accept: application/json
 ###
 
 # ═══════════════════════════════════════════════════════════════════════
-# 5. Streaming request
-# ═══════════════════════════════════════════════════════════════════════
-
-### [Feature: IStreamRequest<T>] Stream all tasks as IAsyncEnumerable
-### The handler yields each TaskDto one by one; ASP.NET Core flushes them as a JSON array.
-### Observe stdout: SimpleLoggingBehavior logs the StreamTasksQuery timing.
-GET {{baseUrl}}/tasks/stream
-Accept: application/json
-
-> {%
-    client.test("Stream endpoint returns 200", function () {
-        client.assert(response.status === 200, "Expected 200 OK");
-        client.assert(Array.isArray(response.body), "Response is an array");
-        client.assert(response.body.length >= 2, "At least 2 tasks streamed");
-    });
-%}
-
-###
-
-# ═══════════════════════════════════════════════════════════════════════
-# 6. Command without response — Update
+# 5. Command without response — Update
 # ═══════════════════════════════════════════════════════════════════════
 
 ### [Feature: Command (IRequest)] Update a task — no typed response
 ### Expect: success response
+### Observe stdout: AuditBehavior fires (UpdateTaskCommand is IAuditableRequest)
 PUT {{baseUrl}}/tasks/{{taskId}}
 Content-Type: application/json
 
@@ -239,142 +222,6 @@ Content-Type: application/json
 > {%
     client.test("Update non-existent task returns error", function () {
         client.assert(response.status >= 400, "Expected an error status code");
-    });
-%}
-
-###
-
-# ═══════════════════════════════════════════════════════════════════════
-# 7. Events — domain event fan-out with concurrent orchestration
-# ═══════════════════════════════════════════════════════════════════════
-
-### [Feature: Events + ConcurrentEventOrchestrator] Complete a task
-### Expect: success response
-### Observe stdout: BOTH of the following run concurrently (ConcurrentEventOrchestrator):
-###   - TaskCompletedLoggingHandler:      "✅ Task completed: ..."
-###   - TaskCompletedNotificationHandler: "📧 Sending notification for ..."
-### Also: SimpleLoggingBehavior logs CompleteTaskCommand timing
-POST {{baseUrl}}/tasks/{{taskId}}/complete
-
-> {%
-    client.test("Complete task succeeds", function () {
-        client.assert(response.status < 400, "Expected success status code");
-    });
-%}
-
-###
-
-### Verify status changed to Completed
-GET {{baseUrl}}/tasks/{{taskId}}
-Accept: application/json
-
-> {%
-    client.test("Task status is Completed", function () {
-        client.assert(response.status === 200, "Expected 200 OK");
-        client.assert(response.body.status === "Completed", "Status is Completed");
-        client.assert(response.body.completedAt !== undefined, "completedAt is set");
-    });
-%}
-
-###
-
-### [Feature: Events] Delete the second task
-### Observe stdout: TaskDeletedLoggingHandler logs "🗑️ Task deleted: ..."
-DELETE {{baseUrl}}/tasks/{{taskId2}}
-
-> {%
-    client.test("Delete task succeeds", function () {
-        client.assert(response.status < 400, "Expected success status code");
-    });
-%}
-
-###
-
-### Verify task 2 is gone
-GET {{baseUrl}}/tasks/{{taskId2}}
-Accept: application/json
-
-> {%
-    client.test("Deleted task is no longer found", function () {
-        client.assert(response.status >= 400, "Expected an error status code");
-    });
-%}
-
-###
-
-# ═══════════════════════════════════════════════════════════════════════
-# 8. Full workflow — Create → Update → Complete → Delete
-# ═══════════════════════════════════════════════════════════════════════
-
-### Step 1: Create
-POST {{baseUrl}}/tasks
-Content-Type: application/json
-
-{
-  "title": "Full workflow task",
-  "description": "Demonstrates the complete Synapse lifecycle in one sequence"
-}
-
-> {%
-    client.test("Workflow step 1 — create", function () {
-        client.assert(response.status === 201, "Expected 201 Created");
-        const location = response.headers.valueOf("Location");
-        const guidPattern = /\/tasks\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
-        client.global.set("wfTaskId", location.match(guidPattern)[1]);
-    });
-%}
-
-###
-
-### Step 2: Update
-PUT {{baseUrl}}/tasks/{{wfTaskId}}
-Content-Type: application/json
-
-{
-  "title": "Full workflow task (revised)",
-  "description": "Now with an updated description"
-}
-
-> {%
-    client.test("Workflow step 2 — update", function () {
-        client.assert(response.status < 400, "Expected success");
-    });
-%}
-
-###
-
-### Step 3: Complete (triggers 2 concurrent event handlers)
-POST {{baseUrl}}/tasks/{{wfTaskId}}/complete
-
-> {%
-    client.test("Workflow step 3 — complete", function () {
-        client.assert(response.status < 400, "Expected success");
-    });
-%}
-
-###
-
-### Step 4: Delete
-DELETE {{baseUrl}}/tasks/{{wfTaskId}}
-
-> {%
-    client.test("Workflow step 4 — delete", function () {
-        client.assert(response.status < 400, "Expected success");
-    });
-%}
-
-###
-
-### Final: List should not contain the workflow task
-GET {{baseUrl}}/tasks
-Accept: application/json
-
-> {%
-    client.test("Workflow task no longer in list", function () {
-        client.assert(response.status === 200, "Expected 200 OK");
-        const wfId = client.global.get("wfTaskId");
-        const found = response.body.some(t => t.id === wfId);
-        client.assert(!found, "Deleted task is not in the list");
     });
 %}
 

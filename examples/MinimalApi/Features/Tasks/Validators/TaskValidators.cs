@@ -5,8 +5,8 @@ namespace UnambitiousFx.Examples.MinimalApi.Features.Tasks.Validators;
 
 /// <summary>
 ///     Validates <see cref="CreateTaskCommand" /> before it reaches the handler.
-///     Registered via <c>cfg.AddValidator&lt;CreateTaskCommandValidator, CreateTaskCommand, Guid&gt;()</c>
-///     and activated by <c>RequestValidationBehavior&lt;CreateTaskCommand, Guid&gt;</c> in the pipeline.
+///     Registered via <c>cfg.AddValidator&lt;CreateTaskCommandValidator, CreateTaskCommand, CreateTaskResult&gt;()</c>
+///     and activated by <c>RequestValidationBehavior&lt;CreateTaskCommand, CreateTaskResult&gt;</c> in the pipeline.
 /// </summary>
 public sealed class CreateTaskCommandValidator : IRequestValidator<CreateTaskCommand>
 {

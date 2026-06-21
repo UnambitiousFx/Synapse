@@ -1,0 +1,190 @@
+### Synapse MinimalApi — Domain Events & Orchestration
+### Demonstrates: IEvent fan-out, ConcurrentEventOrchestrator, AuditBehavior on commands.
+### Run `dotnet run` in examples/MinimalApi, then execute requests top-to-bottom.
+@baseUrl = http://localhost:5225
+
+# ═══════════════════════════════════════════════════════════════════════
+# Setup — create tasks to work with
+# ═══════════════════════════════════════════════════════════════════════
+
+### Create task 1 (will be completed)
+### Observe stdout: TaskCreatedLoggingHandler fires after handler returns
+POST {{baseUrl}}/tasks
+Content-Type: application/json
+
+{
+  "title": "Event demo task",
+  "description": "Will be completed to trigger TaskCompletedEvent fan-out"
+}
+
+> {%
+    client.test("Task for completion created", function () {
+        client.assert(response.status === 201, "Expected 201 Created");
+        const location = response.headers.valueOf("Location");
+        const guidPattern = /\/tasks\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
+        client.global.set("evTaskId", location.match(guidPattern)[1]);
+    });
+%}
+
+###
+
+### Create task 2 (will be deleted)
+POST {{baseUrl}}/tasks
+Content-Type: application/json
+
+{
+  "title": "Deletion demo task",
+  "description": "Will be deleted to trigger TaskDeletedEvent"
+}
+
+> {%
+    client.test("Task for deletion created", function () {
+        client.assert(response.status === 201, "Expected 201 Created");
+        const location = response.headers.valueOf("Location");
+        const guidPattern = /\/tasks\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
+        client.global.set("evTaskId2", location.match(guidPattern)[1]);
+    });
+%}
+
+###
+
+# ═══════════════════════════════════════════════════════════════════════
+# Domain events — Complete (fan-out to 2 concurrent handlers)
+# ═══════════════════════════════════════════════════════════════════════
+
+### [Feature: Events + ConcurrentEventOrchestrator] Complete a task
+### Expect: success response
+### Observe stdout (ConcurrentEventOrchestrator fires BOTH handlers in parallel):
+###   ✅ TaskCompletedLoggingHandler:      "✅ Task completed: ..."
+###   📧 TaskCompletedNotificationHandler: "📧 Sending notification for ..."
+### Also: AuditBehavior + SimpleLoggingBehavior fire for CompleteTaskCommand
+POST {{baseUrl}}/tasks/{{evTaskId}}/complete
+
+> {%
+    client.test("Complete task succeeds", function () {
+        client.assert(response.status < 400, "Expected success status code");
+    });
+%}
+
+###
+
+### Verify status changed to Completed
+GET {{baseUrl}}/tasks/{{evTaskId}}
+Accept: application/json
+
+> {%
+    client.test("Task status is Completed", function () {
+        client.assert(response.status === 200, "Expected 200 OK");
+        client.assert(response.body.status === "Completed", "Status is Completed");
+        client.assert(response.body.completedAt !== undefined, "completedAt is set");
+    });
+%}
+
+###
+
+# ═══════════════════════════════════════════════════════════════════════
+# Domain events — Delete (single handler)
+# ═══════════════════════════════════════════════════════════════════════
+
+### [Feature: Events] Delete a task
+### Observe stdout: TaskDeletedLoggingHandler logs "🗑️ Task deleted: ..."
+### Also: AuditBehavior fires for DeleteTaskCommand (IAuditableRequest)
+DELETE {{baseUrl}}/tasks/{{evTaskId2}}
+
+> {%
+    client.test("Delete task succeeds", function () {
+        client.assert(response.status < 400, "Expected success status code");
+    });
+%}
+
+###
+
+### Verify task 2 is gone
+GET {{baseUrl}}/tasks/{{evTaskId2}}
+Accept: application/json
+
+> {%
+    client.test("Deleted task is no longer found", function () {
+        client.assert(response.status >= 400, "Expected an error status code");
+    });
+%}
+
+###
+
+# ═══════════════════════════════════════════════════════════════════════
+# Full workflow — Create → Update → Complete → Delete
+# ═══════════════════════════════════════════════════════════════════════
+
+### Step 1: Create
+POST {{baseUrl}}/tasks
+Content-Type: application/json
+
+{
+  "title": "Full workflow task",
+  "description": "Demonstrates the complete Synapse lifecycle in one sequence"
+}
+
+> {%
+    client.test("Workflow step 1 — create", function () {
+        client.assert(response.status === 201, "Expected 201 Created");
+        const location = response.headers.valueOf("Location");
+        const guidPattern = /\/tasks\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
+        client.global.set("wfTaskId", location.match(guidPattern)[1]);
+    });
+%}
+
+###
+
+### Step 2: Update
+PUT {{baseUrl}}/tasks/{{wfTaskId}}
+Content-Type: application/json
+
+{
+  "title": "Full workflow task (revised)",
+  "description": "Now with an updated description"
+}
+
+> {%
+    client.test("Workflow step 2 — update", function () {
+        client.assert(response.status < 400, "Expected success");
+    });
+%}
+
+###
+
+### Step 3: Complete (triggers 2 concurrent event handlers)
+POST {{baseUrl}}/tasks/{{wfTaskId}}/complete
+
+> {%
+    client.test("Workflow step 3 — complete", function () {
+        client.assert(response.status < 400, "Expected success");
+    });
+%}
+
+###
+
+### Step 4: Delete
+DELETE {{baseUrl}}/tasks/{{wfTaskId}}
+
+> {%
+    client.test("Workflow step 4 — delete", function () {
+        client.assert(response.status < 400, "Expected success");
+    });
+%}
+
+###
+
+### Final: List should not contain the workflow task
+GET {{baseUrl}}/tasks
+Accept: application/json
+
+> {%
+    client.test("Workflow task no longer in list", function () {
+        client.assert(response.status === 200, "Expected 200 OK");
+        const wfId = client.global.get("wfTaskId");
+        const found = response.body.some(t => t.id === wfId);
+        client.assert(!found, "Deleted task is not in the list");
+    });
+%}
+
+###

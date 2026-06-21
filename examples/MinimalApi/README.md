@@ -5,16 +5,35 @@ It is the canonical ASP.NET integration example for the library.
 
 ## Features Demonstrated
 
-- ✅ **Commands** — with (`CreateTask → Guid`) and without (`UpdateTask`, `CompleteTask`, `DeleteTask`) a typed response
+- ✅ **Commands** — with (`CreateTask → CreateTaskResult { TaskId }`) and without (`UpdateTask`, `CompleteTask`, `DeleteTask`) a typed response
 - ✅ **Queries** — single item (`GetTask`) and list (`ListTasks`)
 - ✅ **Streaming** — `IStreamRequest<T>` yielded via `IAsyncEnumerable` (`StreamTasks`)
 - ✅ **Validation** — `RequestValidationBehavior<TRequest, TResponse>` wired up for `CreateTask`
 - ✅ **Domain events** — fan-out to multiple handlers (`TaskCompletedEvent` × 2)
 - ✅ **Concurrent event orchestration** — `ConcurrentEventOrchestrator`
-- ✅ **Pipeline behaviors** — open-generic `SimpleLoggingBehavior` wrapping every request and event
+- ✅ **Pipeline behavior ordering** — `MetricsBehavior(Order=10)` wraps `AuditBehavior(Order=20)`;
+  nesting visible in stdout brackets (`▶`/`◀`). Registered via **source-gen `[PipelineBehavior]` attribute**.
+- ✅ **Constraint-based open generic** — `AuditBehavior<TRequest>` targets only `IAuditableRequest`
+  commands; queries receive no audit logging. The source generator's `Satisfies()` check enforces
+  the constraint at **compile time** (see `RegisterGroup.g.cs` in `obj/`).
+- ✅ **Short-circuiting behavior** — `AuthorizationBehavior` returns `Result.Failure` without calling
+  `next()` when the caller lacks the `tasks:admin` permission; the handler never executes.
+  Registered as a **runtime open-generic** with `ISecuredRequest` constraint.
+- ✅ **Stream pipeline behavior** — `StreamLoggingBehavior` wraps the `IAsyncEnumerable<Result<T>>`
+  chain and logs a `🔢 Streamed N items` summary after the stream completes.
+  Registered as a **runtime open-generic**.
 - ✅ **Correlation** — `IContext.CorrelationId` propagated to `X-Correlation-Id` response header
 - ✅ **CQRS boundary enforcement** — `EnableCqrsBoundaryEnforcement()`
 - ✅ **Native AOT Compatibility** — `CreateSlimBuilder()` and JSON source generation
+
+## Pipeline Behavior Registration Mechanisms
+
+Both registration mechanisms are showcased side-by-side in `Program.cs`:
+
+| Mechanism | API | Example | AOT |
+|---|---|---|---|
+| **Source-gen attribute** | `[PipelineBehavior(Order = N)]` + `cfg.AddRegisterGroup(new RegisterGroup())` | `MetricsBehavior`, `AuditBehavior` | ✅ Compile-time closed generics |
+| **Runtime open-generic** | `cfg.AddOpenGeneric*PipelineBehavior(typeof(X<>))` | `AuthorizationBehavior`, `StreamLoggingBehavior` | ⚠️ MS DI closes at resolve time; response type must be a class (not a value type) |
 
 ## Project Structure
 
@@ -22,31 +41,43 @@ It is the canonical ASP.NET integration example for the library.
 MinimalApi/
 ├── Program.cs                          # Entry point: DI setup and endpoint mapping
 ├── Features/Tasks/
-│   ├── Commands.cs                     # CreateTaskCommand, UpdateTaskCommand, ...
-│   ├── Queries.cs                      # GetTaskQuery, ListTasksQuery, TaskDto, ...
-│   ├── Events.cs                       # TaskCreatedEvent, TaskCompletedEvent, ...
+│   ├── Commands.cs                     # CreateTaskCommand (IAuditableRequest), PurgeCompletedTasksCommand (ISecuredRequest), …
+│   ├── Queries.cs                      # GetTaskQuery, ListTasksQuery, TaskDto, …
+│   ├── Events.cs                       # TaskCreatedEvent, TaskCompletedEvent, …
+│   ├── PipelineContracts.cs            # IAuditableRequest, ISecuredRequest marker interfaces
 │   ├── Handlers/
-│   │   ├── CommandHandlers.cs
+│   │   ├── CommandHandlers.cs          # … + PurgeCompletedTasksCommandHandler
 │   │   ├── QueryHandlers.cs
 │   │   └── EventHandlers.cs
 │   └── Validators/
 │       └── TaskValidators.cs           # CreateTaskCommandValidator
-└── Infrastructure/
-    └── TaskRepository.cs               # In-memory ConcurrentDictionary store
+├── Infrastructure/
+│   ├── TaskRepository.cs               # In-memory ConcurrentDictionary store
+│   └── Pipelines/
+│       ├── MetricsBehavior.cs          # [PipelineBehavior(Order=10)] — ordering demo
+│       ├── AuditBehavior.cs            # [PipelineBehavior(Order=20)] — constraint-based
+│       ├── AuthorizationBehavior.cs    # Runtime open-generic — short-circuit demo
+│       └── StreamLoggingBehavior.cs    # Runtime open-generic — stream behavior demo
+└── Http/
+    ├── requests.http                   # Commands & queries
+    ├── streaming.http                  # IStreamRequest<T> demo
+    ├── events.http                     # Domain events & orchestration
+    └── pipeline-behaviors.http         # Full behavior tour (ordering / constraint / short-circuit / stream)
 ```
 
 ## API Endpoints
 
-| Method   | Path                    | Description                                     |
-|----------|-------------------------|-------------------------------------------------|
-| `GET`    | `/`                     | API info                                        |
-| `GET`    | `/tasks`                | List all tasks (Query)                          |
-| `GET`    | `/tasks/stream`         | Stream tasks one by one (IStreamRequest)        |
-| `GET`    | `/tasks/{id}`           | Get a task by ID (Query)                        |
-| `POST`   | `/tasks`                | Create a task (Command → Guid, validated)       |
-| `PUT`    | `/tasks/{id}`           | Update a task (Command)                         |
-| `POST`   | `/tasks/{id}/complete`  | Complete a task (2 concurrent event handlers)   |
-| `DELETE` | `/tasks/{id}`           | Delete a task (domain event)                    |
+| Method   | Path                        | Description                                                       |
+|----------|-----------------------------|-------------------------------------------------------------------|
+| `GET`    | `/`                         | API info                                                          |
+| `GET`    | `/tasks`                    | List all tasks (Query, no audit)                                  |
+| `GET`    | `/tasks/stream`             | Stream tasks one by one (IStreamRequest + StreamLoggingBehavior)  |
+| `GET`    | `/tasks/{id}`               | Get a task by ID (Query, no audit)                                |
+| `POST`   | `/tasks`                    | Create a task (Command → CreateTaskResult, validated + audited)   |
+| `PUT`    | `/tasks/{id}`               | Update a task (Command, audited)                                  |
+| `POST`   | `/tasks/{id}/complete`      | Complete a task (2 concurrent event handlers, audited)            |
+| `DELETE` | `/tasks/{id}`               | Delete a task (domain event, audited)                             |
+| `POST`   | `/tasks/admin/purge`        | Purge completed tasks (AuthorizationBehavior — requires `tasks:admin`) |
 
 ## Running the Example
 
@@ -55,6 +86,45 @@ MinimalApi/
 ```bash
 cd examples/MinimalApi
 dotnet run
+```
+
+### Exploring Pipeline Behaviors
+
+Open the themed HTTP files in your IDE's HTTP client (JetBrains, VS Code REST Client, etc.):
+
+| File | What it shows |
+|---|---|
+| `Http/requests.http` | Commands, queries, validation, correlation IDs |
+| `Http/streaming.http` | `IStreamRequest<T>` + `StreamLoggingBehavior` |
+| `Http/events.http` | Domain events, fan-out, `ConcurrentEventOrchestrator` |
+| `Http/pipeline-behaviors.http` | **Full behavior tour** — ordering, constraints, short-circuit, stream |
+
+While making requests, watch the terminal output for the behavior log lines:
+
+```
+▶ [metrics:10] CreateTaskCommand started          ← MetricsBehavior (Order=10)
+📝 [audit:20] CreateTaskCommand — pipeline entry  ← AuditBehavior  (Order=20, IAuditableRequest only)
+info: CreateTaskCommand handled in 00:00:00.001   ← SimpleLoggingBehavior
+info: Creating task: ...                          ← handler
+📝 [audit:20] CreateTaskCommand succeeded
+◀ [metrics:10] CreateTaskCommand finished in ...
+```
+
+Compare with a query (no `📝 [audit]` lines):
+
+```
+▶ [metrics:10] ListTasksQuery started
+info: ListTasksQuery handled in 00:00:00.001
+◀ [metrics:10] ListTasksQuery finished in ...
+```
+
+And the short-circuit demo (`POST /tasks/admin/purge` without the header):
+
+```
+▶ [metrics:10] PurgeCompletedTasksCommand started
+🚫 [auth] PurgeCompletedTasksCommand denied — requires 'tasks:admin'
+info: PurgeCompletedTasksCommand handled in ... with error ...
+◀ [metrics:10] PurgeCompletedTasksCommand finished
 ```
 
 ### Publish as Native AOT
@@ -89,6 +159,7 @@ var builder = WebApplication.CreateSlimBuilder(args);
 [JsonSerializable(typeof(UpdateTaskRequest))]
 [JsonSerializable(typeof(TaskDto))]
 [JsonSerializable(typeof(List<TaskDto>))]
+[JsonSerializable(typeof(PurgeResult))]   // PurgeCompletedTasksCommand response
 internal partial class AppJsonSerializerContext : JsonSerializerContext { }
 
 builder.Services.ConfigureHttpJsonOptions(options =>

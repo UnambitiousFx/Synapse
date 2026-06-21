@@ -1,0 +1,259 @@
+### Synapse MinimalApi — Pipeline Behavior Feature Tour
+###
+### This file demonstrates all four pipeline-behavior scenarios:
+###
+###   1. ORDERING      — MetricsBehavior(Order=10) wraps AuditBehavior(Order=20).
+###                      Look for the ▶/◀ brackets in stdout on every request.
+###
+###   2. CONSTRAINT    — AuditBehavior only fires on IAuditableRequest commands.
+###                      Compare a CreateTask (📝 AUDIT lines present) with a
+###                      ListTasks (📝 AUDIT lines absent).
+###
+###   3. SHORT-CIRCUIT — AuthorizationBehavior returns Result.Failure without ever
+###                      calling next().  The 🧹 PURGING handler log only appears
+###                      when the X-User-Permissions: tasks:admin header is present.
+###
+###   4. STREAM        — StreamLoggingBehavior wraps IAsyncEnumerable<Result<T>>
+###                      and logs "🔢 Streamed N items" after the stream ends.
+###                      (See Http/streaming.http for a dedicated stream demo.)
+###
+### Run `dotnet run` in examples/MinimalApi, then execute requests top-to-bottom
+### while watching the terminal output.
+@baseUrl = http://localhost:5225
+
+# ═══════════════════════════════════════════════════════════════════════
+# Setup — create tasks needed for this demo
+# ═══════════════════════════════════════════════════════════════════════
+
+### Create task A (used to demonstrate audit trail + later completed for purge demo)
+POST {{baseUrl}}/tasks
+Content-Type: application/json
+
+{
+  "title": "Pipeline demo task A",
+  "description": "Will be completed and then purged"
+}
+
+> {%
+    client.test("Task A created", function () {
+        client.assert(response.status === 201, "Expected 201 Created");
+        const location = response.headers.valueOf("Location");
+        const guidPattern = /\/tasks\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
+        client.global.set("pbTaskIdA", location.match(guidPattern)[1]);
+    });
+%}
+
+###
+
+### Create task B (kept pending; verifying it survives the purge)
+POST {{baseUrl}}/tasks
+Content-Type: application/json
+
+{
+  "title": "Pipeline demo task B",
+  "description": "Stays pending — should survive the purge"
+}
+
+> {%
+    client.test("Task B created", function () {
+        client.assert(response.status === 201, "Expected 201 Created");
+        const location = response.headers.valueOf("Location");
+        const guidPattern = /\/tasks\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
+        client.global.set("pbTaskIdB", location.match(guidPattern)[1]);
+    });
+%}
+
+###
+
+# ═══════════════════════════════════════════════════════════════════════
+# Scenario 1 + 2: Ordering & Constraint-based behavior
+# ═══════════════════════════════════════════════════════════════════════
+
+### [Feature: Ordering + Constraint] Create a task — observe command pipeline in stdout
+###
+### Expected stdout (behaviors run outermost first):
+###   ▶ [metrics:10] CreateTaskCommand started      ← MetricsBehavior (Order=10, source-gen)
+###   📝 [audit:20] CreateTaskCommand — pipeline entry recorded  ← AuditBehavior (Order=20, source-gen)
+###   info: ... CreateTaskCommand handled in ...    ← SimpleLoggingBehavior (runtime)
+###   info: Creating task: Pipeline demo task A     ← handler
+###   📝 [audit:20] CreateTaskCommand succeeded     ← AuditBehavior exit
+###   ◀ [metrics:10] CreateTaskCommand finished     ← MetricsBehavior exit
+###
+### Note: AuditBehavior appears because CreateTaskCommand implements IAuditableRequest.
+### The source generator's Satisfies() check cross-products AuditBehavior<,> with
+### CreateTaskCommand at compile time (see RegisterGroup.g.cs in obj/).
+POST {{baseUrl}}/tasks
+Content-Type: application/json
+
+{
+  "title": "Ordering demo task",
+  "description": "Watch the stdout bracket nesting"
+}
+
+> {%
+    client.test("Ordering demo task created", function () {
+        client.assert(response.status === 201, "Expected 201 Created");
+    });
+%}
+
+###
+
+### [Feature: Constraint] List tasks — observe QUERY pipeline (no AuditBehavior)
+###
+### Expected stdout (compare with CreateTask above — AuditBehavior is absent):
+###   ▶ [metrics:10] ListTasksQuery started         ← MetricsBehavior (Order=10)
+###   info: ... ListTasksQuery handled in ...       ← SimpleLoggingBehavior (runtime)
+###   info: handler body (no explicit log here)
+###   ◀ [metrics:10] ListTasksQuery finished        ← MetricsBehavior exit
+###
+### No "📝 [audit:20]" lines because ListTasksQuery does NOT implement IAuditableRequest.
+### The source generator simply never emits an AuditBehavior registration for it.
+GET {{baseUrl}}/tasks
+Accept: application/json
+
+> {%
+    client.test("List tasks returns 200", function () {
+        client.assert(response.status === 200, "Expected 200 OK");
+        client.assert(Array.isArray(response.body), "Response is an array");
+    });
+%}
+
+###
+
+# ═══════════════════════════════════════════════════════════════════════
+# Scenario 3: Short-circuiting (AuthorizationBehavior)
+# ═══════════════════════════════════════════════════════════════════════
+
+### First: complete task A so there is something to purge
+POST {{baseUrl}}/tasks/{{pbTaskIdA}}/complete
+
+> {%
+    client.test("Task A completed", function () {
+        client.assert(response.status < 400, "Expected success");
+    });
+%}
+
+###
+
+### [Feature: Short-circuit] Purge WITHOUT permission — pipeline halts at AuthorizationBehavior
+###
+### Expect: 4xx failure
+###
+### Expected stdout (handler 🧹 PURGING line is ABSENT):
+###   ▶ [metrics:10] PurgeCompletedTasksCommand started
+###   info: ... PurgeCompletedTasksCommand handled in ... with error ...  ← SimpleLogging (failure)
+###   🚫 [auth] PurgeCompletedTasksCommand denied — requires 'tasks:admin'
+###   ◀ [metrics:10] PurgeCompletedTasksCommand finished
+###
+### AuthorizationBehavior returns Result.Failure without calling next() —
+### the handler (and its "🧹 PURGING" log) never executes.
+POST {{baseUrl}}/tasks/admin/purge
+
+> {%
+    client.test("Purge without permission is rejected", function () {
+        client.assert(response.status >= 400, "Expected 4xx — AuthorizationBehavior short-circuited");
+    });
+%}
+
+###
+
+### Verify task A still exists (not purged because the request was denied)
+GET {{baseUrl}}/tasks/{{pbTaskIdA}}
+Accept: application/json
+
+> {%
+    client.test("Completed task A survives rejected purge", function () {
+        client.assert(response.status === 200, "Task A should still exist");
+        client.assert(response.body.status === "Completed", "Status is still Completed");
+    });
+%}
+
+###
+
+### [Feature: Short-circuit pass-through] Purge WITH permission — pipeline continues to handler
+###
+### Add X-User-Permissions: tasks:admin header to satisfy AuthorizationBehavior.
+### Expect: success, returns count of purged tasks (should be 1 — task A)
+###
+### Expected stdout (compare with the denied request above — handler NOW executes):
+###   ▶ [metrics:10] PurgeCompletedTasksCommand started
+###   ✅ [auth] PurgeCompletedTasksCommand authorized for 'tasks:admin'
+###   🧹 PURGING all completed tasks...             ← handler executing
+###   🧹 PURGED 1 completed task(s)
+###   info: ... PurgeCompletedTasksCommand handled in ...  ← SimpleLogging (success)
+###   ◀ [metrics:10] PurgeCompletedTasksCommand finished
+POST {{baseUrl}}/tasks/admin/purge
+X-User-Permissions: tasks:admin
+
+> {%
+    client.test("Authorized purge returns success", function () {
+        client.assert(response.status < 400, "Expected success status code");
+    });
+
+    client.test("Purge returned a count", function () {
+        client.assert(typeof response.body.purgedCount === "number", "Response has purgedCount field");
+        client.assert(response.body.purgedCount >= 1, "At least 1 task was purged");
+    });
+%}
+
+###
+
+### Verify task A is gone (purged)
+GET {{baseUrl}}/tasks/{{pbTaskIdA}}
+Accept: application/json
+
+> {%
+    client.test("Task A was purged", function () {
+        client.assert(response.status >= 400, "Task A should be gone after purge");
+    });
+%}
+
+###
+
+### Verify task B still exists (it was Pending, not Completed — not purged)
+GET {{baseUrl}}/tasks/{{pbTaskIdB}}
+Accept: application/json
+
+> {%
+    client.test("Task B (Pending) was NOT purged", function () {
+        client.assert(response.status === 200, "Task B should still exist");
+        client.assert(response.body.status === "Pending", "Status is still Pending");
+    });
+%}
+
+###
+
+# ═══════════════════════════════════════════════════════════════════════
+# Scenario 4: Stream pipeline behavior (quick reference)
+# ═══════════════════════════════════════════════════════════════════════
+
+### [Feature: Stream behavior] Stream remaining tasks
+### Observe stdout AFTER all items are yielded:
+###   "🔢 Streamed N StreamTasksQuery item(s) in <elapsed>"
+### See Http/streaming.http for the full streaming demo.
+GET {{baseUrl}}/tasks/stream
+Accept: application/json
+
+> {%
+    client.test("Stream returns 200 with array body", function () {
+        client.assert(response.status === 200, "Expected 200 OK");
+        client.assert(Array.isArray(response.body), "Response is an array");
+    });
+%}
+
+###
+
+# ═══════════════════════════════════════════════════════════════════════
+# Cleanup
+# ═══════════════════════════════════════════════════════════════════════
+
+### Delete task B
+DELETE {{baseUrl}}/tasks/{{pbTaskIdB}}
+
+> {%
+    client.test("Cleanup — task B deleted", function () {
+        client.assert(response.status < 400, "Expected success");
+    });
+%}
+
+###
