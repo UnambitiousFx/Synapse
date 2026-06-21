@@ -23,6 +23,18 @@ const config: Config = {
   organizationName: 'UnambitiousFx',
   projectName: 'Synapse',
 
+  plugins: [
+    [
+      'docusaurus-plugin-llms',
+      {
+        generateLLMsTxt: true,
+        generateLLMsFullTxt: true,
+        excludeImports: true,
+        removeDuplicateHeadings: true,
+      },
+    ],
+  ],
+
   themes: ['@docusaurus/theme-mermaid'],
 
   markdown: {
