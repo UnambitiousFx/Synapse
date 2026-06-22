@@ -3,7 +3,15 @@
 **Severity:** Medium  
 **Area:** Core DI / Documentation  
 **Discovered on:** `feature/typed-pipeline-behaviors`, .NET 10, `PublishAot=true`  
-**Depends on:** [001](001-open-generic-pipeline-behavior-aot-value-type.md)
+**Depends on:** [001](001-open-generic-pipeline-behavior-aot-value-type.md)  
+**Status:** ✅ **Resolved** on `feature/typed-pipeline-behaviors` — see [Resolution](#resolution).
+
+---
+
+> **TL;DR.** Moot once issue [001] was fixed. CQRS enforcement now emits **closed**
+> `CqrsBoundaryEnforcementBehavior<,>` registrations (assembly-attribute opt-in), so no open-generic
+> descriptor exists for MS DI's AOT check to reject — at startup *or* per request. `ValidateOnBuild`
+> is irrelevant to this scenario.
 
 ---
 
@@ -115,6 +123,31 @@ regardless of `ValidateOnBuild` because it is gated only on
 
 In short: `ValidateOnBuild` and the AOT open-generic check are **two separate mechanisms**;
 disabling the former does not affect the latter.
+
+---
+
+## Resolution
+
+The root cause was removed by the fix for issue
+[001](001-open-generic-pipeline-behavior-aot-value-type.md). CQRS enforcement is opted in via
+`[assembly: EnableSynapseCqrsBoundaryEnforcement]`, and the source generator emits **closed**
+`CqrsBoundaryEnforcementBehavior<TRequest, TResponse>` registrations (one per handler) instead of an
+open-generic `IRequestPipelineBehavior<,>` descriptor. With no open-generic descriptor, MS DI's
+`VerifyOpenGenericAotCompatibility` is never invoked for the CQRS path — neither during the startup
+sweep nor during per-request resolution — so the `InvalidOperationException` this issue describes can
+no longer occur, regardless of `ValidateOnBuild`.
+
+The technical distinction above (startup sweep vs per-request AOT check are separate mechanisms)
+remains accurate, but it is no longer reachable for the CQRS path.
+
+Status of the original action items:
+
+1. **Remove the misleading workaround** from `examples/MinimalApi/Program.cs` — ✅ done.
+2. **Fix issue [001]** at the root — ✅ done (closed registrations via the generator + assembly
+   attribute).
+3. **Add a note** to the AOT documentation explaining that `ValidateOnBuild` governs startup sweeps
+   only — ⏳ **not done / optional follow-up.** Tracked here so it isn't lost; the runtime crash it
+   would have warned about is no longer reachable for the CQRS path.
 
 ### To address
 

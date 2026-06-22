@@ -23,11 +23,14 @@ namespace UnambitiousFx.Examples.MinimalApi.Infrastructure.Pipelines;
 ///     Emits enter/exit log lines so the pipeline nesting order is
 ///     visible in stdout even when other behaviors are stacked inside.
 /// </summary>
-[PipelineBehavior(Order = 10)]
-public sealed class MetricsBehavior<TRequest> : IRequestPipelineBehavior<TRequest>
+[PipelineBehavior]
+public sealed class MetricsBehavior<TRequest> : IRequestPipelineBehavior<TRequest>, IOrderedPipelineBehavior
     where TRequest : IRequest
 {
     private readonly ILogger<MetricsBehavior<TRequest>> _logger;
+
+    /// <summary>Runtime pipeline position — outermost user behavior; audit (20) runs inside this.</summary>
+    public uint Order => 10;
 
     public MetricsBehavior(ILogger<MetricsBehavior<TRequest>> logger)
     {
@@ -56,12 +59,16 @@ public sealed class MetricsBehavior<TRequest> : IRequestPipelineBehavior<TReques
 /// <summary>
 ///     Timing behavior for requests that produce a response.
 /// </summary>
-[PipelineBehavior(Order = 10)]
-public sealed class MetricsBehavior<TRequest, TResponse> : IRequestPipelineBehavior<TRequest, TResponse>
+[PipelineBehavior]
+public sealed class MetricsBehavior<TRequest, TResponse> : IRequestPipelineBehavior<TRequest, TResponse>,
+    IOrderedPipelineBehavior
     where TRequest : IRequest<TResponse>
     where TResponse : notnull
 {
     private readonly ILogger<MetricsBehavior<TRequest, TResponse>> _logger;
+
+    /// <summary>Runtime pipeline position — outermost user behavior; audit (20) runs inside this.</summary>
+    public uint Order => 10;
 
     public MetricsBehavior(ILogger<MetricsBehavior<TRequest, TResponse>> logger)
     {

@@ -19,6 +19,16 @@ internal sealed class InvokerOptions
     public Dictionary<Type, Delegate> RequestDispatchers { get; set; } = new();
 
     /// <summary>
+    ///     Dispatch delegates for request types without a typed response.
+    ///     Keyed by the concrete request type (<c>typeof(TRequest)</c>).
+    ///     Each delegate is a
+    ///     <c>Func&lt;IRequest, IDependencyResolver, CancellationToken, ValueTask&lt;Result&gt;&gt;</c>
+    ///     captured at registration time, ensuring NativeAOT compatibility with no reflection or
+    ///     <c>MakeGenericType</c> at dispatch time.
+    /// </summary>
+    public Dictionary<Type, Delegate> VoidRequestDispatchers { get; set; } = new();
+
+    /// <summary>
     ///     Dispatch delegates for streaming request types.
     ///     Keyed by the concrete request type (<c>typeof(TRequest)</c>).
     ///     Each delegate is a

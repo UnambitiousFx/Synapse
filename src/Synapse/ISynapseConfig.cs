@@ -11,6 +11,11 @@ namespace UnambitiousFx.Synapse;
 /// </summary>
 public interface ISynapseConfig
 {
+    private const string OpenGenericBehaviorAotMessage =
+        "Open-generic pipeline behaviors require runtime code generation to close over their type arguments " +
+        "and are not Native-AOT safe (value-type responses throw at resolution time). Decorate the behavior " +
+        "with [PipelineBehavior] so the source generator emits closed registrations instead.";
+
     // ── Pipeline behaviors ───────────────────────────────────────────────────
 
     /// <summary>
@@ -56,6 +61,37 @@ public interface ISynapseConfig
         where TItem : notnull;
 
     /// <summary>
+    ///     Registers CQRS boundary enforcement for a specific request type (no-response form).
+    /// </summary>
+    /// <remarks>
+    ///     Use this for handlers the source generator cannot see — handlers registered manually at runtime
+    ///     (e.g. <see cref="RegisterRequestHandler{THandler,TRequest}" />) or declared in assemblies the
+    ///     generator does not scan. Handlers the generator discovers are wired automatically when the assembly
+    ///     carries <c>[assembly: EnableSynapseCqrsBoundaryEnforcement]</c>. The registration is deduplicated and
+    ///     runs outermost via <see cref="IOrderedPipelineBehavior.First" />, so calling this for a request that
+    ///     the generator also covers is harmless (the behavior is wired at most once). Registration is closed
+    ///     (Native-AOT safe).
+    /// </remarks>
+    ISynapseConfig RegisterCqrsBoundaryEnforcement<TRequest>()
+        where TRequest : IRequest;
+
+    /// <summary>
+    ///     Registers CQRS boundary enforcement for a specific request/response pair.
+    /// </summary>
+    /// <remarks>
+    ///     Use this for handlers the source generator cannot see — handlers registered manually at runtime
+    ///     (e.g. <see cref="RegisterRequestHandler{THandler,TRequest,TResponse}" />) or declared in assemblies
+    ///     the generator does not scan. Handlers the generator discovers are wired automatically when the
+    ///     assembly carries <c>[assembly: EnableSynapseCqrsBoundaryEnforcement]</c>. The registration is
+    ///     deduplicated and runs outermost via <see cref="IOrderedPipelineBehavior.First" />, so calling this for
+    ///     a request that the generator also covers is harmless (the behavior is wired at most once). Registration
+    ///     is closed (Native-AOT safe).
+    /// </remarks>
+    ISynapseConfig RegisterCqrsBoundaryEnforcement<TRequest, TResponse>()
+        where TRequest : IRequest<TResponse>
+        where TResponse : notnull;
+
+    /// <summary>
     ///     Registers an open-generic request pipeline behavior (no-response form) using the MS DI open-generic
     ///     registration mechanism. The container closes the generic type on resolution.
     ///     Use this for cross-cutting library behaviors (e.g. logging, CQRS enforcement) that apply to all request types.
@@ -77,6 +113,7 @@ public interface ISynapseConfig
     ///     An open-generic type with two type parameters, e.g. <c>typeof(SimpleLoggingBehavior&lt;,&gt;)</c>.
     ///     Must implement <c>IRequestPipelineBehavior&lt;TRequest, TResponse&gt;</c>.
     /// </param>
+    [RequiresDynamicCode(OpenGenericBehaviorAotMessage)]
     ISynapseConfig AddOpenGenericRequestWithResponsePipelineBehavior(
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         Type openGenericBehaviorType);
@@ -99,6 +136,7 @@ public interface ISynapseConfig
     ///     An open-generic type with two type parameters.
     ///     Must implement <c>IStreamRequestPipelineBehavior&lt;TRequest, TItem&gt;</c>.
     /// </param>
+    [RequiresDynamicCode(OpenGenericBehaviorAotMessage)]
     ISynapseConfig AddOpenGenericStreamRequestPipelineBehavior(
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         Type openGenericBehaviorType);
@@ -207,9 +245,19 @@ public interface ISynapseConfig
     ISynapseConfig ConfigureOutbox(Action<OutboxOptions> configure);
 
     /// <summary>
-    ///     Enables CQRS boundary enforcement. Registers open-generic CQRS boundary enforcement behaviors
-    ///     for all request types via open-generic DI registration.
+    ///     Enables CQRS boundary enforcement.
     /// </summary>
+    /// <remarks>
+    ///     Obsolete. Enforcement is now opted-in via the assembly attribute
+    ///     <c>[assembly: EnableSynapseCqrsBoundaryEnforcement]</c>, which lets the source generator emit closed
+    ///     (Native-AOT safe) registrations. The runtime path was removed; calling this with <c>enable:true</c>
+    ///     throws <see cref="NotSupportedException" /> so the loss of enforcement cannot pass silently.
+    /// </remarks>
+    [Obsolete(
+        "Runtime CQRS boundary enforcement was removed. Apply " +
+        "[assembly: EnableSynapseCqrsBoundaryEnforcement] so the source generator emits closed " +
+        "(Native-AOT safe) registrations. Calling this method with enable:true now throws.",
+        error: true)]
     ISynapseConfig EnableCqrsBoundaryEnforcement(bool enable = true);
 
     /// <summary>

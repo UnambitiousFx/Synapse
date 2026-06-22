@@ -29,11 +29,14 @@ namespace UnambitiousFx.Examples.MinimalApi.Infrastructure.Pipelines;
 ///     Only applied to request types that implement <see cref="IAuditableRequest" />;
 ///     the source generator enforces this via the generic constraint.
 /// </summary>
-[PipelineBehavior(Order = 20)]
-public sealed class AuditBehavior<TRequest> : IRequestPipelineBehavior<TRequest>
+[PipelineBehavior]
+public sealed class AuditBehavior<TRequest> : IRequestPipelineBehavior<TRequest>, IOrderedPipelineBehavior
     where TRequest : IRequest, IAuditableRequest
 {
     private readonly ILogger<AuditBehavior<TRequest>> _logger;
+
+    /// <summary>Runtime pipeline position — runs inside metrics (10), closer to the handler.</summary>
+    public uint Order => 20;
 
     public AuditBehavior(ILogger<AuditBehavior<TRequest>> logger)
     {
@@ -71,12 +74,16 @@ public sealed class AuditBehavior<TRequest> : IRequestPipelineBehavior<TRequest>
 ///     Audit behavior for requests that produce a response.
 ///     Only applied to request types that implement <see cref="IAuditableRequest" />.
 /// </summary>
-[PipelineBehavior(Order = 20)]
-public sealed class AuditBehavior<TRequest, TResponse> : IRequestPipelineBehavior<TRequest, TResponse>
+[PipelineBehavior]
+public sealed class AuditBehavior<TRequest, TResponse> : IRequestPipelineBehavior<TRequest, TResponse>,
+    IOrderedPipelineBehavior
     where TRequest : IRequest<TResponse>, IAuditableRequest
     where TResponse : notnull
 {
     private readonly ILogger<AuditBehavior<TRequest, TResponse>> _logger;
+
+    /// <summary>Runtime pipeline position — runs inside metrics (10), closer to the handler.</summary>
+    public uint Order => 20;
 
     public AuditBehavior(ILogger<AuditBehavior<TRequest, TResponse>> logger)
     {

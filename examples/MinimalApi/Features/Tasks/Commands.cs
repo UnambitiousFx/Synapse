@@ -63,23 +63,18 @@ public sealed record DeleteTaskCommand : IRequest, IAuditableRequest
 }
 
 /// <summary>
-///     Admin command that removes all completed tasks.
+///     Admin command that removes all completed tasks, returning the purged count.
 ///     Implements <see cref="ISecuredRequest" /> → protected by AuthorizationBehavior
-///     (runtime open-generic, short-circuits without <c>tasks:admin</c> permission).
+///     (source-generated closed registration, short-circuits without <c>tasks:admin</c> permission).
 ///     Does NOT implement <see cref="IAuditableRequest" /> — demonstrating selective
 ///     behavior targeting: the audit trail is not applied to admin bulk operations.
+///
+///     The response is a bare value type (<c>int</c>). This is the Native-AOT regression case from
+///     known-issue 001: with CQRS enforcement and AuthorizationBehavior both applied, the pipeline
+///     closes over <c>int</c>. Because those behaviors are now emitted as closed generic registrations
+///     by the source generator (not open-generic DI descriptors), this resolves correctly under AOT.
 /// </summary>
-public sealed record PurgeCompletedTasksCommand : IRequest<PurgeResult>, ISecuredRequest
+public sealed record PurgeCompletedTasksCommand : IRequest<int>, ISecuredRequest
 {
     public string RequiredPermission => "tasks:admin";
-}
-
-/// <summary>
-///     Result returned by <see cref="PurgeCompletedTasksCommand" />.
-///     Using a class (not <c>int</c>) keeps the response type a reference type,
-///     which is required for runtime open-generic DI resolution under .NET Native AOT validation.
-/// </summary>
-public sealed record PurgeResult
-{
-    public required int PurgedCount { get; init; }
 }

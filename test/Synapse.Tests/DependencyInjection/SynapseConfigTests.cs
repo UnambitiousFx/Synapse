@@ -3,6 +3,7 @@ using Microsoft.Extensions.Options;
 using UnambitiousFx.Functional;
 using UnambitiousFx.Synapse.Abstractions;
 using UnambitiousFx.Synapse.Contexts;
+using UnambitiousFx.Synapse.Pipelines;
 using UnambitiousFx.Synapse.Publish;
 using UnambitiousFx.Synapse.Publish.Orchestrators;
 using UnambitiousFx.Synapse.Publish.Outbox;
@@ -224,6 +225,92 @@ public sealed class SynapseConfigTests
         Assert.IsType<TestWithResponseRequestValidator>(validator);
     }
 
+    // ── AddValidator wires the validation behavior (issue 004) ───────────────
+
+    [Fact]
+    public void AddValidator_WithResponse_RegistersValidationBehavior()
+    {
+        // Arrange (Given)
+        var services = new ServiceCollection();
+        services.AddSynapse(cfg =>
+        {
+            cfg.AddValidator<TestWithResponseRequestValidator, RequestWithResponseExample, int>();
+        });
+
+        // Act (When)
+        var descriptor = services.FirstOrDefault(x =>
+            x.ServiceType == typeof(IRequestPipelineBehavior<RequestWithResponseExample, int>) &&
+            x.ImplementationType == typeof(RequestValidationBehavior<RequestWithResponseExample, int>));
+
+        // Assert (Then)
+        Assert.NotNull(descriptor);
+    }
+
+    [Fact]
+    public void AddValidator_NoResponse_RegistersValidationBehavior()
+    {
+        // Arrange (Given)
+        var services = new ServiceCollection();
+        services.AddSynapse(cfg =>
+        {
+            cfg.AddValidator<TestNoResponseRequestValidator, RequestExample>();
+        });
+
+        // Act (When)
+        var descriptor = services.FirstOrDefault(x =>
+            x.ServiceType == typeof(IRequestPipelineBehavior<RequestExample>) &&
+            x.ImplementationType == typeof(RequestValidationBehavior<RequestExample>));
+
+        // Assert (Then)
+        Assert.NotNull(descriptor);
+    }
+
+    [Fact]
+    public void AddValidator_MultipleValidatorsForSameRequest_RegistersBehaviorOnce()
+    {
+        // Arrange (Given) — two distinct validators target the same request
+        var services = new ServiceCollection();
+        services.AddSynapse(cfg =>
+        {
+            cfg.AddValidator<TestWithResponseRequestValidator, RequestWithResponseExample, int>();
+            cfg.AddValidator<SecondWithResponseRequestValidator, RequestWithResponseExample, int>();
+        });
+
+        // Act (When)
+        var behaviorDescriptors = services.Where(x =>
+            x.ServiceType == typeof(IRequestPipelineBehavior<RequestWithResponseExample, int>) &&
+            x.ImplementationType == typeof(RequestValidationBehavior<RequestWithResponseExample, int>)).ToList();
+        var validatorDescriptors = services.Where(x =>
+            x.ServiceType == typeof(IRequestValidator<RequestWithResponseExample>)).ToList();
+
+        // Assert (Then) — behavior deduplicated to one; both validators kept.
+        Assert.Single(behaviorDescriptors);
+        Assert.Equal(2, validatorDescriptors.Count);
+    }
+
+    [Fact]
+    public async Task AddValidator_Alone_RejectsInvalidRequest()
+    {
+        // Arrange (Given) — a handler plus a failing validator, wired ONLY through AddValidator
+        // (no manual RequestValidationBehavior registration).
+        var services = new ServiceCollection()
+            .AddSynapse(cfg =>
+            {
+                cfg.RegisterRequestHandler<RequestWithResponseExampleHandler, RequestWithResponseExample, int>();
+                cfg.AddValidator<AlwaysFailingValidator, RequestWithResponseExample, int>();
+            })
+            .AddLogging()
+            .BuildServiceProvider();
+
+        var invoker = services.GetRequiredService<IInvoker>();
+
+        // Act (When)
+        var result = await invoker.InvokeAsync(new RequestWithResponseExample());
+
+        // Assert (Then) — validation ran and rejected the request before the handler returned success.
+        Assert.False(result.IsSuccess);
+    }
+
     // ── AddOpenGenericRequestPipelineBehavior ────────────────────────────────
 
     [Fact]
@@ -385,12 +472,24 @@ public sealed class SynapseConfigTests
             CancellationToken cancellationToken = default) => ValueTask.FromResult(Result.Success());
     }
 
+    private sealed class SecondWithResponseRequestValidator : IRequestValidator<RequestWithResponseExample>
+    {
+        public ValueTask<Result> ValidateAsync(RequestWithResponseExample request,
+            CancellationToken cancellationToken = default) => ValueTask.FromResult(Result.Success());
+    }
+
+    private sealed class AlwaysFailingValidator : IRequestValidator<RequestWithResponseExample>
+    {
+        public ValueTask<Result> ValidateAsync(RequestWithResponseExample request,
+            CancellationToken cancellationToken = default) => ValueTask.FromResult(Result.Failure("invalid"));
+    }
+
     private sealed class CustomEventOutboxStorage : IEventOutboxStorage
     {
-        public ValueTask<IEnumerable<IEvent>> GetPendingEventsAsync(CancellationToken cancellationToken = default)
-            => ValueTask.FromResult(Enumerable.Empty<IEvent>());
+        public ValueTask<IReadOnlyList<OutboxEntry>> GetPendingEventsAsync(CancellationToken cancellationToken = default)
+            => ValueTask.FromResult<IReadOnlyList<OutboxEntry>>([]);
 
-        public ValueTask<Result> MarkAsProcessedAsync(IEvent @event, CancellationToken cancellationToken = default)
+        public ValueTask<Result> MarkAsProcessedAsync(Guid id, CancellationToken cancellationToken = default)
             => ValueTask.FromResult(Result.Success());
 
         public ValueTask<Result> ClearAsync(CancellationToken cancellationToken = default)
@@ -400,23 +499,26 @@ public sealed class SynapseConfigTests
             where TEvent : class, IEvent
             => ValueTask.FromResult(Result.Success());
 
-        public ValueTask<Result> MarkAsFailedAsync(IEvent @event,
+        public ValueTask<Result> MarkAsFailedAsync(Guid id,
             string reason,
             bool deadLetter,
             DateTimeOffset? nextAttemptAt = null,
             CancellationToken cancellationToken = default)
             => ValueTask.FromResult(Result.Success());
 
-        public ValueTask<IEnumerable<IEvent>> GetDeadLetterEventsAsync(CancellationToken cancellationToken = default)
-            => ValueTask.FromResult(Enumerable.Empty<IEvent>());
+        public ValueTask<IReadOnlyList<OutboxEntry>> GetDeadLetterEventsAsync(CancellationToken cancellationToken = default)
+            => ValueTask.FromResult<IReadOnlyList<OutboxEntry>>([]);
 
-        public ValueTask<int?> GetAttemptCountAsync(IEvent @event, CancellationToken cancellationToken = default)
+        public ValueTask<int?> GetAttemptCountAsync(Guid id, CancellationToken cancellationToken = default)
             => ValueTask.FromResult<int?>(null);
 
         public ValueTask<int> GetPendingCountAsync(CancellationToken cancellationToken = default)
             => ValueTask.FromResult(0);
 
-        public ValueTask<int> GetFailedCountAsync(CancellationToken cancellationToken = default)
+        public ValueTask<int> GetRetryingCountAsync(CancellationToken cancellationToken = default)
+            => ValueTask.FromResult(0);
+
+        public ValueTask<int> GetDeadLetterCountAsync(CancellationToken cancellationToken = default)
             => ValueTask.FromResult(0);
 
         public ValueTask<TimeSpan?> GetOldestPendingAgeAsync(CancellationToken cancellationToken = default)

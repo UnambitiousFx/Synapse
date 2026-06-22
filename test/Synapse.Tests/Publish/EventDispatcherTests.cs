@@ -158,6 +158,30 @@ public sealed class EventDispatcherTests
     }
 
     [Fact]
+    public async Task DispatchAsync_CalledTwiceOnSameInstance_ResolvesAndSortsBehaviorsOnce()
+    {
+        // Arrange (Given)
+        var @event = new EventExample("Test Event");
+        var handler = new EventExampleHandler1();
+        var dispatcher = CreateDispatcher();
+
+        _dependencyResolver.GetServices<IEventHandler<EventExample>>()
+            .Returns(new[] { handler });
+        _dependencyResolver.GetServices<IEventPipelineBehavior<EventExample>>()
+            .Returns(Array.Empty<IEventPipelineBehavior<EventExample>>());
+        _eventOrchestrator.RunAsync(Arg.Any<IEventHandler<EventExample>[]>(), @event, Arg.Any<CancellationToken>())
+            .Returns(Result.Success());
+
+        // Act (When)
+        await dispatcher.DispatchAsync(@event, CancellationToken.None);
+        await dispatcher.DispatchAsync(@event, CancellationToken.None);
+
+        // Assert (Then) — the sorted behavior array is cached per event type for the dispatcher's
+        // lifetime, so behaviors are resolved only once across both dispatches.
+        _dependencyResolver.Received(1).GetServices<IEventPipelineBehavior<EventExample>>();
+    }
+
+    [Fact]
     public async Task DispatchAsync_WithPolymorphicEvent_UsesDispatcherDelegate()
     {
         // Arrange (Given)

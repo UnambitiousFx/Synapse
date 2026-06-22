@@ -8,6 +8,7 @@
     <Folder Name="/examples/">
         <Project Path="examples/GettingStarted/GettingStarted.csproj" />
         <Project Path="examples/MinimalApi/MinimalApi.csproj" />
+        <Project Path="examples/MinimalApi.Counter/MinimalApi.Counter.csproj" />
         <Project Path="examples/MinimalApi.Tests/MinimalApi.Tests.csproj" />
     </Folder>
     <Folder Name="/examples/_/">

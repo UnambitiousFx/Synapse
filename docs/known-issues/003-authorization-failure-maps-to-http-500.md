@@ -1,6 +1,7 @@
-# [Bug]: Pipeline short-circuit via `Result.Failure<T>()` returns HTTP 500 instead of 403/401
+# [Bug]: Pipeline short-circuit via `Result.Failure<T>()` returns HTTP 500 instead of 403/401 — ✅ RESOLVED
 
 **Severity:** Medium  
+**Status:** ✅ Resolved on `feature/typed-pipeline-behaviors` — see [Resolution](#resolution).  
 **Area:** `Synapse.AspNetCore` / `UnambitiousFx.Functional.AspNetCore` (cross-repo)  
 **Discovered on:** `feature/typed-pipeline-behaviors`, .NET 10
 
@@ -170,3 +171,51 @@ default and that callers needing specific status codes should provide a custom `
 > `examples/MinimalApi/Http/pipeline-behaviors.http` passes for both 500 and 403, so the HTTP
 > file demo is not broken — but the status code is semantically misleading for a real-world
 > authorization scenario.
+
+---
+
+## Resolution
+
+Fixed in-repo, no cross-repo change required. The `UnambitiousFx.Functional` /
+`UnambitiousFx.Functional.AspNetCore` packages were upgraded from **1.0.6** to **2.0.3**, which now
+ship the typed-failure infrastructure that "Option A" called for:
+
+- **Typed failures** in `UnambitiousFx.Functional.Failures` — `UnauthorizedFailure`,
+  `UnauthenticatedFailure`, `NotFoundFailure`, `ConflictFailure`, `ValidationFailure`, … — plus
+  factory extensions on `Result` (`FailUnauthorized`, `FailNotFound`, `FailConflict`, `FailValidation`, …).
+- **`DefaultFailureHttpMapper`** (already registered by `AddSynapseAspNetCore`) now recognises each
+  typed failure and maps it to the appropriate HTTP status instead of falling through to 500.
+
+`AuthorizationBehavior` (`examples/MinimalApi/Infrastructure/Pipelines/AuthorizationBehavior.cs`) now
+returns a **typed** failure rather than a string failure:
+
+```csharp
+// before — string failure, no category → mapped to 500
+return Result.Failure<TResponse>($"Forbidden: requires permission '{required}'");
+
+// after — typed authorization failure → mapped to a real denial status
+return Result.FailUnauthorized<TResponse>($"Requires permission '{required}'");
+```
+
+### Resulting status code
+
+`UnauthorizedFailure` maps to **`401 Unauthorized`** under the current `DefaultFailureHttpMapper`
+(verified by `Purge_WithoutPermission_IsDenied` in `examples/MinimalApi.Tests/TasksApiTests.cs`).
+This satisfies the expected behavior above ("403 Forbidden **or** 401 Unauthorized") — the request is
+understood and deliberately denied, and is no longer a misleading 500. The package does not currently
+expose a distinct `Forbidden` (403) failure category.
+
+### Getting a specific status code (e.g. 403)
+
+Callers who need a status the default mapper does not emit (such as a strict 403 for
+authenticated-but-unpermitted callers) register a custom `IFailureHttpMapper` **before**
+`AddSynapseAspNetCore()` — the registration uses `TryAddSingleton`, so the custom mapper wins:
+
+```csharp
+builder.Services.AddSingleton<IFailureHttpMapper>(
+    new CompositeFailureHttpMapper(
+        new TypedFailureHttpMapper<UnauthorizedFailure>(
+            f => new FailureHttpResponse { StatusCode = StatusCodes.Status403Forbidden, Body = f.Message }),
+        DefaultFailureHttpMapper.Instance));
+builder.Services.AddSynapseAspNetCore(); // TryAddSingleton → no-op, custom mapper already registered
+```

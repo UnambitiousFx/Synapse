@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -16,6 +17,12 @@ internal sealed class EventDispatcher : IEventDispatcher
     private readonly ILogger<EventDispatcher> _logger;
     private readonly ISynapseMetrics _metrics;
     private readonly EventDispatcherOptions _options;
+
+    // Sorted event behaviors cached per event type for the dispatcher's (scoped) lifetime, so the
+    // OrderBy/ToArray cost is paid once per type per scope rather than on every dispatch — matching
+    // how the request/stream proxies sort once in their constructor. ConcurrentDictionary guards the
+    // case where a single scope issues concurrent dispatches (e.g. Task.WhenAll over publishes).
+    private readonly ConcurrentDictionary<Type, object> _behaviorCache = new();
 
 
     public EventDispatcher(
@@ -66,9 +73,16 @@ internal sealed class EventDispatcher : IEventDispatcher
         // for this exact event type are returned — no runtime type-filtering needed.
         var handlersArray = _dependencyResolver.GetServices<IEventHandler<TEvent>>() as IEventHandler<TEvent>[] ??
                             _dependencyResolver.GetServices<IEventHandler<TEvent>>().ToArray();
-        var behaviorsArray =
-            _dependencyResolver.GetServices<IEventPipelineBehavior<TEvent>>() as IEventPipelineBehavior<TEvent>[] ??
-            _dependencyResolver.GetServices<IEventPipelineBehavior<TEvent>>().ToArray();
+        // Behaviors are ordered by their runtime pipeline position (IOrderedPipelineBehavior); the
+        // stable sort keeps registration order for behaviors that share an Order. The resolved and
+        // sorted array is cached per event type so the sort runs once per type within the scope.
+        var behaviorsArray = (IEventPipelineBehavior<TEvent>[])_behaviorCache.GetOrAdd(
+            genericType,
+            static (_, resolver) => resolver
+                .GetServices<IEventPipelineBehavior<TEvent>>()
+                .OrderBy(Pipelines.PipelineBehaviorOrdering.OrderOf)
+                .ToArray(),
+            _dependencyResolver);
 
         return ExecutePipelineAsync(
             @event,

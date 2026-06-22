@@ -25,7 +25,8 @@ public sealed class OutboxManagerTests
         var @event = new EventExample("event-1");
 
         outboxStorage.GetPendingEventsAsync(Arg.Any<CancellationToken>())
-            .Returns(new ValueTask<IEnumerable<IEvent>>(new IEvent[] { @event }));
+            .Returns(new ValueTask<IReadOnlyList<OutboxEntry>>(
+                new[] { new OutboxEntry(Guid.NewGuid(), @event) }));
 
         var options = new EventDispatcherOptions
         {
@@ -56,9 +57,9 @@ public sealed class OutboxManagerTests
 
         // Assert (Then)
         await outboxStorage.DidNotReceive()
-            .MarkAsFailedAsync(Arg.Any<IEvent>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<DateTimeOffset?>(),
+            .MarkAsFailedAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<DateTimeOffset?>(),
                 Arg.Any<CancellationToken>());
         await outboxStorage.DidNotReceive()
-            .MarkAsProcessedAsync(Arg.Any<IEvent>(), Arg.Any<CancellationToken>());
+            .MarkAsProcessedAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
     }
 }

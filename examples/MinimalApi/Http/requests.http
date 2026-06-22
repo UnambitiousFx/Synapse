@@ -226,3 +226,60 @@ Content-Type: application/json
 %}
 
 ###
+
+# ═══════════════════════════════════════════════════════════════════════
+# 6. Command without response — Complete
+# ═══════════════════════════════════════════════════════════════════════
+
+### [Feature: Command (IRequest)] Complete a task — no typed response
+### Expect: success. Observe stdout: AuditBehavior + TaskCompletedEvent fan-out (see events.http)
+POST {{baseUrl}}/tasks/{{taskId2}}/complete
+
+> {%
+    client.test("Complete task succeeds", function () {
+        client.assert(response.status < 400, "Expected success status code");
+    });
+%}
+
+###
+
+### Verify the task is now Completed
+GET {{baseUrl}}/tasks/{{taskId2}}
+Accept: application/json
+
+> {%
+    client.test("Task status is Completed", function () {
+        client.assert(response.status === 200, "Expected 200 OK");
+        client.assert(response.body.status === "Completed", "Status is Completed");
+    });
+%}
+
+###
+
+# ═══════════════════════════════════════════════════════════════════════
+# 7. Command without response — Delete
+# ═══════════════════════════════════════════════════════════════════════
+
+### [Feature: Command (IRequest)] Delete a task
+### Expect: success. Observe stdout: AuditBehavior + TaskDeletedEvent (see events.http)
+DELETE {{baseUrl}}/tasks/{{taskId2}}
+
+> {%
+    client.test("Delete task succeeds", function () {
+        client.assert(response.status < 400, "Expected success status code");
+    });
+%}
+
+###
+
+### Verify the task is gone
+GET {{baseUrl}}/tasks/{{taskId2}}
+Accept: application/json
+
+> {%
+    client.test("Deleted task is no longer found", function () {
+        client.assert(response.status >= 400, "Expected an error status code");
+    });
+%}
+
+###

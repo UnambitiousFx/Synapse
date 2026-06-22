@@ -5,11 +5,19 @@ using UnambitiousFx.Examples.MinimalApi.Features.Tasks;
 using UnambitiousFx.Examples.MinimalApi.Features.Tasks.Validators;
 using UnambitiousFx.Examples.MinimalApi.Infrastructure;
 using UnambitiousFx.Examples.MinimalApi.Infrastructure.Pipelines;
+using UnambitiousFx.Examples.MinimalApi.Counter;
 using UnambitiousFx.Synapse;
+using UnambitiousFx.Synapse.Abstractions;
 using UnambitiousFx.Synapse.AspNetCore;
 using UnambitiousFx.Synapse.AspNetCore.Http;
 using UnambitiousFx.Synapse.Pipelines;
 using UnambitiousFx.Synapse.Publish.Orchestrators;
+
+// Opt into CQRS boundary enforcement. The source generator emits closed (Native-AOT safe)
+// CqrsBoundaryEnforcementBehavior registrations — one per request handler, inserted at the front
+// of the pipeline — instead of an open-generic descriptor that would throw at resolve time when
+// the response is a value type (see known-issue 001).
+[assembly: EnableSynapseCqrsBoundaryEnforcement]
 
 // Use CreateSlimBuilder for Native AOT compatibility
 var builder = WebApplication.CreateSlimBuilder(args);
@@ -22,6 +30,9 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 
 // Infrastructure
 builder.Services.AddSingleton<TaskRepository>();
+
+// Counter feature (separate assembly) — registers its CounterStore singleton.
+builder.Services.AddCounterFeature();
 
 // Required by AuthorizationBehavior to read the X-User-Permissions header
 builder.Services.AddHttpContextAccessor();
@@ -38,70 +49,70 @@ builder.Services.AddSynapse(cfg =>
     //                          [EventHandler<>] / [StreamRequestHandler<>]
     //                          in this assembly (replaces the manual
     //                          cfg.RegisterRequestHandler<...>() calls).
-    //   2. MetricsBehavior   — [PipelineBehavior(Order = 10)], unconstrained.
-    //                          Applied to EVERY discovered request.
-    //   3. AuditBehavior     — [PipelineBehavior(Order = 20)],
+    //   2. MetricsBehavior   — [PipelineBehavior] + IOrderedPipelineBehavior (Order 10),
+    //                          unconstrained. Applied to EVERY discovered request.
+    //   3. AuditBehavior     — [PipelineBehavior] + IOrderedPipelineBehavior (Order 20),
     //                          constrained: where TRequest : IAuditableRequest.
     //                          Applied only to the four mutating commands;
     //                          queries and PurgeCompletedTasksCommand are skipped.
     //
-    // The generator sorts by Order before emitting registrations, so
-    // Metrics always wraps Audit regardless of source-code ordering.
-    cfg.AddRegisterGroup(new RegisterGroup());
+    // Each behavior declares its pipeline position at runtime via IOrderedPipelineBehavior, so
+    // Metrics (10) always wraps Audit (20) regardless of registration source or order.
+    cfg.AddRegisterGroup(new global::UnambitiousFx.Examples.MinimalApi.RegisterGroup());
+
+    // Compose the Counter feature, whose handlers/behaviors live in a SEPARATE assembly
+    // (examples/MinimalApi.Counter) and are wired through ITS OWN generated RegisterGroup. This proves
+    // cross-assembly RegisterGroup composition, including closed CQRS + value-type (int) pipeline registrations.
+    cfg.AddRegisterGroup(new global::UnambitiousFx.Examples.MinimalApi.Counter.RegisterGroup());
 
     // Wires event dispatchers generated alongside RegisterGroup so that
     // IEmitter.EmitAsync can route TaskCreatedEvent, TaskCompletedEvent, etc.
-    cfg.UseEventDispatcherRegistration<EventDispatcherRegistration>();
+    cfg.UseEventDispatcherRegistration<global::UnambitiousFx.Examples.MinimalApi.EventDispatcherRegistration>();
 
     // ── Validators ─────────────────────────────────────────────────────
-    // Registers IRequestValidator<CreateTaskCommand> in DI
-    cfg.AddValidator<CreateTaskCommandValidator, CreateTaskCommand, CreateTaskResult>();
+    // CreateTaskCommandValidator carries [Validator], so the generated RegisterGroup above already
+    // registered it together with RequestValidationBehavior<CreateTaskCommand, CreateTaskResult>.
+    // No cfg.AddValidator<...>() call is required (that runtime API still exists for non-generated setups).
 
-    // ── Pipeline behaviors — runtime open-generic registrations ────────
+    // ── Pipeline behaviors ──────────────────────────────────────────────
     //
-    // These use cfg.AddOpenGeneric*PipelineBehavior(typeof(X<>)) —
-    // the RUNTIME mechanism (Mechanism 1).  MS DI closes the open generic
-    // at resolve time and skips descriptors whose generic constraints are
-    // not satisfied by the concrete request type.
-    //
-    // Resulting pipeline order (innermost → outermost is reverse order of registration):
-    //   [CQRS enforcement] ← always outermost (uses Insert(0))
-    //     [MetricsBehavior:10]     ← source-gen, unconstrained
-    //       [AuditBehavior:20]     ← source-gen, only IAuditableRequest
-    //         [SimpleLoggingBehavior]  ← runtime, unconstrained
-    //           [AuthorizationBehavior]  ← runtime, only ISecuredRequest (short-circuit)
-    //             [RequestValidationBehavior]  ← runtime, only CreateTaskCommand
+    // Resulting pipeline order (outermost → innermost):
+    //   [CqrsBoundaryEnforcement]  ← source-gen, closed; IOrderedPipelineBehavior.First (outermost)
+    //     [AuthorizationBehavior:5]  ← source-gen, only ISecuredRequest (short-circuit) [PipelineBehavior]
+    //       [MetricsBehavior:10]     ← source-gen, unconstrained [PipelineBehavior]
+    //         [AuditBehavior:20]     ← source-gen, only IAuditableRequest [PipelineBehavior]
+    //           [SimpleLoggingBehavior]  ← runtime open-generic (request-only, ref type → AOT-safe; Last)
+    //             [RequestValidationBehavior]  ← source-gen from [Validator]; IOrderedPipelineBehavior.Last
     //               [Handler]
+    // Position is decided entirely by each behavior's IOrderedPipelineBehavior.Order (default Last),
+    // not by registration order.
 
-    // Open-generic logging — library behavior, wraps requests without a response and events.
-    // Note: SimpleLoggingBehavior<TRequest, TResponse> (the response-bearing variant) is NOT
-    // registered as a runtime open-generic here because .NET's DI AOT validation rejects
-    // open-generic service registrations whose type arguments are value types (e.g. Guid, int).
-    // Response-bearing requests are instead covered by MetricsBehavior<,> registered above
-    // via RegisterGroup as CLOSED generics (no value-type constraint issue).
+    // Open-generic logging — library behaviors that cannot carry [PipelineBehavior] (the generator
+    // only scans this assembly, not referenced ones). Registered at runtime. The request-only and
+    // event-only arities close over reference types (IRequest / IEvent), so they remain AOT-safe.
+    // The response-bearing SimpleLoggingBehavior<,> is intentionally NOT registered — MetricsBehavior<,>
+    // covers response-bearing requests as a closed [PipelineBehavior] registration instead.
     cfg.AddOpenGenericRequestPipelineBehavior(typeof(SimpleLoggingBehavior<>));
     cfg.AddOpenGenericEventPipelineBehavior(typeof(SimpleLoggingEventBehavior<>));
 
-    // Short-circuit authorization — runtime open-generic with ISecuredRequest constraint.
-    // Only PurgeCompletedTasksCommand implements ISecuredRequest, so MS DI skips this
-    // descriptor for all other request types (constraint-based filtering at runtime).
-    cfg.AddOpenGenericRequestPipelineBehavior(typeof(AuthorizationBehavior<>));
-    cfg.AddOpenGenericRequestWithResponsePipelineBehavior(typeof(AuthorizationBehavior<,>));
+    // Stream-specific behavior — wraps IAsyncEnumerable<Result<TItem>> from next() and emits a
+    // "🔢 Streamed N items" summary. Registered as a CLOSED generic for the concrete stream type so it
+    // stays Native-AOT safe (the open-generic AddOpenGenericStreamRequestPipelineBehavior is annotated
+    // [RequiresDynamicCode] because its item type could be a value type).
+    cfg.RegisterStreamRequestPipelineBehavior<StreamLoggingBehavior<StreamTasksQuery, TaskDto>, StreamTasksQuery, TaskDto>();
 
-    // Stream-specific behavior — wraps IAsyncEnumerable<Result<TItem>> from next()
-    // and emits a "🔢 Streamed N items" summary when the stream completes.
-    cfg.AddOpenGenericStreamRequestPipelineBehavior(typeof(StreamLoggingBehavior<,>));
-
-    // Typed validation — only for CreateTaskCommand (registered explicitly, not open-generic)
-    cfg.RegisterRequestPipelineBehavior<RequestValidationBehavior<CreateTaskCommand, CreateTaskResult>, CreateTaskCommand, CreateTaskResult>();
+    // Typed validation for CreateTaskCommand is wired by the [Validator] attribute on
+    // CreateTaskCommandValidator (emitted into RegisterGroup as a closed, deduplicated registration),
+    // so no manual RequestValidationBehavior registration is needed here.
 
     // ── Event orchestration ────────────────────────────────────────────
     // Both TaskCompleted handlers run concurrently (observe interleaved logs)
     cfg.SetEventOrchestrator<ConcurrentEventOrchestrator>();
 
-    // ── CQRS enforcement ───────────────────────────────────────────────
-    // Always the outermost behavior regardless of registration order (uses Insert(0))
-    cfg.EnableCqrsBoundaryEnforcement();
+    // ── CQRS enforcement ────────────────────────────────────────────────
+    // Opted-in via [assembly: EnableSynapseCqrsBoundaryEnforcement] at the top of this file.
+    // The generator emits closed CqrsBoundaryEnforcementBehavior<Req[,Resp]> registrations at the
+    // front of the pipeline, so it stays outermost and is Native-AOT safe even for value-type responses.
 });
 
 var app = builder.Build();
@@ -113,6 +124,9 @@ app.UseCorrelationId();
 
 // ── Root ──────────────────────────────────────────────────────────────
 app.MapGet("/", () => Results.Ok(new ApiInfo()));
+
+// ── Counter feature endpoints (defined in examples/MinimalApi.Counter) ──
+app.MapCounterEndpoints();
 
 // ── Task endpoints ────────────────────────────────────────────────────
 var tasks = app.MapGroup("/tasks").WithTags("Tasks");
@@ -192,7 +206,7 @@ tasks.MapDelete("/{id:guid}", async (
     .WithSummary("Delete a task");
 
 // Feature: Admin command protected by AuthorizationBehavior (short-circuit demo)
-// Without X-User-Permissions: tasks:admin header → 4xx, handler never runs
+// Without X-User-Permissions: tasks:admin header → 401 (typed UnauthorizedFailure), handler never runs
 // With    X-User-Permissions: tasks:admin header → 200, returns count of purged tasks
 tasks.MapPost("/admin/purge", async (
         [FromServices] IHttpInvoker invoker,
@@ -231,11 +245,12 @@ namespace UnambitiousFx.Examples.MinimalApi
             // Pipeline behavior demos
             "Behavior ordering — MetricsBehavior(Order=10) wraps AuditBehavior(Order=20) [source-gen]",
             "Constraint-based open generic — AuditBehavior only on IAuditableRequest commands [source-gen]",
-            "Short-circuit behavior — AuthorizationBehavior halts pipeline on missing permission [runtime]",
-            "Stream pipeline behavior — StreamLoggingBehavior counts yielded items [runtime]",
+            "Short-circuit behavior — AuthorizationBehavior halts pipeline on missing permission [source-gen]",
+            "Stream pipeline behavior — StreamLoggingBehavior counts yielded items [typed/closed]",
+            "Value-type response under AOT — PurgeCompletedTasks → int (closed CQRS + auth registrations)",
             // Cross-cutting
             "Context & correlation — IContext.CorrelationId → X-Correlation-Id header",
-            "CQRS boundary enforcement — EnableCqrsBoundaryEnforcement()"
+            "CQRS boundary enforcement — [assembly: EnableSynapseCqrsBoundaryEnforcement]"
         ];
 
         public string[] Endpoints { get; init; } =
@@ -262,7 +277,7 @@ namespace UnambitiousFx.Examples.MinimalApi
     [JsonSerializable(typeof(IAsyncEnumerable<TaskDto>))]
     [JsonSerializable(typeof(CreateTaskResult))]   // CreateTaskCommand response (TaskId unwrapped to Guid in endpoint)
     [JsonSerializable(typeof(Guid))]               // body: Results.Created(..., result.TaskId)
-    [JsonSerializable(typeof(PurgeResult))]
+    [JsonSerializable(typeof(int))]                // PurgeCompletedTasksCommand response (value-type, AOT regression case)
     [JsonSerializable(typeof(ProblemDetails))]
     [JsonSerializable(typeof(HttpValidationProblemDetails))]
     internal partial class AppJsonSerializerContext : JsonSerializerContext

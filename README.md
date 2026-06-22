@@ -104,6 +104,43 @@ Full documentation is available at https://unambitiousfx.com/lib-synapse/
 - **Registration groups:** implement `IRegisterGroup` to modularize and share handler registration logic.
 - **Outbox & commits:** implement `IOutboxStorage`, `IOutboxCommit` for transactional event persistence.
 
+### Cross-assembly pipeline behaviors
+
+An open-generic `[PipelineBehavior]` is applied to **every** request/event/stream handler the
+declaring assembly can see — including handlers defined in **referenced** assemblies. The generator
+emits one closed (Native-AOT-safe) registration per matching handler, so a behavior registered in
+your composition root blankets the whole reference graph automatically. Constraints (e.g.
+`where TRequest : ISecuredRequest`) still filter which handlers a behavior wraps.
+
+This propagation flows **downward only** — along the reference direction. A behavior declared in a
+library cannot wrap a handler in an application that references it (the library cannot see that
+application). Place behaviors meant to apply everywhere in the composition root.
+
+Event behaviors (`IEventPipelineBehavior<TEvent>`) and stream behaviors get the same treatment —
+including `where TEvent : …` / `where TRequest : …` constraint filtering, so an open-generic event
+behavior constrained to a marker interface only wraps events that implement it.
+
+**CQRS boundary enforcement** follows the same downward propagation. Apply
+`[assembly: EnableSynapseCqrsBoundaryEnforcement]` once at the composition root and it covers request
+handlers in referenced assemblies too — no need to repeat the attribute in every sub-project. Leaving
+it on a referenced library is harmless: duplicate enforcement registrations are deduplicated at the
+service-collection level (the behavior is not idempotent, so this dedup is what keeps it safe).
+
+To opt an assembly out and restrict its behaviors (and CQRS enforcement) to same-assembly handlers,
+apply `[assembly: DisableSynapseCrossAssemblyBehaviors]`.
+
+Handlers the generator cannot see — those registered manually at runtime via
+`cfg.RegisterRequestHandler<…>()`, or living in an assembly the generator does not scan — are not
+covered by the attribute. Enforce them explicitly with
+`cfg.RegisterCqrsBoundaryEnforcement<TRequest>()` (or the `<TRequest, TResponse>` overload) in the
+composition root. The registration is closed (Native-AOT safe) and deduplicated, so it is safe to
+call even for a request the generator also covers.
+
+> **Ordering caveat:** the `Order` property sorts behaviors only within a single `IRegisterGroup`.
+> Across separately composed `RegisterGroup`s (e.g. one per assembly), pipeline position follows
+> `AddRegisterGroup` call order. CQRS boundary enforcement is registered "first" and stays outermost
+> regardless.
+
 > Note: Transport/distributed messaging APIs are intentionally not documented here — they may change prior to the first
 > stable release.
 

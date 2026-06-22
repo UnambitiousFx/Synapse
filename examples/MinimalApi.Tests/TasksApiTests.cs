@@ -134,4 +134,39 @@ public sealed class TasksApiTests
         // Assert
         response.EnsureSuccessStatusCode();
     }
+
+    // ── Value-type (int) response through closed CQRS + AuthorizationBehavior (known-issue 001) ──
+
+    [Fact]
+    public async Task Purge_WithAdminPermission_Returns200AndIntCount()
+    {
+        // Arrange — PurgeCompletedTasksCommand : IRequest<int>; the int response flows through the
+        // generated closed CqrsBoundaryEnforcementBehavior<,int> and AuthorizationBehavior<,int>.
+        var client = _factory.CreateClient();
+        var request = new HttpRequestMessage(HttpMethod.Post, "/tasks/admin/purge");
+        request.Headers.Add("X-User-Permissions", "tasks:admin");
+
+        // Act
+        var response = await client.SendAsync(request);
+
+        // Assert — success with a value-type int body (no AOT/DI value-type resolution failure).
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var purgedCount = await response.Content.ReadFromJsonAsync<int>();
+        Assert.True(purgedCount >= 0);
+    }
+
+    [Fact]
+    public async Task Purge_WithoutPermission_IsDenied()
+    {
+        // Arrange — no X-User-Permissions header → AuthorizationBehavior short-circuits.
+        var client = _factory.CreateClient();
+
+        // Act
+        var response = await client.PostAsync("/tasks/admin/purge", content: null);
+
+        // Assert — handler never runs; the typed UnauthorizedFailure maps to 401 Unauthorized
+        // (DefaultFailureHttpMapper, package 2.0.3 — see known-issue 003). Either 401 or 403 is
+        // a correct denial code; the package default for UnauthorizedFailure is 401.
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
 }

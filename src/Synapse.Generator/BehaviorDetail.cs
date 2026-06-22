@@ -8,23 +8,25 @@ public readonly record struct BehaviorDetail
     public BehaviorDetail(
         string className,
         string @namespace,
+        string fullyQualifiedName,
         BehaviorKind kind,
         bool isOpenGeneric,
         string fullRequestTypeName,
         string? fullResponseOrItemTypeName,
-        int order,
         EquatableArray<string> requestConstraints,
-        EquatableArray<string> responseConstraints)
+        EquatableArray<string> responseConstraints,
+        EquatableArray<int> closingTypeArgumentMap)
     {
         ClassName = className;
         Namespace = @namespace;
+        FullyQualifiedName = fullyQualifiedName;
         Kind = kind;
         IsOpenGeneric = isOpenGeneric;
         FullRequestTypeName = fullRequestTypeName;
         FullResponseOrItemTypeName = fullResponseOrItemTypeName;
-        Order = order;
         RequestConstraints = requestConstraints;
         ResponseConstraints = responseConstraints;
+        ClosingTypeArgumentMap = closingTypeArgumentMap;
     }
 
     /// <summary>Simple class name (without namespace).</summary>
@@ -32,6 +34,13 @@ public readonly record struct BehaviorDetail
 
     /// <summary>Namespace of the behavior class.</summary>
     public string Namespace { get; }
+
+    /// <summary>
+    ///     Fully-qualified type name (including <c>global::</c> prefix and any enclosing types) of the behavior
+    ///     class, with generic type parameters omitted. Used to emit a compilable registration even for nested
+    ///     behavior classes; for open generics this is the base name the factory closes with type arguments.
+    /// </summary>
+    public string FullyQualifiedName { get; }
 
     /// <summary>Whether this is an open-generic class (cross-product with all matching handlers).</summary>
     public bool IsOpenGeneric { get; }
@@ -52,9 +61,6 @@ public readonly record struct BehaviorDetail
     /// </summary>
     public string? FullResponseOrItemTypeName { get; }
 
-    /// <summary>Controls pipeline ordering; lower runs first (outermost).</summary>
-    public int Order { get; }
-
     /// <summary>
     ///     Named-type constraints on the first (request) type parameter of an open-generic behavior, as
     ///     fully-qualified display strings. A handler is only cross-producted with this behavior when its
@@ -68,7 +74,36 @@ public readonly record struct BehaviorDetail
     /// </summary>
     public EquatableArray<string> ResponseConstraints { get; }
 
-    public string FullBehaviorTypeName => $"{Namespace}.{ClassName}";
+    /// <summary>
+    ///     For an open-generic behavior: one entry per class type parameter (in class-declaration order),
+    ///     holding the index of the implemented interface's type argument that binds it (<c>0</c> = request /
+    ///     event slot, <c>1</c> = response / item slot), or <c>-1</c> when the parameter is bound by no
+    ///     interface type argument and therefore cannot be inferred. Empty for closed behaviors. Drives the
+    ///     order and arity of type arguments emitted when the class is closed over a matching handler.
+    /// </summary>
+    public EquatableArray<int> ClosingTypeArgumentMap { get; }
+
+    /// <summary>
+    ///     True when at least one class type parameter cannot be bound from the implemented pipeline interface
+    ///     (a <c>-1</c> entry in <see cref="ClosingTypeArgumentMap" />), so the class cannot be closed safely.
+    /// </summary>
+    public bool HasUnbindableTypeParameter
+    {
+        get
+        {
+            foreach (var index in ClosingTypeArgumentMap)
+            {
+                if (index < 0)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+    }
+
+    public string FullBehaviorTypeName => FullyQualifiedName;
 }
 
 /// <summary>

@@ -12,7 +12,8 @@ namespace UnambitiousFx.Synapse.Pipelines;
 ///     This variant handles requests that do not produce a response.
 /// </summary>
 /// <typeparam name="TRequest">The request type.</typeparam>
-public sealed class CqrsBoundaryEnforcementBehavior<TRequest> : IRequestPipelineBehavior<TRequest>
+public sealed class CqrsBoundaryEnforcementBehavior<TRequest> : IRequestPipelineBehavior<TRequest>,
+    IOrderedPipelineBehavior
     where TRequest : IRequest
 {
     private readonly IContext _context;
@@ -25,6 +26,11 @@ public sealed class CqrsBoundaryEnforcementBehavior<TRequest> : IRequestPipeline
         _context = context;
     }
 
+    /// <summary>
+    ///     Runs outermost so the boundary marker wraps every other behavior in the chain.
+    /// </summary>
+    public uint Order => IOrderedPipelineBehavior.First;
+
     /// <inheritdoc />
     public async ValueTask<Result> HandleAsync(TRequest request,
         RequestHandlerDelegate<TRequest> next,
@@ -34,7 +40,19 @@ public sealed class CqrsBoundaryEnforcementBehavior<TRequest> : IRequestPipeline
         CqrsBoundaryMetadata.Validate(_context, requestName);
         CqrsBoundaryMetadata.Add(_context, requestName);
 
-        var response = await next(request, cancellationToken);
+        Result response;
+        try
+        {
+            response = await next(request, cancellationToken);
+        }
+        catch
+        {
+            // Inner handler/behavior threw: clear the marker so a later send in the same
+            // scope sees a clean boundary, but do not mask the original exception.
+            CqrsBoundaryMetadata.RemoveIfPresent(_context);
+            throw;
+        }
+
         CqrsBoundaryMetadata.Remove(_context);
         return response;
     }
@@ -49,7 +67,8 @@ public sealed class CqrsBoundaryEnforcementBehavior<TRequest> : IRequestPipeline
 /// </summary>
 /// <typeparam name="TRequest">The request type.</typeparam>
 /// <typeparam name="TResponse">The response type.</typeparam>
-public sealed class CqrsBoundaryEnforcementBehavior<TRequest, TResponse> : IRequestPipelineBehavior<TRequest, TResponse>
+public sealed class CqrsBoundaryEnforcementBehavior<TRequest, TResponse> : IRequestPipelineBehavior<TRequest, TResponse>,
+    IOrderedPipelineBehavior
     where TRequest : IRequest<TResponse>
     where TResponse : notnull
 {
@@ -63,6 +82,11 @@ public sealed class CqrsBoundaryEnforcementBehavior<TRequest, TResponse> : IRequ
         _context = context;
     }
 
+    /// <summary>
+    ///     Runs outermost so the boundary marker wraps every other behavior in the chain.
+    /// </summary>
+    public uint Order => IOrderedPipelineBehavior.First;
+
     /// <inheritdoc />
     public async ValueTask<Result<TResponse>> HandleAsync(TRequest request,
         RequestHandlerDelegate<TRequest, TResponse> next,
@@ -72,7 +96,19 @@ public sealed class CqrsBoundaryEnforcementBehavior<TRequest, TResponse> : IRequ
         CqrsBoundaryMetadata.Validate(_context, requestName);
         CqrsBoundaryMetadata.Add(_context, requestName);
 
-        var response = await next(request, cancellationToken);
+        Result<TResponse> response;
+        try
+        {
+            response = await next(request, cancellationToken);
+        }
+        catch
+        {
+            // Inner handler/behavior threw: clear the marker so a later send in the same
+            // scope sees a clean boundary, but do not mask the original exception.
+            CqrsBoundaryMetadata.RemoveIfPresent(_context);
+            throw;
+        }
+
         CqrsBoundaryMetadata.Remove(_context);
         return response;
     }
@@ -95,6 +131,12 @@ internal static class CqrsBoundaryMetadata
                 "CQRS boundary enforcement metadata was missing when trying to remove it. This indicates a violation of the CQRS boundary enforcement behavior.");
         }
 
+        context.RemoveMetadata(CQRSBoundaryEnforcementNameKey);
+    }
+
+    public static void RemoveIfPresent(IContext context)
+    {
+        context.RemoveMetadata(CQRSBoundaryEnforcementKey);
         context.RemoveMetadata(CQRSBoundaryEnforcementNameKey);
     }
 

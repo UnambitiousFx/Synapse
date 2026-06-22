@@ -138,6 +138,60 @@ public sealed class GeneratorBehaviorTests
             generated);
     }
 
+    // ── Constrained open-generic event behavior ──────────────────────────
+
+    [Fact]
+    public void ConstrainedOpenGenericEventBehavior_OnlyCrossProductsWithMatchingEvents()
+    {
+        // Arrange (Given) — an open-generic event behavior constrained to a marker interface. It must
+        // cross-product only with event handlers whose event implements that marker, exactly like the
+        // request-behavior constraint filtering.
+        const string source = """
+            using System.Threading;
+            using System.Threading.Tasks;
+            using UnambitiousFx.Functional;
+            using UnambitiousFx.Synapse.Abstractions;
+
+            namespace TestNs;
+
+            public interface IAuditableEvent : IEvent;
+
+            public sealed record UserCreated : IEvent;
+            public sealed record OrderPlaced : IAuditableEvent;
+
+            [EventHandler<UserCreated>]
+            public sealed class UserCreatedHandler : IEventHandler<UserCreated>
+            {
+                public ValueTask<Result> HandleAsync(UserCreated @event, CancellationToken ct = default)
+                    => ValueTask.FromResult(Result.Success());
+            }
+
+            [EventHandler<OrderPlaced>]
+            public sealed class OrderPlacedHandler : IEventHandler<OrderPlaced>
+            {
+                public ValueTask<Result> HandleAsync(OrderPlaced @event, CancellationToken ct = default)
+                    => ValueTask.FromResult(Result.Success());
+            }
+
+            [PipelineBehavior]
+            public sealed class AuditEventBehavior<TEvent> : IEventPipelineBehavior<TEvent>
+                where TEvent : class, IAuditableEvent
+            {
+                public ValueTask<Result> HandleAsync(TEvent @event, EventHandlerDelegate<TEvent> next, CancellationToken ct = default)
+                    => next(@event, ct);
+            }
+            """;
+
+        // Act (When)
+        var generated = RunGeneratorAndGetRegistrationGroup(source);
+
+        // Assert (Then) — only the auditable event is wrapped; the plain event is not.
+        Assert.Contains(
+            "builder.RegisterEventPipelineBehavior<global::TestNs.AuditEventBehavior<global::TestNs.OrderPlaced>, global::TestNs.OrderPlaced>()",
+            generated);
+        Assert.DoesNotContain("AuditEventBehavior<global::TestNs.UserCreated>", generated);
+    }
+
     // ── Open-generic stream behavior ──────────────────────────────────────
 
     [Fact]
@@ -227,10 +281,13 @@ public sealed class GeneratorBehaviorTests
             generated);
     }
 
-    // ── Order attribute controls emission order ───────────────────────────
+    // ── Emission order is deterministic (namespace + class name) ──────────
+    // Runtime pipeline position is decided by IOrderedPipelineBehavior, not by emission order.
+    // The generator only needs a stable, reproducible registration sequence, keyed by
+    // namespace then class name.
 
     [Fact]
-    public void BehaviorOrder_LowerValueEmittedFirst()
+    public void BehaviorEmission_OrderedByClassNameDeterministically()
     {
         // Arrange (Given)
         const string source = """
@@ -250,16 +307,16 @@ public sealed class GeneratorBehaviorTests
                     => ValueTask.FromResult(Result.Success());
             }
 
-            [PipelineBehavior(Order = 10)]
-            public sealed class SecondBehavior<TRequest> : IRequestPipelineBehavior<TRequest>
+            [PipelineBehavior]
+            public sealed class ZuluBehavior<TRequest> : IRequestPipelineBehavior<TRequest>
                 where TRequest : IRequest
             {
                 public ValueTask<Result> HandleAsync(TRequest request, RequestHandlerDelegate<TRequest> next, CancellationToken ct = default)
                     => next(request, ct);
             }
 
-            [PipelineBehavior(Order = 1)]
-            public sealed class FirstBehavior<TRequest> : IRequestPipelineBehavior<TRequest>
+            [PipelineBehavior]
+            public sealed class AlphaBehavior<TRequest> : IRequestPipelineBehavior<TRequest>
                 where TRequest : IRequest
             {
                 public ValueTask<Result> HandleAsync(TRequest request, RequestHandlerDelegate<TRequest> next, CancellationToken ct = default)
@@ -270,12 +327,13 @@ public sealed class GeneratorBehaviorTests
         // Act (When)
         var generated = RunGeneratorAndGetRegistrationGroup(source);
 
-        // Assert (Then) — FirstBehavior (Order=1) must appear before SecondBehavior (Order=10)
-        var firstPos = generated.IndexOf("FirstBehavior", StringComparison.Ordinal);
-        var secondPos = generated.IndexOf("SecondBehavior", StringComparison.Ordinal);
-        Assert.True(firstPos >= 0, "FirstBehavior registration not found");
-        Assert.True(secondPos >= 0, "SecondBehavior registration not found");
-        Assert.True(firstPos < secondPos, "FirstBehavior (Order=1) should be emitted before SecondBehavior (Order=10)");
+        // Assert (Then) — AlphaBehavior must be emitted before ZuluBehavior (class-name ordinal sort),
+        // regardless of declaration order in the source.
+        var alphaPos = generated.IndexOf("AlphaBehavior", StringComparison.Ordinal);
+        var zuluPos = generated.IndexOf("ZuluBehavior", StringComparison.Ordinal);
+        Assert.True(alphaPos >= 0, "AlphaBehavior registration not found");
+        Assert.True(zuluPos >= 0, "ZuluBehavior registration not found");
+        Assert.True(alphaPos < zuluPos, "AlphaBehavior should be emitted before ZuluBehavior");
     }
 
     // ── Multiple handlers — open-generic behavior cross-products with all ─
@@ -538,6 +596,89 @@ public sealed class GeneratorBehaviorTests
         Assert.Contains(diagnostics, d => d.Id == "MDG002");
     }
 
+    // ── MDG010: open-generic behavior with an uninferable extra type parameter ──
+
+    [Fact]
+    public void OpenGenericBehavior_WithExtraUnbindableTypeParameter_EmitsMDG010AndNoRegistration()
+    {
+        // Arrange (Given) — the class declares two type parameters but the interface binds only one,
+        // so TState cannot be inferred when the behavior is closed over a handler.
+        const string source = """
+            using System.Threading;
+            using System.Threading.Tasks;
+            using UnambitiousFx.Functional;
+            using UnambitiousFx.Synapse.Abstractions;
+
+            namespace TestNs;
+
+            public sealed record MyRequest : IRequest;
+
+            [RequestHandler<MyRequest>]
+            public sealed class MyHandler : IRequestHandler<MyRequest>
+            {
+                public ValueTask<Result> HandleAsync(MyRequest request, CancellationToken ct = default)
+                    => ValueTask.FromResult(Result.Success());
+            }
+
+            [PipelineBehavior]
+            public sealed class LogBehavior<TRequest, TState> : IRequestPipelineBehavior<TRequest>
+                where TRequest : IRequest
+            {
+                public ValueTask<Result> HandleAsync(TRequest request, RequestHandlerDelegate<TRequest> next, CancellationToken ct = default)
+                    => next(request, ct);
+            }
+            """;
+
+        // Act (When)
+        var (diagnostics, generated) = RunGenerator(source);
+
+        // Assert (Then) — diagnostic reported and no malformed registration emitted.
+        Assert.Contains(diagnostics, d => d.Id == "MDG010");
+        Assert.DoesNotContain("LogBehavior<", generated ?? string.Empty);
+    }
+
+    // ── Open-generic behavior whose type parameters are declared in a different order than the interface ──
+
+    [Fact]
+    public void OpenGenericBehavior_WithReorderedTypeParameters_ClosesInClassOrder()
+    {
+        // Arrange (Given) — class declares <TResponse, TRequest> but the interface is <TRequest, TResponse>.
+        const string source = """
+            using System.Threading;
+            using System.Threading.Tasks;
+            using UnambitiousFx.Functional;
+            using UnambitiousFx.Synapse.Abstractions;
+
+            namespace TestNs;
+
+            public sealed record MyRequest : IRequest<int>;
+
+            [RequestHandler<MyRequest, int>]
+            public sealed class MyHandler : IRequestHandler<MyRequest, int>
+            {
+                public ValueTask<Result<int>> HandleAsync(MyRequest request, CancellationToken ct = default)
+                    => ValueTask.FromResult(Result.Success(42));
+            }
+
+            [PipelineBehavior]
+            public sealed class LoggingBehavior<TResponse, TRequest> : IRequestPipelineBehavior<TRequest, TResponse>
+                where TRequest : IRequest<TResponse>
+                where TResponse : notnull
+            {
+                public ValueTask<Result<TResponse>> HandleAsync(TRequest request, RequestHandlerDelegate<TRequest, TResponse> next, CancellationToken ct = default)
+                    => next(request, ct);
+            }
+            """;
+
+        // Act (When)
+        var generated = RunGeneratorAndGetRegistrationGroup(source);
+
+        // Assert (Then) — the behavior is closed in class-declaration order (<TResponse, TRequest> => <int, MyRequest>).
+        Assert.Contains(
+            "builder.RegisterRequestPipelineBehavior<global::TestNs.LoggingBehavior<int, global::TestNs.MyRequest>, global::TestNs.MyRequest, int>()",
+            generated);
+    }
+
     // ── EventDispatcherRegistration.g.cs is generated for IEvent types ───
 
     [Fact]
@@ -571,7 +712,631 @@ public sealed class GeneratorBehaviorTests
         Assert.Contains("EventDispatcherRegistration", generated);
     }
 
+    // ── CQRS boundary enforcement via [assembly: EnableSynapseCqrsBoundaryEnforcement] ─
+
+    [Fact]
+    public void CqrsEnforcement_WhenAssemblyOptIn_EmitsClosedRegistrationForValueTypeResponse()
+    {
+        // Arrange (Given) — opt-in attribute + a handler whose response is a value type (int).
+        // This is the known-issue 001 regression case: an open-generic descriptor closed over a
+        // value type throws under Native AOT, so the generator must emit a CLOSED registration.
+        const string source = """
+            using System.Threading;
+            using System.Threading.Tasks;
+            using UnambitiousFx.Functional;
+            using UnambitiousFx.Synapse.Abstractions;
+
+            [assembly: EnableSynapseCqrsBoundaryEnforcement]
+
+            namespace TestNs;
+
+            public sealed record MyRequest : IRequest<int>;
+
+            [RequestHandler<MyRequest, int>]
+            public sealed class MyHandler : IRequestHandler<MyRequest, int>
+            {
+                public ValueTask<Result<int>> HandleAsync(MyRequest request, CancellationToken ct = default)
+                    => ValueTask.FromResult(Result.Success(42));
+            }
+            """;
+
+        // Act (When)
+        var generated = RunGeneratorAndGetRegistrationGroup(source);
+
+        // Assert (Then) — closed, value-type, deduplicated front-of-pipeline registration; no open-generic descriptor.
+        Assert.Contains(
+            "builder.RegisterCqrsBoundaryEnforcement<global::TestNs.MyRequest, int>()",
+            generated);
+        Assert.DoesNotContain("IRequestPipelineBehavior<,>", generated);
+    }
+
+    [Fact]
+    public void RequestHandler_WithTupleResponse_EmitsCorrectlyGlobalizedRegistration()
+    {
+        // Arrange (Given) — a query whose response is a value tuple, plus an open-generic behavior so a
+        // closed registration is emitted. This is the known-issue 012 regression case: the old string
+        // muncher prefixed the whole tuple with `global::`, emitting uncompilable `global::(int, string)`.
+        const string source = """
+            using System.Threading;
+            using System.Threading.Tasks;
+            using UnambitiousFx.Functional;
+            using UnambitiousFx.Synapse.Abstractions;
+
+            namespace TestNs;
+
+            public sealed record GetTotals : IRequest<(int Open, int Done)>;
+
+            [RequestHandler<GetTotals, (int Open, int Done)>]
+            public sealed class GetTotalsHandler : IRequestHandler<GetTotals, (int Open, int Done)>
+            {
+                public ValueTask<Result<(int Open, int Done)>> HandleAsync(GetTotals request, CancellationToken ct = default)
+                    => ValueTask.FromResult(Result.Success((1, 2)));
+            }
+
+            [PipelineBehavior]
+            public sealed class LoggingBehavior<TRequest, TResponse> : IRequestPipelineBehavior<TRequest, TResponse>
+                where TRequest : IRequest<TResponse>
+                where TResponse : notnull
+            {
+                public ValueTask<Result<TResponse>> HandleAsync(TRequest request, RequestHandlerDelegate<TRequest, TResponse> next, CancellationToken ct = default)
+                    => next(request, ct);
+            }
+            """;
+
+        // Act (When)
+        var generated = RunGeneratorAndGetRegistrationGroup(source);
+
+        // Assert (Then) — the tuple flows through verbatim, never gets a malformed `global::(` prefix.
+        Assert.DoesNotContain("global::(", generated);
+        Assert.Contains(
+            "builder.RegisterRequestHandler<global::TestNs.GetTotalsHandler, global::TestNs.GetTotals, (int Open, int Done)>()",
+            generated);
+        Assert.Contains(
+            "builder.RegisterRequestPipelineBehavior<global::TestNs.LoggingBehavior<global::TestNs.GetTotals, (int Open, int Done)>, global::TestNs.GetTotals, (int Open, int Done)>()",
+            generated);
+    }
+
+    [Fact]
+    public void RequestHandler_WithTupleAsGenericArgument_EmitsCorrectlyGlobalizedRegistration()
+    {
+        // Arrange (Given) — a request type that is itself generic over a value tuple, plus an
+        // open-generic behavior so a closed registration is emitted. This is the known-issue 017
+        // regression case: the old `SplitTopLevelArgs` counted only `<`/`>`, so the tuple's internal
+        // comma was treated as a top-level argument separator and the request type was emitted as
+        // uncompilable `global::TestNs.Query<global::(int Id, global:: string Name)>`.
+        const string source = """
+            using System.Threading;
+            using System.Threading.Tasks;
+            using UnambitiousFx.Functional;
+            using UnambitiousFx.Synapse.Abstractions;
+
+            namespace TestNs;
+
+            public sealed record Query<T>(T Value) : IRequest<int>;
+
+            [RequestHandler<Query<(int Id, string Name)>, int>]
+            public sealed class QueryHandler : IRequestHandler<Query<(int Id, string Name)>, int>
+            {
+                public ValueTask<Result<int>> HandleAsync(Query<(int Id, string Name)> request, CancellationToken ct = default)
+                    => ValueTask.FromResult(Result.Success(0));
+            }
+
+            [PipelineBehavior]
+            public sealed class LoggingBehavior<TRequest, TResponse> : IRequestPipelineBehavior<TRequest, TResponse>
+                where TRequest : IRequest<TResponse>
+                where TResponse : notnull
+            {
+                public ValueTask<Result<TResponse>> HandleAsync(TRequest request, RequestHandlerDelegate<TRequest, TResponse> next, CancellationToken ct = default)
+                    => next(request, ct);
+            }
+            """;
+
+        // Act (When)
+        var generated = RunGeneratorAndGetRegistrationGroup(source);
+
+        // Assert (Then) — the nested tuple flows through verbatim, never gets a malformed `global::(`.
+        Assert.DoesNotContain("global::(", generated);
+        Assert.Contains(
+            "builder.RegisterRequestHandler<global::TestNs.QueryHandler, global::TestNs.Query<(int Id, string Name)>, int>()",
+            generated);
+        Assert.Contains(
+            "builder.RegisterRequestPipelineBehavior<global::TestNs.LoggingBehavior<global::TestNs.Query<(int Id, string Name)>, int>, global::TestNs.Query<(int Id, string Name)>, int>()",
+            generated);
+    }
+
+    [Fact]
+    public void CqrsEnforcement_WithoutAssemblyOptIn_EmitsNoRegistration()
+    {
+        // Arrange (Given) — same handler, but no opt-in attribute.
+        const string source = """
+            using System.Threading;
+            using System.Threading.Tasks;
+            using UnambitiousFx.Functional;
+            using UnambitiousFx.Synapse.Abstractions;
+
+            namespace TestNs;
+
+            public sealed record MyRequest : IRequest<int>;
+
+            [RequestHandler<MyRequest, int>]
+            public sealed class MyHandler : IRequestHandler<MyRequest, int>
+            {
+                public ValueTask<Result<int>> HandleAsync(MyRequest request, CancellationToken ct = default)
+                    => ValueTask.FromResult(Result.Success(42));
+            }
+            """;
+
+        // Act (When)
+        var generated = RunGeneratorAndGetRegistrationGroup(source);
+
+        // Assert (Then) — no CQRS behavior emitted when not opted-in.
+        Assert.DoesNotContain("RegisterCqrsBoundaryEnforcement", generated);
+    }
+
+    // ── Cross-assembly behavior application ───────────────────────────────
+
+    [Fact]
+    public void OpenGenericBehavior_CrossProductsWithHandlerInReferencedAssembly()
+    {
+        // Arrange (Given) — handler lives in a referenced assembly; the open-generic behavior is
+        // declared in the assembly being generated. The behavior must blanket the referenced handler.
+        const string referencedSource = """
+            using System.Threading;
+            using System.Threading.Tasks;
+            using UnambitiousFx.Functional;
+            using UnambitiousFx.Synapse.Abstractions;
+
+            namespace LibNs;
+
+            public sealed record LibRequest : IRequest<int>;
+
+            [RequestHandler<LibRequest, int>]
+            public sealed class LibHandler : IRequestHandler<LibRequest, int>
+            {
+                public ValueTask<Result<int>> HandleAsync(LibRequest request, CancellationToken ct = default)
+                    => ValueTask.FromResult(Result.Success(1));
+            }
+            """;
+
+        const string mainSource = """
+            using System.Threading;
+            using System.Threading.Tasks;
+            using UnambitiousFx.Functional;
+            using UnambitiousFx.Synapse.Abstractions;
+
+            namespace AppNs;
+
+            [PipelineBehavior]
+            public sealed class MetricsBehavior<TRequest, TResponse> : IRequestPipelineBehavior<TRequest, TResponse>
+                where TRequest : IRequest<TResponse>
+                where TResponse : notnull
+            {
+                public ValueTask<Result<TResponse>> HandleAsync(TRequest request, RequestHandlerDelegate<TRequest, TResponse> next, CancellationToken ct = default)
+                    => next(request, ct);
+            }
+            """;
+
+        // Act (When)
+        var generated = RunGeneratorWithReference(referencedSource, mainSource);
+
+        // Assert (Then) — closed (AOT-safe) registration over the referenced value-type request.
+        Assert.Contains(
+            "builder.RegisterRequestPipelineBehavior<global::AppNs.MetricsBehavior<global::LibNs.LibRequest, int>, global::LibNs.LibRequest, int>()",
+            generated);
+    }
+
+    [Fact]
+    public void OpenGenericBehavior_WithCrossAssemblyDisabled_DoesNotCrossProductReferencedHandler()
+    {
+        // Arrange (Given) — same setup, but the main assembly opts out of cross-assembly propagation.
+        const string referencedSource = """
+            using System.Threading;
+            using System.Threading.Tasks;
+            using UnambitiousFx.Functional;
+            using UnambitiousFx.Synapse.Abstractions;
+
+            namespace LibNs;
+
+            public sealed record LibRequest : IRequest<int>;
+
+            [RequestHandler<LibRequest, int>]
+            public sealed class LibHandler : IRequestHandler<LibRequest, int>
+            {
+                public ValueTask<Result<int>> HandleAsync(LibRequest request, CancellationToken ct = default)
+                    => ValueTask.FromResult(Result.Success(1));
+            }
+            """;
+
+        const string mainSource = """
+            using System.Threading;
+            using System.Threading.Tasks;
+            using UnambitiousFx.Functional;
+            using UnambitiousFx.Synapse.Abstractions;
+
+            [assembly: DisableSynapseCrossAssemblyBehaviors]
+
+            namespace AppNs;
+
+            [PipelineBehavior]
+            public sealed class MetricsBehavior<TRequest, TResponse> : IRequestPipelineBehavior<TRequest, TResponse>
+                where TRequest : IRequest<TResponse>
+                where TResponse : notnull
+            {
+                public ValueTask<Result<TResponse>> HandleAsync(TRequest request, RequestHandlerDelegate<TRequest, TResponse> next, CancellationToken ct = default)
+                    => next(request, ct);
+            }
+            """;
+
+        // Act (When)
+        var generated = RunGeneratorWithReference(referencedSource, mainSource);
+
+        // Assert (Then) — the referenced handler is not blanketed when opted out.
+        Assert.DoesNotContain("LibRequest", generated);
+    }
+
+    [Fact]
+    public void CqrsEnforcement_WhenRootOptsIn_EmitsRegistrationForReferencedAssemblyHandler()
+    {
+        // Arrange (Given) — only the composition root opts into CQRS enforcement; the handler lives in a
+        // referenced assembly that does NOT carry the attribute. The root must still cover it.
+        const string referencedSource = """
+            using System.Threading;
+            using System.Threading.Tasks;
+            using UnambitiousFx.Functional;
+            using UnambitiousFx.Synapse.Abstractions;
+
+            namespace LibNs;
+
+            public sealed record LibRequest : IRequest<int>;
+
+            [RequestHandler<LibRequest, int>]
+            public sealed class LibHandler : IRequestHandler<LibRequest, int>
+            {
+                public ValueTask<Result<int>> HandleAsync(LibRequest request, CancellationToken ct = default)
+                    => ValueTask.FromResult(Result.Success(1));
+            }
+            """;
+
+        const string mainSource = """
+            using UnambitiousFx.Synapse.Abstractions;
+
+            [assembly: EnableSynapseCqrsBoundaryEnforcement]
+
+            namespace AppNs;
+            """;
+
+        // Act (When)
+        var generated = RunGeneratorWithReference(referencedSource, mainSource);
+
+        // Assert (Then) — CQRS enforcement emitted for the referenced value-type request, AOT-safe.
+        Assert.Contains(
+            "builder.RegisterCqrsBoundaryEnforcement<global::LibNs.LibRequest, int>()",
+            generated);
+    }
+
+    // ── [Validator] discovery ─────────────────────────────────────────────
+
+    [Fact]
+    public void ValidatorAttribute_WithResponseRequest_EmitsRegisterValidatorWithResponse()
+    {
+        // Arrange (Given)
+        const string source = """
+            using System.Threading;
+            using System.Threading.Tasks;
+            using UnambitiousFx.Functional;
+            using UnambitiousFx.Synapse.Abstractions;
+
+            namespace TestNs;
+
+            public sealed record MyRequest : IRequest<int>;
+
+            [RequestHandler<MyRequest, int>]
+            public sealed class MyHandler : IRequestHandler<MyRequest, int>
+            {
+                public ValueTask<Result<int>> HandleAsync(MyRequest request, CancellationToken ct = default)
+                    => ValueTask.FromResult(Result.Success(1));
+            }
+
+            [Validator]
+            public sealed class MyValidator : IRequestValidator<MyRequest>
+            {
+                public ValueTask<Result> ValidateAsync(MyRequest request, CancellationToken ct = default)
+                    => ValueTask.FromResult(Result.Success());
+            }
+            """;
+
+        // Act (When)
+        var generated = RunGeneratorAndGetRegistrationGroup(source);
+
+        // Assert (Then) — response type derived from MyRequest : IRequest<int>.
+        Assert.Contains(
+            "builder.RegisterValidator<global::TestNs.MyValidator, global::TestNs.MyRequest, int>()",
+            generated);
+    }
+
+    [Fact]
+    public void ValidatorAttribute_NoResponseRequest_EmitsRegisterValidatorWithoutResponse()
+    {
+        // Arrange (Given)
+        const string source = """
+            using System.Threading;
+            using System.Threading.Tasks;
+            using UnambitiousFx.Functional;
+            using UnambitiousFx.Synapse.Abstractions;
+
+            namespace TestNs;
+
+            public sealed record MyRequest : IRequest;
+
+            [RequestHandler<MyRequest>]
+            public sealed class MyHandler : IRequestHandler<MyRequest>
+            {
+                public ValueTask<Result> HandleAsync(MyRequest request, CancellationToken ct = default)
+                    => ValueTask.FromResult(Result.Success());
+            }
+
+            [Validator]
+            public sealed class MyValidator : IRequestValidator<MyRequest>
+            {
+                public ValueTask<Result> ValidateAsync(MyRequest request, CancellationToken ct = default)
+                    => ValueTask.FromResult(Result.Success());
+            }
+            """;
+
+        // Act (When)
+        var generated = RunGeneratorAndGetRegistrationGroup(source);
+
+        // Assert (Then) — two-argument form, no response.
+        Assert.Contains(
+            "builder.RegisterValidator<global::TestNs.MyValidator, global::TestNs.MyRequest>()",
+            generated);
+    }
+
+    [Fact]
+    public void ValidatorAttribute_OnNonValidatorClass_EmitsDiagnosticAndNoRegistration()
+    {
+        // Arrange (Given) — [Validator] on a class that does not implement IRequestValidator<>.
+        const string source = """
+            using System.Threading;
+            using System.Threading.Tasks;
+            using UnambitiousFx.Functional;
+            using UnambitiousFx.Synapse.Abstractions;
+
+            namespace TestNs;
+
+            public sealed record MyRequest : IRequest;
+
+            [RequestHandler<MyRequest>]
+            public sealed class MyHandler : IRequestHandler<MyRequest>
+            {
+                public ValueTask<Result> HandleAsync(MyRequest request, CancellationToken ct = default)
+                    => ValueTask.FromResult(Result.Success());
+            }
+
+            [Validator]
+            public sealed class NotAValidator
+            {
+            }
+            """;
+
+        // Act (When)
+        var (diagnostics, generated) = RunGenerator(source);
+
+        // Assert (Then)
+        Assert.Contains(diagnostics, d => d.Id == "MDG009");
+        Assert.DoesNotContain("RegisterValidator", generated ?? string.Empty);
+    }
+
+    [Fact]
+    public void ValidatorAttribute_RequestWithMultipleIRequest_EmitsMDG011AndNoRegistration()
+    {
+        // Arrange (Given) — the validated request implements two IRequest<TResponse> with distinct
+        // response types, so the response binding is ambiguous.
+        const string source = """
+            using System.Threading;
+            using System.Threading.Tasks;
+            using UnambitiousFx.Functional;
+            using UnambitiousFx.Synapse.Abstractions;
+
+            namespace TestNs;
+
+            public sealed record Foo;
+            public sealed record Bar;
+
+            public sealed record MultiReq : IRequest<Foo>, IRequest<Bar>;
+
+            [Validator]
+            public sealed class MultiReqValidator : IRequestValidator<MultiReq>
+            {
+                public ValueTask<Result> ValidateAsync(MultiReq request, CancellationToken ct = default)
+                    => ValueTask.FromResult(Result.Success());
+            }
+            """;
+
+        // Act (When)
+        var (diagnostics, generated) = RunGenerator(source);
+
+        // Assert (Then) — ambiguity reported, no (wrong) registration emitted.
+        Assert.Contains(diagnostics, d => d.Id == "MDG011");
+        Assert.DoesNotContain("RegisterValidator", generated ?? string.Empty);
+    }
+
+    // ── Nested type declarations (enclosing-type chain) ───────────────────
+
+    [Fact]
+    public void NestedRequestHandler_EmitsEnclosingTypeInRegistration()
+    {
+        // Arrange (Given)
+        const string source = """
+            using System.Threading;
+            using System.Threading.Tasks;
+            using UnambitiousFx.Functional;
+            using UnambitiousFx.Synapse.Abstractions;
+
+            namespace TestNs;
+
+            public sealed record CreateTaskCommand : IRequest;
+
+            public static class Tasks
+            {
+                [RequestHandler<CreateTaskCommand>]
+                public sealed class CreateHandler : IRequestHandler<CreateTaskCommand>
+                {
+                    public ValueTask<Result> HandleAsync(CreateTaskCommand request, CancellationToken ct = default)
+                        => ValueTask.FromResult(Result.Success());
+                }
+            }
+            """;
+
+        // Act (When)
+        var generated = RunGeneratorAndGetRegistrationGroup(source);
+
+        // Assert (Then)
+        Assert.Contains(
+            "builder.RegisterRequestHandler<global::TestNs.Tasks.CreateHandler, global::TestNs.CreateTaskCommand>()",
+            generated);
+    }
+
+    [Fact]
+    public void NestedClosedBehavior_EmitsEnclosingTypeInRegistration()
+    {
+        // Arrange (Given)
+        const string source = """
+            using System.Threading;
+            using System.Threading.Tasks;
+            using UnambitiousFx.Functional;
+            using UnambitiousFx.Synapse.Abstractions;
+
+            namespace TestNs;
+
+            public sealed record MyRequest : IRequest;
+
+            public static class Outer
+            {
+                [PipelineBehavior]
+                public sealed class SpecificBehavior : IRequestPipelineBehavior<MyRequest>
+                {
+                    public ValueTask<Result> HandleAsync(MyRequest request, RequestHandlerDelegate<MyRequest> next, CancellationToken ct = default)
+                        => next(request, ct);
+                }
+            }
+            """;
+
+        // Act (When)
+        var generated = RunGeneratorAndGetRegistrationGroup(source);
+
+        // Assert (Then)
+        Assert.Contains(
+            "builder.RegisterRequestPipelineBehavior<global::TestNs.Outer.SpecificBehavior, global::TestNs.MyRequest>()",
+            generated);
+    }
+
+    [Fact]
+    public void NestedOpenGenericBehavior_EmitsEnclosingTypeWithoutStrayTypeParameters()
+    {
+        // Arrange (Given)
+        const string source = """
+            using System.Threading;
+            using System.Threading.Tasks;
+            using UnambitiousFx.Functional;
+            using UnambitiousFx.Synapse.Abstractions;
+
+            namespace TestNs;
+
+            public sealed record MyRequest : IRequest;
+
+            [RequestHandler<MyRequest>]
+            public sealed class MyHandler : IRequestHandler<MyRequest>
+            {
+                public ValueTask<Result> HandleAsync(MyRequest request, CancellationToken ct = default)
+                    => ValueTask.FromResult(Result.Success());
+            }
+
+            public static class Outer
+            {
+                [PipelineBehavior]
+                public sealed class LoggingBehavior<TRequest> : IRequestPipelineBehavior<TRequest>
+                    where TRequest : IRequest
+                {
+                    public ValueTask<Result> HandleAsync(TRequest request, RequestHandlerDelegate<TRequest> next, CancellationToken ct = default)
+                        => next(request, ct);
+                }
+            }
+            """;
+
+        // Act (When)
+        var generated = RunGeneratorAndGetRegistrationGroup(source);
+
+        // Assert (Then): base name carries the enclosing type and is closed with the handler's request,
+        // with no stray open-generic type parameters left on the base name.
+        Assert.Contains(
+            "builder.RegisterRequestPipelineBehavior<global::TestNs.Outer.LoggingBehavior<global::TestNs.MyRequest>, global::TestNs.MyRequest>()",
+            generated);
+    }
+
+    [Fact]
+    public void NestedValidator_EmitsEnclosingTypeInRegistration()
+    {
+        // Arrange (Given)
+        const string source = """
+            using System.Threading;
+            using System.Threading.Tasks;
+            using UnambitiousFx.Functional;
+            using UnambitiousFx.Synapse.Abstractions;
+
+            namespace TestNs;
+
+            public sealed record MyRequest : IRequest;
+
+            public static class Outer
+            {
+                [Validator]
+                public sealed class MyValidator : IRequestValidator<MyRequest>
+                {
+                    public ValueTask<Result> ValidateAsync(MyRequest request, CancellationToken ct = default)
+                        => ValueTask.FromResult(Result.Success());
+                }
+            }
+            """;
+
+        // Act (When)
+        var generated = RunGeneratorAndGetRegistrationGroup(source);
+
+        // Assert (Then)
+        Assert.Contains(
+            "builder.RegisterValidator<global::TestNs.Outer.MyValidator, global::TestNs.MyRequest>()",
+            generated);
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────
+
+    private static string RunGeneratorWithReference(string referencedSource, string mainSource)
+    {
+        var referencedCompilation = CSharpCompilation.Create(
+            "ReferencedAssembly",
+            [CSharpSyntaxTree.ParseText(referencedSource)],
+            GetMetadataReferences(),
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary,
+                nullableContextOptions: NullableContextOptions.Enable));
+
+        var references = GetMetadataReferences().Append(referencedCompilation.ToMetadataReference());
+
+        var compilation = CSharpCompilation.Create(
+            "TestAssembly",
+            [CSharpSyntaxTree.ParseText(mainSource)],
+            references,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary,
+                nullableContextOptions: NullableContextOptions.Enable));
+
+        var driver = CSharpGeneratorDriver
+            .Create(new SynapseGenerator())
+            .RunGenerators(compilation);
+
+        var generatedFile = driver.GetRunResult().GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.EndsWith("RegisterGroup.g.cs", StringComparison.Ordinal));
+
+        return generatedFile?.GetText().ToString() ?? string.Empty;
+    }
 
     private static string RunGeneratorAndGetRegistrationGroup(string source)
     {

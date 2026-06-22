@@ -155,18 +155,20 @@ internal readonly record struct Context : IContext
             return;
         }
 
-        // Store trace and span IDs for distributed tracing correlation
-        if (!string.IsNullOrEmpty(activity.TraceId.ToString()))
+        // Store trace and span IDs for distributed tracing correlation.
+        // Guard on the actual default (all-zero) id, not on string emptiness:
+        // a default ActivityTraceId/ActivitySpanId stringifies to a non-empty all-zeros string.
+        if (activity.TraceId != default)
         {
             SetMetadata("Tracing.TraceId", activity.TraceId.ToString());
         }
 
-        if (!string.IsNullOrEmpty(activity.SpanId.ToString()))
+        if (activity.SpanId != default)
         {
             SetMetadata("Tracing.SpanId", activity.SpanId.ToString());
         }
 
-        if (!string.IsNullOrEmpty(activity.ParentSpanId.ToString()))
+        if (activity.ParentSpanId != default)
         {
             SetMetadata("Tracing.ParentSpanId", activity.ParentSpanId.ToString());
         }

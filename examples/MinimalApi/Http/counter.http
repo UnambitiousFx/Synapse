@@ -1,0 +1,113 @@
+### Synapse MinimalApi — Counter feature (value-type responses, cross-assembly RegisterGroup, CQRS enforcement)
+###
+### The Counter feature lives in a SEPARATE assembly (examples/MinimalApi.Counter). Its handlers and
+### behaviors are wired through that assembly's own generated RegisterGroup, composed into this host via a
+### second cfg.AddRegisterGroup(...). Every Counter message is IRequest<int> — a BARE value type — exercising
+### the known-issue 001 path end-to-end:
+###
+###   • value-type (int) responses through the generated CLOSED CqrsBoundaryEnforcementBehavior<,int>
+###   • a generated CLOSED open-generic [PipelineBehavior] (CounterTracingBehavior<,int>)
+###   • CQRS boundary enforcement that rejects nested requests (illegal-nested endpoint)
+###
+### Run `dotnet run` in examples/MinimalApi, then execute requests top-to-bottom.
+@baseUrl = http://localhost:5225
+
+# ═══════════════════════════════════════════════════════════════════════
+# 1. Query — current counter value (IRequest<int>)
+# ═══════════════════════════════════════════════════════════════════════
+
+### [Feature: value-type query, cross-assembly] Get the current counter value
+### Expect: 200 OK, body is a bare int. Captures the value for the increment delta check below.
+GET {{baseUrl}}/counter
+Accept: application/json
+
+> {%
+    client.test("Get counter returns 200 with an int body", function () {
+        client.assert(response.status === 200, "Expected 200 OK");
+        client.assert(typeof response.body === "number", "Body is a bare int (value-type response)");
+    });
+    client.global.set("counterBefore", response.body);
+%}
+
+###
+
+# ═══════════════════════════════════════════════════════════════════════
+# 2. Command — increment (IRequest<int> through closed CQRS + CounterTracingBehavior)
+# ═══════════════════════════════════════════════════════════════════════
+
+### [Feature: value-type command, closed open-generic behavior] Increment the counter
+### Expect: 200 OK, body = previous value + 1.
+### Observe stdout: SimpleLoggingBehavior timing for IncrementCounterCommand.
+POST {{baseUrl}}/counter/increment
+
+> {%
+    client.test("Increment returns 200 with an int body", function () {
+        client.assert(response.status === 200, "Expected 200 OK");
+        client.assert(typeof response.body === "number", "Body is a bare int");
+    });
+    client.test("Increment returns previous value + 1", function () {
+        const before = client.global.get("counterBefore");
+        client.assert(response.body === before + 1, "Counter incremented by exactly 1");
+    });
+    client.global.set("counterAfter", response.body);
+%}
+
+###
+
+### Increment again — confirm monotonic increase (state held in the singleton CounterStore)
+POST {{baseUrl}}/counter/increment
+
+> {%
+    client.test("Second increment is greater than the first", function () {
+        client.assert(response.status === 200, "Expected 200 OK");
+        client.assert(response.body === client.global.get("counterAfter") + 1, "Incremented again by 1");
+    });
+%}
+
+###
+
+### Confirm GET reflects the latest value
+GET {{baseUrl}}/counter
+Accept: application/json
+
+> {%
+    client.test("Counter value persisted across requests", function () {
+        client.assert(response.status === 200, "Expected 200 OK");
+        client.assert(response.body >= client.global.get("counterBefore") + 2, "Counter advanced by the increments");
+    });
+%}
+
+###
+
+# ═══════════════════════════════════════════════════════════════════════
+# 3. CQRS boundary enforcement — nested request is rejected
+# ═══════════════════════════════════════════════════════════════════════
+
+### [Feature: CQRS boundary enforcement] Illegal nested request
+### The IllegalNestedCommand handler sends GetCounterQuery from WITHIN the handler, crossing the CQRS
+### boundary. The generated closed CqrsBoundaryEnforcementBehavior throws CqrsBoundaryViolationException.
+### Expect: failure (5xx). The counter is NOT mutated (handler short-circuits).
+###
+### Observe stdout: CqrsBoundaryViolationException — "CQRS boundary violation ... IllegalNestedCommand ... GetCounterQuery"
+POST {{baseUrl}}/counter/illegal-nested
+
+> {%
+    client.test("Illegal nested request is rejected", function () {
+        client.assert(response.status >= 400, "Expected a failure — CQRS boundary violation");
+    });
+%}
+
+###
+
+### Verify the counter was not changed by the rejected request
+GET {{baseUrl}}/counter
+Accept: application/json
+
+> {%
+    client.test("Counter unchanged after rejected nested request", function () {
+        client.assert(response.status === 200, "Expected 200 OK");
+        client.assert(response.body >= client.global.get("counterBefore") + 2, "Counter not decremented/reset by the rejected call");
+    });
+%}
+
+###

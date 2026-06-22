@@ -24,6 +24,13 @@ public sealed class InvokerTests
                     var handler = resolver.GetRequiredService<IRequestHandler<RequestWithResponseExample, int>>();
                     return handler.HandleAsync((RequestWithResponseExample)request, ct);
                 });
+        options.Value.VoidRequestDispatchers[typeof(RequestExample)] =
+            (Func<IRequest, IDependencyResolver, CancellationToken, ValueTask<Result>>)(
+                (request, resolver, ct) =>
+                {
+                    var handler = resolver.GetRequiredService<IRequestHandler<RequestExample>>();
+                    return handler.HandleAsync((RequestExample)request, ct);
+                });
 
         _invoker = new Invoker(_resolver, options);
     }
@@ -73,4 +80,58 @@ public sealed class InvokerTests
         // Assert (Then)
         Assert.True(result.IsSuccess);
     }
+
+    [Fact]
+    public async Task GivenARequestHeldByItsInterfaceStaticType_WhenInvokeWithResponse_ResolvesByRuntimeType()
+    {
+        // Arrange (Given)
+        IRequest<int> request = new RequestWithResponseExample();
+        var handler = Substitute.For<IRequestHandler<RequestWithResponseExample, int>>();
+
+        _resolver.GetRequiredService<IRequestHandler<RequestWithResponseExample, int>>()
+            .Returns(handler);
+        handler.HandleAsync((RequestWithResponseExample)request, CancellationToken.None)
+            .Returns(Result.Success(42));
+
+        // Act (When)
+        var result = await _invoker.InvokeAsync(request, CancellationToken.None);
+
+        // Assert (Then)
+        Assert.True(result.IsSuccess);
+    }
+
+    [Fact]
+    public async Task GivenARequestHeldByItsInterfaceStaticType_WhenInvokeWithoutResponse_ResolvesByRuntimeType()
+    {
+        // Arrange (Given)
+        IRequest request = new RequestExample();
+        var handler = Substitute.For<IRequestHandler<RequestExample>>();
+
+        _resolver.GetRequiredService<IRequestHandler<RequestExample>>()
+            .Returns(handler);
+        handler.HandleAsync((RequestExample)request, CancellationToken.None)
+            .Returns(Result.Success());
+
+        // Act (When)
+        var result = await _invoker.InvokeAsync(request, CancellationToken.None);
+
+        // Assert (Then)
+        Assert.True(result.IsSuccess);
+    }
+
+    [Fact]
+    public async Task GivenAnUnregisteredRequestWithoutResponse_WhenInvoke_ThrowsFriendlyError()
+    {
+        // Arrange (Given)
+        var request = new UnregisteredRequestExample();
+
+        // Act (When)
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await _invoker.InvokeAsync(request, CancellationToken.None));
+
+        // Assert (Then)
+        Assert.Contains("No handler registered for request type", exception.Message);
+    }
+
+    private sealed record UnregisteredRequestExample : IRequest;
 }

@@ -210,6 +210,24 @@ public interface IDependencyInjectionBuilder
         where TResponse : notnull;
 
     /// <summary>
+    ///     Registers the CQRS boundary enforcement behavior for a specific request type (without response).
+    ///     The behavior runs outermost via <see cref="IOrderedPipelineBehavior.First" />. The registration is
+    ///     deduplicated, so the same request may be covered by more than one opted-in assembly's generated
+    ///     RegisterGroup without registering the behavior twice.
+    /// </summary>
+    IDependencyInjectionBuilder RegisterCqrsBoundaryEnforcement<TRequest>()
+        where TRequest : IRequest;
+
+    /// <summary>
+    ///     Registers the CQRS boundary enforcement behavior for a specific request/response pair. The behavior
+    ///     runs outermost via <see cref="IOrderedPipelineBehavior.First" />. The registration is deduplicated;
+    ///     see the no-response overload.
+    /// </summary>
+    IDependencyInjectionBuilder RegisterCqrsBoundaryEnforcement<TRequest, TResponse>()
+        where TRequest : IRequest<TResponse>
+        where TResponse : notnull;
+
+    /// <summary>
     ///     Registers a typed event pipeline behavior for a specific event type.
     /// </summary>
     IDependencyInjectionBuilder RegisterEventPipelineBehavior<
@@ -227,4 +245,26 @@ public interface IDependencyInjectionBuilder
         where TBehavior : class, IStreamRequestPipelineBehavior<TRequest, TItem>
         where TRequest : IStreamRequest<TItem>
         where TItem : notnull;
+
+    /// <summary>
+    ///     Registers a request validator (no-response) together with the closed validation behavior that runs
+    ///     it. The registration is deduplicated so the validation behavior runs at most once per request type
+    ///     even when several validators target the same request.
+    /// </summary>
+    IDependencyInjectionBuilder RegisterValidator<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+        TValidator, TRequest>()
+        where TValidator : class, IRequestValidator<TRequest>
+        where TRequest : IRequest;
+
+    /// <summary>
+    ///     Registers a request validator (with response) together with the closed validation behavior that
+    ///     runs it. Deduplicated; see the no-response overload.
+    /// </summary>
+    IDependencyInjectionBuilder RegisterValidator<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+        TValidator, TRequest, TResponse>()
+        where TValidator : class, IRequestValidator<TRequest>
+        where TRequest : IRequest<TResponse>
+        where TResponse : notnull;
 }

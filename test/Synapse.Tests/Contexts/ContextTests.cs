@@ -135,6 +135,23 @@ public sealed class ContextTests
     }
 
     [Fact]
+    public void Context_DoesNotCaptureParentSpanId_WhenParentIsDefault()
+    {
+        // Arrange (Given)
+        var emitter = Substitute.For<IEmitter>();
+        var outboxCommit = Substitute.For<IOutboxCommit>();
+        using var activity = new Activity("synapse-test");
+        activity.Start();
+
+        // Act (When)
+        var context = new Context(emitter, outboxCommit, Guid.NewGuid());
+
+        // Assert (Then)
+        Assert.Equal(default, activity.ParentSpanId);
+        Assert.False(context.TryGetMetadata<string>("Tracing.ParentSpanId", out _));
+    }
+
+    [Fact]
     public async Task SlimContextFactory_Create_ReturnsContextWithWorkingDependencies()
     {
         // Arrange (Given)

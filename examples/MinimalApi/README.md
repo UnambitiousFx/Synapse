@@ -16,14 +16,17 @@ It is the canonical ASP.NET integration example for the library.
 - ✅ **Constraint-based open generic** — `AuditBehavior<TRequest>` targets only `IAuditableRequest`
   commands; queries receive no audit logging. The source generator's `Satisfies()` check enforces
   the constraint at **compile time** (see `RegisterGroup.g.cs` in `obj/`).
-- ✅ **Short-circuiting behavior** — `AuthorizationBehavior` returns `Result.Failure` without calling
-  `next()` when the caller lacks the `tasks:admin` permission; the handler never executes.
+- ✅ **Short-circuiting behavior** — `AuthorizationBehavior` returns a typed
+  `Result.FailUnauthorized(...)` without calling `next()` when the caller lacks the `tasks:admin`
+  permission; the handler never executes. The typed `UnauthorizedFailure` maps to **401 Unauthorized**
+  via `DefaultFailureHttpMapper` (not a generic 500 — see known-issue 003).
   Registered as a **runtime open-generic** with `ISecuredRequest` constraint.
 - ✅ **Stream pipeline behavior** — `StreamLoggingBehavior` wraps the `IAsyncEnumerable<Result<T>>`
   chain and logs a `🔢 Streamed N items` summary after the stream completes.
   Registered as a **runtime open-generic**.
 - ✅ **Correlation** — `IContext.CorrelationId` propagated to `X-Correlation-Id` response header
-- ✅ **CQRS boundary enforcement** — `EnableCqrsBoundaryEnforcement()`
+- ✅ **CQRS boundary enforcement** — `[assembly: EnableSynapseCqrsBoundaryEnforcement]` (generator
+  wires discovered handlers; use `cfg.RegisterCqrsBoundaryEnforcement<…>()` for manually-registered ones)
 - ✅ **Native AOT Compatibility** — `CreateSlimBuilder()` and JSON source generation
 
 ## Pipeline Behavior Registration Mechanisms
@@ -32,7 +35,7 @@ Both registration mechanisms are showcased side-by-side in `Program.cs`:
 
 | Mechanism | API | Example | AOT |
 |---|---|---|---|
-| **Source-gen attribute** | `[PipelineBehavior(Order = N)]` + `cfg.AddRegisterGroup(new RegisterGroup())` | `MetricsBehavior`, `AuditBehavior` | ✅ Compile-time closed generics |
+| **Source-gen attribute** | `[PipelineBehavior]` (+ `IOrderedPipelineBehavior` for ordering) + `cfg.AddRegisterGroup(new RegisterGroup())` | `MetricsBehavior`, `AuditBehavior` | ✅ Compile-time closed generics |
 | **Runtime open-generic** | `cfg.AddOpenGeneric*PipelineBehavior(typeof(X<>))` | `AuthorizationBehavior`, `StreamLoggingBehavior` | ⚠️ MS DI closes at resolve time; response type must be a class (not a value type) |
 
 ## Project Structure
@@ -54,8 +57,8 @@ MinimalApi/
 ├── Infrastructure/
 │   ├── TaskRepository.cs               # In-memory ConcurrentDictionary store
 │   └── Pipelines/
-│       ├── MetricsBehavior.cs          # [PipelineBehavior(Order=10)] — ordering demo
-│       ├── AuditBehavior.cs            # [PipelineBehavior(Order=20)] — constraint-based
+│       ├── MetricsBehavior.cs          # [PipelineBehavior] + IOrderedPipelineBehavior (Order 10) — ordering demo
+│       ├── AuditBehavior.cs            # [PipelineBehavior] + IOrderedPipelineBehavior (Order 20) — constraint-based
 │       ├── AuthorizationBehavior.cs    # Runtime open-generic — short-circuit demo
 │       └── StreamLoggingBehavior.cs    # Runtime open-generic — stream behavior demo
 └── Http/
@@ -118,7 +121,7 @@ info: ListTasksQuery handled in 00:00:00.001
 ◀ [metrics:10] ListTasksQuery finished in ...
 ```
 
-And the short-circuit demo (`POST /tasks/admin/purge` without the header):
+And the short-circuit demo (`POST /tasks/admin/purge` without the header → **401 Unauthorized**):
 
 ```
 ▶ [metrics:10] PurgeCompletedTasksCommand started

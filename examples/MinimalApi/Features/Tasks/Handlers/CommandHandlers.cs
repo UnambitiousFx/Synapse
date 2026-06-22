@@ -168,8 +168,8 @@ public sealed class DeleteTaskCommandHandler : IRequestHandler<DeleteTaskCommand
 //     handler executes and logs 🧹 PURGING.
 // ═══════════════════════════════════════════════════════════════
 
-[RequestHandler<PurgeCompletedTasksCommand, PurgeResult>]
-public sealed class PurgeCompletedTasksCommandHandler : IRequestHandler<PurgeCompletedTasksCommand, PurgeResult>
+[RequestHandler<PurgeCompletedTasksCommand, int>]
+public sealed class PurgeCompletedTasksCommandHandler : IRequestHandler<PurgeCompletedTasksCommand, int>
 {
     private readonly ILogger<PurgeCompletedTasksCommandHandler> _logger;
     private readonly TaskRepository _repository;
@@ -182,7 +182,7 @@ public sealed class PurgeCompletedTasksCommandHandler : IRequestHandler<PurgeCom
         _logger = logger;
     }
 
-    public ValueTask<Result<PurgeResult>> HandleAsync(
+    public ValueTask<Result<int>> HandleAsync(
         PurgeCompletedTasksCommand request,
         CancellationToken cancellationToken = default)
     {
@@ -199,6 +199,6 @@ public sealed class PurgeCompletedTasksCommandHandler : IRequestHandler<PurgeCom
 
         _logger.LogInformation("🧹 PURGED {Count} completed task(s)", completed.Count);
 
-        return ValueTask.FromResult(Result.Success(new PurgeResult { PurgedCount = completed.Count }));
+        return ValueTask.FromResult(Result.Success(completed.Count));
     }
 }

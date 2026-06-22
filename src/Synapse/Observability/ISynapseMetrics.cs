@@ -33,22 +33,4 @@ public interface ISynapseMetrics
     /// </summary>
     /// <param name="eventType">The type of event dead-lettered.</param>
     void RecordOutboxDeadLettered(string eventType);
-
-    /// <summary>
-    ///     Records the current queue depth of the outbox (number of pending events).
-    /// </summary>
-    /// <param name="count">The number of pending events in the outbox.</param>
-    void RecordOutboxQueueDepth(int count);
-
-    /// <summary>
-    ///     Records the processing lag of the outbox (age of oldest pending event).
-    /// </summary>
-    /// <param name="lagSeconds">The age of the oldest pending event in seconds.</param>
-    void RecordOutboxProcessingLag(double lagSeconds);
-
-    /// <summary>
-    ///     Records the number of failed events in the outbox.
-    /// </summary>
-    /// <param name="count">The number of failed events awaiting retry.</param>
-    void RecordOutboxFailedCount(int count);
 }

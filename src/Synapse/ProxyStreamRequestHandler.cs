@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using System.Runtime.CompilerServices;
 using UnambitiousFx.Functional;
 using UnambitiousFx.Synapse.Abstractions;
+using UnambitiousFx.Synapse.Pipelines;
 
 namespace UnambitiousFx.Synapse;
 
@@ -20,7 +21,8 @@ internal sealed class ProxyStreamRequestHandler<TRequestHandler, TRequest, TItem
     where TRequest : IStreamRequest<TItem>
     where TItem : notnull
 {
-    private readonly ImmutableArray<IStreamRequestPipelineBehavior<TRequest, TItem>> _behaviors = [.. behaviors];
+    private readonly ImmutableArray<IStreamRequestPipelineBehavior<TRequest, TItem>> _behaviors =
+        [.. behaviors.OrderBy(PipelineBehaviorOrdering.OrderOf)];
 
     public async IAsyncEnumerable<Result<TItem>> HandleAsync(TRequest request,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)

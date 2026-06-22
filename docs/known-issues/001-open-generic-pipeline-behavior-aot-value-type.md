@@ -2,7 +2,15 @@
 
 **Severity:** High  
 **Area:** Core DI (`src/Synapse`)  
-**Discovered on:** `feature/typed-pipeline-behaviors`, .NET 10, `PublishAot=true`
+**Discovered on:** `feature/typed-pipeline-behaviors`, .NET 10, `PublishAot=true`  
+**Status:** ✅ **Resolved** on `feature/typed-pipeline-behaviors` — see [Resolution](#resolution).
+
+> **TL;DR.** CQRS boundary enforcement is now opted-in via the assembly attribute
+> `[assembly: EnableSynapseCqrsBoundaryEnforcement]`; the source generator emits **closed**
+> `CqrsBoundaryEnforcementBehavior<TRequest, TResponse>` registrations (one per request handler,
+> inserted at the front of the pipeline). User behaviors should use `[PipelineBehavior]` for the same
+> closed-registration treatment. Value-type responses (`IRequest<Guid>`, `IRequest<int>`) now work
+> under Native AOT — the class-wrapper workaround is no longer required.
 
 ---
 
@@ -98,13 +106,9 @@ builder.Services.AddSynapse(cfg =>
 });
 ```
 
-**Current workaround used in `examples/MinimalApi`:** wrap the value type in a class record:
-
-```csharp
-// Instead of IRequest<Guid>:
-public sealed record CreateTaskResult { public required Guid TaskId { get; init; } }
-public sealed record CreateTaskCommand : IRequest<CreateTaskResult> { ... }
-```
+**Former workaround (no longer needed):** wrap the value type in a class record so the response type is
+a reference type. After the fix below, `examples/MinimalApi` instead uses
+`PurgeCompletedTasksCommand : IRequest<int>` directly to exercise the value-type path under AOT.
 
 ---
 
@@ -139,22 +143,52 @@ The relevant library code:
   by all `AddOpenGeneric*PipelineBehavior()` methods.
 - `src/Synapse/Resolvers/DefaultDependencyResolver.cs:21–25` — where the resolution throws.
 
-### Suggested fixes (to address)
+### Resolution
 
-**Option A (preferred) — source-generator closed registrations:**  
-Extend `Synapse.Generator` to emit closed `IRequestPipelineBehavior<TRequest, TResponse>`
-registrations for `CqrsBoundaryEnforcementBehavior` for each discovered request type, exactly as
-it already does for `[PipelineBehavior]`-attributed behaviors in `RegisterGroup`. This eliminates
-the open-generic descriptor entirely and is fully AOT-safe.
+The fix combines Option A (generator-emitted closed registrations) for the library's CQRS behavior with
+the existing `[PipelineBehavior]` path for user behaviors, plus Option B (`[RequiresDynamicCode]`) as a
+guard-rail on the remaining runtime open-generic APIs.
 
-**Option B — `[RequiresDynamicCode]` annotation:**  
-Annotate `EnableCqrsBoundaryEnforcement()` and `AddOpenGenericRequestWithResponsePipelineBehavior()`
-with `[RequiresDynamicCode("...")]`. This causes the compiler/trimmer to warn AOT consumers at
-publish time. Does not fix the runtime error but makes it diagnosable earlier.
+**1. CQRS enforcement is now opted-in via an assembly attribute.**
+A runtime fluent call is invisible to the source generator, so enforcement is expressed as
+`[assembly: EnableSynapseCqrsBoundaryEnforcement]`
+(`src/Synapse.Abstractions/EnableSynapseCqrsBoundaryEnforcementAttribute.cs`). The generator detects it
+(`CompilationExtensions.IsCqrsBoundaryEnforcementEnabled`) and, for each discovered request handler, emits
+a **closed** registration:
 
-**Option C — document as known limitation:**  
-Document that AOT projects must use class response types (no `IRequest<ValueType>`) when
-open-generic behaviors are registered. Lowest effort; least user-friendly.
+```csharp
+// Generated in RegisterGroup.g.cs — closed over the concrete (value-type) response, AOT-safe:
+builder.RegisterCqrsBoundaryEnforcement<PurgeCompletedTasksCommand, int>();
+```
+
+`CqrsBoundaryEnforcementBehavior` implements `IOrderedPipelineBehavior` with
+`IOrderedPipelineBehavior.First`, so it stays **outermost** at runtime regardless of registration order
+— preserving the previous guarantee without an open-generic descriptor. (Originally this used a
+front-insertion helper; see issue
+[009](009-behavior-order-not-honored-across-registration-sources.md) for why ordering moved to the
+runtime interface.)
+
+`cfg.EnableCqrsBoundaryEnforcement()` is now `[Obsolete]` and a no-op (registering it alongside the
+generated closed registrations would double-wrap the pipeline and make `CqrsBoundaryMetadata.Validate()`
+throw on every request).
+
+**2. User open-generic behaviors use `[PipelineBehavior]`.**
+The generator already cross-products `[PipelineBehavior]`-attributed open generics into closed
+registrations (honouring generic constraints). `examples/MinimalApi`'s `AuthorizationBehavior<,>` now
+carries `[PipelineBehavior]` instead of being registered via `cfg.AddOpenGenericRequestWithResponsePipelineBehavior(...)`.
+
+**3. Runtime open-generic APIs that can close over a value type are annotated.**
+`AddOpenGenericRequestWithResponsePipelineBehavior` and `AddOpenGenericStreamRequestPipelineBehavior` are
+marked `[RequiresDynamicCode(...)]`, so AOT consumers get a publish-time IL3050 warning pointing them to the
+`[PipelineBehavior]` / closed-registration path instead of a runtime crash. (The request-only and event-only
+open-generic overloads close over reference types and remain un-annotated.)
+
+**Verification.** `examples/MinimalApi` publishes with `PublishAot=true` and no IL3050/trim warnings;
+`POST /tasks/admin/purge` (response type `int`) returns `200` instead of throwing
+`InvalidOperationException … 'System.Int32' is a ValueType`. Covered by
+`test/Synapse.Generator.Tests/GeneratorBehaviorTests.cs`
+(`CqrsEnforcement_WhenAssemblyOptIn_EmitsClosedRegistrationForValueTypeResponse`) and the runtime
+`CqrsBoundaryEnforcementTests`.
 
 > See also: [002](002-validateonbuild-does-not-suppress-aot-open-generic-check.md) for a
-> related misunderstanding about `ValidateOnBuild`.
+> related misunderstanding about `ValidateOnBuild` (now moot for the CQRS path).

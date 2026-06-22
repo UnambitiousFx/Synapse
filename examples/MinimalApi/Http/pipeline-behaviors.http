@@ -137,7 +137,7 @@ POST {{baseUrl}}/tasks/{{pbTaskIdA}}/complete
 
 ### [Feature: Short-circuit] Purge WITHOUT permission — pipeline halts at AuthorizationBehavior
 ###
-### Expect: 4xx failure
+### Expect: 401 Unauthorized (typed UnauthorizedFailure → DefaultFailureHttpMapper)
 ###
 ### Expected stdout (handler 🧹 PURGING line is ABSENT):
 ###   ▶ [metrics:10] PurgeCompletedTasksCommand started
@@ -145,13 +145,13 @@ POST {{baseUrl}}/tasks/{{pbTaskIdA}}/complete
 ###   🚫 [auth] PurgeCompletedTasksCommand denied — requires 'tasks:admin'
 ###   ◀ [metrics:10] PurgeCompletedTasksCommand finished
 ###
-### AuthorizationBehavior returns Result.Failure without calling next() —
+### AuthorizationBehavior returns Result.FailUnauthorized (typed) without calling next() —
 ### the handler (and its "🧹 PURGING" log) never executes.
 POST {{baseUrl}}/tasks/admin/purge
 
 > {%
     client.test("Purge without permission is rejected", function () {
-        client.assert(response.status >= 400, "Expected 4xx — AuthorizationBehavior short-circuited");
+        client.assert(response.status === 401, "Expected 401 — AuthorizationBehavior returned a typed UnauthorizedFailure");
     });
 %}
 
@@ -173,7 +173,10 @@ Accept: application/json
 ### [Feature: Short-circuit pass-through] Purge WITH permission — pipeline continues to handler
 ###
 ### Add X-User-Permissions: tasks:admin header to satisfy AuthorizationBehavior.
-### Expect: success, returns count of purged tasks (should be 1 — task A)
+### Expect: success, returns count of purged tasks (should be 1 — task A).
+### Note: PurgeCompletedTasksCommand : IRequest<int> — the body is a BARE value type (int), the
+### known-issue 001 regression case. It flows through the generated closed CqrsBoundaryEnforcementBehavior<,int>
+### and AuthorizationBehavior<,int> (no open-generic value-type DI resolution failure under AOT).
 ###
 ### Expected stdout (compare with the denied request above — handler NOW executes):
 ###   ▶ [metrics:10] PurgeCompletedTasksCommand started
@@ -190,9 +193,9 @@ X-User-Permissions: tasks:admin
         client.assert(response.status < 400, "Expected success status code");
     });
 
-    client.test("Purge returned a count", function () {
-        client.assert(typeof response.body.purgedCount === "number", "Response has purgedCount field");
-        client.assert(response.body.purgedCount >= 1, "At least 1 task was purged");
+    client.test("Purge returned an int count", function () {
+        client.assert(typeof response.body === "number", "Response body is a bare int (value-type response)");
+        client.assert(response.body >= 1, "At least 1 task was purged");
     });
 %}
 

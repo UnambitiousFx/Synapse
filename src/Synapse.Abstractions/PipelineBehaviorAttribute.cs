@@ -11,12 +11,9 @@ namespace UnambitiousFx.Synapse.Abstractions;
 ///     Closed behaviors (implementing e.g. <see cref="IRequestPipelineBehavior{TRequest,TResponse}" /> with concrete
 ///     type args) are emitted as a single registration for that exact type pair.
 /// </remarks>
+/// <remarks>
+///     Pipeline position is controlled at runtime by implementing <see cref="IOrderedPipelineBehavior" />,
+///     not by this attribute, which serves only as the discovery marker for the source generator.
+/// </remarks>
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
-public sealed class PipelineBehaviorAttribute : Attribute
-{
-    /// <summary>
-    ///     Controls the position of this behavior in the pipeline chain.
-    ///     Lower values run first (outermost position). Default is 0.
-    /// </summary>
-    public int Order { get; init; } = 0;
-}
+public sealed class PipelineBehaviorAttribute : Attribute;

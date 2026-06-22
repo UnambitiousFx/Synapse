@@ -13,9 +13,15 @@ namespace UnambitiousFx.Synapse;
 
 internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfig
 {
+    private const string OpenGenericBehaviorAotMessage =
+        "Open-generic pipeline behaviors require runtime code generation to close over their type arguments " +
+        "and are not Native-AOT safe (value-type responses throw at resolution time). Decorate the behavior " +
+        "with [PipelineBehavior] so the source generator emits closed registrations instead.";
+
     private readonly List<Action<IServiceCollection>> _actions = new();
     private readonly Dictionary<Type, DispatchEventDelegate> _eventDispatchers = new();
     private readonly Dictionary<Type, Delegate> _requestDispatchers = new();
+    private readonly Dictionary<Type, Delegate> _voidRequestDispatchers = new();
     private readonly Dictionary<Type, Delegate> _streamRequestDispatchers = new();
 
     [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
@@ -75,6 +81,21 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
         return this;
     }
 
+    public ISynapseConfig RegisterCqrsBoundaryEnforcement<TRequest>()
+        where TRequest : IRequest
+    {
+        _actions.Add(svc => svc.RegisterCqrsBoundaryEnforcement<TRequest>());
+        return this;
+    }
+
+    public ISynapseConfig RegisterCqrsBoundaryEnforcement<TRequest, TResponse>()
+        where TRequest : IRequest<TResponse>
+        where TResponse : notnull
+    {
+        _actions.Add(svc => svc.RegisterCqrsBoundaryEnforcement<TRequest, TResponse>());
+        return this;
+    }
+
     public ISynapseConfig AddOpenGenericRequestPipelineBehavior(
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         Type openGenericBehaviorType)
@@ -82,6 +103,7 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
         return AddOpenGenericBehavior(typeof(IRequestPipelineBehavior<>), openGenericBehaviorType);
     }
 
+    [RequiresDynamicCode(OpenGenericBehaviorAotMessage)]
     public ISynapseConfig AddOpenGenericRequestWithResponsePipelineBehavior(
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         Type openGenericBehaviorType)
@@ -96,6 +118,7 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
         return AddOpenGenericBehavior(typeof(IEventPipelineBehavior<>), openGenericBehaviorType);
     }
 
+    [RequiresDynamicCode(OpenGenericBehaviorAotMessage)]
     public ISynapseConfig AddOpenGenericStreamRequestPipelineBehavior(
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         Type openGenericBehaviorType)
@@ -139,6 +162,13 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
         where THandler : class, IRequestHandler<TRequest>
     {
         _actions.Add(scv => scv.RegisterRequestHandler<THandler, TRequest>());
+        _voidRequestDispatchers.TryAdd(typeof(TRequest),
+            (Func<IRequest, IDependencyResolver, CancellationToken, ValueTask<Result>>)(
+                (request, resolver, ct) =>
+                {
+                    var handler = resolver.GetRequiredService<IRequestHandler<TRequest>>();
+                    return handler.HandleAsync((TRequest)request, ct);
+                }));
         return this;
     }
 
@@ -219,6 +249,13 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
             if (condition())
             {
                 scv.RegisterRequestHandler<THandler, TRequest>();
+                _voidRequestDispatchers.TryAdd(typeof(TRequest),
+                    (Func<IRequest, IDependencyResolver, CancellationToken, ValueTask<Result>>)(
+                        (request, resolver, ct) =>
+                        {
+                            var handler = resolver.GetRequiredService<IRequestHandler<TRequest>>();
+                            return handler.HandleAsync((TRequest)request, ct);
+                        }));
             }
         });
         return this;
@@ -277,6 +314,11 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
                 _requestDispatchers.TryAdd(type, dispatcher);
             }
 
+            foreach (var (type, dispatcher) in builder.VoidRequestDispatchers)
+            {
+                _voidRequestDispatchers.TryAdd(type, dispatcher);
+            }
+
             foreach (var (type, dispatcher) in builder.EventDispatchers)
             {
                 _eventDispatchers.TryAdd(type, dispatcher);
@@ -312,28 +354,29 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
         return this;
     }
 
+    [Obsolete(
+        "Runtime CQRS boundary enforcement was removed. Apply " +
+        "[assembly: EnableSynapseCqrsBoundaryEnforcement] so the source generator emits closed " +
+        "(Native-AOT safe) registrations. Calling this method with enable:true now throws.",
+        error: true)]
     public ISynapseConfig EnableCqrsBoundaryEnforcement(bool enable = true)
     {
         if (!enable)
         {
+            // Already disabled by default; nothing to do.
             return this;
         }
 
-        // Boundary enforcement must wrap every other behavior (it tracks entering/leaving a handler and
-        // rejects nested sends), so it has to be the outermost behavior regardless of the order in which
-        // other behaviors are registered. The pipeline runs behaviors in service-registration order, so we
-        // insert these open-generic descriptors at the front of the collection rather than appending them
-        // — making the position deterministic instead of dependent on the call order of AddSynapse config.
-        _actions.Add(svc =>
-        {
-            svc.Insert(0,
-                new ServiceDescriptor(typeof(IRequestPipelineBehavior<,>), typeof(CqrsBoundaryEnforcementBehavior<,>),
-                    ServiceLifetime.Scoped));
-            svc.Insert(0,
-                new ServiceDescriptor(typeof(IRequestPipelineBehavior<>), typeof(CqrsBoundaryEnforcementBehavior<>),
-                    ServiceLifetime.Scoped));
-        });
-        return this;
+        // Fail loudly instead of silently dropping enforcement. The runtime registration path was
+        // removed in favor of generator-emitted closed registrations gated on the assembly attribute;
+        // re-registering here would reintroduce the open-generic value-type AOT failure (known-issue
+        // 001) and duplicate the behavior, making CqrsBoundaryMetadata.Validate() throw on every request.
+        throw new NotSupportedException(
+            "Runtime CQRS boundary enforcement was removed. Apply " +
+            "[assembly: EnableSynapseCqrsBoundaryEnforcement] so the Synapse source generator emits " +
+            "closed (Native-AOT safe) CqrsBoundaryEnforcementBehavior registrations. The runtime " +
+            "registration path was removed because open-generic behaviors cannot close over value-type " +
+            "responses under Native AOT (see known-issue 001).");
     }
 
     public ISynapseConfig AddValidator<
@@ -342,7 +385,7 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
         where TValidator : class, IRequestValidator<TRequest>
         where TRequest : IRequest
     {
-        _actions.Add(scv => scv.AddScoped<IRequestValidator<TRequest>, TValidator>());
+        _actions.Add(scv => scv.RegisterValidator<TValidator, TRequest>());
         return this;
     }
 
@@ -353,7 +396,7 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
         where TRequest : IRequest<TResponse>
         where TResponse : notnull
     {
-        _actions.Add(scv => scv.AddScoped<IRequestValidator<TRequest>, TValidator>());
+        _actions.Add(scv => scv.RegisterValidator<TValidator, TRequest, TResponse>());
         return this;
     }
 
@@ -415,6 +458,7 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
         services.Configure<InvokerOptions>(opts =>
         {
             opts.RequestDispatchers = _requestDispatchers;
+            opts.VoidRequestDispatchers = _voidRequestDispatchers;
             opts.StreamRequestDispatchers = _streamRequestDispatchers;
         });
     }

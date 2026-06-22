@@ -9,7 +9,11 @@ internal static class RegisterGroupFactory
     public static SourceText Create(string? rootNamespace,
         string abstractionsNamespace,
         ImmutableArray<HandlerDetail?> details,
-        ImmutableArray<BehaviorDetail> behaviors)
+        ImmutableArray<BehaviorDetail> behaviors,
+        bool cqrsBoundaryEnforcementEnabled,
+        ImmutableArray<HandlerDetail> behaviorTargets,
+        bool crossAssemblyBehaviorsDisabled,
+        ImmutableArray<ValidatorDetail> validators)
     {
         var sb = new StringBuilder();
 
@@ -45,12 +49,30 @@ internal static class RegisterGroupFactory
             }
         }
 
-        // Emit behavior registrations. Sort by Order, then by a deterministic secondary key
-        // (namespace + class name) so behaviors that share an Order have a stable, reproducible
-        // pipeline position independent of discovery order across (incremental) compilations.
+        // Behaviors and CQRS enforcement are applied to every handler target visible in the compilation
+        // (own assembly + referenced assemblies), so registering them in the composition root covers the
+        // whole reference graph. The opt-out attribute restricts this to same-assembly handlers. Handler
+        // registration always stays scoped to `details` (this assembly) so handlers aren't double-registered;
+        // CQRS registration is deduplicated at the service-collection level, so emitting it for a referenced
+        // request that its own assembly also covers is harmless.
+        var openGenericTargets = crossAssemblyBehaviorsDisabled
+            ? details.Where(d => d is not null).Select(d => d!.Value).ToArray()
+            : behaviorTargets.ToArray();
+
+        // Emit CQRS boundary enforcement registrations (when opted-in via the assembly attribute). The
+        // behavior implements IOrderedPipelineBehavior with First, so it stays outermost at runtime
+        // regardless of registration order.
+        if (cqrsBoundaryEnforcementEnabled)
+        {
+            EmitCqrsBoundaryRegistrations(sb, openGenericTargets);
+        }
+
+        // Emit behavior registrations in a deterministic order (namespace + class name) so the generated
+        // source is reproducible across (incremental) compilations. Runtime pipeline position is decided
+        // by IOrderedPipelineBehavior, not emit order — this only stabilizes the registration sequence,
+        // which the runtime stable sort falls back to for behaviors that share an Order.
         var validBehaviors = behaviors
-            .OrderBy(b => b.Order)
-            .ThenBy(b => b.Namespace, StringComparer.Ordinal)
+            .OrderBy(b => b.Namespace, StringComparer.Ordinal)
             .ThenBy(b => b.ClassName, StringComparer.Ordinal)
             .ToArray();
 
@@ -59,7 +81,7 @@ internal static class RegisterGroupFactory
             if (behavior.IsOpenGeneric)
             {
                 // Cross-product: emit one registration per matching handler
-                EmitOpenGenericBehaviorRegistrations(sb, behavior, details);
+                EmitOpenGenericBehaviorRegistrations(sb, behavior, openGenericTargets);
             }
             else
             {
@@ -68,15 +90,63 @@ internal static class RegisterGroupFactory
             }
         }
 
+        // Emit validator registrations last so the validation behavior lands innermost (closest to the
+        // handler). Each call registers the validator and the closed RequestValidationBehavior that runs it;
+        // the behavior registration is deduplicated, so multiple validators for one request wire it once.
+        EmitValidatorRegistrations(sb, validators);
+
         sb.AppendLine("    }");
         sb.AppendLine("}");
         return SourceText.From(sb.ToString(), Encoding.UTF8);
     }
 
+    private static void EmitCqrsBoundaryRegistrations(StringBuilder sb, IReadOnlyList<HandlerDetail> handlers)
+    {
+        foreach (var handler in handlers)
+        {
+            if (handler.HandlerType != HandlerType.RequestHandler)
+            {
+                continue;
+            }
+
+            var req = handler.FullTargetTypeName;
+
+            if (handler.FullResponseType is { } resp)
+            {
+                // req and resp are already fully qualified (ToEmitName / FullyQualifiedFormat); emit verbatim.
+                sb.AppendLine($"        builder.RegisterCqrsBoundaryEnforcement<{req}, {resp}>();");
+            }
+            else
+            {
+                sb.AppendLine($"        builder.RegisterCqrsBoundaryEnforcement<{req}>();");
+            }
+        }
+    }
+
+    private static void EmitValidatorRegistrations(StringBuilder sb, ImmutableArray<ValidatorDetail> validators)
+    {
+        foreach (var validator in validators)
+        {
+            var validatorType = validator.FullValidatorTypeName;
+            var requestType = validator.FullRequestTypeName;
+
+            if (validator.FullResponseType is { } responseType)
+            {
+                sb.AppendLine(
+                    $"        builder.RegisterValidator<{validatorType}, {requestType}, {responseType}>();");
+            }
+            else
+            {
+                sb.AppendLine(
+                    $"        builder.RegisterValidator<{validatorType}, {requestType}>();");
+            }
+        }
+    }
+
     private static void EmitClosedBehaviorRegistration(StringBuilder sb, BehaviorDetail behavior)
     {
-        var behaviorType = GlobalizeType(behavior.FullBehaviorTypeName);
-        var requestType = GlobalizeType(behavior.FullRequestTypeName);
+        var behaviorType = behavior.FullBehaviorTypeName;
+        var requestType = behavior.FullRequestTypeName;
 
         switch (behavior.Kind)
         {
@@ -86,7 +156,7 @@ internal static class RegisterGroupFactory
                 break;
             case BehaviorKind.RequestWithResponse when behavior.FullResponseOrItemTypeName is { } responseType:
                 sb.AppendLine(
-                    $"        builder.RegisterRequestPipelineBehavior<{behaviorType}, {requestType}, {GlobalizeType(responseType)}>();");
+                    $"        builder.RegisterRequestPipelineBehavior<{behaviorType}, {requestType}, {responseType}>();");
                 break;
             case BehaviorKind.Event:
                 sb.AppendLine(
@@ -94,69 +164,64 @@ internal static class RegisterGroupFactory
                 break;
             case BehaviorKind.StreamRequest when behavior.FullResponseOrItemTypeName is { } itemType:
                 sb.AppendLine(
-                    $"        builder.RegisterStreamRequestPipelineBehavior<{behaviorType}, {requestType}, {GlobalizeType(itemType)}>();");
+                    $"        builder.RegisterStreamRequestPipelineBehavior<{behaviorType}, {requestType}, {itemType}>();");
                 break;
         }
     }
 
     private static void EmitOpenGenericBehaviorRegistrations(StringBuilder sb,
         BehaviorDetail behavior,
-        ImmutableArray<HandlerDetail?> handlers)
+        IReadOnlyList<HandlerDetail> handlers)
     {
-        var behaviorBaseName = GlobalizeType(behavior.FullBehaviorTypeName);
+        var behaviorBaseName = behavior.FullBehaviorTypeName;
 
         foreach (var handler in handlers)
         {
-            if (handler is null)
-            {
-                continue;
-            }
-
             switch (behavior.Kind)
             {
-                case BehaviorKind.Request when handler.Value.HandlerType == HandlerType.RequestHandler
-                                               && handler.Value.FullResponseType is null
+                case BehaviorKind.Request when handler.HandlerType == HandlerType.RequestHandler
+                                               && handler.FullResponseType is null
                                                && Satisfies(behavior.RequestConstraints,
-                                                   handler.Value.TargetSatisfyingTypes):
+                                                   handler.TargetSatisfyingTypes):
                 {
-                    var req = GlobalizeType(handler.Value.FullTargetTypeName);
-                    var closedBehavior = $"{behaviorBaseName}<{req}>";
+                    var req = handler.FullTargetTypeName;
+                    var closedBehavior = CloseBehavior(behavior, behaviorBaseName, req, null);
                     sb.AppendLine($"        builder.RegisterRequestPipelineBehavior<{closedBehavior}, {req}>();");
                     break;
                 }
-                case BehaviorKind.RequestWithResponse when handler.Value.HandlerType == HandlerType.RequestHandler
-                                                          && handler.Value.FullResponseType is { } resp
+                case BehaviorKind.RequestWithResponse when handler.HandlerType == HandlerType.RequestHandler
+                                                          && handler.FullResponseType is { } resp
                                                           && Satisfies(behavior.RequestConstraints,
-                                                              handler.Value.TargetSatisfyingTypes)
+                                                              handler.TargetSatisfyingTypes)
                                                           && Satisfies(behavior.ResponseConstraints,
-                                                              handler.Value.ResponseSatisfyingTypes):
+                                                              handler.ResponseSatisfyingTypes):
                 {
-                    var req = GlobalizeType(handler.Value.FullTargetTypeName);
-                    var respType = GlobalizeType(resp);
-                    var closedBehavior = $"{behaviorBaseName}<{req}, {respType}>";
+                    var req = handler.FullTargetTypeName;
+                    var respType = resp;
+                    var closedBehavior = CloseBehavior(behavior, behaviorBaseName, req, respType);
                     sb.AppendLine(
                         $"        builder.RegisterRequestPipelineBehavior<{closedBehavior}, {req}, {respType}>();");
                     break;
                 }
-                case BehaviorKind.Event when handler.Value.HandlerType == HandlerType.EventHandler
+                case BehaviorKind.Event when handler.HandlerType == HandlerType.EventHandler
                                              && Satisfies(behavior.RequestConstraints,
-                                                 handler.Value.TargetSatisfyingTypes):
+                                                 handler.TargetSatisfyingTypes):
                 {
-                    var evt = GlobalizeType(handler.Value.FullTargetTypeName);
-                    var closedBehavior = $"{behaviorBaseName}<{evt}>";
+                    var evt = handler.FullTargetTypeName;
+                    var closedBehavior = CloseBehavior(behavior, behaviorBaseName, evt, null);
                     sb.AppendLine($"        builder.RegisterEventPipelineBehavior<{closedBehavior}, {evt}>();");
                     break;
                 }
-                case BehaviorKind.StreamRequest when handler.Value.HandlerType == HandlerType.StreamRequestHandler
-                                                    && handler.Value.FullResponseType is { } item
+                case BehaviorKind.StreamRequest when handler.HandlerType == HandlerType.StreamRequestHandler
+                                                    && handler.FullResponseType is { } item
                                                     && Satisfies(behavior.RequestConstraints,
-                                                        handler.Value.TargetSatisfyingTypes)
+                                                        handler.TargetSatisfyingTypes)
                                                     && Satisfies(behavior.ResponseConstraints,
-                                                        handler.Value.ResponseSatisfyingTypes):
+                                                        handler.ResponseSatisfyingTypes):
                 {
-                    var req = GlobalizeType(handler.Value.FullTargetTypeName);
-                    var itemType = GlobalizeType(item);
-                    var closedBehavior = $"{behaviorBaseName}<{req}, {itemType}>";
+                    var req = handler.FullTargetTypeName;
+                    var itemType = item;
+                    var closedBehavior = CloseBehavior(behavior, behaviorBaseName, req, itemType);
                     sb.AppendLine(
                         $"        builder.RegisterStreamRequestPipelineBehavior<{closedBehavior}, {req}, {itemType}>();");
                     break;
@@ -165,11 +230,32 @@ internal static class RegisterGroupFactory
         }
     }
 
+    /// <summary>
+    ///     Builds the closed behavior type name by substituting each of the class's own type parameters with
+    ///     the concrete request/response type, in class-declaration order. The order and arity come from
+    ///     <see cref="BehaviorDetail.ClosingTypeArgumentMap" /> (index <c>0</c> → request/event, <c>1</c> →
+    ///     response/item) so a class whose generic arity or parameter order differs from its interface closes
+    ///     correctly. Falls back to the interface arity when no map is recorded (legacy / safety).
+    /// </summary>
+    private static string CloseBehavior(BehaviorDetail behavior, string behaviorBaseName, string request,
+        string? response)
+    {
+        if (behavior.ClosingTypeArgumentMap.Count == 0)
+        {
+            return response is null
+                ? $"{behaviorBaseName}<{request}>"
+                : $"{behaviorBaseName}<{request}, {response}>";
+        }
+
+        var args = behavior.ClosingTypeArgumentMap.Select(i => i == 1 ? response! : request);
+        return $"{behaviorBaseName}<{string.Join(", ", args)}>";
+    }
+
     private static void RegisterEventHandler(StringBuilder sb,
         HandlerDetail detail)
     {
         sb.AppendLine(
-            $"        builder.RegisterEventHandler<{GlobalizeType(detail.FullHandlerTypeName)}, {GlobalizeType(detail.FullTargetTypeName)}>();");
+            $"        builder.RegisterEventHandler<{detail.FullHandlerTypeName}, {detail.FullTargetTypeName}>();");
     }
 
     private static void RegisterRequestHandler(StringBuilder sb,
@@ -178,12 +264,12 @@ internal static class RegisterGroupFactory
         if (detail.FullResponseType is null)
         {
             sb.AppendLine(
-                $"        builder.RegisterRequestHandler<{GlobalizeType(detail.FullHandlerTypeName)}, {GlobalizeType(detail.FullTargetTypeName)}>();");
+                $"        builder.RegisterRequestHandler<{detail.FullHandlerTypeName}, {detail.FullTargetTypeName}>();");
         }
         else
         {
             sb.AppendLine(
-                $"        builder.RegisterRequestHandler<{GlobalizeType(detail.FullHandlerTypeName)}, {GlobalizeType(detail.FullTargetTypeName)}, {GlobalizeType(detail.FullResponseType)}>();");
+                $"        builder.RegisterRequestHandler<{detail.FullHandlerTypeName}, {detail.FullTargetTypeName}, {detail.FullResponseType}>();");
         }
     }
 
@@ -194,7 +280,7 @@ internal static class RegisterGroupFactory
         if (detail.FullResponseType is not null)
         {
             sb.AppendLine(
-                $"        builder.RegisterStreamRequestHandler<{GlobalizeType(detail.FullHandlerTypeName)}, {GlobalizeType(detail.FullTargetTypeName)}, {GlobalizeType(detail.FullResponseType)}>();");
+                $"        builder.RegisterStreamRequestHandler<{detail.FullHandlerTypeName}, {detail.FullTargetTypeName}, {detail.FullResponseType}>();");
         }
     }
 
@@ -230,77 +316,4 @@ internal static class RegisterGroupFactory
         return true;
     }
 
-    // C# predefined type keywords — global:: prefix is not valid for these.
-    private static readonly HashSet<string> CSharpKeywordTypes = new HashSet<string>(StringComparer.Ordinal)
-    {
-        "bool", "byte", "char", "decimal", "double", "float", "int", "long",
-        "nint", "nuint", "object", "sbyte", "short", "string", "uint", "ulong", "ushort", "void"
-    };
-
-    private static string GlobalizeType(string input)
-    {
-        input = input.Trim();
-
-        var openIdx = input.IndexOf('<');
-        if (openIdx >= 0)
-        {
-            // Generic type: globalize the base, recurse into each top-level type argument, and
-            // preserve any trailing decorators (e.g. nullable '?' or array '[]') after the '>'.
-            var closeIdx = input.LastIndexOf('>');
-            var baseType = input.Substring(0, openIdx);
-            var argsText = input.Substring(openIdx + 1, closeIdx - openIdx - 1);
-            var suffix = input.Substring(closeIdx + 1);
-            var args = string.Join(", ", SplitTopLevelArgs(argsText).Select(GlobalizeType));
-            return $"{GlobalizeSimpleType(baseType)}<{args}>{suffix}";
-        }
-
-        return GlobalizeSimpleType(input);
-    }
-
-    private static string GlobalizeSimpleType(string input)
-    {
-        // Split trailing decorators ('?', '[]') from the core type name so keyword detection works.
-        var coreLength = input.Length;
-        while (coreLength > 0 && (input[coreLength - 1] == '?' || input[coreLength - 1] == '[' ||
-                                  input[coreLength - 1] == ']'))
-        {
-            coreLength--;
-        }
-
-        var core = input.Substring(0, coreLength);
-        var suffix = input.Substring(coreLength);
-
-        if (core.StartsWith("global::", StringComparison.Ordinal) || CSharpKeywordTypes.Contains(core))
-        {
-            return core + suffix;
-        }
-
-        return $"global::{core}{suffix}";
-    }
-
-    private static IEnumerable<string> SplitTopLevelArgs(string args)
-    {
-        var result = new List<string>();
-        var depth = 0;
-        var start = 0;
-        for (var i = 0; i < args.Length; i++)
-        {
-            switch (args[i])
-            {
-                case '<':
-                    depth++;
-                    break;
-                case '>':
-                    depth--;
-                    break;
-                case ',' when depth == 0:
-                    result.Add(args.Substring(start, i - start));
-                    start = i + 1;
-                    break;
-            }
-        }
-
-        result.Add(args.Substring(start));
-        return result;
-    }
 }

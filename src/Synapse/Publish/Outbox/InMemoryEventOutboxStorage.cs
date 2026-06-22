@@ -29,26 +29,27 @@ public sealed class InMemoryEventOutboxStorage : IEventOutboxStorage
     private readonly ConcurrentDictionary<Guid, ConcurrentBag<Item>> _scopedItems = new();
 
     /// <inheritdoc />
-    public ValueTask<IEnumerable<IEvent>> GetPendingEventsAsync(CancellationToken cancellationToken = default)
+    public ValueTask<IReadOnlyList<OutboxEntry>> GetPendingEventsAsync(CancellationToken cancellationToken = default)
     {
-        // Returns events ready for dispatch (not processed, not dead-letter, and past scheduled time)
+        // Returns items ready for dispatch (not processed, not dead-letter, and past scheduled time)
         var now = DateTimeOffset.UtcNow;
-        return new ValueTask<IEnumerable<IEvent>>(_scopedItems.Values
+        IReadOnlyList<OutboxEntry> pending = _scopedItems.Values
             .SelectMany(items => items)
             .Where(item =>
                 item is { Processed: false, DeadLetter: false } &&
                 (item.NextAttemptAt is null || item.NextAttemptAt <= now))
-            .Select(item => item.Event)
-            .ToList());
+            .Select(item => new OutboxEntry(item.Id, item.Event))
+            .ToList();
+        return new ValueTask<IReadOnlyList<OutboxEntry>>(pending);
     }
 
     /// <inheritdoc />
-    public ValueTask<Result> MarkAsProcessedAsync(IEvent @event,
+    public ValueTask<Result> MarkAsProcessedAsync(Guid id,
         CancellationToken cancellationToken = default)
     {
-        if (!TryFindItem(@event, out var item))
+        if (!TryFindItem(id, out var item))
         {
-            return new ValueTask<Result>(Result.Failure($"Event '{@event}' was not found in the outbox storage"));
+            return new ValueTask<Result>(Result.Failure($"Outbox item '{id}' was not found in the outbox storage"));
         }
 
         item.Processed = true;
@@ -78,15 +79,15 @@ public sealed class InMemoryEventOutboxStorage : IEventOutboxStorage
     }
 
     /// <inheritdoc />
-    public ValueTask<Result> MarkAsFailedAsync(IEvent @event,
+    public ValueTask<Result> MarkAsFailedAsync(Guid id,
         string reason,
         bool deadLetter,
         DateTimeOffset? nextAttemptAt = null,
         CancellationToken cancellationToken = default)
     {
-        if (!TryFindItem(@event, out var item))
+        if (!TryFindItem(id, out var item))
         {
-            return new ValueTask<Result>(Result.Failure($"Event '{@event}' was not found in the outbox storage"));
+            return new ValueTask<Result>(Result.Failure($"Outbox item '{id}' was not found in the outbox storage"));
         }
 
         item.Attempts++;
@@ -105,20 +106,21 @@ public sealed class InMemoryEventOutboxStorage : IEventOutboxStorage
     }
 
     /// <inheritdoc />
-    public ValueTask<IEnumerable<IEvent>> GetDeadLetterEventsAsync(CancellationToken cancellationToken = default)
+    public ValueTask<IReadOnlyList<OutboxEntry>> GetDeadLetterEventsAsync(CancellationToken cancellationToken = default)
     {
-        return new ValueTask<IEnumerable<IEvent>>(_scopedItems.Values
+        IReadOnlyList<OutboxEntry> deadLetter = _scopedItems.Values
             .SelectMany(items => items)
             .Where(i => i.DeadLetter)
-            .Select(i => i.Event)
-            .ToList());
+            .Select(i => new OutboxEntry(i.Id, i.Event))
+            .ToList();
+        return new ValueTask<IReadOnlyList<OutboxEntry>>(deadLetter);
     }
 
     /// <inheritdoc />
-    public ValueTask<int?> GetAttemptCountAsync(IEvent @event,
+    public ValueTask<int?> GetAttemptCountAsync(Guid id,
         CancellationToken cancellationToken = default)
     {
-        if (!TryFindItem(@event, out var item))
+        if (!TryFindItem(id, out var item))
         {
             return new ValueTask<int?>((int?)null);
         }
@@ -136,11 +138,20 @@ public sealed class InMemoryEventOutboxStorage : IEventOutboxStorage
     }
 
     /// <inheritdoc />
-    public ValueTask<int> GetFailedCountAsync(CancellationToken cancellationToken = default)
+    public ValueTask<int> GetRetryingCountAsync(CancellationToken cancellationToken = default)
     {
         var count = _scopedItems.Values
             .SelectMany(items => items)
             .Count(i => i is { Processed: false, DeadLetter: false } && i.Attempts > 0);
+        return new ValueTask<int>(count);
+    }
+
+    /// <inheritdoc />
+    public ValueTask<int> GetDeadLetterCountAsync(CancellationToken cancellationToken = default)
+    {
+        var count = _scopedItems.Values
+            .SelectMany(items => items)
+            .Count(i => i.DeadLetter);
         return new ValueTask<int>(count);
     }
 
@@ -162,11 +173,11 @@ public sealed class InMemoryEventOutboxStorage : IEventOutboxStorage
         return new ValueTask<TimeSpan?>(age);
     }
 
-    private bool TryFindItem(IEvent @event, out Item item)
+    private bool TryFindItem(Guid id, out Item item)
     {
         foreach (var scopedItems in _scopedItems.Values)
         {
-            var foundItem = scopedItems.FirstOrDefault(i => ReferenceEquals(i.Event, @event));
+            var foundItem = scopedItems.FirstOrDefault(i => i.Id == id);
             if (foundItem != null)
             {
                 item = foundItem;
@@ -188,6 +199,7 @@ public sealed class InMemoryEventOutboxStorage : IEventOutboxStorage
             CreatedAt = DateTimeOffset.UtcNow;
         }
 
+        public Guid Id { get; } = Guid.NewGuid();
         public IEvent Event { get; }
         public bool Processed { get; set; }
         public DateTimeOffset CreatedAt { get; }
