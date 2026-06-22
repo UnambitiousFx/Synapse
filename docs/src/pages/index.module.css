@@ -1,0 +1,157 @@
+/**
+ * CSS modules for the homepage.
+ */
+
+/* ── Hero ────────────────────────────────────────────────────────────────── */
+
+.heroBanner {
+  padding: 4rem 0 3rem;
+  background: linear-gradient(
+    135deg,
+    var(--synapse-hero-bg-start) 0%,
+    var(--synapse-hero-bg-end) 100%
+  );
+  color: var(--synapse-hero-text);
+  overflow: hidden;
+}
+
+.heroInner {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: center;
+  gap: 3rem;
+}
+
+@media screen and (max-width: 996px) {
+  .heroBanner {
+    padding: 2.5rem 1.5rem 2rem;
+  }
+
+  .heroInner {
+    grid-template-columns: 1fr;
+    gap: 2rem;
+  }
+}
+
+/* ── Hero left column ────────────────────────────────────────────────────── */
+
+.heroLeft {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.heroTagline {
+  font-size: 1.125rem;
+  opacity: 0.85;
+  margin: 0;
+  line-height: 1.6;
+}
+
+.heroButtons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.heroInstall {
+  margin-top: 0.25rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.heroInstall code {
+  background: var(--synapse-install-bg);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #86efac;
+  padding: 0.4rem 0.9rem;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  letter-spacing: 0.01em;
+}
+
+/* ── Hero right column — code sample ────────────────────────────────────── */
+
+.heroCode {
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 1.25rem 1.5rem;
+  overflow-x: auto;
+}
+
+.heroCode pre {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.65;
+  color: #d4fce4;
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+
+.heroCodeLabel {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  opacity: 0.5;
+  margin-bottom: 0.6rem;
+}
+
+@media screen and (max-width: 996px) {
+  .heroCode {
+    display: none;
+  }
+}
+
+/* ── Features ────────────────────────────────────────────────────────────── */
+
+.features {
+  padding: 3rem 0 2rem;
+}
+
+.featuresGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1.25rem;
+}
+
+@media screen and (max-width: 1100px) {
+  .featuresGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media screen and (max-width: 600px) {
+  .featuresGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Next-steps section ──────────────────────────────────────────────────── */
+
+.nextSteps {
+  padding: 2rem 0 3.5rem;
+  border-top: 1px solid var(--ifm-color-emphasis-200);
+}
+
+.nextStepsGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+@media screen and (max-width: 996px) {
+  .nextStepsGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media screen and (max-width: 600px) {
+  .nextStepsGrid {
+    grid-template-columns: 1fr;
+  }
+}
