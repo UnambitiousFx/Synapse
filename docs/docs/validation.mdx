@@ -1,5 +1,7 @@
 ---
 sidebar_position: 8
+title: Validation
+description: Run validators before the handler is invoked using IRequestValidator and the built-in RequestValidationBehavior pipeline stage.
 ---
 
 # Validation
@@ -46,6 +48,10 @@ services.AddSynapse(cfg =>
 ```
 
 `AddValidator` registers `IRequestValidator<CreateTaskCommand>` in DI. `RequestValidationBehavior` resolves all registered validators for the request type at runtime.
+
+:::tip
+If any validator returns `Result.Failure`, the **handler is never called** and the failure is returned directly to the caller.
+:::
 
 ## Validation flow
 

@@ -1,5 +1,7 @@
 ---
 sidebar_position: 4
+title: Events
+description: Fan-out in-process event publishing with IEmitter, IEventHandler, and sequential or concurrent orchestration.
 ---
 
 # Events
@@ -136,7 +138,9 @@ services.AddSynapse(cfg =>
 });
 ```
 
+:::tip Choosing an orchestrator
 Use `ConcurrentEventOrchestrator` when handlers are independent and latency matters. Use the default `SequentialEventOrchestrator` when order matters or handlers share mutable state.
+:::
 
 ## Batch publishing
 

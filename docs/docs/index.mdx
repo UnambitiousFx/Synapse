@@ -1,6 +1,11 @@
 ---
 sidebar_position: 1
+title: Synapse
+description: Lightweight, Native-AOT-ready in-process mediator for .NET. Commands, Queries, Events, and composable Pipelines with zero runtime reflection.
 ---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
 
 # Synapse
 
@@ -13,7 +18,7 @@ UnambitiousFx.Synapse is a lightweight, high-performance, in-process mediator fo
 - **Streaming** — return `IAsyncEnumerable<Result<T>>` for large or live data sets.
 - **Pipeline behaviors** — wrap any request or event in cross-cutting concerns (logging, validation, CQRS enforcement).
 - **NativeAOT-ready** — dispatch delegates are captured at startup; no `MakeGenericType`, no reflection at request time.
-- **Result-based errors** — handlers return `Result` / `Result<T>` from [UnambitiousFx.Functional](/lib-functional); errors are values, not exceptions.
+- **Result-based errors** — handlers return `Result` / `Result<T>` from `UnambitiousFx.Functional`; errors are values, not exceptions.
 
 ## Architecture overview
 
@@ -44,12 +49,25 @@ graph TD
 
 ## Packages
 
-```bash
-dotnet add package UnambitiousFx.Synapse.Abstractions
-dotnet add package UnambitiousFx.Synapse
-dotnet add package UnambitiousFx.Synapse.AspNetCore   # optional — web API integration
-dotnet add package UnambitiousFx.Synapse.Generator    # optional — source generator
-```
+<Tabs>
+  <TabItem value="cli" label=".NET CLI" default>
+    ```bash
+    dotnet add package UnambitiousFx.Synapse.Abstractions
+    dotnet add package UnambitiousFx.Synapse
+    dotnet add package UnambitiousFx.Synapse.AspNetCore   # optional — web API integration
+    dotnet add package UnambitiousFx.Synapse.Generator    # optional — source generator
+    ```
+  </TabItem>
+  <TabItem value="packageref" label="PackageReference">
+    ```xml
+    <PackageReference Include="UnambitiousFx.Synapse.Abstractions" Version="*" />
+    <PackageReference Include="UnambitiousFx.Synapse" Version="*" />
+    <!-- optional -->
+    <PackageReference Include="UnambitiousFx.Synapse.AspNetCore" Version="*" />
+    <PackageReference Include="UnambitiousFx.Synapse.Generator" Version="*" />
+    ```
+  </TabItem>
+</Tabs>
 
 | Package                              | Purpose                                                              |
 | ------------------------------------ | -------------------------------------------------------------------- |

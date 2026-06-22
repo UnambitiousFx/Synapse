@@ -1,5 +1,7 @@
 ---
 sidebar_position: 10
+title: Outbox Pattern
+description: Defer event dispatch until after your transaction commits using the built-in outbox, with retry, dead-lettering, and health checks.
 ---
 
 # Outbox Pattern
@@ -102,6 +104,10 @@ cfg.SetDefaultPublishingMode(EmitMode.Outbox);
 ```
 
 With this setting, `EmitAsync(event)` and `EmitAsync(event, EmitMode.Default)` store to the outbox automatically.
+
+:::warning Production storage
+The built-in `InMemoryEventOutboxStorage` is **not persistent** — all pending events are lost on restart. Replace it with a database-backed implementation before going to production.
+:::
 
 ## Replace the storage for production
 

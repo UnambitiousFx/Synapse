@@ -87,7 +87,30 @@ const config: Config = {
           type: 'docSidebar',
           sidebarId: 'tutorialSidebar',
           position: 'left',
-          label: 'Getting Started',
+          label: 'Docs',
+        },
+        {
+          type: 'doc',
+          docId: 'commands-and-queries',
+          position: 'left',
+          label: 'Core Concepts',
+        },
+        {
+          type: 'doc',
+          docId: 'pipelines',
+          position: 'left',
+          label: 'Pipelines',
+        },
+        {
+          type: 'doc',
+          docId: 'aspnetcore',
+          position: 'left',
+          label: 'ASP.NET Core',
+        },
+        {
+          href: 'https://www.nuget.org/packages?q=UnambitiousFx.Synapse',
+          label: 'NuGet',
+          position: 'right',
         },
         {
           href: 'https://github.com/UnambitiousFx/Synapse',
@@ -105,6 +128,18 @@ const config: Config = {
             {
               label: 'Getting Started',
               to: '/docs/getting-started',
+            },
+            {
+              label: 'Commands & Queries',
+              to: '/docs/commands-and-queries',
+            },
+            {
+              label: 'Pipeline Behaviors',
+              to: '/docs/pipelines',
+            },
+            {
+              label: 'ASP.NET Core',
+              to: '/docs/aspnetcore',
             },
           ],
         },

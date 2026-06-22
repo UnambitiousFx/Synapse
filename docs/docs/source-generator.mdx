@@ -1,5 +1,7 @@
 ---
 sidebar_position: 12
+title: Source Generator
+description: Roslyn incremental source generator that eliminates manual handler registration and enables NativeAOT-safe dispatch.
 ---
 
 # Source Generator
@@ -130,6 +132,10 @@ services.AddSynapse(cfg =>
 ```
 
 That replaces all manual `RegisterRequestHandler` / `RegisterEventHandler` calls.
+
+:::caution NativeAOT requirement
+`UseEventDispatcherRegistration` is **required** when publishing with `PublishAot=true` or full trimming. Without it, event dispatch falls back to runtime `typeof(T)` resolution which the AOT compiler cannot analyze.
+:::
 
 ## When to use `UseEventDispatcherRegistration`
 

@@ -1,5 +1,7 @@
 ---
 sidebar_position: 7
+title: Pipeline Behaviors
+description: Wrap request, event, or stream handling with cross-cutting logic using the chain-of-responsibility pipeline pattern.
 ---
 
 # Pipeline Behaviors
@@ -179,6 +181,10 @@ public class StreamLoggingBehavior : IStreamRequestPipelineBehavior
     }
 }
 ```
+
+:::note Registration order
+Behaviors run in **registration order** — the first behavior registered is the outermost wrapper. Register logging before validation so the log captures the full round-trip including validation failures.
+:::
 
 ## Registration order
 

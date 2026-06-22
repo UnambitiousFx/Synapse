@@ -1,6 +1,11 @@
 ---
 sidebar_position: 2
+title: Getting Started
+description: Install Synapse, wire it up in a .NET application, and send your first command end-to-end.
 ---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
 
 # Getting Started
 
@@ -8,15 +13,33 @@ This guide walks you through installing Synapse, wiring it up in a .NET applicat
 
 ## Install
 
-```bash
-dotnet add package UnambitiousFx.Synapse
-```
+<Tabs>
+  <TabItem value="cli" label=".NET CLI" default>
+    ```bash
+    dotnet add package UnambitiousFx.Synapse
+    ```
+  </TabItem>
+  <TabItem value="packageref" label="PackageReference">
+    ```xml
+    <PackageReference Include="UnambitiousFx.Synapse" Version="*" />
+    ```
+  </TabItem>
+</Tabs>
 
 For web API projects, also install the ASP.NET Core integration layer:
 
-```bash
-dotnet add package UnambitiousFx.Synapse.AspNetCore
-```
+<Tabs>
+  <TabItem value="cli" label=".NET CLI" default>
+    ```bash
+    dotnet add package UnambitiousFx.Synapse.AspNetCore
+    ```
+  </TabItem>
+  <TabItem value="packageref" label="PackageReference">
+    ```xml
+    <PackageReference Include="UnambitiousFx.Synapse.AspNetCore" Version="*" />
+    ```
+  </TabItem>
+</Tabs>
 
 ## Register Synapse
 
@@ -29,7 +52,10 @@ builder.Services.AddSynapse(cfg =>
 });
 ```
 
+:::note
 Every handler must be registered explicitly — Synapse does not auto-discover handlers by convention.
+Use the [Source Generator](./source-generator) to eliminate boilerplate in larger projects.
+:::
 
 ### What gets registered automatically
 
@@ -89,7 +115,9 @@ public class CreateTaskHandler : IRequestHandler<CreateTaskCommand, Guid>
 }
 ```
 
-Handlers receive the command and a `CancellationToken`. They always return `Result<TResponse>` — never throw for domain errors.
+:::tip
+Handlers receive the command and a `CancellationToken`. Return `Result<TResponse>` for domain errors — **never throw**. See [Error Handling](./error-handling) for patterns.
+:::
 
 ## Send the command
 
@@ -154,7 +182,7 @@ if (result.IsSuccess)
     Process(result.Value);
 ```
 
-For more detail on `Result`, see the [UnambitiousFx.Functional documentation](/lib-functional/result/).
+For more detail on `Result`, see the `UnambitiousFx.Functional` documentation.
 
 ## Complete example
 

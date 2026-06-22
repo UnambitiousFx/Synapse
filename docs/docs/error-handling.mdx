@@ -1,10 +1,12 @@
 ---
 sidebar_position: 9
+title: Error Handling
+description: Work with Result and Result of T across handlers, pipelines, and call sites — errors as values, not exceptions.
 ---
 
 # Error Handling
 
-Synapse embraces the principle that **errors are values**. Handlers return `Result` / `Result<T>` from [UnambitiousFx.Functional](/lib-functional) rather than throwing exceptions for domain errors. Exceptions are reserved for genuine programming errors (misconfiguration, missing handlers).
+Synapse embraces the principle that **errors are values**. Handlers return `Result` / `Result<T>` from `UnambitiousFx.Functional` rather than throwing exceptions for domain errors. Exceptions are reserved for genuine programming errors (misconfiguration, missing handlers).
 
 ## Result at the call site
 
@@ -107,6 +109,6 @@ These should never appear in normal application flow. If they do, fix the config
 
 ## See also
 
-- [UnambitiousFx.Functional documentation](/lib-functional/result/) — full `Result<T>` API: `Bind`, `Map`, `Ensure`, `Recover`, LINQ support.
+- `UnambitiousFx.Functional` — full `Result<T>` API: `Bind`, `Map`, `Ensure`, `Recover`, LINQ support.
 - [Validation](./validation) — validation failures surface as `Result.Failure` before the handler runs.
 - [Pipeline Behaviors](./pipelines) — behaviors can inspect and transform failures.
