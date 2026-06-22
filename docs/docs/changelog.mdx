@@ -1,0 +1,70 @@
+---
+sidebar_position: 14
+title: Changelog
+description: Resolved issues and hardening fixes found during development of Synapse on the feature/typed-pipeline-behaviors branch.
+---
+
+# Changelog
+
+This page records issues discovered and resolved while hardening the library. All entries are fully resolved — none represent open bugs. The detailed engineering notes for each fix live in [`docs/known-issues/`](https://github.com/UnambitiousFx/Synapse/tree/feature/typed-pipeline-behaviors/docs/known-issues) (mirrors the GitHub bug-report template; kept as a developer reference).
+
+## Core DI
+
+| ID | Summary | Severity |
+|---|---|---|
+| [001](https://github.com/UnambitiousFx/Synapse/blob/feature/typed-pipeline-behaviors/docs/known-issues/001-open-generic-pipeline-behavior-aot-value-type.md) | Open-generic pipeline behavior registrations throw at runtime under Native AOT when `TResponse` is a value type | **High** |
+| [002](https://github.com/UnambitiousFx/Synapse/blob/feature/typed-pipeline-behaviors/docs/known-issues/002-validateonbuild-does-not-suppress-aot-open-generic-check.md) | `ValidateOnBuild = false` does not suppress the issue-001 runtime error | Medium |
+| [004](https://github.com/UnambitiousFx/Synapse/blob/feature/typed-pipeline-behaviors/docs/known-issues/004-validators-never-run-without-manual-behavior-registration.md) | `AddValidator` registers a validator that is never wired into the pipeline — validation silently never runs | **High** |
+| [015](https://github.com/UnambitiousFx/Synapse/blob/feature/typed-pipeline-behaviors/docs/known-issues/015-enablecqrsboundaryenforcement-is-a-silent-noop.md) | `EnableCqrsBoundaryEnforcement()` was an `[Obsolete]` no-op; runtime-API callers silently lost all enforcement | **High** |
+| [019](https://github.com/UnambitiousFx/Synapse/blob/feature/typed-pipeline-behaviors/docs/known-issues/019-behavior-dedup-is-lifetime-and-factory-blind.md) | Behavior dedup compared `(ServiceType, ImplementationType)` only — lifetime-blind, skipped factory/instance registrations | Medium |
+
+## Source Generator
+
+| ID | Summary | Severity |
+|---|---|---|
+| [005](https://github.com/UnambitiousFx/Synapse/blob/feature/typed-pipeline-behaviors/docs/known-issues/005-generator-drops-enclosing-type-chain-for-nested-handlers.md) | Generator emits an uncompilable type name for nested handler/behavior classes (drops enclosing-type chain) | **High** |
+| [006](https://github.com/UnambitiousFx/Synapse/blob/feature/typed-pipeline-behaviors/docs/known-issues/006-open-generic-behavior-closed-with-wrong-arity.md) | Open-generic behavior closed with the interface's arity, not the class's own → CS0305 | **High** |
+| [012](https://github.com/UnambitiousFx/Synapse/blob/feature/typed-pipeline-behaviors/docs/known-issues/012-globalizetype-breaks-on-tuple-and-pointer-types.md) | `GlobalizeType` emits invalid `global::` prefix for tuple / pointer / function-pointer types | Medium |
+| [017](https://github.com/UnambitiousFx/Synapse/blob/feature/typed-pipeline-behaviors/docs/known-issues/017-splittoplevelargs-ignores-tuple-parentheses.md) | `SplitTopLevelArgs` ignored tuple `()` — a tuple nested as a generic argument emitted uncompilable code | Medium |
+| [022](https://github.com/UnambitiousFx/Synapse/blob/feature/typed-pipeline-behaviors/docs/known-issues/022-validator-attribute-picks-first-irequest-response.md) | `[Validator]` derived the response type from the first `IRequest<T>` found; multi-`IRequest` requests now emit diagnostic MDG011 | Low |
+
+## Pipeline & CQRS
+
+| ID | Summary | Severity |
+|---|---|---|
+| [008](https://github.com/UnambitiousFx/Synapse/blob/feature/typed-pipeline-behaviors/docs/known-issues/008-cross-assembly-behavior-registered-and-runs-twice.md) | Cross-assembly open-generic behavior is registered (and runs) twice — no dedup on the user-behavior path | **High** |
+| [009](https://github.com/UnambitiousFx/Synapse/blob/feature/typed-pipeline-behaviors/docs/known-issues/009-behavior-order-not-honored-across-registration-sources.md) | `Order` is only a generator-local sort; runtime order follows DI registration across sources | Medium |
+| [013](https://github.com/UnambitiousFx/Synapse/blob/feature/typed-pipeline-behaviors/docs/known-issues/013-invoker-overloads-resolve-handlers-inconsistently.md) | `Invoker` overloads resolve handlers inconsistently (static `TRequest` vs runtime `request.GetType()`) | Medium |
+| [016](https://github.com/UnambitiousFx/Synapse/blob/feature/typed-pipeline-behaviors/docs/known-issues/016-cqrs-boundary-marker-leaks-on-handler-exception.md) | CQRS boundary marker leaked when a handler threw — spurious violation on later send in the same scope | Medium |
+| [018](https://github.com/UnambitiousFx/Synapse/blob/feature/typed-pipeline-behaviors/docs/known-issues/018-cqrs-enforcement-skips-generator-invisible-handlers.md) | CQRS enforcement was emitted per-discovered-handler only — manually registered handlers were not covered | Medium |
+| [021](https://github.com/UnambitiousFx/Synapse/blob/feature/typed-pipeline-behaviors/docs/known-issues/021-eventdispatcher-resorts-behaviors-every-publish.md) | `EventDispatcher` re-sorted behaviors via `OrderBy` on every publish (per-publish allocation) | Low |
+
+## Outbox
+
+| ID | Summary | Severity |
+|---|---|---|
+| [010](https://github.com/UnambitiousFx/Synapse/blob/feature/typed-pipeline-behaviors/docs/known-issues/010-outbox-lookup-uses-reference-equality.md) | Outbox event lookup narrowed to `ReferenceEquals` — broke the public contract for equal-but-distinct events | Medium |
+| [014](https://github.com/UnambitiousFx/Synapse/blob/feature/typed-pipeline-behaviors/docs/known-issues/014-outbox-lookup-matches-value-equal-event-across-scopes.md) | Outbox lookup matched the first value-equal event across all scopes; stored items now carry a stable `Guid` identity via `OutboxEntry` | **High** |
+| [020](https://github.com/UnambitiousFx/Synapse/blob/feature/typed-pipeline-behaviors/docs/known-issues/020-outbox-failed-count-counts-retrying-events.md) | Outbox "failed count" counted retrying events (`Attempts > 0`), tripping the health check on transient retries | Medium |
+| [023](https://github.com/UnambitiousFx/Synapse/blob/feature/typed-pipeline-behaviors/docs/known-issues/023-recordoutbox-methods-are-dead-noops.md) | `RecordOutbox*` metric methods were dead no-ops on `ISynapseMetrics` (superseded by observable gauges); removed | Low |
+
+## Observability
+
+| ID | Summary | Severity |
+|---|---|---|
+| [007](https://github.com/UnambitiousFx/Synapse/blob/feature/typed-pipeline-behaviors/docs/known-issues/007-outbox-metrics-emit-nothing.md) | Outbox observable gauges are never registered; `Record*` are no-ops so outbox metrics emit nothing | **High** |
+| [011](https://github.com/UnambitiousFx/Synapse/blob/feature/typed-pipeline-behaviors/docs/known-issues/011-tracing-capture-stores-zero-trace-ids.md) | Tracing capture stores zero/invalid trace IDs (empty-string guard never fires) and stringifies twice | Medium |
+
+## ASP.NET Core
+
+| ID | Summary | Severity |
+|---|---|---|
+| [003](https://github.com/UnambitiousFx/Synapse/blob/feature/typed-pipeline-behaviors/docs/known-issues/003-authorization-failure-maps-to-http-500.md) | Pipeline short-circuit via `Result.Failure<T>()` mapped to HTTP 500; behavior now returns a typed `UnauthorizedFailure` → 401 | Medium |
+
+---
+
+> **Discovery context:** Issues 001–003 were found while building the pipeline-behavior showcase in
+> `examples/MinimalApi` on branch `feature/typed-pipeline-behaviors` against .NET 10 with
+> `PublishAot=true`. Issues 004–023 were found in successive high-effort code reviews of the same
+> branch (diff + working-tree, multiple finder angles). All are resolved. Line numbers in the
+> individual files are approximate and may drift as the branch evolves.

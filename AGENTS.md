@@ -84,6 +84,16 @@ For changes affecting hot paths, add or update benchmarks in `benchmarks/Synapse
 - Use a lightweight test host or in-memory transports where appropriate.
 - Keep integration tests deterministic and focused on behavior rather than implementation details.
 
+## Documentation & Changelog
+
+When a bug is found **and** resolved on a branch, record it in the three-file changelog system:
+
+1. `docs/known-issues/NNN-slug.md` — detailed bug report (mirrors `.github/ISSUE_TEMPLATE/bug_report.yml` plus a `## Resolution` section).
+2. `docs/known-issues/README.md` — append a row to the index table.
+3. `docs/docs/changelog.mdx` — append a row to the matching area section in the published changelog.
+
+Use the `/changelog` skill for step-by-step guidance and consistency rules (severity, area, summary must match across all three files). After editing, run `cd docs && pnpm build` to verify no broken links.
+
 ## Contribution & Review
 
 - Keep PRs small and focused.
