@@ -28,7 +28,7 @@ const sidebars: SidebarsConfig = {
     {
       type: 'category',
       label: 'Project',
-      items: ['changelog'],
+      items: ['changelog', 'using-with-ai'],
     },
   ],
 };

@@ -147,16 +147,18 @@ builder.Services.AddHealthChecks()
     .AddCheck<OutboxHealthCheck>("outbox", tags: ["ready"]);
 ```
 
-Configure thresholds via `OutboxHealthCheckOptions`:
+`OutboxHealthCheck` reads its `OutboxHealthCheckOptions` from its constructor (not `IOptions<T>`), so register a configured instance as a singleton; `AddCheck<OutboxHealthCheck>` resolves it through the optional constructor parameter:
 
 ```csharp
-builder.Services.Configure<OutboxHealthCheckOptions>(opts =>
+builder.Services.AddSingleton(new OutboxHealthCheckOptions
 {
-    opts.DegradedPendingThreshold = 50;     // Degraded when > 50 pending
-    opts.CriticalPendingThreshold = 200;    // Unhealthy when > 200 pending
-    opts.CriticalLagThreshold     = TimeSpan.FromMinutes(5);
+    DegradedPendingThreshold = 50,    // Degraded when pending >= 50
+    CriticalPendingThreshold = 200,   // Unhealthy when pending >= 200
+    CriticalLagThreshold     = TimeSpan.FromMinutes(5),
 });
 ```
+
+See [Observability](./observability#outbox-health-check) for the full threshold list (dead-letter and lag thresholds included).
 
 ## See also
 

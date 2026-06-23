@@ -1,0 +1,49 @@
+---
+title: Using these docs with AI
+description: Point Claude, Cursor, Copilot and other AI assistants at the Synapse docs via llms.txt and the Context7 MCP server.
+---
+
+# Using these docs with AI
+
+These docs are built to be consumed by AI coding assistants, not just humans.
+There are two ways to plug them in.
+
+## 1. llms.txt (zero setup)
+
+Every build publishes machine-readable bundles following the
+[llmstxt.org](https://llmstxt.org) standard:
+
+| File | Contents |
+|------|----------|
+| [`/llms.txt`](https://synapse.unambitiousfx.com/llms.txt) | Index of every doc section with links |
+| [`/llms-full.txt`](https://synapse.unambitiousfx.com/llms-full.txt) | All documentation in one file |
+| [`/llms-pipelines.txt`](https://synapse.unambitiousfx.com/llms-pipelines.txt) | Pipelines, validation, error handling |
+| [`/llms-outbox.txt`](https://synapse.unambitiousfx.com/llms-outbox.txt) | Events, outbox, observability |
+
+Paste a URL into any assistant, or let tools that understand `llms.txt` fetch
+them automatically. Pull a focused bundle when you only need one concern.
+
+## 2. Context7 MCP (live, always current)
+
+[Context7](https://context7.com) indexes these docs and serves them over MCP,
+so an assistant can query them on demand without you pasting anything.
+
+Library ID: **`/UnambitiousFx/Synapse`**
+
+### Claude Code
+
+```bash
+claude mcp add --transport http context7 https://mcp.context7.com/mcp
+```
+
+Then ask: *"use context7 — how do I register a pipeline behavior in Synapse?"*
+
+### Cursor / VS Code
+
+Add Context7 as an MCP server (`https://mcp.context7.com/mcp`) in your editor's
+MCP settings, then reference the `/UnambitiousFx/Synapse` library in prompts.
+
+:::tip
+Several unrelated projects are named "Synapse" on Context7. Always use the
+fully-qualified ID `/UnambitiousFx/Synapse` to get these docs.
+:::

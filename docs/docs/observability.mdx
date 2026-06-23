@@ -10,17 +10,23 @@ Synapse exposes structured logging, distributed tracing, metrics, and health che
 
 ## Structured logging with built-in behaviors
 
-### `SimpleLoggingBehavior`
+### `SimpleLoggingBehavior<TRequest, TResponse>` / `SimpleLoggingEventBehavior<TEvent>`
 
-Logs the name of each request or event and the elapsed time after the handler completes. Register it for requests, events, or both:
+Logs the name of each request or event and the elapsed time after the handler completes. The behaviors are typed; register a closed pair per handler (`SimpleLoggingBehavior<TRequest>` for void requests):
 
 ```csharp
 services.AddSynapse(cfg =>
 {
-    cfg.RegisterRequestPipelineBehavior<SimpleLoggingBehavior>();
-    cfg.RegisterEventPipelineBehavior<SimpleLoggingBehavior>();
+    cfg.RegisterRequestPipelineBehavior<
+        SimpleLoggingBehavior<CreateTaskCommand, Guid>, CreateTaskCommand, Guid>();
+    cfg.RegisterEventPipelineBehavior<
+        SimpleLoggingEventBehavior<TaskCreatedEvent>, TaskCreatedEvent>();
 });
 ```
+
+:::tip
+To apply logging across every handler without naming each pair, make an open-generic behavior and mark it `[PipelineBehavior]` so the source generator emits the closed registrations for you. See [Pipeline Behaviors](./pipelines#applying-a-behavior-to-every-handler).
+:::
 
 Sample output:
 
@@ -55,28 +61,28 @@ Synapse creates an `ActivitySource` named `Unambitious.Synapse`. Any pipeline be
 
 ```csharp
 using System.Diagnostics;
-using UnambitiousFx.Synapse;
+using UnambitiousFx.Synapse.Observability;
 
-public class TracingBehavior : IRequestPipelineBehavior
+[PipelineBehavior]
+public sealed class TracingBehavior<TRequest, TResponse>
+    : IRequestPipelineBehavior<TRequest, TResponse>
+    where TRequest : IRequest<TResponse>
+    where TResponse : notnull
 {
-    public async ValueTask<Result<TResponse>> HandleAsync<TRequest, TResponse>(
+    public async ValueTask<Result<TResponse>> HandleAsync(
         TRequest request,
-        RequestHandlerDelegate<TResponse> next,
-        CancellationToken ct)
-        where TRequest : IRequest<TResponse>
-        where TResponse : notnull
+        RequestHandlerDelegate<TRequest, TResponse> next,
+        CancellationToken cancellationToken = default)
     {
         using var activity = SynapseActivitySource.Source.StartActivity(typeof(TRequest).Name);
-        var result = await next();
+        var result = await next(request, cancellationToken);
         activity?.SetStatus(result.IsSuccess ? ActivityStatusCode.Ok : ActivityStatusCode.Error);
         return result;
     }
-
-    public ValueTask<Result> HandleAsync<TRequest>(TRequest request, RequestHandlerDelegate next, CancellationToken ct)
-        where TRequest : IRequest
-        => next();
 }
 ```
+
+`[PipelineBehavior]` lets the source generator close this open-generic behavior over every matching handler. See [Pipeline Behaviors](./pipelines#applying-a-behavior-to-every-handler).
 
 To export traces to an OpenTelemetry collector, register the activity source when configuring OpenTelemetry:
 
@@ -91,15 +97,19 @@ builder.Services.AddOpenTelemetry()
 
 `ISynapseMetrics` is backed by `System.Diagnostics.Metrics` and works with any OpenTelemetry-compatible metrics exporter.
 
-| Metric                 | Type            | Description                           |
-| ---------------------- | --------------- | ------------------------------------- |
-| Event dispatched       | Counter         | Per-event type, success/failure label |
-| Dispatch latency       | Histogram (ms)  | Per-event type                        |
-| Outbox event processed | Counter         | Per-event type, success/failure label |
-| Outbox dead-lettered   | Counter         | Per-event type                        |
-| Outbox queue depth     | Gauge           | Total pending events                  |
-| Outbox processing lag  | Gauge (seconds) | Age of the oldest pending event       |
-| Outbox failed count    | Gauge           | Events awaiting retry                 |
+All instruments are published on the `Unambitious.Synapse` meter. Counters/histograms carry an `event.type` tag (and a `success` tag where applicable).
+
+| Instrument                             | Type            | Description                            |
+| -------------------------------------- | --------------- | -------------------------------------- |
+| `mediator.events.dispatched`           | Counter         | Events dispatched (`event.type`, `success`) |
+| `mediator.events.dispatch_failures`    | Counter         | Event dispatch failures (`event.type`) |
+| `mediator.events.dispatch.duration`    | Histogram (ms)  | Dispatch duration (`event.type`)       |
+| `mediator.outbox.events.processed`     | Counter         | Events processed from the outbox (`event.type`, `success`) |
+| `mediator.outbox.events.dead_lettered` | Counter         | Events moved to the dead-letter queue (`event.type`) |
+| `mediator.outbox.queue_depth`          | Gauge           | Pending events in the outbox           |
+| `mediator.outbox.processing_lag`       | Gauge (seconds) | Age of the oldest pending event        |
+| `mediator.outbox.retrying_count`       | Gauge           | Events that failed at least once and await retry |
+| `mediator.outbox.dead_letter_count`    | Gauge           | Events that exhausted retries          |
 
 Export to Prometheus + OpenTelemetry:
 
@@ -110,7 +120,7 @@ builder.Services.AddOpenTelemetry()
         .AddPrometheusExporter());
 ```
 
-Replace the default implementation to customise all metric behaviour:
+Replace the default implementation to customise how the recorded operations are emitted. `ISynapseMetrics` exposes four record methods — `RecordEventDispatched`, `RecordDispatchLatency`, `RecordOutboxEventProcessed`, and `RecordOutboxDeadLettered` (the outbox gauges are observed internally by `SynapseMetrics`):
 
 ```csharp
 builder.Services.AddSingleton<ISynapseMetrics, MyMetrics>();
@@ -118,7 +128,7 @@ builder.Services.AddSingleton<ISynapseMetrics, MyMetrics>();
 
 ## Outbox health check
 
-`OutboxHealthCheck` implements `IHealthCheck` and reports the health of the event outbox. It monitors pending event count, failed event count, and queue lag.
+`OutboxHealthCheck` implements `IHealthCheck` and reports the health of the event outbox. It monitors pending event count, dead-lettered event count, and queue lag (the age of the oldest pending event).
 
 ### Register
 
@@ -129,24 +139,28 @@ builder.Services.AddHealthChecks()
 
 ### Configure thresholds
 
+`OutboxHealthCheck` takes its `OutboxHealthCheckOptions` directly through its constructor (not via `IOptions<T>`), so register a configured instance as a singleton — `AddCheck<OutboxHealthCheck>` then resolves it through the optional constructor parameter:
+
 ```csharp
-builder.Services.Configure<OutboxHealthCheckOptions>(opts =>
+builder.Services.AddSingleton(new OutboxHealthCheckOptions
 {
-    opts.DegradedPendingThreshold  = 50;
-    opts.CriticalPendingThreshold  = 200;
-    opts.DegradedFailedThreshold   = 5;
-    opts.CriticalFailedThreshold   = 20;
-    opts.CriticalLagThreshold      = TimeSpan.FromMinutes(5);
+    DegradedPendingThreshold    = 50,
+    CriticalPendingThreshold    = 200,
+    DegradedDeadLetterThreshold = 5,
+    CriticalDeadLetterThreshold = 20,
+    DegradedLagThreshold        = TimeSpan.FromMinutes(5),
+    CriticalLagThreshold        = TimeSpan.FromMinutes(15),
 });
 ```
 
-| Threshold                  | Effect when exceeded      |
-| -------------------------- | ------------------------- |
-| `DegradedPendingThreshold` | Health status → Degraded  |
-| `CriticalPendingThreshold` | Health status → Unhealthy |
-| `DegradedFailedThreshold`  | Health status → Degraded  |
-| `CriticalFailedThreshold`  | Health status → Unhealthy |
-| `CriticalLagThreshold`     | Health status → Unhealthy |
+| Threshold                     | Default | Effect when reached       |
+| ----------------------------- | ------- | ------------------------- |
+| `DegradedPendingThreshold`    | 1000    | Health status → Degraded  |
+| `CriticalPendingThreshold`    | 5000    | Health status → Unhealthy |
+| `DegradedDeadLetterThreshold` | 10      | Health status → Degraded  |
+| `CriticalDeadLetterThreshold` | 50      | Health status → Unhealthy |
+| `DegradedLagThreshold`        | 5 min   | Health status → Degraded  |
+| `CriticalLagThreshold`        | 15 min  | Health status → Unhealthy |
 
 ### Expose the health endpoint
 

@@ -129,11 +129,11 @@ public class TasksController : ControllerBase
     public TasksController(IMvcInvoker invoker) => _invoker = invoker;
 
     [HttpGet("{id}")]
-    public Task<IActionResult> Get(Guid id, CancellationToken ct) =>
+    public ValueTask<IActionResult> Get(Guid id, CancellationToken ct) =>
         _invoker.InvokeAsync(new GetTaskQuery(id), ct);
 
     [HttpPost]
-    public Task<IActionResult> Create([FromBody] CreateTaskCommand cmd, CancellationToken ct) =>
+    public ValueTask<IActionResult> Create([FromBody] CreateTaskCommand cmd, CancellationToken ct) =>
         _invoker.InvokeAsync(cmd, id => Created($"/tasks/{id}", id), ct);
 }
 ```
@@ -147,20 +147,28 @@ builder.Services.AddSingleton<IFailureHttpMapper, MyFailureHttpMapper>();
 builder.Services.AddSynapseAspNetCore();
 ```
 
+`IFailureHttpMapper` (from `UnambitiousFx.Functional.AspNetCore.Mappers`) has a single method, `FailureHttpResponse? GetFailureResponse(IFailure failure)`. Return a `FailureHttpResponse` carrying the status code and body (or `null` to fall through). The invokers turn it into the appropriate `IResult` / `IActionResult`:
+
 ```csharp
+using UnambitiousFx.Functional.AspNetCore.Mappers;
+
 public class MyFailureHttpMapper : IFailureHttpMapper
 {
-    public IResult Map(IFailure failure)
+    public FailureHttpResponse? GetFailureResponse(IFailure failure)
     {
         return failure switch
         {
-            NotFoundFailure nf => Results.NotFound(new { nf.Message }),
-            ValidationFailure vf => Results.UnprocessableEntity(new { vf.Message }),
-            _ => Results.Problem(failure.ToString())
+            NotFoundFailure nf   => new FailureHttpResponse { StatusCode = 404, Body = new { nf.Message } },
+            ValidationFailure vf => new FailureHttpResponse { StatusCode = 422, Body = new { vf.Message } },
+            _                    => new FailureHttpResponse { StatusCode = 500, Body = new { failure.Message } },
         };
     }
 }
 ```
+
+:::tip
+To override only a few failure types, subclass `DefaultFailureHttpMapper` (its `GetFailureResponse` is `virtual`) and call `base.GetFailureResponse(failure)` for the cases you don't handle.
+:::
 
 ## Correlation ID middleware
 

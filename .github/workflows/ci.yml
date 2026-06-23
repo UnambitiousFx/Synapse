@@ -92,8 +92,6 @@ jobs:
           --configuration Release
           --runtime linux-x64
           --self-contained
-          -p:PublishAot=true
-          -p:StripSymbols=true
 
       - name: Verify AOT binary
         run: |

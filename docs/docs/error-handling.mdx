@@ -33,13 +33,15 @@ return result.Match(
 
 ### `IsSuccess` guard
 
+`Result` / `Result<T>` expose no `Value` or `Error` property — pull both out with `TryGet`, or use `IsSuccess` / `IsFailure` purely as a boolean check:
+
 ```csharp
-if (!result.IsSuccess)
+if (!result.TryGet(out var id, out var error))
 {
-    logger.LogError("Create task failed: {Error}", result.Error);
+    logger.LogError("Create task failed: {Error}", error);
     return;
 }
-Process(result.Value);
+Process(id);
 ```
 
 ## Returning failures from handlers
@@ -69,7 +71,8 @@ var results = new[]
     validator2.ValidateAsync(cmd),
 };
 
-var combined = results.Combine();
+// Combine over ValueTask<Result> awaits all of them and returns ValueTask<Result>
+var combined = await results.Combine();
 if (!combined.IsSuccess)
     return combined; // all individual failures merged
 ```
@@ -103,7 +106,7 @@ Exceptions are thrown only for programming errors — situations that indicate m
 | -------------------------------- | ------------------------------------------------------------------------------------------- |
 | `MissingHandlerException`        | No handler registered for the request type. This is a startup/configuration error.          |
 | `CqrsBoundaryViolationException` | A command was dispatched from inside a query (or vice versa) with CQRS enforcement enabled. |
-| `MissingContextFeatureException` | `IContext.GetRequiredFeature<T>()` called but the feature was never set.                    |
+| `MissingContextFeatureException` | `IContext.MustGetFeature<T>()` called but the feature was never set.                         |
 
 These should never appear in normal application flow. If they do, fix the configuration rather than catching them.
 
