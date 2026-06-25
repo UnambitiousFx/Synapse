@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using NSubstitute;
 using UnambitiousFx.Functional;
 using UnambitiousFx.Synapse.Abstractions;
 using UnambitiousFx.Synapse.Contexts;
@@ -443,7 +444,127 @@ public sealed class SynapseConfigTests
         Assert.NotNull(behavior);
     }
 
+    // ── RegisterRequestHandler — dispatcher delegate invocation ──────────────
+
+    [Fact]
+    public async Task RegisterRequestHandler_WithResponse_DispatcherDelegateInvokesHandlerViaInvoker()
+    {
+        // Arrange (Given)
+        var services = new ServiceCollection()
+            .AddSynapse(cfg =>
+            {
+                cfg.RegisterRequestHandler<RequestWithResponseExampleHandler, RequestWithResponseExample, int>();
+            })
+            .AddLogging()
+            .BuildServiceProvider();
+        var invoker = services.GetRequiredService<IInvoker>();
+
+        // Act (When)
+        var result = await invoker.InvokeAsync(new RequestWithResponseExample(), CancellationToken.None);
+
+        // Assert (Then)
+        Assert.True(result.IsSuccess);
+    }
+
+    [Fact]
+    public async Task RegisterRequestHandler_VoidRequest_DispatcherDelegateInvokesHandlerViaInvoker()
+    {
+        // Arrange (Given)
+        var services = new ServiceCollection()
+            .AddSynapse(cfg =>
+            {
+                cfg.RegisterRequestHandler<RequestExampleHandler, RequestExample>();
+            })
+            .AddLogging()
+            .BuildServiceProvider();
+        var invoker = services.GetRequiredService<IInvoker>();
+
+        // Act (When)
+        var result = await invoker.InvokeAsync(new RequestExample(), CancellationToken.None);
+
+        // Assert (Then)
+        Assert.True(result.IsSuccess);
+    }
+
+    // ── RegisterEventHandler — delegate body + type mismatch ─────────────────
+
+    [Fact]
+    public async Task RegisterEventHandler_DispatcherDelegate_InvokesEventDispatcher()
+    {
+        // Arrange (Given)
+        var services = new ServiceCollection()
+            .AddSynapse(cfg =>
+            {
+                cfg.RegisterEventHandler<EventExampleHandler1, EventExample>();
+            })
+            .AddLogging()
+            .BuildServiceProvider();
+        var options = services.GetRequiredService<IOptions<EventDispatcherOptions>>().Value;
+        var del = options.Dispatchers[typeof(EventExample)];
+        var eventDispatcher = Substitute.For<IEventDispatcher>();
+        eventDispatcher.DispatchAsync(Arg.Any<EventExample>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(Result.Success()));
+
+        // Act (When)
+        var result = await del(new EventExample("test"), eventDispatcher, CancellationToken.None);
+
+        // Assert (Then)
+        Assert.True(result.IsSuccess);
+        await eventDispatcher.Received(1).DispatchAsync(Arg.Any<EventExample>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task RegisterEventHandler_DispatcherDelegate_WithWrongEventType_Throws()
+    {
+        // Arrange (Given)
+        var services = new ServiceCollection()
+            .AddSynapse(cfg =>
+            {
+                cfg.RegisterEventHandler<EventExampleHandler1, EventExample>();
+            })
+            .AddLogging()
+            .BuildServiceProvider();
+        var options = services.GetRequiredService<IOptions<EventDispatcherOptions>>().Value;
+        var del = options.Dispatchers[typeof(EventExample)];
+        var eventDispatcher = Substitute.For<IEventDispatcher>();
+
+        // Act & Assert (When & Then)
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => del(new WrongSynapseConfigEvent(), eventDispatcher, CancellationToken.None).AsTask());
+    }
+
+    // ── Apply — EventDispatcherOptions concat branch (pre-existing dispatchers) ──
+
+    [Fact]
+    public void Apply_WithPreExistingEventDispatchers_MergesBothDispatcherDicts()
+    {
+        // Arrange (Given) — pre-configure a dispatcher for BaseEventExample before AddSynapse
+        var services = new ServiceCollection();
+        services.Configure<EventDispatcherOptions>(opt =>
+        {
+            opt.Dispatchers = new Dictionary<Type, DispatchEventDelegate>
+            {
+                [typeof(BaseEventExample)] = (_, _, _) => ValueTask.FromResult(Result.Success())
+            };
+        });
+        services.AddSynapse(cfg =>
+        {
+            cfg.RegisterEventHandler<EventExampleHandler1, EventExample>();
+        });
+        var provider = services.AddLogging().BuildServiceProvider();
+
+        // Act (When) — when options are resolved both Configure callbacks run;
+        // Apply() sees Count != 0 and concats _eventDispatchers (EventExample) with existing (BaseEventExample)
+        var options = provider.GetRequiredService<IOptions<EventDispatcherOptions>>().Value;
+
+        // Assert (Then)
+        Assert.Contains(typeof(EventExample), options.Dispatchers.Keys);
+        Assert.Contains(typeof(BaseEventExample), options.Dispatchers.Keys);
+    }
+
     // ── Private fixtures ─────────────────────────────────────────────────────
+
+    private sealed record WrongSynapseConfigEvent : IEvent;
 
     private sealed record TestStreamRequest : IStreamRequest<int>;
 

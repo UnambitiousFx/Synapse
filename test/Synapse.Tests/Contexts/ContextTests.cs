@@ -176,6 +176,57 @@ public sealed class ContextTests
         Assert.True(commitResult.IsSuccess);
     }
 
+    [Fact]
+    public void Context_TryGetMetadata_WhenTypeMismatch_ReturnsFalse()
+    {
+        // Arrange (Given)
+        var context = new Context(Substitute.For<IEmitter>(), Substitute.For<IOutboxCommit>(), Guid.NewGuid());
+        context.SetMetadata("key", "string-value");
+
+        // Act (When)
+        var found = context.TryGetMetadata<int>("key", out var value);
+
+        // Assert (Then)
+        Assert.False(found);
+        Assert.Equal(default, value);
+    }
+
+    [Fact]
+    public void Context_GetMetadata_WhenKeyMissing_ReturnsDefault()
+    {
+        // Arrange (Given)
+        var context = new Context(Substitute.For<IEmitter>(), Substitute.For<IOutboxCommit>(), Guid.NewGuid());
+
+        // Act (When)
+        var value = context.GetMetadata<string>("nonexistent");
+
+        // Assert (Then)
+        Assert.Null(value);
+    }
+
+    [Fact]
+    public void Context_CopyConstructor_MergesMetadataAndFeatures()
+    {
+        // Arrange (Given)
+        var emitter = Substitute.For<IEmitter>();
+        var outboxCommit = Substitute.For<IOutboxCommit>();
+        var original = new Context(emitter, outboxCommit, Guid.NewGuid());
+        original.SetMetadata("orig-key", "orig-val");
+        var feature = new TestFeature("f1");
+
+        var extraMeta = new Dictionary<string, object> { ["new-key"] = "new-val" };
+        var extraFeatures = new Dictionary<Type, IContextFeature> { [typeof(TestFeature)] = feature };
+
+        // Act (When) — copy constructor merges provided dicts with existing ones
+        var copy = new Context(original, extraFeatures, extraMeta);
+
+        // Assert (Then)
+        Assert.True(copy.TryGetMetadata<string>("new-key", out var newVal));
+        Assert.Equal("new-val", newVal);
+        Assert.Equal(original.CorrelationId, copy.CorrelationId);
+        Assert.Same(feature, copy.GetFeature<TestFeature>());
+    }
+
     private sealed record TestEvent : IEvent;
 
     private sealed record TestFeature(string Value) : IContextFeature

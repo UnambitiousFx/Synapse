@@ -1,6 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
+using NSubstitute;
 using UnambitiousFx.Functional;
 using UnambitiousFx.Synapse.Abstractions;
+using UnambitiousFx.Synapse.Resolvers;
 
 namespace UnambitiousFx.Synapse.Tests.DependencyInjection;
 
@@ -274,7 +276,120 @@ public sealed class DefaultDependencyInjectionBuilderTests
             x.ImplementationType == typeof(TestStreamBehavior));
     }
 
+    // ── Dispatcher delegate invocation ───────────────────────────────────────
+
+    [Fact]
+    public async Task RegisterRequestHandler_WithResponse_DispatcherDelegate_InvokesHandler()
+    {
+        // Arrange (Given)
+        var builder = new DefaultDependencyInjectionBuilder();
+        builder.RegisterRequestHandler<TestRequestWithResponseHandler, TestRequestWithResponse, int>();
+        var del = builder.RequestDispatchers[typeof(TestRequestWithResponse)];
+        var func = (Func<IRequest<int>, IDependencyResolver, CancellationToken, ValueTask<Result<int>>>)del;
+        var handler = new TestRequestWithResponseHandler();
+        var resolver = new FakeDependencyResolver(
+            new Dictionary<Type, object> { [typeof(IRequestHandler<TestRequestWithResponse, int>)] = handler });
+
+        // Act (When)
+        var result = await func(new TestRequestWithResponse(), resolver, CancellationToken.None);
+
+        // Assert (Then)
+        Assert.True(result.IsSuccess);
+    }
+
+    [Fact]
+    public async Task RegisterRequestHandler_VoidRequest_DispatcherDelegate_InvokesHandler()
+    {
+        // Arrange (Given)
+        var builder = new DefaultDependencyInjectionBuilder();
+        builder.RegisterRequestHandler<TestRequestHandler, TestRequest>();
+        var del = builder.VoidRequestDispatchers[typeof(TestRequest)];
+        var func = (Func<IRequest, IDependencyResolver, CancellationToken, ValueTask<Result>>)del;
+        var handler = new TestRequestHandler();
+        var resolver = new FakeDependencyResolver(
+            new Dictionary<Type, object> { [typeof(IRequestHandler<TestRequest>)] = handler });
+
+        // Act (When)
+        var result = await func(new TestRequest(), resolver, CancellationToken.None);
+
+        // Assert (Then)
+        Assert.True(result.IsSuccess);
+    }
+
+    [Fact]
+    public async Task RegisterEventHandler_DispatcherDelegate_InvokesEventDispatcher()
+    {
+        // Arrange (Given)
+        var builder = new DefaultDependencyInjectionBuilder();
+        builder.RegisterEventHandler<TestEventHandler, TestEvent>();
+        var dispatcher = builder.EventDispatchers[typeof(TestEvent)];
+        var eventDispatcher = Substitute.For<IEventDispatcher>();
+        eventDispatcher.DispatchAsync(Arg.Any<TestEvent>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(Result.Success()));
+
+        // Act (When)
+        var result = await dispatcher(new TestEvent(), eventDispatcher, CancellationToken.None);
+
+        // Assert (Then)
+        Assert.True(result.IsSuccess);
+        await eventDispatcher.Received(1).DispatchAsync(Arg.Any<TestEvent>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task RegisterEventHandler_DispatcherDelegate_WithWrongEventType_Throws()
+    {
+        // Arrange (Given)
+        var builder = new DefaultDependencyInjectionBuilder();
+        builder.RegisterEventHandler<TestEventHandler, TestEvent>();
+        var dispatcher = builder.EventDispatchers[typeof(TestEvent)];
+        var eventDispatcher = Substitute.For<IEventDispatcher>();
+
+        // Act & Assert (When & Then)
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => dispatcher(new OtherTestEvent(), eventDispatcher, CancellationToken.None).AsTask());
+    }
+
+    [Fact]
+    public async Task RegisterStreamRequestHandler_DispatcherDelegate_InvokesHandler()
+    {
+        // Arrange (Given)
+        var builder = new DefaultDependencyInjectionBuilder();
+        builder.RegisterStreamRequestHandler<TestStreamRequestHandler, TestStreamRequest, int>();
+        var del = builder.StreamRequestDispatchers[typeof(TestStreamRequest)];
+        var func =
+            (Func<IStreamRequest<int>, IDependencyResolver, CancellationToken, IAsyncEnumerable<Result<int>>>)del;
+        var handler = new TestStreamRequestHandler();
+        var resolver = new FakeDependencyResolver(
+            new Dictionary<Type, object> { [typeof(IStreamRequestHandler<TestStreamRequest, int>)] = handler });
+
+        // Act (When)
+        var results = new List<Result<int>>();
+        await foreach (var item in func(new TestStreamRequest(), resolver, CancellationToken.None))
+        {
+            results.Add(item);
+        }
+
+        // Assert (Then)
+        Assert.Single(results);
+        Assert.True(results[0].IsSuccess);
+    }
+
     // ── Behavior fixtures ────────────────────────────────────────────────────
+
+    private sealed record OtherTestEvent : IEvent;
+
+    /// <summary>Simple concrete resolver backed by a dictionary; avoids Castle proxy issues with private types.</summary>
+    private sealed class FakeDependencyResolver(Dictionary<Type, object> services) : IDependencyResolver
+    {
+        public TService? GetService<TService>() where TService : class
+            => services.GetValueOrDefault(typeof(TService)) as TService;
+
+        public TService GetRequiredService<TService>() where TService : class
+            => (TService)services[typeof(TService)];
+
+        public IEnumerable<TService> GetServices<TService>() where TService : class
+            => services.Values.OfType<TService>();
+    }
 
     private sealed class TestNoResponseBehavior : IRequestPipelineBehavior<TestRequest>
     {
