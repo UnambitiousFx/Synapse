@@ -177,9 +177,9 @@ var message = result.Match(
     success: id    => $"Created: {id}",
     failure: error => $"Error: {error}");
 
-// Option 3 — IsSuccess guard
-if (result.IsSuccess)
-    Process(result.Value);
+// Option 3 — TryGetValue (value only, ignore the error)
+if (result.TryGetValue(out var id))
+    Process(id);
 ```
 
 For more detail on `Result`, see the `UnambitiousFx.Functional` documentation.

@@ -9,67 +9,121 @@ namespace UnambitiousFx.Synapse.Pipelines;
 ///     - Commands from being sent within command handlers
 ///     - Queries from being sent within query handlers
 ///     - Commands from being sent within query handlers
+///     This variant handles requests that do not produce a response.
 /// </summary>
-public sealed class CqrsBoundaryEnforcementBehavior : IRequestPipelineBehavior
+/// <typeparam name="TRequest">The request type.</typeparam>
+public sealed class CqrsBoundaryEnforcementBehavior<TRequest> : IRequestPipelineBehavior<TRequest>,
+    IOrderedPipelineBehavior
+    where TRequest : IRequest
 {
-    private const string CQRSBoundaryEnforcementKey = "__CQRSBoundaryEnforcement";
-    private const string CQRSBoundaryEnforcementNameKey = "__CQRSBoundaryEnforcement_Name";
     private readonly IContext _context;
 
     /// <summary>
+    ///     Initializes a new instance of the <see cref="CqrsBoundaryEnforcementBehavior{TRequest}" /> class.
     /// </summary>
-    /// <param name="context"></param>
     public CqrsBoundaryEnforcementBehavior(IContext context)
     {
         _context = context;
     }
 
     /// <summary>
+    ///     Runs outermost so the boundary marker wraps every other behavior in the chain.
     /// </summary>
-    /// <param name="request"></param>
-    /// <param name="next"></param>
-    /// <param name="cancellationToken"></param>
-    /// <typeparam name="TRequest"></typeparam>
-    /// <returns></returns>
-    public async ValueTask<Result> HandleAsync<TRequest>(TRequest request,
+    public uint Order => IOrderedPipelineBehavior.First;
+
+    /// <inheritdoc />
+    public async ValueTask<Result> HandleAsync(TRequest request,
         RequestHandlerDelegate<TRequest> next,
         CancellationToken cancellationToken = default)
-        where TRequest : IRequest
     {
         var requestName = typeof(TRequest).Name;
-        ValidateBoundaries(_context, requestName);
+        CqrsBoundaryMetadata.Validate(_context, requestName);
+        CqrsBoundaryMetadata.Add(_context, requestName);
 
-        AddBoundaryMetadata(_context, requestName);
+        Result response;
+        try
+        {
+            response = await next(request, cancellationToken);
+        }
+        catch
+        {
+            // Inner handler/behavior threw: clear the marker so a later send in the same
+            // scope sees a clean boundary, but do not mask the original exception.
+            CqrsBoundaryMetadata.RemoveIfPresent(_context);
+            throw;
+        }
 
-        var response = await next(request, cancellationToken);
-        RemoveBoundaryMetadata(_context);
+        CqrsBoundaryMetadata.Remove(_context);
         return response;
+    }
+}
+
+/// <summary>
+///     Pipeline behavior that enforces CQRS boundaries by preventing:
+///     - Commands from being sent within command handlers
+///     - Queries from being sent within query handlers
+///     - Commands from being sent within query handlers
+///     This variant handles requests that produce a response.
+/// </summary>
+/// <typeparam name="TRequest">The request type.</typeparam>
+/// <typeparam name="TResponse">The response type.</typeparam>
+public sealed class CqrsBoundaryEnforcementBehavior<TRequest, TResponse> : IRequestPipelineBehavior<TRequest, TResponse>,
+    IOrderedPipelineBehavior
+    where TRequest : IRequest<TResponse>
+    where TResponse : notnull
+{
+    private readonly IContext _context;
+
+    /// <summary>
+    ///     Initializes a new instance of the <see cref="CqrsBoundaryEnforcementBehavior{TRequest,TResponse}" /> class.
+    /// </summary>
+    public CqrsBoundaryEnforcementBehavior(IContext context)
+    {
+        _context = context;
     }
 
     /// <summary>
+    ///     Runs outermost so the boundary marker wraps every other behavior in the chain.
     /// </summary>
-    /// <param name="request"></param>
-    /// <param name="next"></param>
-    /// <param name="cancellationToken"></param>
-    /// <typeparam name="TRequest"></typeparam>
-    /// <typeparam name="TResponse"></typeparam>
-    /// <returns></returns>
-    public async ValueTask<Result<TResponse>> HandleAsync<TRequest, TResponse>(TRequest request,
+    public uint Order => IOrderedPipelineBehavior.First;
+
+    /// <inheritdoc />
+    public async ValueTask<Result<TResponse>> HandleAsync(TRequest request,
         RequestHandlerDelegate<TRequest, TResponse> next,
         CancellationToken cancellationToken = default)
-        where TRequest : IRequest<TResponse>
-        where TResponse : notnull
     {
         var requestName = typeof(TRequest).Name;
-        ValidateBoundaries(_context, requestName);
+        CqrsBoundaryMetadata.Validate(_context, requestName);
+        CqrsBoundaryMetadata.Add(_context, requestName);
 
-        AddBoundaryMetadata(_context, requestName);
-        var response = await next(request, cancellationToken);
-        RemoveBoundaryMetadata(_context);
+        Result<TResponse> response;
+        try
+        {
+            response = await next(request, cancellationToken);
+        }
+        catch
+        {
+            // Inner handler/behavior threw: clear the marker so a later send in the same
+            // scope sees a clean boundary, but do not mask the original exception.
+            CqrsBoundaryMetadata.RemoveIfPresent(_context);
+            throw;
+        }
+
+        CqrsBoundaryMetadata.Remove(_context);
         return response;
     }
+}
 
-    private static void RemoveBoundaryMetadata(IContext context)
+/// <summary>
+///     Shared boundary-enforcement metadata logic for the no-response and with-response CQRS behaviors,
+///     keeping the metadata keys, validation rule, and exception messages in a single place.
+/// </summary>
+internal static class CqrsBoundaryMetadata
+{
+    private const string CQRSBoundaryEnforcementKey = "__CQRSBoundaryEnforcement";
+    private const string CQRSBoundaryEnforcementNameKey = "__CQRSBoundaryEnforcement_Name";
+
+    public static void Remove(IContext context)
     {
         if (!context.RemoveMetadata(CQRSBoundaryEnforcementKey))
         {
@@ -80,24 +134,26 @@ public sealed class CqrsBoundaryEnforcementBehavior : IRequestPipelineBehavior
         context.RemoveMetadata(CQRSBoundaryEnforcementNameKey);
     }
 
-    private static void AddBoundaryMetadata(IContext context,
-        string requestName)
+    public static void RemoveIfPresent(IContext context)
+    {
+        context.RemoveMetadata(CQRSBoundaryEnforcementKey);
+        context.RemoveMetadata(CQRSBoundaryEnforcementNameKey);
+    }
+
+    public static void Add(IContext context, string requestName)
     {
         context.SetMetadata(CQRSBoundaryEnforcementKey, true);
         context.SetMetadata(CQRSBoundaryEnforcementNameKey, requestName);
     }
 
-    private static void ValidateBoundaries(IContext context,
-        string requestName)
+    public static void Validate(IContext context, string requestName)
     {
-        if (!context.TryGetMetadata<bool>(CQRSBoundaryEnforcementKey, out var isInRequest) ||
-            !isInRequest)
+        if (!context.TryGetMetadata<bool>(CQRSBoundaryEnforcementKey, out var isInRequest) || !isInRequest)
         {
             return;
         }
 
         var previousRequestName = context.GetMetadata<string>(CQRSBoundaryEnforcementNameKey);
-
         throw new CqrsBoundaryViolationException(
             $"CQRS boundary violation: Cannot send request '{requestName}' within a request handler. Boundary was previously crossed by '{previousRequestName}'.");
     }

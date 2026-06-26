@@ -34,21 +34,23 @@ public sealed class OutboxHealthCheck : IHealthCheck
         try
         {
             var pendingCount = await _storage.GetPendingCountAsync(cancellationToken);
-            var failedCount = await _storage.GetFailedCountAsync(cancellationToken);
+            var retryingCount = await _storage.GetRetryingCountAsync(cancellationToken);
+            var deadLetterCount = await _storage.GetDeadLetterCountAsync(cancellationToken);
             var oldestPendingAge = await _storage.GetOldestPendingAgeAsync(cancellationToken);
 
             var data = new Dictionary<string, object>
             {
                 ["pending_count"] = pendingCount,
-                ["failed_count"] = failedCount,
+                ["retrying_count"] = retryingCount,
+                ["dead_letter_count"] = deadLetterCount,
                 ["oldest_pending_age_seconds"] = oldestPendingAge?.TotalSeconds ?? 0
             };
 
             // Check for critical conditions
-            if (failedCount >= _options.CriticalFailedThreshold)
+            if (deadLetterCount >= _options.CriticalDeadLetterThreshold)
             {
                 return HealthCheckResult.Unhealthy(
-                    $"Outbox has {failedCount} failed events (threshold: {_options.CriticalFailedThreshold})",
+                    $"Outbox has {deadLetterCount} dead-lettered events (threshold: {_options.CriticalDeadLetterThreshold})",
                     data: data);
             }
 
@@ -67,10 +69,10 @@ public sealed class OutboxHealthCheck : IHealthCheck
             }
 
             // Check for degraded conditions
-            if (failedCount >= _options.DegradedFailedThreshold)
+            if (deadLetterCount >= _options.DegradedDeadLetterThreshold)
             {
                 return HealthCheckResult.Degraded(
-                    $"Outbox has {failedCount} failed events (threshold: {_options.DegradedFailedThreshold})",
+                    $"Outbox has {deadLetterCount} dead-lettered events (threshold: {_options.DegradedDeadLetterThreshold})",
                     data: data);
             }
 
@@ -113,14 +115,14 @@ public sealed class OutboxHealthCheckOptions
     public int CriticalPendingThreshold { get; set; } = 5000;
 
     /// <summary>
-    ///     Number of failed events that triggers a degraded status. Default is 10.
+    ///     Number of dead-lettered events that triggers a degraded status. Default is 10.
     /// </summary>
-    public int DegradedFailedThreshold { get; set; } = 10;
+    public int DegradedDeadLetterThreshold { get; set; } = 10;
 
     /// <summary>
-    ///     Number of failed events that triggers an unhealthy status. Default is 50.
+    ///     Number of dead-lettered events that triggers an unhealthy status. Default is 50.
     /// </summary>
-    public int CriticalFailedThreshold { get; set; } = 50;
+    public int CriticalDeadLetterThreshold { get; set; } = 50;
 
     /// <summary>
     ///     Age of oldest pending event that triggers a degraded status. Default is 5 minutes.

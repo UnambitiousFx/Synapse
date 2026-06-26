@@ -3,31 +3,22 @@ using UnambitiousFx.Functional;
 namespace UnambitiousFx.Synapse.Abstractions;
 
 /// <summary>
-///     Defines an interface for implementing a pipeline behavior that can be executed
-///     around the handling of events in an event-driven mediator pattern.
+///     Typed event pipeline behavior that only applies to a specific event type.
+///     Registered by the DI container under <c>IEventPipelineBehavior&lt;TEvent&gt;</c> so only behaviors
+///     declared for a given event type are resolved when dispatching that event.
 /// </summary>
-public interface IEventPipelineBehavior
+/// <typeparam name="TEvent">The event type this behavior handles.</typeparam>
+public interface IEventPipelineBehavior<TEvent>
+    where TEvent : IEvent
 {
-    /// Handles the specified event by invoking the next delegate in the event pipeline behavior chain.
-    /// <typeparam name="TEvent">The type of the event being handled. Must implement the <see cref="IEvent" /> interface.</typeparam>
-    /// <param name="event">
-    ///     The event instance that is being processed by the pipeline behavior.
-    /// </param>
-    /// <param name="next">
-    ///     A delegate that points to the next behavior in the pipeline, or the final event handler if this is the last
-    ///     behavior.
-    /// </param>
-    /// <param name="cancellationToken">
-    ///     A token that can be used to propagate notification of cancellation.
-    /// </param>
-    /// <returns>
-    ///     A <see cref="ValueTask{Result}" /> representing the result of this pipeline behavior and subsequent behaviors or
-    ///     handlers.
-    ///     If successful, the result will indicate the successful processing of the event; otherwise, it will indicate a
-    ///     failure.
-    /// </returns>
-    ValueTask<Result> HandleAsync<TEvent>(TEvent @event,
+    /// <summary>
+    ///     Handles the event within the pipeline for the specific <typeparamref name="TEvent" /> type.
+    /// </summary>
+    /// <param name="event">The event instance being processed.</param>
+    /// <param name="next">Delegate to invoke the next behavior or the event handlers.</param>
+    /// <param name="cancellationToken">Token for cancelling the operation.</param>
+    /// <returns>A task containing the result of the operation.</returns>
+    ValueTask<Result> HandleAsync(TEvent @event,
         EventHandlerDelegate<TEvent> next,
-        CancellationToken cancellationToken = default)
-        where TEvent : IEvent;
+        CancellationToken cancellationToken = default);
 }

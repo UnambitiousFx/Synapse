@@ -1,72 +1,86 @@
 # Synapse MinimalApi Example (Native AOT Ready)
 
-This example demonstrates how to use Synapse in a Native AOT-compatible ASP.NET Core application.
-
-## What is Native AOT?
-
-Native Ahead-of-Time (AOT) compilation compiles your .NET application directly to native machine code, resulting in:
-
-- **Faster Startup** - No JIT compilation at runtime
-- **Smaller Memory Footprint** - Reduced working set
-- **Smaller Deployment Size** - Only necessary code is included
-- **Better Performance** - Optimized native code
+This example demonstrates how to use Synapse in an ASP.NET Core application with full Native AOT support.
+It is the canonical ASP.NET integration example for the library.
 
 ## Features Demonstrated
 
-- ✅ **Native AOT Compatibility** - Uses `CreateSlimBuilder()` and trimming-friendly patterns
-- ✅ **JSON Source Generation** - Required for AOT, using `[JsonSerializable]` attributes
-- ✅ **Minimal Dependencies** - Lean and fast
-- ✅ **Same Synapse API** - Identical to WebApi example, just AOT-optimized
+- ✅ **Commands** — with (`CreateTask → CreateTaskResult { TaskId }`) and without (`UpdateTask`, `CompleteTask`, `DeleteTask`) a typed response
+- ✅ **Queries** — single item (`GetTask`) and list (`ListTasks`)
+- ✅ **Streaming** — `IStreamRequest<T>` yielded via `IAsyncEnumerable` (`StreamTasks`)
+- ✅ **Validation** — `RequestValidationBehavior<TRequest, TResponse>` wired up for `CreateTask`
+- ✅ **Domain events** — fan-out to multiple handlers (`TaskCompletedEvent` × 2)
+- ✅ **Concurrent event orchestration** — `ConcurrentEventOrchestrator`
+- ✅ **Pipeline behavior ordering** — `MetricsBehavior(Order=10)` wraps `AuditBehavior(Order=20)`;
+  nesting visible in stdout brackets (`▶`/`◀`). Registered via **source-gen `[PipelineBehavior]` attribute**.
+- ✅ **Constraint-based open generic** — `AuditBehavior<TRequest>` targets only `IAuditableRequest`
+  commands; queries receive no audit logging. The source generator's `Satisfies()` check enforces
+  the constraint at **compile time** (see `RegisterGroup.g.cs` in `obj/`).
+- ✅ **Short-circuiting behavior** — `AuthorizationBehavior` returns a typed
+  `Result.FailUnauthorized(...)` without calling `next()` when the caller lacks the `tasks:admin`
+  permission; the handler never executes. The typed `UnauthorizedFailure` maps to **401 Unauthorized**
+  via `DefaultFailureHttpMapper` (not a generic 500 — see known-issue 003).
+  Registered as a **runtime open-generic** with `ISecuredRequest` constraint.
+- ✅ **Stream pipeline behavior** — `StreamLoggingBehavior` wraps the `IAsyncEnumerable<Result<T>>`
+  chain and logs a `🔢 Streamed N items` summary after the stream completes.
+  Registered as a **runtime open-generic**.
+- ✅ **Correlation** — `IContext.CorrelationId` propagated to `X-Correlation-Id` response header
+- ✅ **CQRS boundary enforcement** — `[assembly: EnableSynapseCqrsBoundaryEnforcement]` (generator
+  wires discovered handlers; use `cfg.RegisterCqrsBoundaryEnforcement<…>()` for manually-registered ones)
+- ✅ **Native AOT Compatibility** — `CreateSlimBuilder()` and JSON source generation
+
+## Pipeline Behavior Registration Mechanisms
+
+Both registration mechanisms are showcased side-by-side in `Program.cs`:
+
+| Mechanism | API | Example | AOT |
+|---|---|---|---|
+| **Source-gen attribute** | `[PipelineBehavior]` (+ `IOrderedPipelineBehavior` for ordering) + `cfg.AddRegisterGroup(new RegisterGroup())` | `MetricsBehavior`, `AuditBehavior` | ✅ Compile-time closed generics |
+| **Runtime open-generic** | `cfg.AddOpenGeneric*PipelineBehavior(typeof(X<>))` | `AuthorizationBehavior`, `StreamLoggingBehavior` | ⚠️ MS DI closes at resolve time; response type must be a class (not a value type) |
 
 ## Project Structure
 
-Identical to [WebApi](../WebApi/README.md) but with AOT-specific configurations.
-
-## Key Differences from WebApi
-
-### 1. Slim Builder
-
-```csharp
-// WebApi uses:
-var builder = WebApplication.CreateBuilder(args);
-
-// MinimalApi uses:
-var builder = WebApplication.CreateSlimBuilder(args);
+```
+MinimalApi/
+├── Program.cs                          # Entry point: DI setup and endpoint mapping
+├── Features/Tasks/
+│   ├── Commands.cs                     # CreateTaskCommand (IAuditableRequest), PurgeCompletedTasksCommand (ISecuredRequest), …
+│   ├── Queries.cs                      # GetTaskQuery, ListTasksQuery, TaskDto, …
+│   ├── Events.cs                       # TaskCreatedEvent, TaskCompletedEvent, …
+│   ├── PipelineContracts.cs            # IAuditableRequest, ISecuredRequest marker interfaces
+│   ├── Handlers/
+│   │   ├── CommandHandlers.cs          # … + PurgeCompletedTasksCommandHandler
+│   │   ├── QueryHandlers.cs
+│   │   └── EventHandlers.cs
+│   └── Validators/
+│       └── TaskValidators.cs           # CreateTaskCommandValidator
+├── Infrastructure/
+│   ├── TaskRepository.cs               # In-memory ConcurrentDictionary store
+│   └── Pipelines/
+│       ├── MetricsBehavior.cs          # [PipelineBehavior] + IOrderedPipelineBehavior (Order 10) — ordering demo
+│       ├── AuditBehavior.cs            # [PipelineBehavior] + IOrderedPipelineBehavior (Order 20) — constraint-based
+│       ├── AuthorizationBehavior.cs    # Runtime open-generic — short-circuit demo
+│       └── StreamLoggingBehavior.cs    # Runtime open-generic — stream behavior demo
+└── Http/
+    ├── requests.http                   # Commands & queries
+    ├── streaming.http                  # IStreamRequest<T> demo
+    ├── events.http                     # Domain events & orchestration
+    └── pipeline-behaviors.http         # Full behavior tour (ordering / constraint / short-circuit / stream)
 ```
 
-`CreateSlimBuilder` includes only essential services for smaller binaries.
+## API Endpoints
 
-### 2. JSON Source Generation
-
-```csharp
-[JsonSerializable(typeof(CreateTaskRequest))]
-[JsonSerializable(typeof(UpdateTaskRequest))]
-[JsonSerializable(typeof(TaskDto))]
-[JsonSerializable(typeof(List<TaskDto>))]
-internal partial class AppJsonSerializerContext : JsonSerializerContext
-{
-}
-
-builder.Services.ConfigureHttpJsonOptions(options =>
-{
-    options.SerializerOptions.TypeInfoResolverChain.Insert(0,
-        AppJsonSerializerContext.Default);
-});
-```
-
-This tells the AOT compiler which types need JSON serialization support.
-
-### 3. Project Configuration
-
-```xml
-<PropertyGroup>
-    <PublishAot>true</PublishAot>
-    <InvariantGlobalization>true</InvariantGlobalization>
-</PropertyGroup>
-```
-
-- `PublishAot` - Enables Native AOT compilation
-- `InvariantGlobalization` - Reduces size by using invariant culture only
+| Method   | Path                        | Description                                                       |
+|----------|-----------------------------|-------------------------------------------------------------------|
+| `GET`    | `/`                         | API info                                                          |
+| `GET`    | `/tasks`                    | List all tasks (Query, no audit)                                  |
+| `GET`    | `/tasks/stream`             | Stream tasks one by one (IStreamRequest + StreamLoggingBehavior)  |
+| `GET`    | `/tasks/{id}`               | Get a task by ID (Query, no audit)                                |
+| `POST`   | `/tasks`                    | Create a task (Command → CreateTaskResult, validated + audited)   |
+| `PUT`    | `/tasks/{id}`               | Update a task (Command, audited)                                  |
+| `POST`   | `/tasks/{id}/complete`      | Complete a task (2 concurrent event handlers, audited)            |
+| `DELETE` | `/tasks/{id}`               | Delete a task (domain event, audited)                             |
+| `POST`   | `/tasks/admin/purge`        | Purge completed tasks (AuthorizationBehavior — requires `tasks:admin`) |
 
 ## Running the Example
 
@@ -77,6 +91,45 @@ cd examples/MinimalApi
 dotnet run
 ```
 
+### Exploring Pipeline Behaviors
+
+Open the themed HTTP files in your IDE's HTTP client (JetBrains, VS Code REST Client, etc.):
+
+| File | What it shows |
+|---|---|
+| `Http/requests.http` | Commands, queries, validation, correlation IDs |
+| `Http/streaming.http` | `IStreamRequest<T>` + `StreamLoggingBehavior` |
+| `Http/events.http` | Domain events, fan-out, `ConcurrentEventOrchestrator` |
+| `Http/pipeline-behaviors.http` | **Full behavior tour** — ordering, constraints, short-circuit, stream |
+
+While making requests, watch the terminal output for the behavior log lines:
+
+```
+▶ [metrics:10] CreateTaskCommand started          ← MetricsBehavior (Order=10)
+📝 [audit:20] CreateTaskCommand — pipeline entry  ← AuditBehavior  (Order=20, IAuditableRequest only)
+info: CreateTaskCommand handled in 00:00:00.001   ← SimpleLoggingBehavior
+info: Creating task: ...                          ← handler
+📝 [audit:20] CreateTaskCommand succeeded
+◀ [metrics:10] CreateTaskCommand finished in ...
+```
+
+Compare with a query (no `📝 [audit]` lines):
+
+```
+▶ [metrics:10] ListTasksQuery started
+info: ListTasksQuery handled in 00:00:00.001
+◀ [metrics:10] ListTasksQuery finished in ...
+```
+
+And the short-circuit demo (`POST /tasks/admin/purge` without the header → **401 Unauthorized**):
+
+```
+▶ [metrics:10] PurgeCompletedTasksCommand started
+🚫 [auth] PurgeCompletedTasksCommand denied — requires 'tasks:admin'
+info: PurgeCompletedTasksCommand handled in ... with error ...
+◀ [metrics:10] PurgeCompletedTasksCommand finished
+```
+
 ### Publish as Native AOT
 
 ```bash
@@ -85,22 +138,63 @@ dotnet publish -c Release
 
 The native executable will be in `bin/Release/net10.0/{runtime}/publish/`.
 
-**Size Comparison:**
+**Size comparison:**
 
-- Regular publish: ~90 MB
-- Native AOT publish: ~15-25 MB
-- Startup time: 2-3x faster
+| Publish mode    | Approximate size | Startup time |
+|-----------------|------------------|--------------|
+| Regular publish | ~90 MB           | 500–800 ms   |
+| Native AOT      | ~15–25 MB        | 150–250 ms   |
+
+## AOT-Specific Configurations
+
+### 1. Slim Builder
+
+```csharp
+var builder = WebApplication.CreateSlimBuilder(args);
+```
+
+`CreateSlimBuilder` includes only essential services, resulting in smaller binaries.
+
+### 2. JSON Source Generation
+
+```csharp
+[JsonSerializable(typeof(CreateTaskRequest))]
+[JsonSerializable(typeof(UpdateTaskRequest))]
+[JsonSerializable(typeof(TaskDto))]
+[JsonSerializable(typeof(List<TaskDto>))]
+[JsonSerializable(typeof(PurgeResult))]   // PurgeCompletedTasksCommand response
+internal partial class AppJsonSerializerContext : JsonSerializerContext { }
+
+builder.Services.ConfigureHttpJsonOptions(options =>
+{
+    options.SerializerOptions.TypeInfoResolverChain.Insert(0,
+        AppJsonSerializerContext.Default);
+});
+```
+
+Every type used in HTTP request/response bodies must be registered so the AOT compiler
+can emit the necessary serialization code.
+
+### 3. Project Configuration
+
+```xml
+<PropertyGroup>
+    <PublishAot>true</PublishAot>
+    <InvariantGlobalization>true</InvariantGlobalization>
+</PropertyGroup>
+```
+
+- `PublishAot` — enables Native AOT compilation on `dotnet publish`
+- `InvariantGlobalization` — reduces binary size by using invariant culture only
 
 ## AOT Compatibility Notes
 
 ### ✅ Synapse is AOT-Ready
 
-Synapse is designed to work with Native AOT:
-
 - No runtime reflection in hot paths
 - Source generators for handler registration
 - Trimming annotations
-- ValueTask for minimal allocations
+- `ValueTask` for minimal allocations
 
 ### ⚠️ What to Watch For
 
@@ -113,24 +207,9 @@ Synapse is designed to work with Native AOT:
    var handler = new MyHandler(dependencies);
    ```
 
-2. **JSON Serialization**
-    - Always add `[JsonSerializable]` for types used in HTTP requests/responses
-    - Use source-generated serializers
+2. **JSON Serialization** — Always add `[JsonSerializable]` for types used in HTTP bodies.
 
-3. **Dependency Injection**
-    - Register services explicitly
-    - Avoid scanning assemblies at runtime
-
-## Performance Characteristics
-
-| Metric        | Regular .NET | Native AOT      |
-|---------------|--------------|-----------------|
-| Startup Time  | 500-800ms    | 150-250ms       |
-| Memory (idle) | 60-80 MB     | 20-35 MB        |
-| Binary Size   | ~90 MB       | ~15-25 MB       |
-| First Request | Similar      | Slightly faster |
-
-## Testing AOT Compatibility
+3. **Dependency Injection** — Register services explicitly; avoid assembly scanning.
 
 ### Check for AOT Warnings
 
@@ -138,43 +217,9 @@ Synapse is designed to work with Native AOT:
 dotnet publish -c Release /p:PublishAot=true
 ```
 
-Look for warnings like:
-
-- `IL2026` - Methods that require runtime reflection
-- `IL3050` - Trimming warnings
-
-### Run Published Binary
-
-```bash
-./bin/Release/net10.0/{runtime}/publish/MinimalApi
-```
-
-## Common AOT Issues and Solutions
-
-### Issue: JSON Serialization Fails
-
-**Problem:** Type not included in source generation
-
-```
-System.InvalidOperationException: No metadata for type X
-```
-
-**Solution:** Add to `AppJsonSerializerContext`:
-
-```csharp
-[JsonSerializable(typeof(YourType))]
-internal partial class AppJsonSerializerContext : JsonSerializerContext { }
-```
-
-### Issue: Trimming Removes Required Code
-
-**Problem:** Code referenced via reflection is trimmed
-
-**Solution:** Use `[DynamicallyAccessedMembers]` or register explicitly
-
-## API Endpoints
-
-Same as [WebApi example](../WebApi/README.md#api-endpoints).
+Look for:
+- `IL2026` — Methods that require runtime reflection
+- `IL3050` — Trimming warnings
 
 ## When to Use Native AOT
 
@@ -194,10 +239,8 @@ Same as [WebApi example](../WebApi/README.md#api-endpoints).
 
 ## Next Steps
 
-- Compare startup times between WebApi and MinimalApi
-- Profile memory usage
-- Test in containerized environments
-- See [GettingStarted](../GettingStarted/README.md) for Synapse fundamentals
+- Run `MinimalApi.Tests` for an integration test suite against these endpoints
+- See [GettingStarted](../GettingStarted/README.md) for a step-by-step tutorial on Synapse fundamentals
 
 ## Learn More
 

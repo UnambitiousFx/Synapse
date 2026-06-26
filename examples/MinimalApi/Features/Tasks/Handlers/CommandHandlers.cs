@@ -1,6 +1,7 @@
 using UnambitiousFx.Examples.MinimalApi.Infrastructure;
 using UnambitiousFx.Functional;
 using UnambitiousFx.Synapse.Abstractions;
+using TaskStatus = UnambitiousFx.Examples.MinimalApi.Infrastructure.TaskStatus;
 
 namespace UnambitiousFx.Examples.MinimalApi.Features.Tasks.Handlers;
 
@@ -8,8 +9,8 @@ namespace UnambitiousFx.Examples.MinimalApi.Features.Tasks.Handlers;
 // Command Handlers
 // ═══════════════════════════════════════════════════════════════
 
-[RequestHandler<CreateTaskCommand, Guid>]
-public sealed class CreateTaskCommandHandler : IRequestHandler<CreateTaskCommand, Guid>
+[RequestHandler<CreateTaskCommand, CreateTaskResult>]
+public sealed class CreateTaskCommandHandler : IRequestHandler<CreateTaskCommand, CreateTaskResult>
 {
     private readonly IEmitter _emitter;
     private readonly ILogger<CreateTaskCommandHandler> _logger;
@@ -25,7 +26,7 @@ public sealed class CreateTaskCommandHandler : IRequestHandler<CreateTaskCommand
         _logger = logger;
     }
 
-    public async ValueTask<Result<Guid>> HandleAsync(
+    public async ValueTask<Result<CreateTaskResult>> HandleAsync(
         CreateTaskCommand request,
         CancellationToken cancellationToken = default)
     {
@@ -41,7 +42,7 @@ public sealed class CreateTaskCommandHandler : IRequestHandler<CreateTaskCommand
             CreatedAt = task.CreatedAt
         }, cancellationToken);
 
-        return Result.Success(task.Id);
+        return Result.Success(new CreateTaskResult { TaskId = task.Id });
     }
 }
 
@@ -154,5 +155,50 @@ public sealed class DeleteTaskCommandHandler : IRequestHandler<DeleteTaskCommand
         }, cancellationToken);
 
         return Result.Success();
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PurgeCompletedTasksCommandHandler
+//
+// Exercises AuthorizationBehavior (short-circuit demo):
+//   • Without X-User-Permissions: tasks:admin → 🚫 [auth] denied;
+//     this handler NEVER executes.
+//   • With X-User-Permissions: tasks:admin    → ✅ [auth] authorized;
+//     handler executes and logs 🧹 PURGING.
+// ═══════════════════════════════════════════════════════════════
+
+[RequestHandler<PurgeCompletedTasksCommand, int>]
+public sealed class PurgeCompletedTasksCommandHandler : IRequestHandler<PurgeCompletedTasksCommand, int>
+{
+    private readonly ILogger<PurgeCompletedTasksCommandHandler> _logger;
+    private readonly TaskRepository _repository;
+
+    public PurgeCompletedTasksCommandHandler(
+        TaskRepository repository,
+        ILogger<PurgeCompletedTasksCommandHandler> logger)
+    {
+        _repository = repository;
+        _logger = logger;
+    }
+
+    public ValueTask<Result<int>> HandleAsync(
+        PurgeCompletedTasksCommand request,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("🧹 PURGING all completed tasks...");
+
+        var completed = _repository.GetAll()
+            .Where(t => t.Status == TaskStatus.Completed)
+            .ToList();
+
+        foreach (var task in completed)
+        {
+            _repository.Delete(task.Id);
+        }
+
+        _logger.LogInformation("🧹 PURGED {Count} completed task(s)", completed.Count);
+
+        return ValueTask.FromResult(Result.Success(completed.Count));
     }
 }

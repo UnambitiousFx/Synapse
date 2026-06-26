@@ -36,24 +36,25 @@ public interface IEventOutboxStorage
     /// </summary>
     /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
     /// <returns>
-    ///     A task that represents the asynchronous operation. The task result contains a collection of pending events.
+    ///     A task that represents the asynchronous operation. The task result contains the pending items, each carrying
+    ///     its stable identity so lifecycle operations can target the specific stored item.
     /// </returns>
-    ValueTask<IEnumerable<IEvent>> GetPendingEventsAsync(CancellationToken cancellationToken = default);
+    ValueTask<IReadOnlyList<OutboxEntry>> GetPendingEventsAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    ///     Marks the specified event as processed in the event outbox storage.
+    ///     Marks the identified stored item as processed in the event outbox storage.
     /// </summary>
-    /// <param name="event">
-    ///     The event to be marked as processed.
+    /// <param name="id">
+    ///     The identity of the stored item to mark as processed (from <see cref="OutboxEntry.Id" />).
     /// </param>
     /// <param name="cancellationToken">
     ///     A token to monitor for cancellation requests.
     /// </param>
     /// <returns>
     ///     A task that represents the asynchronous operation. The task result contains a <see cref="Result" />
-    ///     indicating whether the event was successfully marked as processed.
+    ///     indicating whether the item was successfully marked as processed.
     /// </returns>
-    ValueTask<Result> MarkAsProcessedAsync(IEvent @event,
+    ValueTask<Result> MarkAsProcessedAsync(Guid id,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -69,29 +70,31 @@ public interface IEventOutboxStorage
     ValueTask<Result> ClearAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    ///     Marks the specified event as failed and optionally schedules the next attempt.
+    ///     Marks the identified stored item as failed and optionally schedules the next attempt.
     /// </summary>
-    /// <param name="event">The event that failed to dispatch.</param>
+    /// <param name="id">The identity of the stored item that failed to dispatch (from <see cref="OutboxEntry.Id" />).</param>
     /// <param name="reason">The reason of the failure.</param>
-    /// <param name="deadLetter">True to move the event to the dead-letter queue.</param>
+    /// <param name="deadLetter">True to move the item to the dead-letter queue.</param>
     /// <param name="nextAttemptAt">Optional next attempt date. Ignored when <paramref name="deadLetter" /> is true.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A result indicating success or failure.</returns>
-    ValueTask<Result> MarkAsFailedAsync(IEvent @event,
+    ValueTask<Result> MarkAsFailedAsync(Guid id,
         string reason,
         bool deadLetter,
         DateTimeOffset? nextAttemptAt = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    ///     Gets events that have been moved to the dead-letter queue.
+    ///     Gets items that have been moved to the dead-letter queue.
     /// </summary>
-    ValueTask<IEnumerable<IEvent>> GetDeadLetterEventsAsync(CancellationToken cancellationToken = default);
+    ValueTask<IReadOnlyList<OutboxEntry>> GetDeadLetterEventsAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    ///     Gets the current attempt count for an event (number of failures already recorded).
+    ///     Gets the current attempt count for the identified stored item (number of failures already recorded).
     /// </summary>
-    ValueTask<int?> GetAttemptCountAsync(IEvent @event,
+    /// <param name="id">The identity of the stored item (from <see cref="OutboxEntry.Id" />).</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    ValueTask<int?> GetAttemptCountAsync(Guid id,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -102,11 +105,20 @@ public interface IEventOutboxStorage
     ValueTask<int> GetPendingCountAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    ///     Gets the count of failed events in the outbox (not yet in dead-letter).
+    ///     Gets the count of events that have failed at least once and are awaiting retry
+    ///     (not yet dead-lettered). This reflects transient backpressure, not operator-actionable failure.
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The number of failed events.</returns>
-    ValueTask<int> GetFailedCountAsync(CancellationToken cancellationToken = default);
+    /// <returns>The number of events currently awaiting retry.</returns>
+    ValueTask<int> GetRetryingCountAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    ///     Gets the count of events that have exhausted their retries and been moved to the
+    ///     dead-letter queue. This is the operator-actionable failure count.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The number of dead-lettered events.</returns>
+    ValueTask<int> GetDeadLetterCountAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     ///     Gets the age of the oldest pending event in the outbox.

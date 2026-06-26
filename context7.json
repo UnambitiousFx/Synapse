@@ -1,0 +1,15 @@
+{
+  "$schema": "https://context7.com/schema/context7.json",
+  "projectTitle": "UnambitiousFx Synapse",
+  "description": "Lightweight, Native-AOT-friendly .NET mediator for message-driven apps: Commands, Queries, Events, Pipelines and an Outbox, with low latency and allocations.",
+  "branch": "main",
+  "folders": ["docs/docs"],
+  "excludeFolders": ["docs/docs/known-issues"],
+  "rules": [
+    "Synapse targets .NET with Native AOT in mind; prefer ValueTask over Task for likely-synchronous handler paths.",
+    "Distinguish Commands, Queries, and Events by intent; keep message contracts small and single-purpose.",
+    "Return typed results via Result/OneOf from UnambitiousFx.Functional instead of throwing exceptions for expected failures.",
+    "Put cross-cutting concerns (validation, retries, logging) in small composable pipeline behaviors, not inside handlers.",
+    "Use the Outbox for reliable event publishing across process/transaction boundaries."
+  ]
+}

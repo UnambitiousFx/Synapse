@@ -13,7 +13,7 @@ public sealed class ProxyStreamRequestHandlerTests
         var handler = new TestStreamHandler();
         var proxy = new ProxyStreamRequestHandler<TestStreamHandler, StreamRequest, int>(
             handler,
-            Array.Empty<IStreamRequestPipelineBehavior>());
+            Array.Empty<IStreamRequestPipelineBehavior<StreamRequest, int>>());
 
         // Act (When)
         var results = await ToValuesAsync(proxy.HandleAsync(new StreamRequest(3), CancellationToken.None));
@@ -28,7 +28,7 @@ public sealed class ProxyStreamRequestHandlerTests
         // Arrange (Given)
         var trace = new List<string>();
         var handler = new TestStreamHandler(trace);
-        var behaviors = new IStreamRequestPipelineBehavior[]
+        var behaviors = new IStreamRequestPipelineBehavior<StreamRequest, int>[]
         {
             new TraceBehavior("b1", trace),
             new TraceBehavior("b2", trace)
@@ -78,13 +78,11 @@ public sealed class ProxyStreamRequestHandlerTests
         }
     }
 
-    private sealed class TraceBehavior(string name, List<string> trace) : IStreamRequestPipelineBehavior
+    private sealed class TraceBehavior(string name, List<string> trace) : IStreamRequestPipelineBehavior<StreamRequest, int>
     {
-        public async IAsyncEnumerable<Result<TItem>> HandleAsync<TRequest, TItem>(TRequest request,
-            StreamRequestHandlerDelegate<TItem> next,
+        public async IAsyncEnumerable<Result<int>> HandleAsync(StreamRequest request,
+            StreamRequestHandlerDelegate<int> next,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
-            where TRequest : IStreamRequest<TItem>
-            where TItem : notnull
         {
             trace.Add($"{name}:before");
             await foreach (var item in next())

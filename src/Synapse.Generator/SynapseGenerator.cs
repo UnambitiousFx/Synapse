@@ -27,9 +27,50 @@ public class SynapseGenerator : IIncrementalGenerator
     private const string LongRequestStreamHandlerAttributeName = $"{ShortRequestStreamHandlerAttributeName}Attribute";
     private const string FullRequestHandlerAttributeName = $"{AbstractionsNamespace}.{LongRequestHandlerAttributeName}";
     private const string FullEventHandlerAttributeName = $"{AbstractionsNamespace}.{LongEventHandlerAttributeName}";
+    private const string FullPipelineBehaviorAttributeName = $"{AbstractionsNamespace}.PipelineBehaviorAttribute";
+    private const string FullValidatorAttributeName = $"{AbstractionsNamespace}.ValidatorAttribute";
 
     private const string FullRequestStreamHandlerAttributeName =
         $"{AbstractionsNamespace}.{LongRequestStreamHandlerAttributeName}";
+
+    // Validator discovery metadata names.
+    private const string RequestValidatorInterfaceName = $"{AbstractionsNamespace}.IRequestValidator";
+    private const string RequestInterfaceName = $"{AbstractionsNamespace}.IRequest";
+
+    // Pipeline interface metadata names (without arity suffix — appended when matching)
+    private const string RequestPipelineBehaviorInterfaceName = $"{AbstractionsNamespace}.IRequestPipelineBehavior";
+    private const string EventPipelineBehaviorInterfaceName = $"{AbstractionsNamespace}.IEventPipelineBehavior";
+
+    private const string StreamRequestPipelineBehaviorInterfaceName =
+        $"{AbstractionsNamespace}.IStreamRequestPipelineBehavior";
+
+    /// <summary>
+    ///     Display format that yields the fully-qualified name (with <c>global::</c> prefix and the full
+    ///     enclosing-type chain) but omits generic type parameters — so nested types register correctly and
+    ///     open-generic behaviors keep a base name the factory can close with type arguments.
+    /// </summary>
+    private static readonly SymbolDisplayFormat FullyQualifiedNoGenericsFormat = new(
+        SymbolDisplayGlobalNamespaceStyle.Included,
+        SymbolDisplayTypeQualificationStyle.NameAndContainingTypesAndNamespaces,
+        SymbolDisplayGenericsOptions.None);
+
+    /// <summary>
+    ///     Renders a concrete response/item type ready for emission as a generic type argument. Uses Roslyn's
+    ///     <see cref="SymbolDisplayFormat.FullyQualifiedFormat" />, which correctly globalizes every type shape
+    ///     — including value tuples, pointers, function pointers, arrays and nullability — so the result needs
+    ///     no further string munging (see known issue 012).
+    /// </summary>
+    private static string ToEmitName(ITypeSymbol symbol)
+    {
+        return symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+    }
+
+    private static string GetFullyQualifiedName(GeneratorAttributeSyntaxContext ctx, string @namespace, string className)
+    {
+        return ctx.TargetSymbol is INamedTypeSymbol symbol
+            ? symbol.ToDisplayString(FullyQualifiedNoGenericsFormat)
+            : $"{@namespace}.{className}";
+    }
 
     /// <summary>
     ///     Initializes the SynapseGenerator by registering post-initialization output with the provided
@@ -104,12 +145,50 @@ public class SynapseGenerator : IIncrementalGenerator
             .Select(static (tuple,
                 _) => tuple.Left.AddRange(tuple.Right));
 
-        var combinedProvider = allHandlerDetails.Combine(rootNamespaceProvider);
+        // Collect [PipelineBehavior]-decorated classes
+        var behaviorDetails = context.SyntaxProvider.ForAttributeWithMetadataName(
+            FullPipelineBehaviorAttributeName,
+            static (node, _) => node is ClassDeclarationSyntax,
+            static (ctx, _) => GetBehaviorDetail(ctx))
+            .Collect();
 
-        context.RegisterSourceOutput(combinedProvider, static (ctx,
-            tuple) =>
+        // Collect [Validator]-decorated classes
+        var validatorDetails = context.SyntaxProvider.ForAttributeWithMetadataName(
+            FullValidatorAttributeName,
+            static (node, _) => node is ClassDeclarationSyntax,
+            static (ctx, _) => GetValidatorDetail(ctx))
+            .Collect();
+
+        // Detect the assembly-level opt-in for CQRS boundary enforcement. A runtime fluent call is
+        // invisible to the generator, so enforcement is expressed as an assembly attribute the generator
+        // can see and turn into closed (AOT-safe) registrations.
+        var cqrsEnabledProvider = compilationProvider
+            .Select(static (compilation, _) => compilation.IsCqrsBoundaryEnforcementEnabled());
+
+        // Discover every request/event/stream handler target visible in the compilation — including
+        // those declared in referenced assemblies — so an assembly's open-generic behaviors can be
+        // cross-producted against the whole reference graph (closed, AOT-safe registrations), not just
+        // same-assembly handlers. Like ExtractEventInfo, this rides on the compilation and therefore
+        // re-runs on every edit; that matches the existing event-dispatcher tradeoff.
+        var behaviorTargetsProvider = compilationProvider
+            .Select(static (compilation, _) => ExtractAllBehaviorTargets(compilation));
+
+        var crossAssemblyDisabledProvider = compilationProvider
+            .Select(static (compilation, _) => compilation.IsCrossAssemblyBehaviorsDisabled());
+
+        var combinedProvider = allHandlerDetails
+            .Combine(rootNamespaceProvider)
+            .Combine(behaviorDetails)
+            .Combine(cqrsEnabledProvider)
+            .Combine(behaviorTargetsProvider)
+            .Combine(crossAssemblyDisabledProvider)
+            .Combine(validatorDetails);
+
+        context.RegisterSourceOutput(combinedProvider, static (ctx, tuple) =>
         {
-            var (details, rootNamespace) = tuple;
+            var ((((((details, rootNamespace), behaviors), cqrsEnabled), behaviorTargets), crossAssemblyDisabled),
+                validatorScans) = tuple;
+
             ctx.ReportDiagnostic(Diagnostic.Create(
                 new DiagnosticDescriptor(
                     "MDG005",
@@ -173,13 +252,104 @@ public class SynapseGenerator : IIncrementalGenerator
                                 "Synapse.Generator",
                                 DiagnosticSeverity.Info,
                                 true),
-                            detail.Value.Location ?? Location.None));
+                            detail.Value.Location?.ToLocation() ?? Location.None));
                     }
                 }
             }
 
+            // Validate behaviors — warn if a [PipelineBehavior] class implements no pipeline interface,
+            // and flatten the per-class scans into the list of behaviors to emit. A single class can
+            // implement several pipeline interfaces, so each scan may contribute multiple behaviors.
+            var behaviorList = ImmutableArray.CreateBuilder<BehaviorDetail>();
+            foreach (var scan in behaviors)
+            {
+                if (scan is null)
+                {
+                    continue;
+                }
+
+                if (scan.Value.Behaviors.Count == 0)
+                {
+                    ctx.ReportDiagnostic(Diagnostic.Create(
+                        new DiagnosticDescriptor(
+                            "MDG008",
+                            "Invalid pipeline behavior",
+                            "[PipelineBehavior] is applied to a class that does not implement any known pipeline interface. Ensure the class implements IRequestPipelineBehavior<>, IEventPipelineBehavior<>, or IStreamRequestPipelineBehavior<,>.",
+                            "Synapse.Generator",
+                            DiagnosticSeverity.Warning,
+                            true),
+                        scan.Value.Location?.ToLocation() ?? Location.None));
+                    continue;
+                }
+
+                foreach (var behavior in scan.Value.Behaviors)
+                {
+                    // A class type parameter not bound by the implemented interface cannot be inferred when the
+                    // behavior is closed over a handler. Emitting a registration anyway would produce code that
+                    // fails to compile (CS0305), so report a clear error and skip this behavior instead.
+                    if (behavior.HasUnbindableTypeParameter)
+                    {
+                        ctx.ReportDiagnostic(Diagnostic.Create(
+                            new DiagnosticDescriptor(
+                                "MDG010",
+                                "Open-generic behavior has uninferable type parameter",
+                                $"Open-generic behavior '{behavior.ClassName}' has a type parameter that is not bound by the pipeline interface it implements, so it cannot be closed over a handler. Remove the extra type parameter or bind it through the interface.",
+                                "Synapse.Generator",
+                                DiagnosticSeverity.Error,
+                                true),
+                            scan.Value.Location?.ToLocation() ?? Location.None));
+                        continue;
+                    }
+
+                    behaviorList.Add(behavior);
+                }
+            }
+
+            // Validate validators — warn if a [Validator] class implements no IRequestValidator<> interface,
+            // and collect the rest for emission.
+            var validatorList = ImmutableArray.CreateBuilder<ValidatorDetail>();
+            foreach (var scan in validatorScans)
+            {
+                if (scan is null)
+                {
+                    continue;
+                }
+
+                if (scan.Value.Detail is not { } validator)
+                {
+                    if (scan.Value.AmbiguousResponseRequest is { } ambiguousRequest)
+                    {
+                        ctx.ReportDiagnostic(Diagnostic.Create(
+                            new DiagnosticDescriptor(
+                                "MDG011",
+                                "Ambiguous validator response type",
+                                $"Request '{ambiguousRequest}' implements multiple IRequest<TResponse>; the validator response type cannot be determined unambiguously. Implement a single IRequest<TResponse>.",
+                                "Synapse.Generator",
+                                DiagnosticSeverity.Error,
+                                true),
+                            scan.Value.Location?.ToLocation() ?? Location.None));
+                        continue;
+                    }
+
+                    ctx.ReportDiagnostic(Diagnostic.Create(
+                        new DiagnosticDescriptor(
+                            "MDG009",
+                            "Invalid validator",
+                            "[Validator] is applied to a class that does not implement IRequestValidator<>. Ensure the class implements IRequestValidator<TRequest>.",
+                            "Synapse.Generator",
+                            DiagnosticSeverity.Warning,
+                            true),
+                        scan.Value.Location?.ToLocation() ?? Location.None));
+                    continue;
+                }
+
+                validatorList.Add(validator);
+            }
+
             ctx.AddSource("RegisterGroup.g.cs",
-                RegisterGroupFactory.Create(rootNamespace, AbstractionsNamespace, details));
+                RegisterGroupFactory.Create(rootNamespace, AbstractionsNamespace, details,
+                    behaviorList.ToImmutable(), cqrsEnabled, behaviorTargets, crossAssemblyDisabled,
+                    validatorList.ToImmutable()));
         });
 
         // Generate event dispatcher registrations for NativeAOT support
@@ -247,10 +417,12 @@ public class SynapseGenerator : IIncrementalGenerator
 
             var className = classDeclaration.Identifier.ValueText;
             var @namespace = classDeclaration.GetNamespace();
-            var (requestType, responseType) = GetRequestInfo(attribute);
-            var location = classDeclaration.GetLocation();
+            var (requestType, responseType, requestSatisfying, responseSatisfying) = GetRequestInfo(attribute);
+            var location = LocationInfo.CreateFrom(classDeclaration.GetLocation());
             var handlerType = HandlerType.StreamRequestHandler;
-            return new HandlerDetail(handlerType, className, @namespace, requestType, responseType, location);
+            var fullyQualifiedName = GetFullyQualifiedName(ctx, @namespace, className);
+            return new HandlerDetail(handlerType, className, @namespace, fullyQualifiedName, requestType, responseType,
+                location, requestSatisfying, responseSatisfying);
         }
 
         return null;
@@ -275,12 +447,14 @@ public class SynapseGenerator : IIncrementalGenerator
 
             var className = classDeclaration.Identifier.ValueText;
             var @namespace = classDeclaration.GetNamespace();
-            var (requestType, responseType) = GetRequestInfo(attribute);
+            var (requestType, responseType, requestSatisfying, responseSatisfying) = GetRequestInfo(attribute);
 
 
-            var location = classDeclaration.GetLocation();
+            var location = LocationInfo.CreateFrom(classDeclaration.GetLocation());
             var handlerType = HandlerType.RequestHandler;
-            return new HandlerDetail(handlerType, className, @namespace, requestType, responseType, location);
+            var fullyQualifiedName = GetFullyQualifiedName(ctx, @namespace, className);
+            return new HandlerDetail(handlerType, className, @namespace, fullyQualifiedName, requestType, responseType,
+                location, requestSatisfying, responseSatisfying);
         }
 
         return null;
@@ -304,41 +478,330 @@ public class SynapseGenerator : IIncrementalGenerator
 
             var className = classDeclaration.Identifier.ValueText;
             var @namespace = classDeclaration.GetNamespace();
-            var (requestType, responseType) = GetRequestInfo(attribute);
+            var (requestType, responseType, requestSatisfying, responseSatisfying) = GetRequestInfo(attribute);
 
-            var location = classDeclaration.GetLocation();
+            var location = LocationInfo.CreateFrom(classDeclaration.GetLocation());
 
-            return new HandlerDetail(HandlerType.EventHandler, className, @namespace, requestType, responseType,
-                location);
+            var fullyQualifiedName = GetFullyQualifiedName(ctx, @namespace, className);
+            return new HandlerDetail(HandlerType.EventHandler, className, @namespace, fullyQualifiedName, requestType,
+                responseType, location, requestSatisfying, responseSatisfying);
         }
 
         return null;
     }
 
-    private static (string RequestType, string? ResponseType) GetRequestInfo(AttributeData attribute)
+    private static BehaviorScan? GetBehaviorDetail(GeneratorAttributeSyntaxContext ctx)
+    {
+        if (ctx.TargetNode is not ClassDeclarationSyntax classDeclaration)
+        {
+            return null;
+        }
+
+        if (ctx.TargetSymbol is not INamedTypeSymbol classSymbol)
+        {
+            return null;
+        }
+
+        var isOpenGeneric = classSymbol.IsGenericType;
+        var className = classDeclaration.Identifier.ValueText;
+        var @namespace = classDeclaration.GetNamespace();
+        var fullyQualifiedName = classSymbol.ToDisplayString(FullyQualifiedNoGenericsFormat);
+        var location = LocationInfo.CreateFrom(classDeclaration.GetLocation());
+
+        // A class may implement more than one pipeline interface — emit a behavior for each, rather
+        // than arbitrarily picking the first one found in AllInterfaces.
+        var behaviors = new List<BehaviorDetail>();
+        foreach (var iface in classSymbol.AllInterfaces)
+        {
+            if (!iface.IsGenericType)
+            {
+                continue;
+            }
+
+            var ifaceNamespace = iface.ContainingNamespace?.ToDisplayString() ?? string.Empty;
+            var ifaceFullName = $"{ifaceNamespace}.{iface.MetadataName}";
+
+            if (ifaceFullName == $"{RequestPipelineBehaviorInterfaceName}`1" && iface.TypeArguments.Length == 1)
+            {
+                var requestType = isOpenGeneric
+                    ? iface.TypeArguments[0].Name
+                    : ToEmitName(iface.TypeArguments[0]);
+                behaviors.Add(new BehaviorDetail(className, @namespace, fullyQualifiedName, BehaviorKind.Request,
+                    isOpenGeneric, requestType, null, GetConstraintNames(iface.TypeArguments[0]), default,
+                    BuildClosingTypeArgumentMap(classSymbol, iface, isOpenGeneric)));
+            }
+            else if (ifaceFullName == $"{RequestPipelineBehaviorInterfaceName}`2" && iface.TypeArguments.Length == 2)
+            {
+                var requestType = isOpenGeneric
+                    ? iface.TypeArguments[0].Name
+                    : ToEmitName(iface.TypeArguments[0]);
+                var responseType = isOpenGeneric
+                    ? iface.TypeArguments[1].Name
+                    : ToEmitName(iface.TypeArguments[1]);
+                behaviors.Add(new BehaviorDetail(className, @namespace, fullyQualifiedName,
+                    BehaviorKind.RequestWithResponse, isOpenGeneric, requestType, responseType,
+                    GetConstraintNames(iface.TypeArguments[0]), GetConstraintNames(iface.TypeArguments[1]),
+                    BuildClosingTypeArgumentMap(classSymbol, iface, isOpenGeneric)));
+            }
+            else if (ifaceFullName == $"{EventPipelineBehaviorInterfaceName}`1" && iface.TypeArguments.Length == 1)
+            {
+                var eventType = isOpenGeneric
+                    ? iface.TypeArguments[0].Name
+                    : ToEmitName(iface.TypeArguments[0]);
+                behaviors.Add(new BehaviorDetail(className, @namespace, fullyQualifiedName, BehaviorKind.Event,
+                    isOpenGeneric, eventType, null, GetConstraintNames(iface.TypeArguments[0]), default,
+                    BuildClosingTypeArgumentMap(classSymbol, iface, isOpenGeneric)));
+            }
+            else if (ifaceFullName == $"{StreamRequestPipelineBehaviorInterfaceName}`2" &&
+                     iface.TypeArguments.Length == 2)
+            {
+                var requestType = isOpenGeneric
+                    ? iface.TypeArguments[0].Name
+                    : ToEmitName(iface.TypeArguments[0]);
+                var itemType = isOpenGeneric
+                    ? iface.TypeArguments[1].Name
+                    : ToEmitName(iface.TypeArguments[1]);
+                behaviors.Add(new BehaviorDetail(className, @namespace, fullyQualifiedName, BehaviorKind.StreamRequest,
+                    isOpenGeneric, requestType, itemType, GetConstraintNames(iface.TypeArguments[0]),
+                    GetConstraintNames(iface.TypeArguments[1]),
+                    BuildClosingTypeArgumentMap(classSymbol, iface, isOpenGeneric)));
+            }
+        }
+
+        // An empty Behaviors collection signals MDG008 (no known pipeline interface implemented).
+        return new BehaviorScan(location, EquatableArray<BehaviorDetail>.From(behaviors));
+    }
+
+    private static ValidatorScan? GetValidatorDetail(GeneratorAttributeSyntaxContext ctx)
+    {
+        if (ctx.TargetNode is not ClassDeclarationSyntax classDeclaration)
+        {
+            return null;
+        }
+
+        if (ctx.TargetSymbol is not INamedTypeSymbol classSymbol)
+        {
+            return null;
+        }
+
+        var className = classDeclaration.Identifier.ValueText;
+        var @namespace = classDeclaration.GetNamespace();
+        var fullyQualifiedName = classSymbol.ToDisplayString(FullyQualifiedNoGenericsFormat);
+        var location = LocationInfo.CreateFrom(classDeclaration.GetLocation());
+
+        foreach (var iface in classSymbol.AllInterfaces)
+        {
+            if (!iface.IsGenericType || iface.TypeArguments.Length != 1)
+            {
+                continue;
+            }
+
+            var ifaceNamespace = iface.ContainingNamespace?.ToDisplayString() ?? string.Empty;
+            var ifaceFullName = $"{ifaceNamespace}.{iface.MetadataName}";
+
+            if (ifaceFullName != $"{RequestValidatorInterfaceName}`1")
+            {
+                continue;
+            }
+
+            var requestSymbol = iface.TypeArguments[0];
+            var requestType = ToEmitName(requestSymbol);
+            var (responseType, ambiguous) = GetRequestResponseType(requestSymbol);
+            if (ambiguous)
+            {
+                // Request implements multiple IRequest<TResponse>; the response binding is ambiguous —
+                // signal MDG011 (null detail + request name) rather than guessing a response type.
+                // Use the plain display name for the human-readable diagnostic message, not the
+                // global::-prefixed emit name.
+                return new ValidatorScan(location, null, requestSymbol.ToDisplayString());
+            }
+
+            return new ValidatorScan(location,
+                new ValidatorDetail(className, @namespace, fullyQualifiedName, requestType, responseType));
+        }
+
+        // No IRequestValidator<> implemented — signal MDG009.
+        return new ValidatorScan(location, null);
+    }
+
+    /// <summary>
+    ///     Returns the fully-qualified response type of a request that implements
+    ///     <c>IRequest&lt;TResponse&gt;</c>, or null when the request only implements the no-response
+    ///     <c>IRequest</c> marker. <c>Ambiguous</c> is true when the request implements more than one
+    ///     <c>IRequest&lt;TResponse&gt;</c> with distinct response types, in which case the response cannot be
+    ///     bound deterministically and the caller should report MDG011 instead of emitting a registration.
+    /// </summary>
+    private static (string? ResponseType, bool Ambiguous) GetRequestResponseType(ITypeSymbol requestSymbol)
+    {
+        string? found = null;
+        var ambiguous = false;
+        foreach (var iface in requestSymbol.AllInterfaces)
+        {
+            if (!iface.IsGenericType || iface.TypeArguments.Length != 1)
+            {
+                continue;
+            }
+
+            var ifaceNamespace = iface.ContainingNamespace?.ToDisplayString() ?? string.Empty;
+            if ($"{ifaceNamespace}.{iface.MetadataName}" != $"{RequestInterfaceName}`1")
+            {
+                continue;
+            }
+
+            // Dedupe by emit name: the same response type seen twice (e.g. via interface inheritance)
+            // is not ambiguous; only distinct response types are.
+            var candidate = ToEmitName(iface.TypeArguments[0]);
+            if (found is null)
+            {
+                found = candidate;
+            }
+            else if (found != candidate)
+            {
+                ambiguous = true;
+            }
+        }
+
+        return (found, ambiguous);
+    }
+
+    /// <summary>
+    ///     Maps each of the behavior class's type parameters (in declaration order) to the index of the
+    ///     implemented interface's type argument that binds it: <c>0</c> for the request/event slot, <c>1</c>
+    ///     for the response/item slot, or <c>-1</c> when no interface type argument references the parameter
+    ///     (it cannot be inferred when the class is closed). This drives the arity and order of type arguments
+    ///     emitted at close time, fixing classes whose own generic arity or parameter order differs from the
+    ///     interface they implement. Returns an empty array for closed (non-generic) behaviors.
+    /// </summary>
+    private static EquatableArray<int> BuildClosingTypeArgumentMap(INamedTypeSymbol classSymbol,
+        INamedTypeSymbol iface,
+        bool isOpenGeneric)
+    {
+        if (!isOpenGeneric || classSymbol.TypeParameters.Length == 0)
+        {
+            return default;
+        }
+
+        var map = new int[classSymbol.TypeParameters.Length];
+        for (var i = 0; i < map.Length; i++)
+        {
+            map[i] = -1;
+        }
+
+        for (var argIndex = 0; argIndex < iface.TypeArguments.Length; argIndex++)
+        {
+            if (iface.TypeArguments[argIndex] is ITypeParameterSymbol
+                {
+                    TypeParameterKind: TypeParameterKind.Type
+                } typeParameter
+                && SymbolEqualityComparer.Default.Equals(typeParameter.ContainingType, classSymbol)
+                && typeParameter.Ordinal < map.Length)
+            {
+                map[typeParameter.Ordinal] = argIndex;
+            }
+        }
+
+        return EquatableArray<int>.From(map);
+    }
+
+    /// <summary>
+    ///     Returns the named-type constraints on an open-generic behavior's type parameter as fully-qualified
+    ///     display strings. Closed type arguments (and parameters with no type constraint) yield an empty array.
+    /// </summary>
+    private static EquatableArray<string> GetConstraintNames(ITypeSymbol typeArgument)
+    {
+        if (typeArgument is not ITypeParameterSymbol { ConstraintTypes.Length: > 0 } typeParameter)
+        {
+            return default;
+        }
+
+        // Only keep concrete named-type constraints (e.g. ICommand). Constraints that reference the
+        // behavior's own type parameters — such as `where TRequest : IRequest<TResponse>` — are satisfied
+        // by construction when the behavior is closed over a matching handler, so filtering on them would
+        // wrongly exclude every handler.
+        var names = typeParameter.ConstraintTypes
+            .Where(c => !ContainsTypeParameter(c))
+            .Select(c => c.ToDisplayString())
+            .ToList();
+
+        return names.Count > 0 ? EquatableArray<string>.From(names) : default;
+    }
+
+    private static bool ContainsTypeParameter(ITypeSymbol type)
+    {
+        switch (type)
+        {
+            case ITypeParameterSymbol:
+                return true;
+            case IArrayTypeSymbol array:
+                return ContainsTypeParameter(array.ElementType);
+            case INamedTypeSymbol named:
+                foreach (var typeArgument in named.TypeArguments)
+                {
+                    if (ContainsTypeParameter(typeArgument))
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
+            default:
+                return false;
+        }
+    }
+
+    private static (string RequestType, string? ResponseType, EquatableArray<string> RequestSatisfying,
+        EquatableArray<string> ResponseSatisfying) GetRequestInfo(AttributeData attribute)
     {
         // Get the attribute constructor's type arguments
         var typeArgs = attribute.AttributeClass?.TypeArguments;
         if (typeArgs is null ||
             typeArgs.Value.Length == 0)
         {
-            return (string.Empty, null);
+            return (string.Empty, null, default, default);
         }
 
 
         // Get the fully qualified name of the request type
-        var requestType = typeArgs.Value[0]
-            .ToDisplayString();
+        var requestSymbol = typeArgs.Value[0];
+        var requestType = ToEmitName(requestSymbol);
+        var requestSatisfying = GetSatisfyingTypeNames(requestSymbol);
 
         // Check if there's a response type (generic attribute with 2 type parameters)
         string? responseType = null;
+        var responseSatisfying = default(EquatableArray<string>);
         if (typeArgs.Value.Length > 1)
         {
-            responseType = typeArgs.Value[1]
-                .ToDisplayString();
+            var responseSymbol = typeArgs.Value[1];
+            responseType = ToEmitName(responseSymbol);
+            responseSatisfying = GetSatisfyingTypeNames(responseSymbol);
         }
 
-        return (requestType, responseType);
+        return (requestType, responseType, requestSatisfying, responseSatisfying);
+    }
+
+    /// <summary>
+    ///     Returns the type itself plus all of its base types and implemented interfaces as fully-qualified
+    ///     display strings — the set a constraint type must be a member of for the type to satisfy it.
+    /// </summary>
+    private static EquatableArray<string> GetSatisfyingTypeNames(ITypeSymbol? type)
+    {
+        if (type is null)
+        {
+            return default;
+        }
+
+        var names = new List<string> { type.ToDisplayString() };
+        foreach (var iface in type.AllInterfaces)
+        {
+            names.Add(iface.ToDisplayString());
+        }
+
+        for (var baseType = type.BaseType; baseType is not null; baseType = baseType.BaseType)
+        {
+            names.Add(baseType.ToDisplayString());
+        }
+
+        return EquatableArray<string>.From(names);
     }
 
     /// <summary>
@@ -363,6 +826,136 @@ public class SynapseGenerator : IIncrementalGenerator
         visitor.Visit(compilation.GlobalNamespace);
 
         return new EventInfo(eventTypes.ToImmutableArray(), handlerTypes.ToImmutableArray());
+    }
+
+    /// <summary>
+    ///     Collects every request/event/stream handler target reachable in the compilation — own assembly and
+    ///     referenced assemblies alike — as <see cref="HandlerDetail" />s for open-generic behavior cross-product.
+    ///     Only the request/response types and their satisfying-type sets are populated; the handler class name
+    ///     and location are irrelevant here (the handler itself is registered by its own assembly's RegisterGroup).
+    ///     Results are deduplicated by (kind, request type, response type).
+    /// </summary>
+    private static ImmutableArray<HandlerDetail> ExtractAllBehaviorTargets(Compilation compilation)
+    {
+        var requestHandler1 = compilation.GetTypeByMetadataName($"{AbstractionsNamespace}.IRequestHandler`1");
+        var requestHandler2 = compilation.GetTypeByMetadataName($"{AbstractionsNamespace}.IRequestHandler`2");
+        var eventHandler1 = compilation.GetTypeByMetadataName($"{AbstractionsNamespace}.IEventHandler`1");
+        var streamHandler2 = compilation.GetTypeByMetadataName($"{AbstractionsNamespace}.IStreamRequestHandler`2");
+
+        if (requestHandler1 is null && requestHandler2 is null && eventHandler1 is null && streamHandler2 is null)
+        {
+            return ImmutableArray<HandlerDetail>.Empty;
+        }
+
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var targets = ImmutableArray.CreateBuilder<HandlerDetail>();
+        var visitor = new BehaviorTargetSymbolVisitor(requestHandler1, requestHandler2, eventHandler1,
+            streamHandler2, seen, targets);
+        visitor.Visit(compilation.GlobalNamespace);
+
+        return targets.ToImmutable();
+    }
+
+    /// <summary>
+    ///     Symbol visitor that finds all concrete types implementing a Synapse handler interface and records
+    ///     the corresponding behavior target (request/event/stream type + response/item type).
+    /// </summary>
+    private class BehaviorTargetSymbolVisitor : SymbolVisitor
+    {
+        private readonly INamedTypeSymbol? _eventHandler1;
+        private readonly INamedTypeSymbol? _requestHandler1;
+        private readonly INamedTypeSymbol? _requestHandler2;
+        private readonly HashSet<string> _seen;
+        private readonly INamedTypeSymbol? _streamHandler2;
+        private readonly ImmutableArray<HandlerDetail>.Builder _targets;
+
+        public BehaviorTargetSymbolVisitor(
+            INamedTypeSymbol? requestHandler1,
+            INamedTypeSymbol? requestHandler2,
+            INamedTypeSymbol? eventHandler1,
+            INamedTypeSymbol? streamHandler2,
+            HashSet<string> seen,
+            ImmutableArray<HandlerDetail>.Builder targets)
+        {
+            _requestHandler1 = requestHandler1;
+            _requestHandler2 = requestHandler2;
+            _eventHandler1 = eventHandler1;
+            _streamHandler2 = streamHandler2;
+            _seen = seen;
+            _targets = targets;
+        }
+
+        public override void VisitNamespace(INamespaceSymbol symbol)
+        {
+            foreach (var member in symbol.GetMembers())
+            {
+                member.Accept(this);
+            }
+        }
+
+        public override void VisitNamedType(INamedTypeSymbol symbol)
+        {
+            if (!symbol.IsAbstract && symbol.TypeKind != TypeKind.Interface)
+            {
+                foreach (var iface in symbol.AllInterfaces)
+                {
+                    if (!iface.IsGenericType)
+                    {
+                        continue;
+                    }
+
+                    var definition = iface.ConstructedFrom;
+                    if (Matches(definition, _requestHandler2) && iface.TypeArguments.Length == 2)
+                    {
+                        Add(HandlerType.RequestHandler, iface.TypeArguments[0], iface.TypeArguments[1]);
+                    }
+                    else if (Matches(definition, _requestHandler1) && iface.TypeArguments.Length == 1)
+                    {
+                        Add(HandlerType.RequestHandler, iface.TypeArguments[0], null);
+                    }
+                    else if (Matches(definition, _eventHandler1) && iface.TypeArguments.Length == 1)
+                    {
+                        Add(HandlerType.EventHandler, iface.TypeArguments[0], null);
+                    }
+                    else if (Matches(definition, _streamHandler2) && iface.TypeArguments.Length == 2)
+                    {
+                        Add(HandlerType.StreamRequestHandler, iface.TypeArguments[0], iface.TypeArguments[1]);
+                    }
+                }
+            }
+
+            foreach (var nestedType in symbol.GetTypeMembers())
+            {
+                nestedType.Accept(this);
+            }
+        }
+
+        private static bool Matches(INamedTypeSymbol definition, INamedTypeSymbol? target)
+        {
+            return target is not null && SymbolEqualityComparer.Default.Equals(definition, target);
+        }
+
+        private void Add(HandlerType handlerType, ITypeSymbol target, ITypeSymbol? response)
+        {
+            // Skip open-generic handler definitions (e.g. an adapter implementing
+            // IRequestHandler<TRequest, TResponse>): their type arguments are unbound type parameters,
+            // not concrete request types, and cannot be closed over.
+            if (ContainsTypeParameter(target) || (response is not null && ContainsTypeParameter(response)))
+            {
+                return;
+            }
+
+            var targetType = ToEmitName(target);
+            var responseType = response is null ? null : ToEmitName(response);
+            var key = $"{handlerType}|{targetType}|{responseType}";
+            if (!_seen.Add(key))
+            {
+                return;
+            }
+
+            _targets.Add(new HandlerDetail(handlerType, string.Empty, string.Empty, string.Empty, targetType,
+                responseType, null, GetSatisfyingTypeNames(target), GetSatisfyingTypeNames(response)));
+        }
     }
 
     /// <summary>

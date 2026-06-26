@@ -105,10 +105,14 @@ public class UserFeature : IContextFeature
 
 ### Set the feature
 
-Set it in a pipeline behavior or middleware before the handler runs:
+Set it in a pipeline behavior before the handler runs, using `SetFeature` (the feature bag — distinct from the metadata bag). Make the behavior open-generic and mark it `[PipelineBehavior]` so the source generator applies it to every matching handler:
 
 ```csharp
-public class AuthenticationBehavior : IRequestPipelineBehavior
+[PipelineBehavior]
+public sealed class AuthenticationBehavior<TRequest, TResponse>
+    : IRequestPipelineBehavior<TRequest, TResponse>
+    where TRequest : IRequest<TResponse>
+    where TResponse : notnull
 {
     private readonly IContextAccessor _contextAccessor;
     private readonly ICurrentUser _currentUser;
@@ -119,30 +123,23 @@ public class AuthenticationBehavior : IRequestPipelineBehavior
         _currentUser = currentUser;
     }
 
-    public async ValueTask<Result<TResponse>> HandleAsync<TRequest, TResponse>(
+    public ValueTask<Result<TResponse>> HandleAsync(
         TRequest request,
-        RequestHandlerDelegate<TResponse> next,
-        CancellationToken ct)
-        where TRequest : IRequest<TResponse>
-        where TResponse : notnull
+        RequestHandlerDelegate<TRequest, TResponse> next,
+        CancellationToken cancellationToken = default)
     {
-        _contextAccessor.Context.SetMetadata("User", new UserFeature
+        _contextAccessor.Context.SetFeature(new UserFeature
         {
             UserId = _currentUser.Id,
             Roles  = _currentUser.Roles
         });
 
-        return await next();
+        return next(request, cancellationToken);
     }
-
-    public ValueTask<Result> HandleAsync<TRequest>(
-        TRequest request,
-        RequestHandlerDelegate next,
-        CancellationToken ct)
-        where TRequest : IRequest
-        => next();
 }
 ```
+
+See [Pipeline Behaviors](./pipelines) for the full behavior model, registration, and ordering.
 
 ### Read the feature
 
@@ -155,7 +152,7 @@ if (context.TryGetFeature<UserFeature>(out var user))
 var user = context.GetFeature<UserFeature>();
 
 // Get or throw MissingContextFeatureException
-var user = context.GetRequiredFeature<UserFeature>();
+var user = context.MustGetFeature<UserFeature>();
 ```
 
 ## Publishing events from handlers

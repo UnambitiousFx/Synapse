@@ -31,6 +31,34 @@ const config: Config = {
         generateLLMsFullTxt: true,
         excludeImports: true,
         removeDuplicateHeadings: true,
+        // Lead the index with the natural reading path; everything else follows.
+        includeOrder: [
+          'index.mdx',
+          'getting-started.mdx',
+          'commands-and-queries.mdx',
+          'events.mdx',
+          'pipelines.mdx',
+        ],
+        includeUnmatchedLast: true,
+        // Resolved/known issues are noise for an AI reading the API surface.
+        ignoreFiles: ['known-issues/**'],
+        // Focused bundles so an assistant can pull one concern, not the whole dump.
+        customLLMFiles: [
+          {
+            filename: 'llms-pipelines.txt',
+            includePatterns: ['pipelines.mdx', 'validation.mdx', 'error-handling.mdx'],
+            fullContent: true,
+            title: 'Synapse Pipelines & Behaviors',
+            description: 'Pipeline behaviors, validation, and error handling.',
+          },
+          {
+            filename: 'llms-outbox.txt',
+            includePatterns: ['outbox.mdx', 'events.mdx', 'observability.mdx'],
+            fullContent: true,
+            title: 'Synapse Events, Outbox & Observability',
+            description: 'Event publishing, the outbox pattern, and observability.',
+          },
+        ],
       },
     ],
   ],
@@ -93,7 +121,7 @@ const config: Config = {
           type: 'doc',
           docId: 'commands-and-queries',
           position: 'left',
-          label: 'Core Concepts',
+          label: 'Commands & Queries',
         },
         {
           type: 'doc',

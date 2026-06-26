@@ -25,6 +25,11 @@ const sidebars: SidebarsConfig = {
       label: 'Advanced & Integration',
       items: ['outbox', 'aspnetcore', 'source-generator', 'observability'],
     },
+    {
+      type: 'category',
+      label: 'Project',
+      items: ['changelog', 'using-with-ai'],
+    },
   ],
 };
 

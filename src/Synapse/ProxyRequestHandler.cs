@@ -1,17 +1,19 @@
 using System.Collections.Immutable;
 using UnambitiousFx.Functional;
 using UnambitiousFx.Synapse.Abstractions;
+using UnambitiousFx.Synapse.Pipelines;
 
 namespace UnambitiousFx.Synapse;
 
 internal sealed class ProxyRequestHandler<TRequestHandler, TRequest>(
     TRequestHandler handler,
-    IEnumerable<IRequestPipelineBehavior> behaviors)
+    IEnumerable<IRequestPipelineBehavior<TRequest>> behaviors)
     : IRequestHandler<TRequest>
     where TRequestHandler : class, IRequestHandler<TRequest>
     where TRequest : IRequest
 {
-    private readonly ImmutableArray<IRequestPipelineBehavior> _behaviors = [.. behaviors];
+    private readonly ImmutableArray<IRequestPipelineBehavior<TRequest>> _behaviors =
+        [.. behaviors.OrderBy(PipelineBehaviorOrdering.OrderOf)];
 
     public ValueTask<Result> HandleAsync(TRequest request,
         CancellationToken cancellationToken = default)
@@ -40,13 +42,14 @@ internal sealed class ProxyRequestHandler<TRequestHandler, TRequest>(
 
 internal sealed class ProxyRequestHandler<TRequestHandler, TRequest, TResponse>(
     TRequestHandler handler,
-    IEnumerable<IRequestPipelineBehavior> behaviors)
+    IEnumerable<IRequestPipelineBehavior<TRequest, TResponse>> behaviors)
     : IRequestHandler<TRequest, TResponse>
     where TRequestHandler : class, IRequestHandler<TRequest, TResponse>
     where TRequest : IRequest<TResponse>
     where TResponse : notnull
 {
-    private readonly ImmutableArray<IRequestPipelineBehavior> _behaviors = [.. behaviors];
+    private readonly ImmutableArray<IRequestPipelineBehavior<TRequest, TResponse>> _behaviors =
+        [.. behaviors.OrderBy(PipelineBehaviorOrdering.OrderOf)];
 
     public ValueTask<Result<TResponse>> HandleAsync(TRequest request,
         CancellationToken cancellationToken = default)

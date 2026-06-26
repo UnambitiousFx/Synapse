@@ -12,7 +12,8 @@ public sealed class SynapseMetrics : ISynapseMetrics
     private readonly Histogram<double> _dispatchLatency;
     private readonly IEventOutboxStorage? _eventOutboxStorage;
     private readonly Counter<long> _outboxMetricReadFailures;
-    private int _lastKnownFailedCount;
+    private int _lastKnownRetryingCount;
+    private int _lastKnownDeadLetterCount;
     private double _lastKnownProcessingLagSeconds;
     private int _lastKnownQueueDepth;
 
@@ -66,6 +67,31 @@ public sealed class SynapseMetrics : ISynapseMetrics
             "mediator.outbox.metrics.read_failures",
             "{count}",
             "Number of failures while reading outbox observable metrics");
+
+        // Outbox observable gauges
+        meter.CreateObservableGauge(
+            "mediator.outbox.queue_depth",
+            ObserveOutboxQueueDepth,
+            "{event}",
+            "Number of pending events in the outbox");
+
+        meter.CreateObservableGauge(
+            "mediator.outbox.processing_lag",
+            ObserveOutboxProcessingLag,
+            "s",
+            "Age of the oldest pending event in the outbox in seconds");
+
+        meter.CreateObservableGauge(
+            "mediator.outbox.retrying_count",
+            ObserveOutboxRetryingCount,
+            "{event}",
+            "Number of events that failed at least once and are awaiting retry in the outbox");
+
+        meter.CreateObservableGauge(
+            "mediator.outbox.dead_letter_count",
+            ObserveOutboxDeadLetterCount,
+            "{event}",
+            "Number of events that exhausted retries and were moved to the dead-letter queue");
     }
 
     /// <summary>
@@ -119,36 +145,6 @@ public sealed class SynapseMetrics : ISynapseMetrics
             new KeyValuePair<string, object?>("event.type", eventType));
     }
 
-    /// <summary>
-    ///     Records the current queue depth of the outbox.
-    /// </summary>
-    /// <param name="count">The number of pending events.</param>
-    public void RecordOutboxQueueDepth(int count)
-    {
-        // This is recorded via observable gauge, no manual recording needed
-        // Method kept for interface compatibility
-    }
-
-    /// <summary>
-    ///     Records the processing lag of the outbox.
-    /// </summary>
-    /// <param name="lagSeconds">The age of the oldest pending event in seconds.</param>
-    public void RecordOutboxProcessingLag(double lagSeconds)
-    {
-        // This is recorded via observable gauge, no manual recording needed
-        // Method kept for interface compatibility
-    }
-
-    /// <summary>
-    ///     Records the number of failed events in the outbox.
-    /// </summary>
-    /// <param name="count">The number of failed events.</param>
-    public void RecordOutboxFailedCount(int count)
-    {
-        // This is recorded via observable gauge, no manual recording needed
-        // Method kept for interface compatibility
-    }
-
     private int ObserveOutboxQueueDepth()
     {
         if (_eventOutboxStorage == null)
@@ -199,7 +195,7 @@ public sealed class SynapseMetrics : ISynapseMetrics
         }
     }
 
-    private int ObserveOutboxFailedCount()
+    private int ObserveOutboxRetryingCount()
     {
         if (_eventOutboxStorage == null)
         {
@@ -208,19 +204,44 @@ public sealed class SynapseMetrics : ISynapseMetrics
 
         try
         {
-            var failedCount = _eventOutboxStorage.GetFailedCountAsync(CancellationToken.None);
-            if (failedCount.IsCompletedSuccessfully)
+            var retryingCount = _eventOutboxStorage.GetRetryingCountAsync(CancellationToken.None);
+            if (retryingCount.IsCompletedSuccessfully)
             {
-                _lastKnownFailedCount = failedCount.Result;
+                _lastKnownRetryingCount = retryingCount.Result;
             }
 
-            return _lastKnownFailedCount;
+            return _lastKnownRetryingCount;
         }
         catch
         {
             _outboxMetricReadFailures.Add(1,
-                new KeyValuePair<string, object?>("metric.name", "failed_count"));
-            return _lastKnownFailedCount;
+                new KeyValuePair<string, object?>("metric.name", "retrying_count"));
+            return _lastKnownRetryingCount;
+        }
+    }
+
+    private int ObserveOutboxDeadLetterCount()
+    {
+        if (_eventOutboxStorage == null)
+        {
+            return 0;
+        }
+
+        try
+        {
+            var deadLetterCount = _eventOutboxStorage.GetDeadLetterCountAsync(CancellationToken.None);
+            if (deadLetterCount.IsCompletedSuccessfully)
+            {
+                _lastKnownDeadLetterCount = deadLetterCount.Result;
+            }
+
+            return _lastKnownDeadLetterCount;
+        }
+        catch
+        {
+            _outboxMetricReadFailures.Add(1,
+                new KeyValuePair<string, object?>("metric.name", "dead_letter_count"));
+            return _lastKnownDeadLetterCount;
         }
     }
 }

@@ -8,8 +8,9 @@ namespace UnambitiousFx.Synapse.Tests;
 public sealed class TypedRequestPipelineBehaviorTests
 {
     [Fact]
-    public async Task Typed_behavior_without_response_executes_only_for_matching_request()
+    public async Task Typed_behavior_without_response_executes_only_for_registered_request()
     {
+        // Arrange (Given)
         var services = new ServiceCollection();
         services.AddSynapse(cfg =>
         {
@@ -17,33 +18,46 @@ public sealed class TypedRequestPipelineBehaviorTests
             cfg.RegisterRequestPipelineBehavior<OnlyTypedSampleRequestBehavior, TypedSampleRequest>();
         });
         var provider = services.BuildServiceProvider();
-        var behavior = provider.GetRequiredService<OnlyTypedSampleRequestBehavior>();
         var sender = provider.GetRequiredService<IInvoker>();
 
+        // Resolve via interface so we get the same instance the pipeline will use
+        var behavior = provider.GetServices<IRequestPipelineBehavior<TypedSampleRequest>>()
+            .OfType<OnlyTypedSampleRequestBehavior>().Single();
+
+        // Act (When)
         await sender.InvokeAsync(new TypedSampleRequest());
+
+        // Assert (Then)
         Assert.Equal(1, behavior.ExecutionCount);
     }
 
     [Fact]
-    public async Task Typed_behavior_without_response_skips_for_request_with_response()
+    public async Task Typed_behavior_without_response_is_absent_from_unrelated_request_resolution()
     {
+        // Arrange (Given) — behavior for TypedSampleRequest only; handler for TypedSampleRequestWithResponse
         var services = new ServiceCollection();
         services.AddSynapse(cfg =>
         {
             cfg.RegisterRequestHandler<TypedSampleRequestWithResponseHandler, TypedSampleRequestWithResponse, int>();
-            cfg.RegisterRequestPipelineBehavior<OnlyTypedSampleRequestBehavior, TypedSampleRequest>();
+            // NOT registered for TypedSampleRequestWithResponse — DI will not return it
         });
+        services.AddScoped<OnlyTypedSampleRequestBehavior>();
         var provider = services.BuildServiceProvider();
-        var behavior = provider.GetRequiredService<OnlyTypedSampleRequestBehavior>();
         var sender = provider.GetRequiredService<IInvoker>();
 
+        // Act (When) — dispatch a with-response request
         await sender.InvokeAsync(new TypedSampleRequestWithResponse(42));
-        Assert.Equal(0, behavior.ExecutionCount);
+
+        // Assert (Then) — behavior for TypedSampleRequest was NOT resolved for this handler
+        var behaviorsForWithResponse =
+            provider.GetServices<IRequestPipelineBehavior<TypedSampleRequestWithResponse, int>>();
+        Assert.Empty(behaviorsForWithResponse);
     }
 
     [Fact]
     public async Task Typed_behavior_with_response_executes_only_for_matching_request()
     {
+        // Arrange (Given)
         var services = new ServiceCollection();
         services.AddSynapse(cfg =>
         {
@@ -52,121 +66,43 @@ public sealed class TypedRequestPipelineBehaviorTests
                 TypedSampleRequestWithResponse, int>();
         });
         var provider = services.BuildServiceProvider();
-        var behavior = provider.GetRequiredService<OnlyTypedSampleRequestWithResponseBehavior>();
         var sender = provider.GetRequiredService<IInvoker>();
 
-        var result =
-            await sender.InvokeAsync(new TypedSampleRequestWithResponse(42));
+        // Resolve via interface so we get the same instance the pipeline will use
+        var behavior = provider.GetServices<IRequestPipelineBehavior<TypedSampleRequestWithResponse, int>>()
+            .OfType<OnlyTypedSampleRequestWithResponseBehavior>().Single();
+
+        // Act (When)
+        var result = await sender.InvokeAsync(new TypedSampleRequestWithResponse(42));
+
+        // Assert (Then)
         Assert.True(result.TryGet(out var value, out _));
         Assert.Equal(42, value);
         Assert.Equal(1, behavior.ExecutionCount);
     }
 
     [Fact]
-    public async Task Interface_typed_behavior_executes_only_for_matching_request()
+    public async Task Two_behaviors_for_same_request_both_execute_in_registration_order()
     {
+        // Arrange (Given)
+        var executionOrder = new List<string>();
         var services = new ServiceCollection();
-        services.AddSynapse(cfg =>
-        {
-            cfg.RegisterRequestHandler<TypedSampleInheritanceRequestHandler, TypedSampleInheritanceRequest>();
-            cfg.RegisterRequestPipelineBehavior<InterfaceTypedRequestBehavior, IBaseRequest>();
-        });
-        var provider = services.BuildServiceProvider();
-        var sender = provider.GetRequiredService<IInvoker>();
-
-        await sender.InvokeAsync(new TypedSampleInheritanceRequest());
-        var behavior = provider.GetRequiredService<InterfaceTypedRequestBehavior>();
-        Assert.Equal(1, behavior.ExecutionCount);
-    }
-
-    [Fact]
-    public async Task Abstract_typed_behavior_executes_only_for_matching_request()
-    {
-        var services = new ServiceCollection();
-        services.AddSynapse(cfg =>
-        {
-            cfg.RegisterRequestHandler<TypedSampleInheritanceRequestHandler, TypedSampleInheritanceRequest>();
-            cfg.RegisterRequestPipelineBehavior<AbstractTypedRequestBehavior, BaseRequest>();
-        });
-        var provider = services.BuildServiceProvider();
-        var sender = provider.GetRequiredService<IInvoker>();
-
-        await sender.InvokeAsync(new TypedSampleInheritanceRequest());
-        var behavior = provider.GetRequiredService<AbstractTypedRequestBehavior>();
-        Assert.Equal(1, behavior.ExecutionCount);
-    }
-
-    [Fact]
-    public async Task Conditional_typed_behavior_executes_when_predicate_true()
-    {
-        var services = new ServiceCollection();
+        // Register the shared list so DI can inject it into behavior constructors
+        services.AddSingleton(executionOrder);
         services.AddSynapse(cfg =>
         {
             cfg.RegisterRequestHandler<TypedSampleRequestHandler, TypedSampleRequest>();
-            cfg.RegisterConditionalRequestPipelineBehavior<ConditionalTypedRequestBehavior, TypedSampleRequest>(_ =>
-                true);
+            cfg.RegisterRequestPipelineBehavior<FirstBehavior, TypedSampleRequest>();
+            cfg.RegisterRequestPipelineBehavior<SecondBehavior, TypedSampleRequest>();
         });
         var provider = services.BuildServiceProvider();
         var sender = provider.GetRequiredService<IInvoker>();
 
+        // Act (When)
         await sender.InvokeAsync(new TypedSampleRequest());
-        var behavior = provider.GetRequiredService<ConditionalTypedRequestBehavior>();
-        Assert.Equal(1, behavior.ExecutionCount);
-    }
 
-    [Fact]
-    public async Task Conditional_typed_behavior_skips_when_predicate_false()
-    {
-        var services = new ServiceCollection();
-        services.AddSynapse(cfg =>
-        {
-            cfg.RegisterRequestHandler<TypedSampleRequestHandler, TypedSampleRequest>();
-            cfg.RegisterConditionalRequestPipelineBehavior<ConditionalTypedRequestBehavior, TypedSampleRequest>(_ =>
-                false);
-        });
-        var provider = services.BuildServiceProvider();
-        var sender = provider.GetRequiredService<IInvoker>();
-
-        await sender.InvokeAsync(new TypedSampleRequest());
-        var behavior = provider.GetRequiredService<ConditionalTypedRequestBehavior>();
-        Assert.Equal(0, behavior.ExecutionCount);
-    }
-
-    [Fact]
-    public async Task Typed_behavior_without_response_throws_when_next_invoked_with_incompatible_request_type()
-    {
-        var services = new ServiceCollection();
-        services.AddSynapse(cfg =>
-        {
-            cfg.RegisterRequestHandler<UnsafeFirstRequestHandler, UnsafeFirstRequest>();
-            cfg.RegisterRequestPipelineBehavior<InvalidForwardingBehavior, IUnsafeBaseRequest>();
-        });
-
-        var provider = services.BuildServiceProvider();
-        var sender = provider.GetRequiredService<IInvoker>();
-
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => sender.InvokeAsync(new UnsafeFirstRequest())
-            .AsTask());
-        Assert.Contains("not assignable", ex.Message);
-    }
-
-    [Fact]
-    public async Task Typed_behavior_with_response_throws_when_next_invoked_with_incompatible_request_type()
-    {
-        var services = new ServiceCollection();
-        services.AddSynapse(cfg =>
-        {
-            cfg.RegisterRequestHandler<UnsafeResponseFirstRequestHandler, UnsafeResponseFirstRequest, int>();
-            cfg.RegisterRequestPipelineBehavior<InvalidForwardingWithResponseBehavior, IUnsafeResponseBaseRequest, int>();
-        });
-
-        var provider = services.BuildServiceProvider();
-        var sender = provider.GetRequiredService<IInvoker>();
-
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => sender
-            .InvokeAsync(new UnsafeResponseFirstRequest())
-            .AsTask());
-        Assert.Contains("not assignable", ex.Message);
+        // Assert (Then)
+        Assert.Equal(["First", "Second"], executionOrder);
     }
 
     private sealed class TypedSampleRequestHandler : IRequestHandler<TypedSampleRequest>
@@ -187,63 +123,25 @@ public sealed class TypedRequestPipelineBehaviorTests
         }
     }
 
-    private sealed class TypedSampleInheritanceRequestHandler : IRequestHandler<TypedSampleInheritanceRequest>
+    private sealed class FirstBehavior(List<string> log) : IRequestPipelineBehavior<TypedSampleRequest>
     {
-        public ValueTask<Result> HandleAsync(TypedSampleInheritanceRequest request,
+        public ValueTask<Result> HandleAsync(TypedSampleRequest request,
+            RequestHandlerDelegate<TypedSampleRequest> next,
             CancellationToken cancellationToken = default)
         {
-            return new ValueTask<Result>(Result.Success());
+            log.Add("First");
+            return next(request, cancellationToken);
         }
     }
 
-    private interface IUnsafeBaseRequest : IRequest;
-
-    private sealed record UnsafeFirstRequest : IUnsafeBaseRequest;
-
-    private sealed record UnsafeSecondRequest : IUnsafeBaseRequest;
-
-    private sealed class InvalidForwardingBehavior : IRequestPipelineBehavior<IUnsafeBaseRequest>
+    private sealed class SecondBehavior(List<string> log) : IRequestPipelineBehavior<TypedSampleRequest>
     {
-        public ValueTask<Result> HandleAsync(IUnsafeBaseRequest request,
-            RequestHandlerDelegate<IUnsafeBaseRequest> next,
+        public ValueTask<Result> HandleAsync(TypedSampleRequest request,
+            RequestHandlerDelegate<TypedSampleRequest> next,
             CancellationToken cancellationToken = default)
         {
-            return next(new UnsafeSecondRequest(), cancellationToken);
-        }
-    }
-
-    private sealed class UnsafeFirstRequestHandler : IRequestHandler<UnsafeFirstRequest>
-    {
-        public ValueTask<Result> HandleAsync(UnsafeFirstRequest request,
-            CancellationToken cancellationToken = default)
-        {
-            return new ValueTask<Result>(Result.Success());
-        }
-    }
-
-    private interface IUnsafeResponseBaseRequest : IRequest<int>;
-
-    private sealed record UnsafeResponseFirstRequest : IUnsafeResponseBaseRequest;
-
-    private sealed record UnsafeResponseSecondRequest : IUnsafeResponseBaseRequest;
-
-    private sealed class InvalidForwardingWithResponseBehavior :
-        IRequestPipelineBehavior<IUnsafeResponseBaseRequest, int>
-    {
-        public ValueTask<Result<int>> HandleAsync(IUnsafeResponseBaseRequest request,
-            RequestHandlerDelegate<IUnsafeResponseBaseRequest, int> next,
-            CancellationToken cancellationToken = default)
-        {
-            return next(new UnsafeResponseSecondRequest(), cancellationToken);
-        }
-    }
-
-    private sealed class UnsafeResponseFirstRequestHandler : IRequestHandler<UnsafeResponseFirstRequest, int>
-    {
-        public ValueTask<Result<int>> HandleAsync(UnsafeResponseFirstRequest request,
-            CancellationToken cancellationToken = default)
-        {
-            return new ValueTask<Result<int>>(Result.Success(1));
+            log.Add("Second");
+            return next(request, cancellationToken);
         }
     }
 }

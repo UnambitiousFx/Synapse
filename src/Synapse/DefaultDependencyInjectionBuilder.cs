@@ -10,10 +10,12 @@ internal sealed class DefaultDependencyInjectionBuilder : IDependencyInjectionBu
 {
     private readonly List<Action<IServiceCollection>> _actions = [];
     private readonly Dictionary<Type, Delegate> _requestDispatchers = new();
+    private readonly Dictionary<Type, Delegate> _voidRequestDispatchers = new();
     private readonly Dictionary<Type, DispatchEventDelegate> _eventDispatchers = new();
     private readonly Dictionary<Type, Delegate> _streamRequestDispatchers = new();
 
     public IReadOnlyDictionary<Type, Delegate> RequestDispatchers => _requestDispatchers;
+    public IReadOnlyDictionary<Type, Delegate> VoidRequestDispatchers => _voidRequestDispatchers;
     public IReadOnlyDictionary<Type, DispatchEventDelegate> EventDispatchers => _eventDispatchers;
     public IReadOnlyDictionary<Type, Delegate> StreamRequestDispatchers => _streamRequestDispatchers;
 
@@ -43,6 +45,13 @@ internal sealed class DefaultDependencyInjectionBuilder : IDependencyInjectionBu
         where TRequest : IRequest
     {
         _actions.Add(services => services.RegisterRequestHandler<TRequestHandler, TRequest>());
+        _voidRequestDispatchers.TryAdd(typeof(TRequest),
+            (Func<IRequest, IDependencyResolver, CancellationToken, ValueTask<Result>>)(
+                (request, resolver, ct) =>
+                {
+                    var handler = resolver.GetRequiredService<IRequestHandler<TRequest>>();
+                    return handler.HandleAsync((TRequest)request, ct);
+                }));
         return this;
     }
 
@@ -121,6 +130,13 @@ internal sealed class DefaultDependencyInjectionBuilder : IDependencyInjectionBu
             if (condition())
             {
                 services.RegisterRequestHandler<TRequestHandler, TRequest>();
+                _voidRequestDispatchers.TryAdd(typeof(TRequest),
+                    (Func<IRequest, IDependencyResolver, CancellationToken, ValueTask<Result>>)(
+                        (request, resolver, ct) =>
+                        {
+                            var handler = resolver.GetRequiredService<IRequestHandler<TRequest>>();
+                            return handler.HandleAsync((TRequest)request, ct);
+                        }));
             }
         });
         return this;
@@ -174,6 +190,84 @@ internal sealed class DefaultDependencyInjectionBuilder : IDependencyInjectionBu
                         }));
             }
         });
+        return this;
+    }
+
+    public IDependencyInjectionBuilder RegisterRequestPipelineBehavior<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+    TBehavior, TRequest>()
+        where TBehavior : class, IRequestPipelineBehavior<TRequest>
+        where TRequest : IRequest
+    {
+        _actions.Add(services => services.RegisterRequestPipelineBehavior<TBehavior, TRequest>());
+        return this;
+    }
+
+    public IDependencyInjectionBuilder RegisterRequestPipelineBehavior<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+    TBehavior, TRequest, TResponse>()
+        where TBehavior : class, IRequestPipelineBehavior<TRequest, TResponse>
+        where TRequest : IRequest<TResponse>
+        where TResponse : notnull
+    {
+        _actions.Add(services => services.RegisterRequestPipelineBehavior<TBehavior, TRequest, TResponse>());
+        return this;
+    }
+
+    public IDependencyInjectionBuilder RegisterCqrsBoundaryEnforcement<TRequest>()
+        where TRequest : IRequest
+    {
+        _actions.Add(services => services.RegisterCqrsBoundaryEnforcement<TRequest>());
+        return this;
+    }
+
+    public IDependencyInjectionBuilder RegisterCqrsBoundaryEnforcement<TRequest, TResponse>()
+        where TRequest : IRequest<TResponse>
+        where TResponse : notnull
+    {
+        _actions.Add(services => services.RegisterCqrsBoundaryEnforcement<TRequest, TResponse>());
+        return this;
+    }
+
+    public IDependencyInjectionBuilder RegisterEventPipelineBehavior<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+    TBehavior, TEvent>()
+        where TBehavior : class, IEventPipelineBehavior<TEvent>
+        where TEvent : class, IEvent
+    {
+        _actions.Add(services => services.RegisterEventPipelineBehavior<TBehavior, TEvent>());
+        return this;
+    }
+
+    public IDependencyInjectionBuilder RegisterStreamRequestPipelineBehavior<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+    TBehavior, TRequest, TItem>()
+        where TBehavior : class, IStreamRequestPipelineBehavior<TRequest, TItem>
+        where TRequest : IStreamRequest<TItem>
+        where TItem : notnull
+    {
+        _actions.Add(services => services.RegisterStreamRequestPipelineBehavior<TBehavior, TRequest, TItem>());
+        return this;
+    }
+
+    public IDependencyInjectionBuilder RegisterValidator<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+    TValidator, TRequest>()
+        where TValidator : class, IRequestValidator<TRequest>
+        where TRequest : IRequest
+    {
+        _actions.Add(services => services.RegisterValidator<TValidator, TRequest>());
+        return this;
+    }
+
+    public IDependencyInjectionBuilder RegisterValidator<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+    TValidator, TRequest, TResponse>()
+        where TValidator : class, IRequestValidator<TRequest>
+        where TRequest : IRequest<TResponse>
+        where TResponse : notnull
+    {
+        _actions.Add(services => services.RegisterValidator<TValidator, TRequest, TResponse>());
         return this;
     }
 

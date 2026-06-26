@@ -6,7 +6,9 @@ description: Wrap request, event, or stream handling with cross-cutting logic us
 
 # Pipeline Behaviors
 
-Pipeline behaviors let you wrap request, event, or stream handling with cross-cutting logic — logging, tracing, validation, or CQRS enforcement — without touching handler code. They follow the **chain-of-responsibility** (Russian-doll) pattern: each behavior calls `next()` to forward to the next behavior or to the handler.
+Pipeline behaviors let you wrap request, event, or stream handling with cross-cutting logic — logging, tracing, validation, or CQRS enforcement — without touching handler code. They follow the **chain-of-responsibility** (Russian-doll) pattern: each behavior calls `next(...)` to forward to the next behavior or to the handler.
+
+All Synapse pipeline behaviors are **typed**: a behavior is bound to a specific request/response (or event, or stream-item) type through the generic interface it implements. The non-generic `HandleAsync<T>(...)` style does not exist — `HandleAsync` is a plain method and `next` is a strongly-typed delegate that takes the request and a `CancellationToken`.
 
 ## How the pipeline works
 
@@ -28,94 +30,94 @@ flowchart LR
     B1 -- Result --> Invoker
 ```
 
-The first behavior registered is the **outermost** wrapper. Each behavior can inspect or modify the request and the result on both sides of `next()`.
+Each behavior can inspect or modify the request and the result on both sides of `next(...)`. Order is controlled explicitly by [`IOrderedPipelineBehavior`](#ordering) — not by registration order.
 
 ## Request pipeline behaviors
 
-### Untyped behavior — applies to all requests
+A request behavior implements one of two typed interfaces:
 
-Implement `IRequestPipelineBehavior` to intercept every command and query:
-
-```csharp
-public class TimingBehavior : IRequestPipelineBehavior
-{
-    private readonly ILogger<TimingBehavior> _logger;
-
-    public TimingBehavior(ILogger<TimingBehavior> logger) => _logger = logger;
-
-    public async ValueTask<Result<TResponse>> HandleAsync<TRequest, TResponse>(
-        TRequest request,
-        RequestHandlerDelegate<TResponse> next,
-        CancellationToken ct)
-        where TRequest : IRequest<TResponse>
-        where TResponse : notnull
-    {
-        var sw = Stopwatch.StartNew();
-        var result = await next();
-        _logger.LogInformation("{Request} completed in {Ms}ms", typeof(TRequest).Name, sw.ElapsedMilliseconds);
-        return result;
-    }
-
-    public async ValueTask<Result> HandleAsync<TRequest>(
-        TRequest request,
-        RequestHandlerDelegate next,
-        CancellationToken ct)
-        where TRequest : IRequest
-    {
-        var sw = Stopwatch.StartNew();
-        var result = await next();
-        _logger.LogInformation("{Request} completed in {Ms}ms", typeof(TRequest).Name, sw.ElapsedMilliseconds);
-        return result;
-    }
-}
-
-// Register
-cfg.RegisterRequestPipelineBehavior<TimingBehavior>();
-```
-
-### Typed behavior — applies to one request type
-
-Target a specific `TRequest` / `TResponse` pair:
+- `IRequestPipelineBehavior<TRequest, TResponse>` — for requests that return a value (`IRequest<TResponse>`).
+- `IRequestPipelineBehavior<TRequest>` — for fire-and-forget requests (`IRequest`).
 
 ```csharp
-public class AuditCreateTaskBehavior : IRequestPipelineBehavior<CreateTaskCommand, Guid>
+public sealed class AuditCreateTaskBehavior : IRequestPipelineBehavior<CreateTaskCommand, Guid>
 {
     public async ValueTask<Result<Guid>> HandleAsync(
         CreateTaskCommand request,
-        RequestHandlerDelegate<Guid> next,
-        CancellationToken ct)
+        RequestHandlerDelegate<CreateTaskCommand, Guid> next,
+        CancellationToken cancellationToken = default)
     {
-        var result = await next();
-        if (result.IsSuccess)
-            Audit.Log($"Task created: {result.Value}");
+        var result = await next(request, cancellationToken);
+        if (result.TryGetValue(out var id))
+            Audit.Log($"Task created: {id}");
         return result;
     }
 }
 
-// Register
+// Register the behavior for its request/response pair
 cfg.RegisterRequestPipelineBehavior<AuditCreateTaskBehavior, CreateTaskCommand, Guid>();
 ```
 
-For fire-and-forget commands (`IRequest` without response), use `IRequestPipelineBehavior<TRequest>`.
-
-### Conditional behavior
-
-Register a behavior that only runs when a runtime predicate is satisfied:
+For a fire-and-forget command, implement `IRequestPipelineBehavior<TRequest>` and register with the two-type-argument overload:
 
 ```csharp
-cfg.RegisterConditionalRequestPipelineBehavior<DebugBehavior>(
-    req => req is IRequest<Guid>);  // only run for Guid-returning requests
+public sealed class AuditDeleteTaskBehavior : IRequestPipelineBehavior<DeleteTaskCommand>
+{
+    public ValueTask<Result> HandleAsync(
+        DeleteTaskCommand request,
+        RequestHandlerDelegate<DeleteTaskCommand> next,
+        CancellationToken cancellationToken = default)
+        => next(request, cancellationToken);
+}
+
+cfg.RegisterRequestPipelineBehavior<AuditDeleteTaskBehavior, DeleteTaskCommand>();
 ```
+
+## Applying a behavior to every handler
+
+Naming each request/response pair is fine for one-off behaviors, but cross-cutting concerns (logging, tracing, auth) usually apply to *all* handlers. Make the behavior **open-generic** and mark it `[PipelineBehavior]` — the Synapse source generator discovers it, infers the kind/arity from the implemented interface, and emits one closed (Native-AOT-safe) registration per matching handler:
+
+```csharp
+[PipelineBehavior]
+public sealed class TimingBehavior<TRequest, TResponse>
+    : IRequestPipelineBehavior<TRequest, TResponse>
+    where TRequest : IRequest<TResponse>
+    where TResponse : notnull
+{
+    private readonly ILogger<TimingBehavior<TRequest, TResponse>> _logger;
+
+    public TimingBehavior(ILogger<TimingBehavior<TRequest, TResponse>> logger) => _logger = logger;
+
+    public async ValueTask<Result<TResponse>> HandleAsync(
+        TRequest request,
+        RequestHandlerDelegate<TRequest, TResponse> next,
+        CancellationToken cancellationToken = default)
+    {
+        var sw = Stopwatch.StartNew();
+        var result = await next(request, cancellationToken);
+        _logger.LogInformation("{Request} completed in {Ms}ms", typeof(TRequest).Name, sw.ElapsedMilliseconds);
+        return result;
+    }
+}
+```
+
+By default an assembly's `[PipelineBehavior]` classes are applied to handlers in **referenced** assemblies too. Apply `[assembly: DisableSynapseCrossAssemblyBehaviors]` to limit the cross-product to handlers declared in the same assembly.
+
+:::note Native AOT
+Registering an open-generic behavior at runtime (`AddOpenGenericRequestPipelineBehavior(typeof(...))`) is supported but is **not** Native-AOT safe for value-type responses. Prefer `[PipelineBehavior]` so the generator emits closed registrations.
+:::
 
 ## Built-in behaviors
 
-### `SimpleLoggingBehavior`
+### `SimpleLoggingBehavior<TRequest, TResponse>` / `SimpleLoggingEventBehavior<TEvent>`
 
-Logs the request or event name and elapsed time. Implements both `IRequestPipelineBehavior` and `IEventPipelineBehavior`:
+Logs the request or event name and elapsed time. Register the closed pair for each handler (`SimpleLoggingBehavior<TRequest>` for void requests):
 
 ```csharp
-cfg.RegisterRequestPipelineBehavior<SimpleLoggingBehavior>();
-cfg.RegisterEventPipelineBehavior<SimpleLoggingBehavior>();
+cfg.RegisterRequestPipelineBehavior<
+    SimpleLoggingBehavior<CreateTaskCommand, Guid>, CreateTaskCommand, Guid>();
+cfg.RegisterEventPipelineBehavior<
+    SimpleLoggingEventBehavior<TaskCreatedEvent>, TaskCreatedEvent>();
 ```
 
 ### `LoggingEnrichmentBehavior<TRequest, TResponse>`
@@ -131,73 +133,96 @@ cfg.RegisterRequestPipelineBehavior<
 
 ### CQRS boundary enforcement
 
-`CqrsBoundaryEnforcementBehavior` detects when a command is dispatched from inside a query handler (or vice versa) and throws `CqrsBoundaryViolationException`. Enable it with:
+`CqrsBoundaryEnforcementBehavior<TRequest>` / `CqrsBoundaryEnforcementBehavior<TRequest, TResponse>` detect when a command is dispatched from inside a query handler (or vice versa) and throw `CqrsBoundaryViolationException`. The behavior runs outermost (`Order => IOrderedPipelineBehavior.First`).
+
+Enable it per request type:
 
 ```csharp
-cfg.EnableCqrsBoundaryEnforcement();
+cfg.RegisterCqrsBoundaryEnforcement<CreateTaskCommand, Guid>();
+cfg.RegisterCqrsBoundaryEnforcement<DeleteTaskCommand>();
 ```
+
+Or turn it on for the whole assembly with the source generator, which emits the closed (AOT-safe) registrations for every handler:
+
+```csharp
+[assembly: EnableSynapseCqrsBoundaryEnforcement]
+```
+
+:::warning
+The old runtime switch `cfg.EnableCqrsBoundaryEnforcement()` was removed — it is now `[Obsolete(error: true)]` and throws. Use `RegisterCqrsBoundaryEnforcement<...>()` or the assembly attribute instead.
+:::
 
 ## Event pipeline behaviors
 
-Implement `IEventPipelineBehavior` to intercept all events:
+Implement `IEventPipelineBehavior<TEvent>` for a specific event type:
 
 ```csharp
-public class EventLoggingBehavior : IEventPipelineBehavior
+public sealed class EventLoggingBehavior : IEventPipelineBehavior<TaskCreatedEvent>
 {
     private readonly ILogger<EventLoggingBehavior> _logger;
 
     public EventLoggingBehavior(ILogger<EventLoggingBehavior> logger) => _logger = logger;
 
-    public async ValueTask<Result> HandleAsync<TEvent>(
-        TEvent @event,
-        EventHandlerDelegate next,
-        CancellationToken ct)
-        where TEvent : class, IEvent
+    public ValueTask<Result> HandleAsync(
+        TaskCreatedEvent @event,
+        EventHandlerDelegate<TaskCreatedEvent> next,
+        CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Dispatching event {Event}", typeof(TEvent).Name);
-        return await next();
+        _logger.LogInformation("Dispatching event {Event}", typeof(TaskCreatedEvent).Name);
+        return next(@event, cancellationToken);
     }
 }
 
-cfg.RegisterEventPipelineBehavior<EventLoggingBehavior>();
+cfg.RegisterEventPipelineBehavior<EventLoggingBehavior, TaskCreatedEvent>();
 ```
+
+To cover every event, make the behavior open-generic (`EventLoggingBehavior<TEvent> : IEventPipelineBehavior<TEvent>`) and mark it `[PipelineBehavior]`.
 
 ## Stream pipeline behaviors
 
-Implement `IStreamRequestPipelineBehavior` to intercept streaming requests:
+Implement `IStreamRequestPipelineBehavior<TRequest, TItem>`. The `next` delegate (`StreamRequestHandlerDelegate<TItem>`) is parameterless and returns the downstream `IAsyncEnumerable<Result<TItem>>`:
 
 ```csharp
-public class StreamLoggingBehavior : IStreamRequestPipelineBehavior
+public sealed class StreamLoggingBehavior : IStreamRequestPipelineBehavior<StreamTasksQuery, TaskDto>
 {
-    public IAsyncEnumerable<Result<TItem>> HandleAsync<TRequest, TItem>(
-        TRequest request,
-        StreamRequestHandlerDelegate<TItem> next,
-        CancellationToken ct)
-        where TRequest : IStreamRequest<TItem>
-        where TItem : notnull
+    public IAsyncEnumerable<Result<TaskDto>> HandleAsync(
+        StreamTasksQuery request,
+        StreamRequestHandlerDelegate<TaskDto> next,
+        CancellationToken cancellationToken = default)
     {
-        Console.WriteLine($"Stream started: {typeof(TRequest).Name}");
+        Console.WriteLine($"Stream started: {typeof(StreamTasksQuery).Name}");
         return next();
     }
 }
+
+cfg.RegisterStreamRequestPipelineBehavior<StreamLoggingBehavior, StreamTasksQuery, TaskDto>();
 ```
 
-:::note Registration order
-Behaviors run in **registration order** — the first behavior registered is the outermost wrapper. Register logging before validation so the log captures the full round-trip including validation failures.
-:::
+## Ordering
 
-## Registration order
-
-Behaviors run in **registration order** — the first behavior registered is the outermost wrapper:
+Behaviors run in the order given by `IOrderedPipelineBehavior` — **not** registration order. A behavior opts in by implementing the interface and exposing an `Order` (a `uint`); **lower values run first (outermost)**, higher run last (innermost, closest to the handler). A behavior that does not implement `IOrderedPipelineBehavior` is treated as `Last`. Ties are broken by registration order (stable).
 
 ```csharp
-cfg.RegisterRequestPipelineBehavior<LoggingBehavior>();   // runs first (outermost)
-cfg.RegisterRequestPipelineBehavior<TracingBehavior>();   // runs second
-cfg.RegisterRequestPipelineBehavior<ValidationBehavior>(); // runs last before handler
+public sealed class LoggingBehavior<TRequest, TResponse>
+    : IRequestPipelineBehavior<TRequest, TResponse>, IOrderedPipelineBehavior
+    where TRequest : IRequest<TResponse>
+    where TResponse : notnull
+{
+    public uint Order => IOrderedPipelineBehavior.First;   // outermost
+
+    public ValueTask<Result<TResponse>> HandleAsync(
+        TRequest request,
+        RequestHandlerDelegate<TRequest, TResponse> next,
+        CancellationToken cancellationToken = default)
+        => next(request, cancellationToken);
+}
 ```
+
+`IOrderedPipelineBehavior` exposes three convenience positions: `First` (`uint.MinValue`), `Middle` (`uint.MaxValue / 2`), and `Last` (`uint.MaxValue`). For example, register logging at `First` so it captures the full round-trip, and validation closer to the handler.
 
 ## See also
 
 - [Validation](./validation) — `RequestValidationBehavior`, the built-in validation pipeline.
 - [Observability](./observability) — `SimpleLoggingBehavior` and `LoggingEnrichmentBehavior` in detail.
-- [Error Handling](./error-handling) — behaviors can short-circuit by returning `Result.Failure(...)` instead of calling `next()`.
+- [Source Generator](./source-generator) — `[PipelineBehavior]` discovery and closed-registration emission.
+- [Error Handling](./error-handling) — behaviors can short-circuit by returning `Result.Failure(...)` instead of calling `next(...)`.

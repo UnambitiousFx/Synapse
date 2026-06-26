@@ -109,7 +109,7 @@ public sealed class StreamPipelineBehaviorTests
         }
 
         // Assert
-        // Counting behavior sees filtered items (6 items: 1, 2, 4, 5, 7, 8 - all except 0, 3, 6, 9)
+        // Counting behavior sees filtered items (6 items: 1, 2, 4, 5, 7, 8 — all except 0, 3, 6, 9)
         Assert.Equal(6, countingBehavior.ItemsProcessed);
         Assert.Equal(6, items.Count);
         Assert.Equal([1, 2, 4, 5, 7, 8], items);
@@ -120,15 +120,13 @@ public sealed class StreamPipelineBehaviorTests
         public int Count { get; init; }
     }
 
-    private sealed class CountingBehavior : IStreamRequestPipelineBehavior
+    private sealed class CountingBehavior : IStreamRequestPipelineBehavior<TestStreamRequest, int>
     {
         public int ItemsProcessed { get; private set; }
 
-        public async IAsyncEnumerable<Result<TItem>> HandleAsync<TRequest, TItem>(TRequest request,
-            StreamRequestHandlerDelegate<TItem> next,
+        public async IAsyncEnumerable<Result<int>> HandleAsync(TestStreamRequest request,
+            StreamRequestHandlerDelegate<int> next,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
-            where TRequest : IStreamRequest<TItem>
-            where TItem : notnull
         {
             await foreach (var item in next())
             {
@@ -138,16 +136,13 @@ public sealed class StreamPipelineBehaviorTests
         }
     }
 
-    private sealed class FilteringBehavior : IStreamRequestPipelineBehavior
+    private sealed class FilteringBehavior : IStreamRequestPipelineBehavior<TestStreamRequest, int>
     {
-        public async IAsyncEnumerable<Result<TItem>> HandleAsync<TRequest, TItem>(TRequest request,
-            StreamRequestHandlerDelegate<TItem> next,
+        public async IAsyncEnumerable<Result<int>> HandleAsync(TestStreamRequest request,
+            StreamRequestHandlerDelegate<int> next,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
-            where TRequest : IStreamRequest<TItem>
-            where TItem : notnull
         {
             await foreach (var item in next())
-                // Only yield successful items
             {
                 if (item.IsSuccess)
                 {

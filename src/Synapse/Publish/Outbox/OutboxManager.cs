@@ -40,11 +40,11 @@ internal sealed class OutboxManager : IOutboxManager
         _logger.LogDebug("Processing pending events from outbox");
 
         var pendingEvents = await _outboxStorage.GetPendingEventsAsync(cancellationToken);
-        var events = _outboxOptions.BatchSize.HasValue
+        var entries = _outboxOptions.BatchSize.HasValue
             ? pendingEvents.Take(_outboxOptions.BatchSize.Value).ToList()
             : pendingEvents.ToList();
 
-        if (events.Count == 0)
+        if (entries.Count == 0)
         {
             _logger.LogDebug("No pending events found in outbox");
             return Result.Success();
@@ -52,13 +52,13 @@ internal sealed class OutboxManager : IOutboxManager
 
         _logger.LogInformation(
             "Processing {EventCount} pending events from outbox (batch size: {BatchSize})",
-            events.Count, _outboxOptions.BatchSize);
+            entries.Count, _outboxOptions.BatchSize);
 
         var results = new List<Result>();
 
-        foreach (var @event in events)
+        foreach (var entry in entries)
         {
-            var result = await DispatchEventAsync(@event, cancellationToken);
+            var result = await DispatchEventAsync(entry, cancellationToken);
             results.Add(result);
         }
 
@@ -68,13 +68,13 @@ internal sealed class OutboxManager : IOutboxManager
         {
             _logger.LogInformation(
                 "Successfully processed {EventCount} pending events from outbox",
-                events.Count);
+                entries.Count);
         }
         else
         {
             _logger.LogWarning(
                 "Completed processing {EventCount} pending events from outbox with failures: {Error}",
-                events.Count, combinedResult.ToString());
+                entries.Count, combinedResult.ToString());
         }
 
         return combinedResult;
@@ -89,9 +89,10 @@ internal sealed class OutboxManager : IOutboxManager
 
 
     private async ValueTask<Result> DispatchEventAsync(
-        IEvent @event,
+        OutboxEntry entry,
         CancellationToken cancellationToken)
     {
+        var @event = entry.Event;
         var eventType = @event.GetType().Name;
 
         try
@@ -118,7 +119,7 @@ internal sealed class OutboxManager : IOutboxManager
                 _logger.LogDebug(
                     "Event {EventType} dispatched successfully from outbox, marking as processed",
                     eventType);
-                await _outboxStorage.MarkAsProcessedAsync(@event, cancellationToken);
+                await _outboxStorage.MarkAsProcessedAsync(entry.Id, cancellationToken);
                 _metrics.RecordOutboxEventProcessed(eventType, true);
             }
             else
@@ -126,7 +127,7 @@ internal sealed class OutboxManager : IOutboxManager
                 _logger.LogWarning(
                     "Event {EventType} dispatch from outbox failed: {Error}",
                     eventType, result.ToString());
-                await HandleDispatchFailureAsync(@event, result.ToString(), cancellationToken);
+                await HandleDispatchFailureAsync(entry, result.ToString(), cancellationToken);
                 _metrics.RecordOutboxEventProcessed(eventType, false);
             }
 
@@ -144,7 +145,7 @@ internal sealed class OutboxManager : IOutboxManager
             _logger.LogError(ex,
                 "Exception occurred while dispatching event {EventType} from outbox",
                 eventType);
-            await HandleDispatchFailureAsync(@event, ex.Message, cancellationToken);
+            await HandleDispatchFailureAsync(entry, ex.Message, cancellationToken);
             return Result.Failure(ex.Message);
         }
     }
@@ -152,16 +153,16 @@ internal sealed class OutboxManager : IOutboxManager
     /// <summary>
     ///     Handles dispatch failures by calculating retry delays and moving events to dead-letter when appropriate.
     /// </summary>
-    /// <param name="event">The event that failed to dispatch.</param>
+    /// <param name="entry">The stored outbox item that failed to dispatch.</param>
     /// <param name="reason">The reason for the failure.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     private async ValueTask HandleDispatchFailureAsync(
-        IEvent @event,
+        OutboxEntry entry,
         string reason,
         CancellationToken cancellationToken)
     {
-        var eventType = @event.GetType().Name;
-        var attemptCount = await _outboxStorage.GetAttemptCountAsync(@event, cancellationToken) ?? 0;
+        var eventType = entry.Event.GetType().Name;
+        var attemptCount = await _outboxStorage.GetAttemptCountAsync(entry.Id, cancellationToken) ?? 0;
         var nextAttemptNumber = attemptCount + 1;
         var shouldDeadLetter = nextAttemptNumber >= _outboxOptions.MaxRetryAttempts;
 
@@ -210,7 +211,7 @@ internal sealed class OutboxManager : IOutboxManager
                 reason);
         }
 
-        await _outboxStorage.MarkAsFailedAsync(@event, reason, shouldDeadLetter, nextAttemptAt, cancellationToken);
+        await _outboxStorage.MarkAsFailedAsync(entry.Id, reason, shouldDeadLetter, nextAttemptAt, cancellationToken);
 
         if (shouldDeadLetter)
         {

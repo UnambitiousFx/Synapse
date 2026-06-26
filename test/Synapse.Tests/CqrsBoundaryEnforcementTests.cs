@@ -2,11 +2,29 @@ using Microsoft.Extensions.DependencyInjection;
 using UnambitiousFx.Functional;
 using UnambitiousFx.Synapse.Abstractions;
 using UnambitiousFx.Synapse.Abstractions.Exceptions;
+using UnambitiousFx.Synapse.Pipelines;
 
 namespace UnambitiousFx.Synapse.Tests;
 
 public sealed class CqrsBoundaryEnforcementTests
 {
+    // Exercises the public runtime enforcement API. It is the same closed registration the source generator
+    // emits per discovered handler for [assembly: EnableSynapseCqrsBoundaryEnforcement], and the supported way
+    // to enforce manually-registered handlers the generator cannot see (known-issue 018). Enforcement only
+    // fires when every request type involved (outer + nested) carries the behavior.
+    private static void EnableCqrs<TRequest>(ISynapseConfig cfg)
+        where TRequest : IRequest
+    {
+        cfg.RegisterCqrsBoundaryEnforcement<TRequest>();
+    }
+
+    private static void EnableCqrs<TRequest, TResponse>(ISynapseConfig cfg)
+        where TRequest : IRequest<TResponse>
+        where TResponse : notnull
+    {
+        cfg.RegisterCqrsBoundaryEnforcement<TRequest, TResponse>();
+    }
+
     [Fact]
     public async Task Should_throw_when_request_sends_another_request_within_handler_when_enforcement_enabled()
     {
@@ -17,7 +35,8 @@ public sealed class CqrsBoundaryEnforcementTests
         {
             cfg.RegisterRequestHandler<FirstRequestHandlerThatSendsSecondRequest, FirstRequest>();
             cfg.RegisterRequestHandler<ValidSecondRequestHandler, SecondRequest>();
-            cfg.EnableCqrsBoundaryEnforcement();
+            EnableCqrs<FirstRequest>(cfg);
+            EnableCqrs<SecondRequest>(cfg);
         });
         var provider = services.BuildServiceProvider();
         var sender = provider.GetRequiredService<IInvoker>();
@@ -42,7 +61,8 @@ public sealed class CqrsBoundaryEnforcementTests
         {
             cfg.RegisterRequestHandler<FirstRequestHandlerThatSendsRequestWithResponse, FirstRequest>();
             cfg.RegisterRequestHandler<ValidFirstRequestWithResponseHandler, FirstRequestWithResponse, int>();
-            cfg.EnableCqrsBoundaryEnforcement();
+            EnableCqrs<FirstRequest>(cfg);
+            EnableCqrs<FirstRequestWithResponse, int>(cfg);
         });
         var provider = services.BuildServiceProvider();
         var sender = provider.GetRequiredService<IInvoker>();
@@ -70,7 +90,8 @@ public sealed class CqrsBoundaryEnforcementTests
             cfg.RegisterRequestHandler<FirstRequestWithResponseHandlerThatSendsRequest, FirstRequestWithResponse,
                 int>();
             cfg.RegisterRequestHandler<ValidSecondRequestWithResponseHandler, SecondRequestWithResponse, string>();
-            cfg.EnableCqrsBoundaryEnforcement();
+            EnableCqrs<FirstRequestWithResponse, int>(cfg);
+            EnableCqrs<SecondRequestWithResponse, string>(cfg);
         });
         var provider = services.BuildServiceProvider();
         var sender = provider.GetRequiredService<IInvoker>();
@@ -94,7 +115,7 @@ public sealed class CqrsBoundaryEnforcementTests
         {
             cfg.RegisterRequestHandler<FirstRequestHandlerThatSendsSecondRequest, FirstRequest>();
             cfg.RegisterRequestHandler<ValidSecondRequestHandler, SecondRequest>();
-            cfg.EnableCqrsBoundaryEnforcement(false); // Explicitly disabled
+            // Enforcement intentionally NOT enabled — no CqrsBoundaryEnforcementBehavior registered.
         });
         var provider = services.BuildServiceProvider();
         var sender = provider.GetRequiredService<IInvoker>();
@@ -113,7 +134,7 @@ public sealed class CqrsBoundaryEnforcementTests
         services.AddSynapse(cfg =>
         {
             cfg.RegisterRequestHandler<ValidFirstRequestHandler, FirstRequest>();
-            cfg.EnableCqrsBoundaryEnforcement();
+            EnableCqrs<FirstRequest>(cfg);
         });
         var provider = services.BuildServiceProvider();
         var sender = provider.GetRequiredService<IInvoker>();
@@ -132,7 +153,7 @@ public sealed class CqrsBoundaryEnforcementTests
         services.AddSynapse(cfg =>
         {
             cfg.RegisterRequestHandler<ValidFirstRequestWithResponseHandler, FirstRequestWithResponse, int>();
-            cfg.EnableCqrsBoundaryEnforcement();
+            EnableCqrs<FirstRequestWithResponse, int>(cfg);
         });
         var provider = services.BuildServiceProvider();
         var sender = provider.GetRequiredService<IInvoker>();
@@ -160,7 +181,8 @@ public sealed class CqrsBoundaryEnforcementTests
             {
                 cfg.RegisterRequestHandler<ValidFirstRequestHandler, FirstRequest>();
                 cfg.RegisterRequestHandler<ValidSecondRequestHandler, SecondRequest>();
-                cfg.EnableCqrsBoundaryEnforcement();
+                EnableCqrs<FirstRequest>(cfg);
+                EnableCqrs<SecondRequest>(cfg);
             });
         var provider = services.BuildServiceProvider();
         var sender = provider.GetRequiredService<IInvoker>();
@@ -183,7 +205,8 @@ public sealed class CqrsBoundaryEnforcementTests
         {
             cfg.RegisterRequestHandler<FirstRequestHandlerThatSendsSecondRequest, FirstRequest>();
             cfg.RegisterRequestHandler<ValidSecondRequestHandler, SecondRequest>();
-            cfg.EnableCqrsBoundaryEnforcement();
+            EnableCqrs<FirstRequest>(cfg);
+            EnableCqrs<SecondRequest>(cfg);
         });
         var provider = services.BuildServiceProvider();
         var sender = provider.GetRequiredService<IInvoker>();
@@ -198,6 +221,100 @@ public sealed class CqrsBoundaryEnforcementTests
         Assert.Contains("Cannot send request 'SecondRequest'", exception.Message);
         Assert.Contains("within a request handler", exception.Message);
         Assert.Contains("previously crossed by 'FirstRequest'", exception.Message);
+    }
+
+    [Fact]
+    public async Task Duplicate_cqrs_registration_is_deduplicated_and_does_not_throw()
+    {
+        // Arrange — two RegisterGroups both register CQRS enforcement for the same request, simulating a
+        // composition root and a referenced library that both opt in. The behavior is not idempotent, so a
+        // duplicate registration would throw on every request — dedup must collapse them to one.
+        var services = new ServiceCollection()
+            .AddLogging();
+        services.AddSynapse(cfg =>
+        {
+            cfg.RegisterRequestHandler<ValidSecondRequestHandler, SecondRequest>();
+            cfg.AddRegisterGroup(new CqrsForSecondRequestGroup());
+            cfg.AddRegisterGroup(new CqrsForSecondRequestGroup());
+        });
+
+        // Assert — only one CQRS descriptor survived for the request.
+        var cqrsDescriptors = services.Count(d =>
+            d.ServiceType == typeof(IRequestPipelineBehavior<SecondRequest>) &&
+            d.ImplementationType == typeof(CqrsBoundaryEnforcementBehavior<SecondRequest>));
+        Assert.Equal(1, cqrsDescriptors);
+
+        // Act — dispatch a top-level request; a duplicate would have thrown a spurious boundary violation.
+        var provider = services.BuildServiceProvider();
+        var sender = provider.GetRequiredService<IInvoker>();
+        var result = await sender.InvokeAsync(new SecondRequest());
+
+        // Assert
+        Assert.True(result.IsSuccess);
+    }
+
+    private sealed class CqrsForSecondRequestGroup : IRegisterGroup
+    {
+        public void Register(IDependencyInjectionBuilder builder)
+        {
+            builder.RegisterCqrsBoundaryEnforcement<SecondRequest>();
+        }
+    }
+
+    [Fact]
+    public async Task Manual_enforcement_enforces_a_runtime_registered_handler_the_generator_cannot_see()
+    {
+        // Arrange — known-issue 018: a handler registered manually at runtime is invisible to the generator,
+        // so it gets no generated enforcement. The public RegisterCqrsBoundaryEnforcement API closes that gap.
+        var services = new ServiceCollection()
+            .AddLogging();
+        services.AddSynapse(cfg =>
+        {
+            cfg.RegisterRequestHandler<FirstRequestHandlerThatSendsSecondRequest, FirstRequest>();
+            cfg.RegisterRequestHandler<ValidSecondRequestHandler, SecondRequest>();
+            cfg.RegisterCqrsBoundaryEnforcement<FirstRequest>();
+            cfg.RegisterCqrsBoundaryEnforcement<SecondRequest>();
+        });
+        var provider = services.BuildServiceProvider();
+        var sender = provider.GetRequiredService<IInvoker>();
+
+        // Act & Assert — the nested send is now detected.
+        var exception = await Assert.ThrowsAsync<CqrsBoundaryViolationException>(async () =>
+            await sender.InvokeAsync(new FirstRequest()));
+
+        Assert.Contains("CQRS boundary violation", exception.Message);
+        Assert.Contains("SecondRequest", exception.Message);
+        Assert.Contains("FirstRequest", exception.Message);
+    }
+
+    [Fact]
+    public async Task Manual_and_generated_enforcement_for_same_request_is_deduplicated()
+    {
+        // Arrange — the realistic 018 overlap: the manual runtime API (composition root) and a generator-style
+        // RegisterGroup (a referenced library that opted in) both enforce the same request. The behavior is not
+        // idempotent, so without dedup a single send would throw a spurious violation.
+        var services = new ServiceCollection()
+            .AddLogging();
+        services.AddSynapse(cfg =>
+        {
+            cfg.RegisterRequestHandler<ValidSecondRequestHandler, SecondRequest>();
+            cfg.RegisterCqrsBoundaryEnforcement<SecondRequest>();
+            cfg.AddRegisterGroup(new CqrsForSecondRequestGroup());
+        });
+
+        // Assert — only one CQRS descriptor survived for the request.
+        var cqrsDescriptors = services.Count(d =>
+            d.ServiceType == typeof(IRequestPipelineBehavior<SecondRequest>) &&
+            d.ImplementationType == typeof(CqrsBoundaryEnforcementBehavior<SecondRequest>));
+        Assert.Equal(1, cqrsDescriptors);
+
+        // Act — a top-level send must succeed; a duplicate would have thrown a spurious boundary violation.
+        var provider = services.BuildServiceProvider();
+        var sender = provider.GetRequiredService<IInvoker>();
+        var result = await sender.InvokeAsync(new SecondRequest());
+
+        // Assert
+        Assert.True(result.IsSuccess);
     }
 
     [Fact]
@@ -229,7 +346,7 @@ public sealed class CqrsBoundaryEnforcementTests
         services.AddSynapse(cfg =>
         {
             cfg.RegisterRequestHandler<RequestHandlerThatRemovesBoundaryKey, FirstRequest>();
-            cfg.EnableCqrsBoundaryEnforcement();
+            EnableCqrs<FirstRequest>(cfg);
         });
         var provider = services.BuildServiceProvider();
         var sender = provider.GetRequiredService<IInvoker>();
@@ -255,7 +372,7 @@ public sealed class CqrsBoundaryEnforcementTests
         {
             cfg.RegisterRequestHandler<RequestWithResponseHandlerThatRemovesBoundaryKey, FirstRequestWithResponse,
                 int>();
-            cfg.EnableCqrsBoundaryEnforcement();
+            EnableCqrs<FirstRequestWithResponse, int>(cfg);
         });
         var provider = services.BuildServiceProvider();
         var sender = provider.GetRequiredService<IInvoker>();
@@ -267,6 +384,58 @@ public sealed class CqrsBoundaryEnforcementTests
 
         Assert.Contains("CQRS boundary enforcement metadata was missing", exception.Message);
         Assert.Contains("violation of the CQRS boundary enforcement behavior", exception.Message);
+    }
+
+    [Fact]
+    public async Task Should_clear_boundary_marker_after_handler_throws_so_next_send_in_scope_succeeds()
+    {
+        // Arrange
+        var services = new ServiceCollection()
+            .AddLogging();
+        services.AddSynapse(cfg =>
+        {
+            cfg.RegisterRequestHandler<FirstRequestHandlerThatThrows, FirstRequest>();
+            cfg.RegisterRequestHandler<ValidSecondRequestHandler, SecondRequest>();
+            EnableCqrs<FirstRequest>(cfg);
+            EnableCqrs<SecondRequest>(cfg);
+        });
+        var provider = services.BuildServiceProvider();
+        var sender = provider.GetRequiredService<IInvoker>();
+
+        // Act & Assert — the original handler exception is surfaced, not masked.
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await sender.InvokeAsync(new FirstRequest()));
+        Assert.Equal("handler boom", exception.Message);
+
+        // A later independent send in the same scope must see a clean boundary state.
+        var result = await sender.InvokeAsync(new SecondRequest());
+        Assert.True(result.IsSuccess);
+    }
+
+    [Fact]
+    public async Task Should_clear_boundary_marker_after_request_with_response_handler_throws()
+    {
+        // Arrange
+        var services = new ServiceCollection()
+            .AddLogging();
+        services.AddSynapse(cfg =>
+        {
+            cfg.RegisterRequestHandler<FirstRequestWithResponseHandlerThatThrows, FirstRequestWithResponse, int>();
+            cfg.RegisterRequestHandler<ValidSecondRequestWithResponseHandler, SecondRequestWithResponse, string>();
+            EnableCqrs<FirstRequestWithResponse, int>(cfg);
+            EnableCqrs<SecondRequestWithResponse, string>(cfg);
+        });
+        var provider = services.BuildServiceProvider();
+        var sender = provider.GetRequiredService<IInvoker>();
+
+        // Act & Assert — the original handler exception is surfaced, not masked.
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await sender.InvokeAsync(new FirstRequestWithResponse()));
+        Assert.Equal("handler boom", exception.Message);
+
+        // A later independent send in the same scope must see a clean boundary state.
+        var result = await sender.InvokeAsync(new SecondRequestWithResponse());
+        Assert.True(result.IsSuccess);
     }
 
     // Test request definitions
@@ -333,6 +502,26 @@ public sealed class CqrsBoundaryEnforcementTests
             // This should throw CqrsBoundaryViolationException
             await _invoker.InvokeAsync(new SecondRequestWithResponse(), cancellationToken);
             return Result.Success(42);
+        }
+    }
+
+    // Handler that throws a normal (non-boundary) exception
+    private sealed class FirstRequestHandlerThatThrows : IRequestHandler<FirstRequest>
+    {
+        public ValueTask<Result> HandleAsync(FirstRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            throw new InvalidOperationException("handler boom");
+        }
+    }
+
+    // Handler with response that throws a normal (non-boundary) exception
+    private sealed class FirstRequestWithResponseHandlerThatThrows : IRequestHandler<FirstRequestWithResponse, int>
+    {
+        public ValueTask<Result<int>> HandleAsync(FirstRequestWithResponse request,
+            CancellationToken cancellationToken = default)
+        {
+            throw new InvalidOperationException("handler boom");
         }
     }
 

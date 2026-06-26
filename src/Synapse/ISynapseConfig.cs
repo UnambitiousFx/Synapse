@@ -11,35 +11,17 @@ namespace UnambitiousFx.Synapse;
 /// </summary>
 public interface ISynapseConfig
 {
-    /// <summary>
-    ///     Registers a request pipeline behavior to be included in the mediator's processing pipeline.
-    /// </summary>
-    /// <typeparam name="TRequestPipelineBehavior">
-    ///     The type of the request pipeline behavior that implements <see cref="IRequestPipelineBehavior" />.
-    ///     This type must have a public constructor to be resolved at runtime.
-    /// </typeparam>
-    /// <returns>
-    ///     The current instance of <see cref="ISynapseConfig" />, enabling further configuration chaining.
-    /// </returns>
-    ISynapseConfig RegisterRequestPipelineBehavior<
-        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
-        TRequestPipelineBehavior>()
-        where TRequestPipelineBehavior : class, IRequestPipelineBehavior;
+    private const string OpenGenericBehaviorAotMessage =
+        "Open-generic pipeline behaviors require runtime code generation to close over their type arguments " +
+        "and are not Native-AOT safe (value-type responses throw at resolution time). Decorate the behavior " +
+        "with [PipelineBehavior] so the source generator emits closed registrations instead.";
+
+    // ── Pipeline behaviors ───────────────────────────────────────────────────
 
     /// <summary>
-    ///     Registers a request pipeline behavior to be included in the mediator's processing pipeline.
-    ///     This overload is for typed registrations that do not have a response.
+    ///     Registers a typed request pipeline behavior for a specific request type (without response).
+    ///     The behavior is resolved by DI only for requests of type <typeparamref name="TRequest" />.
     /// </summary>
-    /// <typeparam name="TBehavior">
-    ///     The type of the behavior that implements <see cref="IRequestPipelineBehavior{TRequest}" />.
-    ///     This type must have a public constructor to be resolved at runtime.
-    /// </typeparam>
-    /// <typeparam name="TRequest">
-    ///     The type of the request that the behavior processes. Must implement <see cref="IRequest" />.
-    /// </typeparam>
-    /// <returns>
-    ///     The current instance of <see cref="ISynapseConfig" />, enabling further configuration chaining.
-    /// </returns>
     ISynapseConfig RegisterRequestPipelineBehavior<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         TBehavior, TRequest>()
@@ -47,162 +29,123 @@ public interface ISynapseConfig
         where TRequest : IRequest;
 
     /// <summary>
-    ///     Registers a request pipeline behavior to be included in the mediator's processing pipeline.
-    ///     This overload is for typed registrations that have a response.
+    ///     Registers a typed request pipeline behavior for a specific request/response pair.
+    ///     The behavior is resolved by DI only for requests of type <typeparamref name="TRequest" />.
     /// </summary>
-    /// <typeparam name="TBehavior">
-    ///     The type of the behavior that implements <see cref="IRequestPipelineBehavior{TRequest, TResponse}" />.
-    ///     This type must have a public constructor to be resolved at runtime.
-    /// </typeparam>
-    /// <typeparam name="TRequest">
-    ///     The type of the request that the behavior processes. Must implement <see cref="IRequest{TResponse}" />.
-    /// </typeparam>
-    /// <typeparam name="TResponse">
-    ///     The type of the response that the behavior generates. Must be a non-nullable type.
-    /// </typeparam>
-    /// <returns>
-    ///     The current instance of <see cref="ISynapseConfig" />, enabling further configuration chaining.
-    /// </returns>
     ISynapseConfig RegisterRequestPipelineBehavior<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
-        TBehavior, TRequest,
-        TResponse>()
+        TBehavior, TRequest, TResponse>()
         where TBehavior : class, IRequestPipelineBehavior<TRequest, TResponse>
         where TRequest : IRequest<TResponse>
         where TResponse : notnull;
 
     /// <summary>
-    ///     Registers a request pipeline behavior conditionally, based on a predicate.
-    ///     The behavior is registered only if the predicate evaluates to true.
+    ///     Registers a typed event pipeline behavior for a specific event type.
+    ///     The behavior is resolved by DI only when dispatching events of type <typeparamref name="TEvent" />.
     /// </summary>
-    /// <typeparam name="TBehavior">
-    ///     The type of the behavior that implements <see cref="IRequestPipelineBehavior" />.
-    ///     This type must have a public constructor to be resolved at runtime.
-    /// </typeparam>
-    /// <param name="predicate">
-    ///     A function that determines whether the behavior should be applied, based on the context and request.
-    /// </param>
-    /// <returns>
-    ///     The current instance of <see cref="ISynapseConfig" />, enabling further configuration chaining.
-    /// </returns>
-    ISynapseConfig RegisterConditionalRequestPipelineBehavior<
+    ISynapseConfig RegisterEventPipelineBehavior<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
-        TBehavior>(
-        Func<object, bool> predicate)
-        where TBehavior : class, IRequestPipelineBehavior;
+        TBehavior, TEvent>()
+        where TBehavior : class, IEventPipelineBehavior<TEvent>
+        where TEvent : class, IEvent;
 
     /// <summary>
-    ///     Registers a request pipeline behavior conditionally, based on a predicate.
-    ///     This overload is for typed registrations that do not have a response.
+    ///     Registers a typed stream pipeline behavior for a specific request/item pair.
+    ///     The behavior is resolved by DI only for streaming requests of type <typeparamref name="TRequest" />.
     /// </summary>
-    /// <typeparam name="TBehavior">
-    ///     The type of the behavior that implements <see cref="IRequestPipelineBehavior{TRequest}" />.
-    ///     This type must have a public constructor to be resolved at runtime.
-    /// </typeparam>
-    /// <typeparam name="TRequest">
-    ///     The type of the request that the behavior processes. Must implement <see cref="IRequest" />.
-    /// </typeparam>
-    /// <param name="predicate">
-    ///     A function that determines whether the behavior should be applied, based on the context and request.
-    /// </param>
-    /// <returns>
-    ///     The current instance of <see cref="ISynapseConfig" />, enabling further configuration chaining.
-    /// </returns>
-    ISynapseConfig RegisterConditionalRequestPipelineBehavior<
+    ISynapseConfig RegisterStreamRequestPipelineBehavior<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
-        TBehavior, TRequest>(
-        Func<TRequest, bool> predicate)
-        where TBehavior : class, IRequestPipelineBehavior<TRequest>
+        TBehavior, TRequest, TItem>()
+        where TBehavior : class, IStreamRequestPipelineBehavior<TRequest, TItem>
+        where TRequest : IStreamRequest<TItem>
+        where TItem : notnull;
+
+    /// <summary>
+    ///     Registers CQRS boundary enforcement for a specific request type (no-response form).
+    /// </summary>
+    /// <remarks>
+    ///     Use this for handlers the source generator cannot see — handlers registered manually at runtime
+    ///     (e.g. <see cref="RegisterRequestHandler{THandler,TRequest}" />) or declared in assemblies the
+    ///     generator does not scan. Handlers the generator discovers are wired automatically when the assembly
+    ///     carries <c>[assembly: EnableSynapseCqrsBoundaryEnforcement]</c>. The registration is deduplicated and
+    ///     runs outermost via <see cref="IOrderedPipelineBehavior.First" />, so calling this for a request that
+    ///     the generator also covers is harmless (the behavior is wired at most once). Registration is closed
+    ///     (Native-AOT safe).
+    /// </remarks>
+    ISynapseConfig RegisterCqrsBoundaryEnforcement<TRequest>()
         where TRequest : IRequest;
 
     /// <summary>
-    ///     Registers a request pipeline behavior conditionally, based on a predicate.
-    ///     This overload is for typed registrations that have a response.
+    ///     Registers CQRS boundary enforcement for a specific request/response pair.
     /// </summary>
-    /// <typeparam name="TBehavior">
-    ///     The type of the behavior that implements <see cref="IRequestPipelineBehavior{TRequest, TResponse}" />.
-    ///     This type must have a public constructor to be resolved at runtime.
-    /// </typeparam>
-    /// <typeparam name="TRequest">
-    ///     The type of the request that the behavior processes. Must implement <see cref="IRequest{TResponse}" />.
-    /// </typeparam>
-    /// <typeparam name="TResponse">
-    ///     The type of the response that the behavior generates. Must be a non-nullable type.
-    /// </typeparam>
-    /// <param name="predicate">
-    ///     A function that determines whether the behavior should be applied, based on the context and request.
-    /// </param>
-    /// <returns>
-    ///     The current instance of <see cref="ISynapseConfig" />, enabling further configuration chaining.
-    /// </returns>
-    ISynapseConfig RegisterConditionalRequestPipelineBehavior<
-        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
-        TBehavior, TRequest, TResponse>(
-        Func<TRequest, bool> predicate)
-        where TBehavior : class, IRequestPipelineBehavior<TRequest, TResponse>
+    /// <remarks>
+    ///     Use this for handlers the source generator cannot see — handlers registered manually at runtime
+    ///     (e.g. <see cref="RegisterRequestHandler{THandler,TRequest,TResponse}" />) or declared in assemblies
+    ///     the generator does not scan. Handlers the generator discovers are wired automatically when the
+    ///     assembly carries <c>[assembly: EnableSynapseCqrsBoundaryEnforcement]</c>. The registration is
+    ///     deduplicated and runs outermost via <see cref="IOrderedPipelineBehavior.First" />, so calling this for
+    ///     a request that the generator also covers is harmless (the behavior is wired at most once). Registration
+    ///     is closed (Native-AOT safe).
+    /// </remarks>
+    ISynapseConfig RegisterCqrsBoundaryEnforcement<TRequest, TResponse>()
         where TRequest : IRequest<TResponse>
         where TResponse : notnull;
 
     /// <summary>
-    ///     Registers a custom event pipeline behavior to be included in the mediator configuration.
+    ///     Registers an open-generic request pipeline behavior (no-response form) using the MS DI open-generic
+    ///     registration mechanism. The container closes the generic type on resolution.
+    ///     Use this for cross-cutting library behaviors (e.g. logging, CQRS enforcement) that apply to all request types.
     /// </summary>
-    /// <typeparam name="TEventPipelineBehavior">
-    ///     The type of the event pipeline behavior to register. The type must implement <see cref="IEventPipelineBehavior" />
-    ///     and
-    ///     must have a public parameterless constructor.
-    /// </typeparam>
-    /// <returns>
-    ///     The instance of <see cref="ISynapseConfig" />, enabling method chaining for further configuration.
-    /// </returns>
-    ISynapseConfig RegisterEventPipelineBehavior<
-        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
-        TEventPipelineBehavior>()
-        where TEventPipelineBehavior : class, IEventPipelineBehavior;
-
-    /// <summary>
-    ///     Specifies the event orchestrator implementation to be used for coordinating the execution
-    ///     of event handlers. The specified type must implement the <see cref="IEventOrchestrator" /> interface.
-    /// </summary>
-    /// <typeparam name="TEventOrchestrator">
-    ///     The type of the event orchestrator to be registered. Must have accessible public constructors
-    ///     and implement <see cref="IEventOrchestrator" />.
-    /// </typeparam>
-    /// <returns>
-    ///     The current <see cref="ISynapseConfig" /> instance to allow method chaining.
-    /// </returns>
-    ISynapseConfig SetEventOrchestrator<
-        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
-        TEventOrchestrator>()
-        where TEventOrchestrator : class, IEventOrchestrator;
-
-    /// <summary>
-    ///     Adds a register group to the mediator configuration.
-    /// </summary>
-    /// <param name="group">
-    ///     The instance of <see cref="IRegisterGroup" /> that contains the registrations to be added.
+    /// <param name="openGenericBehaviorType">
+    ///     An open-generic type with one type parameter, e.g. <c>typeof(SimpleLoggingBehavior&lt;&gt;)</c>.
+    ///     Must implement <c>IRequestPipelineBehavior&lt;TRequest&gt;</c>.
     /// </param>
-    /// <returns>
-    ///     The current instance of <see cref="ISynapseConfig" />, enabling fluent configuration.
-    /// </returns>
-    ISynapseConfig AddRegisterGroup(IRegisterGroup group);
+    ISynapseConfig AddOpenGenericRequestPipelineBehavior(
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+        Type openGenericBehaviorType);
 
     /// <summary>
-    ///     Registers a request handler within the mediator configuration to handle requests of a specific type and produce
-    ///     responses of a specific type.
+    ///     Registers an open-generic request pipeline behavior (with-response form) using the MS DI open-generic
+    ///     registration mechanism. The container closes the generic type on resolution.
+    ///     Use this for cross-cutting library behaviors (e.g. logging, CQRS enforcement) that apply to all request types.
     /// </summary>
-    /// <typeparam name="THandler">
-    ///     The type of the handler that processes the request. Must implement
-    ///     <see cref="IRequestHandler{TRequest, TResponse}" />.
-    /// </typeparam>
-    /// <typeparam name="TRequest">
-    ///     The type of the request that the handler processes. Must implement <see cref="IRequest{TResponse}" />.
-    /// </typeparam>
-    /// <typeparam name="TResponse">
-    ///     The type of the response that the handler generates. Must be a non-nullable type.
-    /// </typeparam>
-    /// <returns>
-    ///     The current instance of <see cref="ISynapseConfig" />, enabling method chaining for additional configuration.
-    /// </returns>
+    /// <param name="openGenericBehaviorType">
+    ///     An open-generic type with two type parameters, e.g. <c>typeof(SimpleLoggingBehavior&lt;,&gt;)</c>.
+    ///     Must implement <c>IRequestPipelineBehavior&lt;TRequest, TResponse&gt;</c>.
+    /// </param>
+    [RequiresDynamicCode(OpenGenericBehaviorAotMessage)]
+    ISynapseConfig AddOpenGenericRequestWithResponsePipelineBehavior(
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+        Type openGenericBehaviorType);
+
+    /// <summary>
+    ///     Registers an open-generic event pipeline behavior using the MS DI open-generic registration mechanism.
+    /// </summary>
+    /// <param name="openGenericBehaviorType">
+    ///     An open-generic type with one type parameter, e.g. <c>typeof(SimpleLoggingEventBehavior&lt;&gt;)</c>.
+    ///     Must implement <c>IEventPipelineBehavior&lt;TEvent&gt;</c>.
+    /// </param>
+    ISynapseConfig AddOpenGenericEventPipelineBehavior(
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+        Type openGenericBehaviorType);
+
+    /// <summary>
+    ///     Registers an open-generic stream pipeline behavior using the MS DI open-generic registration mechanism.
+    /// </summary>
+    /// <param name="openGenericBehaviorType">
+    ///     An open-generic type with two type parameters.
+    ///     Must implement <c>IStreamRequestPipelineBehavior&lt;TRequest, TItem&gt;</c>.
+    /// </param>
+    [RequiresDynamicCode(OpenGenericBehaviorAotMessage)]
+    ISynapseConfig AddOpenGenericStreamRequestPipelineBehavior(
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+        Type openGenericBehaviorType);
+
+    // ── Handlers ────────────────────────────────────────────────────────────
+
+    /// <summary>
+    ///     Registers a request handler within the mediator configuration.
+    /// </summary>
     ISynapseConfig RegisterRequestHandler<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         THandler, TRequest, TResponse>()
@@ -211,17 +154,8 @@ public interface ISynapseConfig
         where THandler : class, IRequestHandler<TRequest, TResponse>;
 
     /// <summary>
-    ///     Registers a request handler and its associated request type with the mediator's configuration.
+    ///     Registers a request handler (no-response) within the mediator configuration.
     /// </summary>
-    /// <typeparam name="THandler">
-    ///     The type of the request handler to be registered. Must implement <see cref="IRequestHandler{TRequest}" />.
-    /// </typeparam>
-    /// <typeparam name="TRequest">
-    ///     The type of the request that the handler processes. Must implement <see cref="IRequest" />.
-    /// </typeparam>
-    /// <returns>
-    ///     The current instance of <see cref="ISynapseConfig" />, enabling chained configuration.
-    /// </returns>
     ISynapseConfig RegisterRequestHandler<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         THandler, TRequest>()
@@ -231,15 +165,6 @@ public interface ISynapseConfig
     /// <summary>
     ///     Registers an event handler for a specific event type.
     /// </summary>
-    /// <typeparam name="THandler">
-    ///     The handler type that implements <see cref="IEventHandler{TEvent}" />.
-    /// </typeparam>
-    /// <typeparam name="TEvent">
-    ///     The event type that the handler will process, implementing <see cref="IEvent" />.
-    /// </typeparam>
-    /// <returns>
-    ///     The current instance of <see cref="ISynapseConfig" />, allowing for fluent configuration.
-    /// </returns>
     ISynapseConfig RegisterEventHandler<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         THandler, TEvent>()
@@ -247,24 +172,20 @@ public interface ISynapseConfig
         where TEvent : class, IEvent;
 
     /// <summary>
+    ///     Registers a streaming request handler.
+    /// </summary>
+    ISynapseConfig RegisterStreamRequestHandler<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+        THandler, TRequest, TItem>()
+        where TItem : notnull
+        where TRequest : IStreamRequest<TItem>
+        where THandler : class, IStreamRequestHandler<TRequest, TItem>;
+
+    // ── Conditional handler registration ────────────────────────────────────
+
+    /// <summary>
     ///     Registers a request handler conditionally based on a predicate evaluated at service collection build time.
     /// </summary>
-    /// <typeparam name="THandler">
-    ///     The type of the request handler to be registered.
-    /// </typeparam>
-    /// <typeparam name="TRequest">
-    ///     The type of the request being handled.
-    /// </typeparam>
-    /// <typeparam name="TResponse">
-    ///     The type of the response returned by the handler.
-    /// </typeparam>
-    /// <param name="condition">
-    ///     A predicate that determines whether the handler should be registered. Evaluated when building the service
-    ///     collection.
-    /// </param>
-    /// <remarks>
-    ///     Useful for registering handlers based on environment variables, feature flags, or configuration values.
-    /// </remarks>
     ISynapseConfig RegisterRequestHandlerWhen<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         THandler, TRequest, TResponse>(Func<bool> condition)
@@ -273,21 +194,8 @@ public interface ISynapseConfig
         where THandler : class, IRequestHandler<TRequest, TResponse>;
 
     /// <summary>
-    ///     Registers a request handler conditionally based on a predicate evaluated at service collection build time.
+    ///     Registers a request handler (no-response) conditionally.
     /// </summary>
-    /// <typeparam name="THandler">
-    ///     The type of the request handler to be registered.
-    /// </typeparam>
-    /// <typeparam name="TRequest">
-    ///     The type of the request being handled.
-    /// </typeparam>
-    /// <param name="condition">
-    ///     A predicate that determines whether the handler should be registered. Evaluated when building the service
-    ///     collection.
-    /// </param>
-    /// <remarks>
-    ///     Useful for registering handlers based on environment variables, feature flags, or configuration values.
-    /// </remarks>
     ISynapseConfig RegisterRequestHandlerWhen<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         THandler, TRequest>(Func<bool> condition)
@@ -295,101 +203,66 @@ public interface ISynapseConfig
         where THandler : class, IRequestHandler<TRequest>;
 
     /// <summary>
-    ///     Registers an event handler conditionally based on a predicate evaluated at service collection build time.
+    ///     Registers an event handler conditionally.
     /// </summary>
-    /// <typeparam name="THandler">
-    ///     The type of the event handler to be registered.
-    /// </typeparam>
-    /// <typeparam name="TEvent">
-    ///     The type of the event that the handler processes.
-    /// </typeparam>
-    /// <param name="condition">
-    ///     A predicate that determines whether the handler should be registered. Evaluated when building the service
-    ///     collection.
-    /// </param>
-    /// <remarks>
-    ///     Useful for registering handlers based on environment variables, feature flags, or configuration values.
-    /// </remarks>
     ISynapseConfig RegisterEventHandlerWhen<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         THandler, TEvent>(Func<bool> condition)
         where THandler : class, IEventHandler<TEvent>
         where TEvent : class, IEvent;
 
+    // ── Infrastructure ───────────────────────────────────────────────────────
+
+    /// <summary>
+    ///     Specifies the event orchestrator implementation.
+    /// </summary>
+    ISynapseConfig SetEventOrchestrator<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+        TEventOrchestrator>()
+        where TEventOrchestrator : class, IEventOrchestrator;
+
+    /// <summary>
+    ///     Adds a register group to the mediator configuration.
+    /// </summary>
+    ISynapseConfig AddRegisterGroup(IRegisterGroup group);
+
     /// <summary>
     ///     Configures the mediator to use the specified implementation for event outbox storage.
-    ///     The event outbox storage is responsible for persisting events and tracking their delivery status.
     /// </summary>
-    /// <typeparam name="TEventOutboxStorage">
-    ///     The type of the event outbox storage implementation. Must implement <see cref="IEventOutboxStorage" />.
-    /// </typeparam>
-    /// <returns>
-    ///     The current <see cref="ISynapseConfig" /> instance, allowing for method chaining.
-    /// </returns>
     ISynapseConfig SetEventOutboxStorage<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         TEventOutboxStorage>()
         where TEventOutboxStorage : class, IEventOutboxStorage;
 
     /// <summary>
-    ///     Sets the default publishing mode for events in the mediator configuration.
+    ///     Sets the default publishing mode for events.
     /// </summary>
-    /// <param name="mode">The <see cref="EmitMode" /> to set as the default publishing mode.</param>
-    /// <returns>An instance of <see cref="ISynapseConfig" /> to allow for method chaining.</returns>
     ISynapseConfig SetDefaultPublishingMode(EmitMode mode);
 
     /// <summary>
     ///     Configures options for the outbox retry, dead-letter and batch processing features.
     /// </summary>
-    /// <param name="configure">Delegate to mutate the <see cref="OutboxOptions" /> instance.</param>
-    /// <returns>The current config instance.</returns>
     ISynapseConfig ConfigureOutbox(Action<OutboxOptions> configure);
 
     /// <summary>
-    ///     Enables CQRS boundary enforcement to prevent violations such as:
-    ///     - Commands being sent within command handlers
-    ///     - Queries being sent within query handlers
-    ///     - Commands being sent within query handlers
+    ///     Enables CQRS boundary enforcement.
     /// </summary>
-    /// <param name="enable">True to enable CQRS boundary enforcement, false to disable it. Default is true.</param>
-    /// <returns>The current config instance.</returns>
+    /// <remarks>
+    ///     Obsolete. Enforcement is now opted-in via the assembly attribute
+    ///     <c>[assembly: EnableSynapseCqrsBoundaryEnforcement]</c>, which lets the source generator emit closed
+    ///     (Native-AOT safe) registrations. The runtime path was removed; calling this with <c>enable:true</c>
+    ///     throws <see cref="NotSupportedException" /> so the loss of enforcement cannot pass silently.
+    /// </remarks>
+    [Obsolete(
+        "Runtime CQRS boundary enforcement was removed. Apply " +
+        "[assembly: EnableSynapseCqrsBoundaryEnforcement] so the source generator emits closed " +
+        "(Native-AOT safe) registrations. Calling this method with enable:true now throws.",
+        error: true)]
     ISynapseConfig EnableCqrsBoundaryEnforcement(bool enable = true);
 
     /// <summary>
-    ///     Registers a streaming request handler for the specified request and item types.
+    ///     Adds a request validator.
     /// </summary>
-    /// <typeparam name="THandler">
-    ///     The type of the handler that processes the streaming request.
-    ///     Must implement <see cref="IStreamRequestHandler{TRequest, TItem}" />.
-    /// </typeparam>
-    /// <typeparam name="TRequest">
-    ///     The type of the streaming request. Must implement <see cref="IStreamRequest{TItem}" />.
-    /// </typeparam>
-    /// <typeparam name="TItem">
-    ///     The type of each item yielded by the stream. Must be a non-nullable type.
-    /// </typeparam>
-    /// <returns>
-    ///     The current instance of <see cref="ISynapseConfig" />, enabling method chaining for additional configuration.
-    /// </returns>
-    ISynapseConfig RegisterStreamRequestHandler<
-        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
-        THandler, TRequest, TItem>()
-        where TItem : notnull
-        where TRequest : IStreamRequest<TItem>
-        where THandler : class, IStreamRequestHandler<TRequest, TItem>;
-
-    /// <summary>
-    ///     Adds a request validator to the mediator configuration.
-    /// </summary>
-    /// <typeparam name="TValidator">
-    ///     The type of the validator, implementing <see cref="IRequestValidator{TRequest}" />.
-    /// </typeparam>
-    /// <typeparam name="TRequest">
-    ///     The type of the request that the validator applies to, implementing <see cref="IRequest" />.
-    /// </typeparam>
-    /// <returns>
-    ///     The current instance of <see cref="ISynapseConfig" />, allowing for fluent configuration.
-    /// </returns>
     ISynapseConfig AddValidator<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         TValidator, TRequest>()
@@ -397,20 +270,8 @@ public interface ISynapseConfig
         where TRequest : IRequest;
 
     /// <summary>
-    ///     Adds a request validator to the mediator configuration for requests that return a typed response.
+    ///     Adds a request validator for requests that return a typed response.
     /// </summary>
-    /// <typeparam name="TValidator">
-    ///     The type of the validator, implementing <see cref="IRequestValidator{TRequest}" />.
-    /// </typeparam>
-    /// <typeparam name="TRequest">
-    ///     The type of the request that the validator applies to, implementing <see cref="IRequest{TResponse}" />.
-    /// </typeparam>
-    /// <typeparam name="TResponse">
-    ///     The type of the response produced by the request. Must be a non-nullable type.
-    /// </typeparam>
-    /// <returns>
-    ///     The current instance of <see cref="ISynapseConfig" />, allowing for fluent configuration.
-    /// </returns>
     ISynapseConfig AddValidator<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         TValidator, TRequest, TResponse>()
@@ -421,28 +282,16 @@ public interface ISynapseConfig
     /// <summary>
     ///     Configures the mediator to use the default context factory implementation.
     /// </summary>
-    /// <returns>
-    ///     The current instance of <see cref="ISynapseConfig" />, allowing for fluent configuration.
-    /// </returns>
     ISynapseConfig UseDefaultContextFactory();
 
     /// <summary>
     ///     Configures the mediator to use the slim context factory implementation for improved performance.
     /// </summary>
-    /// <returns>
-    ///     The current instance of <see cref="ISynapseConfig" />, allowing for fluent configuration.
-    /// </returns>
     ISynapseConfig UseSlimContextFactory();
 
     /// <summary>
     ///     Configures the mediator to use a custom context factory implementation.
     /// </summary>
-    /// <typeparam name="TContextFactory">
-    ///     The type of the context factory to use. Must implement <see cref="IContextFactory" />.
-    /// </typeparam>
-    /// <returns>
-    ///     The current instance of <see cref="ISynapseConfig" />, allowing for fluent configuration.
-    /// </returns>
     ISynapseConfig UseContextFactory<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         TContextFactory>()
@@ -450,30 +299,14 @@ public interface ISynapseConfig
 
     /// <summary>
     ///     Registers event dispatcher delegates using a generated registration class.
-    ///     This is typically used with source-generated IEventDispatcherRegistration implementations
-    ///     for NativeAOT compatibility.
     /// </summary>
-    /// <typeparam name="TRegistration">
-    ///     The type of the registration class. Must implement <see cref="IEventDispatcherRegistration" />.
-    /// </typeparam>
-    /// <returns>
-    ///     The current instance of <see cref="ISynapseConfig" />, enabling method chaining.
-    /// </returns>
-    /// <remarks>
-    ///     This method should be called with the generated EventDispatcherRegistration class
-    ///     to register typed dispatcher delegates for all event types, avoiding reflection
-    ///     during outbox replay.
-    /// </remarks>
     ISynapseConfig UseEventDispatcherRegistration<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         TRegistration>()
         where TRegistration : class, IEventDispatcherRegistration, new();
 
     /// <summary>
-    ///     Applies the current configuration to set up the mediator with the provided services and options.
-    ///     This method finalizes the configuration by ensuring that all registered components such as
-    ///     handlers, orchestrators, and storage are added to the service collection. The configurations
-    ///     for publishing and event dispatching are also initialized during this process.
+    ///     Applies the current configuration to set up the mediator.
     /// </summary>
     void Apply();
 }

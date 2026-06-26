@@ -1,0 +1,74 @@
+### Synapse MinimalApi — Streaming (IStreamRequest<T>)
+### Demonstrates: IStreamRequest<T>, IAsyncEnumerable yielded items, StreamLoggingBehavior.
+### Run `dotnet run` in examples/MinimalApi, then execute requests top-to-bottom.
+@baseUrl = http://localhost:5225
+
+# ═══════════════════════════════════════════════════════════════════════
+# Setup — create a couple of tasks so the stream has something to yield
+# ═══════════════════════════════════════════════════════════════════════
+
+### Create task 1
+POST {{baseUrl}}/tasks
+Content-Type: application/json
+
+{
+  "title": "Stream task Alpha",
+  "description": "First task for the streaming demo"
+}
+
+> {%
+    client.test("Task Alpha created", function () {
+        client.assert(response.status === 201, "Expected 201 Created");
+    });
+%}
+
+###
+
+### Create task 2
+POST {{baseUrl}}/tasks
+Content-Type: application/json
+
+{
+  "title": "Stream task Beta",
+  "description": "Second task for the streaming demo"
+}
+
+> {%
+    client.test("Task Beta created", function () {
+        client.assert(response.status === 201, "Expected 201 Created");
+    });
+%}
+
+###
+
+# ═══════════════════════════════════════════════════════════════════════
+# Streaming request
+# ═══════════════════════════════════════════════════════════════════════
+
+### [Feature: IStreamRequest<T>] Stream all tasks as IAsyncEnumerable
+### The handler yields each TaskDto one by one; ASP.NET Core flushes them as a JSON array.
+###
+### Observe stdout (StreamLoggingBehavior):
+###   "🔢 Streamed N StreamTasksQuery item(s) in <elapsed>"
+###
+### This log line appears AFTER the stream completes — the behavior wraps the
+### IAsyncEnumerable from next() and counts items as they are yielded.
+GET {{baseUrl}}/tasks/stream
+Accept: application/json
+
+> {%
+    client.test("Stream endpoint returns 200", function () {
+        client.assert(response.status === 200, "Expected 200 OK");
+        client.assert(Array.isArray(response.body), "Response is an array");
+        client.assert(response.body.length >= 2, "At least 2 tasks streamed");
+    });
+
+    client.test("Each item has the expected shape", function () {
+        const first = response.body[0];
+        client.assert(first.id !== undefined, "id present");
+        client.assert(first.title !== undefined, "title present");
+        client.assert(first.status !== undefined, "status present");
+    });
+%}
+
+###

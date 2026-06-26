@@ -29,8 +29,17 @@ internal sealed class Invoker(IDependencyResolver resolver, IOptions<InvokerOpti
         CancellationToken cancellationToken = default)
         where TRequest : IRequest
     {
-        var handler = resolver.GetRequiredService<IRequestHandler<TRequest>>();
-        return handler.HandleAsync(request, cancellationToken);
+        var requestType = request.GetType();
+        if (!options.Value.VoidRequestDispatchers.TryGetValue(requestType, out var del))
+        {
+            throw new InvalidOperationException(
+                $"No handler registered for request type '{requestType.Name}'. " +
+                $"Ensure it is registered via cfg.RegisterRequestHandler<THandler, {requestType.Name}>().");
+        }
+
+        var dispatch =
+            (Func<IRequest, IDependencyResolver, CancellationToken, ValueTask<Result>>)del;
+        return dispatch(request, resolver, cancellationToken);
     }
 
     public async IAsyncEnumerable<Result<TItem>> InvokeStreamAsync<TItem>(IStreamRequest<TItem> request,
