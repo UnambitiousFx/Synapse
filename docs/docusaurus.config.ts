@@ -9,6 +9,24 @@ const config: Config = {
   tagline: 'Synapse is a simple Native-AOT mediator',
   favicon: 'img/favicon.ico',
 
+  headTags: [
+    {
+      tagName: 'link',
+      attributes: {
+        rel: 'icon',
+        type: 'image/svg+xml',
+        href: '/img/favicon.svg',
+      },
+    },
+    {
+      tagName: 'link',
+      attributes: {
+        rel: 'apple-touch-icon',
+        href: '/img/apple-touch-icon.png',
+      },
+    },
+  ],
+
   // Future flags, see https://docusaurus.io/docs/api/docusaurus-config#future
   future: {
     v4: true, // Improve compatibility with the upcoming Docusaurus v4
@@ -99,16 +117,16 @@ const config: Config = {
   ],
 
   themeConfig: {
-    // Replace with your project's social card
-    image: 'img/docusaurus-social-card.jpg',
+    image: 'img/unambitiousfx-social-card.png',
     colorMode: {
       respectPrefersColorScheme: true,
     },
     navbar: {
       title: 'Synapse',
       logo: {
-        alt: 'Synapse Logo',
-        src: 'img/logo.svg',
+        alt: 'UnambitiousFx Synapse Logo',
+        src: 'img/unambitiousfx-icon-light.svg',
+        srcDark: 'img/unambitiousfx-icon-dark.svg',
       },
       items: [
         {
