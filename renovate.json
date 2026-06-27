@@ -42,19 +42,22 @@
       "matchManagers": ["nuget"],
       "matchPackageNames": ["Microsoft.Extensions.**", "Microsoft.AspNetCore.**"],
       "matchCurrentVersion": "/^10\\./",
-      "allowedVersions": "/^10\\./"
+      "allowedVersions": "/^10\\./",
+      "groupName": "microsoft net10"
     },
     {
       "matchManagers": ["nuget"],
       "matchPackageNames": ["Microsoft.Extensions.**", "Microsoft.AspNetCore.**"],
       "matchCurrentVersion": "/^9\\./",
-      "allowedVersions": "/^9\\./"
+      "allowedVersions": "/^9\\./",
+      "groupName": "microsoft net9"
     },
     {
       "matchManagers": ["nuget"],
       "matchPackageNames": ["Microsoft.Extensions.**", "Microsoft.AspNetCore.**"],
       "matchCurrentVersion": "/^8\\./",
-      "allowedVersions": "/^8\\./"
+      "allowedVersions": "/^8\\./",
+      "groupName": "microsoft net8"
     }
   ]
 }
