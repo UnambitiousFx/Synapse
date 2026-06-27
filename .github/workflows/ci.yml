@@ -56,14 +56,14 @@ jobs:
 
       - name: Upload coverage reports to Codecov
         if: matrix.os == 'ubuntu-latest'
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7
         with:
           directory: ./test-results
           token: ${{ secrets.CODECOV_TOKEN }}
 
       - name: Upload test results to Codecov
         if: matrix.os == 'ubuntu-latest'
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7
         with:
           report_type: test_results
           files: ./test-results/junit.xml
