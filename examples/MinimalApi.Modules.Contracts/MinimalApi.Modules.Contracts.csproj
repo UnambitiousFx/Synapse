@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <IsAotCompatible>true</IsAotCompatible>
+    </PropertyGroup>
+
+    <!-- Only Synapse.Abstractions — IEvent lives there. No handler framework, no DI, no ASP.NET Core. -->
+    <ItemGroup>
+        <ProjectReference Include="..\..\src\Synapse.Abstractions\Synapse.Abstractions.csproj" />
+    </ItemGroup>
+
+</Project>

@@ -298,14 +298,6 @@ public interface ISynapseConfig
         where TContextFactory : class, IContextFactory;
 
     /// <summary>
-    ///     Registers event dispatcher delegates using a generated registration class.
-    /// </summary>
-    ISynapseConfig UseEventDispatcherRegistration<
-        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
-        TRegistration>()
-        where TRegistration : class, IEventDispatcherRegistration, new();
-
-    /// <summary>
     ///     Applies the current configuration to set up the mediator.
     /// </summary>
     void Apply();

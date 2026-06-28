@@ -305,6 +305,14 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
         var builder = new DefaultDependencyInjectionBuilder();
         group.Register(builder);
 
+        // If the group also implements IEventDispatcherRegistration (e.g. the source-generated
+        // RegisterGroup), register its dispatch delegates eagerly so the _eventDispatchers map
+        // is populated before Apply() merges it into EventDispatcherOptions.
+        if (group is IEventDispatcherRegistration registration)
+        {
+            registration.RegisterDispatchers((type, dispatch) => _eventDispatchers.TryAdd(type, dispatch));
+        }
+
         _actions.Add(svc =>
         {
             builder.Apply(svc);
@@ -416,16 +424,6 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
         where TContextFactory : class, IContextFactory
     {
         _contextFactory = typeof(TContextFactory);
-        return this;
-    }
-
-    public ISynapseConfig UseEventDispatcherRegistration<
-        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
-    TRegistration>()
-        where TRegistration : class, IEventDispatcherRegistration, new()
-    {
-        var registration = new TRegistration();
-        registration.RegisterDispatchers((type, dispatchDelegate) => { _eventDispatchers[type] = dispatchDelegate; });
         return this;
     }
 

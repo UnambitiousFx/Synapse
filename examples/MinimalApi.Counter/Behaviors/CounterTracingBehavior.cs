@@ -1,7 +1,7 @@
 using UnambitiousFx.Functional;
 using UnambitiousFx.Synapse.Abstractions;
 
-namespace UnambitiousFx.Examples.MinimalApi.Counter;
+namespace UnambitiousFx.Examples.MinimalApi.Counter.Behaviors;
 
 /// <summary>
 ///     Open-generic, response-bearing pipeline behavior registered via <c>[PipelineBehavior]</c>. The source

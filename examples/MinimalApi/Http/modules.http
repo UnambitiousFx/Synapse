@@ -1,0 +1,104 @@
+### Synapse MinimalApi — Modular Monolith: Cross-Assembly Events
+### Demonstrates: two independent modules communicating via a shared event contract.
+###   Orders module  — [RequestHandler<>] + source-generated RegisterGroup (emitter)
+###   Notifications  — cfg.RegisterEventHandler<>() manual registration (subscriber)
+###   Contracts lib  — OrderPlacedEvent (the only shared dependency)
+### Run `dotnet run` in examples/MinimalApi, then execute requests top-to-bottom.
+@baseUrl = http://localhost:5225
+
+# ═══════════════════════════════════════════════════════════════════════
+# Step 1 — Place an order
+# PlaceOrderCommandHandler (Orders module, source-gen) stores the order
+# and emits OrderPlacedEvent via IEmitter.
+# OrderPlacedNotificationHandler (Notifications module, manual) receives it
+# and appends a NotificationEntry to NotificationLog.
+# ═══════════════════════════════════════════════════════════════════════
+
+### [Orders] Place order 1
+### Expect: 201 Created with order ID in body
+### Observe stdout:
+###   📦 [Orders]        "Order <id> placed: 2x Widget"
+###   🔔 [Notifications] "Order <id> received: 2x Widget"
+POST {{baseUrl}}/orders
+Content-Type: application/json
+
+{
+  "product": "Widget",
+  "quantity": 2
+}
+
+> {%
+    client.test("Order placed", function () {
+        client.assert(response.status === 201, "Expected 201 Created");
+        client.global.set("orderId1", response.body);
+    });
+%}
+
+###
+
+### [Orders] Place order 2
+POST {{baseUrl}}/orders
+Content-Type: application/json
+
+{
+  "product": "Gadget",
+  "quantity": 5
+}
+
+> {%
+    client.test("Second order placed", function () {
+        client.assert(response.status === 201, "Expected 201 Created");
+        client.global.set("orderId2", response.body);
+    });
+%}
+
+###
+
+# ═══════════════════════════════════════════════════════════════════════
+# Step 2 — Verify cross-assembly event delivery
+# GET /notifications lists all NotificationEntry records that
+# OrderPlacedNotificationHandler appended to the NotificationLog singleton.
+# Each entry proves the event crossed from the Orders assembly
+# to the Notifications assembly via the shared OrderPlacedEvent contract.
+# ═══════════════════════════════════════════════════════════════════════
+
+### [Notifications] List received notifications
+### Expect: JSON array with 2 entries (one per order placed above)
+### Each entry: { orderId, product, quantity, receivedAt }
+GET {{baseUrl}}/notifications
+Accept: application/json
+
+> {%
+    client.test("Both order notifications received", function () {
+        client.assert(response.status === 200, "Expected 200 OK");
+        client.assert(response.body.length >= 2, "Expected at least 2 notifications");
+        const products = response.body.map(n => n.product);
+        client.assert(products.includes("Widget"), "Widget notification present");
+        client.assert(products.includes("Gadget"), "Gadget notification present");
+    });
+%}
+
+###
+
+# ═══════════════════════════════════════════════════════════════════════
+# What this shows
+# ═══════════════════════════════════════════════════════════════════════
+#
+#  ┌─ MinimalApi.Modules.Orders ──────────────────────────┐
+#  │  PlaceOrderCommand → [RequestHandler<>] (source-gen) │
+#  │  PlaceOrderCommandHandler: _emitter.EmitAsync(event) │
+#  └──────────────────────────────────┬───────────────────┘
+#                                     │ OrderPlacedEvent
+#                                     │ (from MinimalApi.Modules.Contracts)
+#  ┌──────────────────────────────────▼───────────────────┐
+#  │  MinimalApi.Modules.Notifications                    │
+#  │  OrderPlacedNotificationHandler: IEventHandler<T>    │
+#  │  Registered manually:                                │
+#  │  cfg.RegisterEventHandler<Handler, OrderPlacedEvent> │
+#  └──────────────────────────────────────────────────────┘
+#
+#  Orders ──────────────────────▶ Contracts
+#  Notifications ───────────────▶ Contracts
+#  Orders ✗──────────────────────▶ Notifications  (no direct reference)
+#
+###

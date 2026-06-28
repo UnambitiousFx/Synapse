@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
+using UnambitiousFx.Examples.MinimalApi.Counter.Messages;
 using UnambitiousFx.Synapse.AspNetCore.Http;
 
 namespace UnambitiousFx.Examples.MinimalApi.Counter;

@@ -1,6 +1,6 @@
 using UnambitiousFx.Synapse.Abstractions;
 
-namespace UnambitiousFx.Examples.MinimalApi.Counter;
+namespace UnambitiousFx.Examples.MinimalApi.Counter.Messages;
 
 // ═══════════════════════════════════════════════════════════════
 // Counter feature messages — every response is a bare value type (int).
@@ -10,13 +10,3 @@ namespace UnambitiousFx.Examples.MinimalApi.Counter;
 
 /// <summary>Increments the counter and returns the new value.</summary>
 public sealed record IncrementCounterCommand : IRequest<int>;
-
-/// <summary>Returns the current counter value.</summary>
-public sealed record GetCounterQuery : IRequest<int>;
-
-/// <summary>
-///     Intentionally illegal command: its handler sends another request from within the handler, crossing the
-///     CQRS boundary. Used to demonstrate that <c>CqrsBoundaryEnforcementBehavior</c> (emitted as a closed
-///     registration by this assembly's generator) is genuinely wired into the host pipeline.
-/// </summary>
-public sealed record IllegalNestedCommand : IRequest<int>;

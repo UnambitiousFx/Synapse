@@ -28,6 +28,7 @@ It is the canonical ASP.NET integration example for the library.
 - ✅ **CQRS boundary enforcement** — `[assembly: EnableSynapseCqrsBoundaryEnforcement]` (generator
   wires discovered handlers; use `cfg.RegisterCqrsBoundaryEnforcement<…>()` for manually-registered ones)
 - ✅ **Native AOT Compatibility** — `CreateSlimBuilder()` and JSON source generation
+- ✅ **Modular monolith** — two independent assemblies communicate via a shared event contract (Orders → `OrderPlacedEvent` → Notifications), with **source-gen** on the emitter side and **manual** `cfg.RegisterEventHandler<>()` on the subscriber side
 
 ## Pipeline Behavior Registration Mechanisms
 
@@ -81,6 +82,43 @@ MinimalApi/
 | `POST`   | `/tasks/{id}/complete`      | Complete a task (2 concurrent event handlers, audited)            |
 | `DELETE` | `/tasks/{id}`               | Delete a task (domain event, audited)                             |
 | `POST`   | `/tasks/admin/purge`        | Purge completed tasks (AuthorizationBehavior — requires `tasks:admin`) |
+| `POST`   | `/orders`                   | Place an order — emits `OrderPlacedEvent` (Orders module, source-gen)  |
+| `GET`    | `/notifications`            | List received notifications (Notifications module, manual registration) |
+
+## Modular Monolith: Cross-Assembly Event Communication
+
+Three sibling projects demonstrate decoupled inter-module communication using Synapse events:
+
+```
+MinimalApi.Modules.Contracts/   ← shared contract only (OrderPlacedEvent : IEvent)
+MinimalApi.Modules.Orders/      ← emitter — [RequestHandler<>] + source-generated RegisterGroup
+MinimalApi.Modules.Notifications/ ← subscriber — cfg.RegisterEventHandler<>() (no source generator)
+```
+
+**Key property:** Orders and Notifications reference only `Contracts` — they have **no reference to each other**.
+
+### Registration contrast
+
+| Module | API used | Where wired |
+|--------|----------|-------------|
+| **Orders** | `[RequestHandler<PlaceOrderCommand, Guid>]` → generator emits `RegisterGroup` | Host: `cfg.AddRegisterGroup(new Orders.RegisterGroup())` |
+| **Notifications** | `cfg.RegisterEventHandler<OrderPlacedNotificationHandler, OrderPlacedEvent>()` | Host: `cfg.AddNotificationsHandlers()` |
+
+Both are fully Native-AOT safe: the generator emits closed delegates for Orders; `RegisterEventHandler` registers the AOT-safe dispatch delegate directly for Notifications.
+
+### Flow
+
+```
+POST /orders
+  └─ PlaceOrderCommandHandler (Orders)
+       └─ _emitter.EmitAsync(new OrderPlacedEvent { ... })
+             └─ OrderPlacedNotificationHandler (Notifications)
+                  └─ NotificationLog.Add(entry)
+
+GET /notifications  →  returns [ { orderId, product, quantity, receivedAt }, ... ]
+```
+
+See `Http/modules.http` to try it end-to-end.
 
 ## Running the Example
 
@@ -101,6 +139,7 @@ Open the themed HTTP files in your IDE's HTTP client (JetBrains, VS Code REST Cl
 | `Http/streaming.http` | `IStreamRequest<T>` + `StreamLoggingBehavior` |
 | `Http/events.http` | Domain events, fan-out, `ConcurrentEventOrchestrator` |
 | `Http/pipeline-behaviors.http` | **Full behavior tour** — ordering, constraints, short-circuit, stream |
+| `Http/modules.http` | **Modular monolith** — `POST /orders` → `OrderPlacedEvent` → `GET /notifications` |
 
 While making requests, watch the terminal output for the behavior log lines:
 

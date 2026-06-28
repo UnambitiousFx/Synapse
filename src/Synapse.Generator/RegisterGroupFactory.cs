@@ -13,14 +13,16 @@ internal static class RegisterGroupFactory
         bool cqrsBoundaryEnforcementEnabled,
         ImmutableArray<HandlerDetail> behaviorTargets,
         bool crossAssemblyBehaviorsDisabled,
-        ImmutableArray<ValidatorDetail> validators)
+        ImmutableArray<ValidatorDetail> validators,
+        EventInfo eventInfo)
     {
         var sb = new StringBuilder();
 
         sb.AppendLine($"namespace {rootNamespace};");
         sb.AppendLine();
 
-        sb.AppendLine($"public sealed class RegisterGroup : global::{abstractionsNamespace}.IRegisterGroup");
+        sb.AppendLine(
+            $"public sealed class RegisterGroup : global::{abstractionsNamespace}.IRegisterGroup, global::{abstractionsNamespace}.IEventDispatcherRegistration");
         sb.AppendLine("{");
         sb.AppendLine($"    public void Register(global::{abstractionsNamespace}.IDependencyInjectionBuilder builder)");
         sb.AppendLine("    {");
@@ -96,6 +98,10 @@ internal static class RegisterGroupFactory
         EmitValidatorRegistrations(sb, validators);
 
         sb.AppendLine("    }");
+        sb.AppendLine();
+
+        EventDispatcherRegistrationFactory.EmitRegisterDispatchers(sb, abstractionsNamespace, eventInfo);
+
         sb.AppendLine("}");
         return SourceText.From(sb.ToString(), Encoding.UTF8);
     }

@@ -26,19 +26,9 @@ internal sealed record EventDispatcherOptions
     ///         <b>Option 1: Source-generated registration (recommended)</b>
     ///     </para>
     ///     <code>
-    ///     // The Synapse.Generator will generate this code for all IEvent types
-    ///     public class EventDispatcherRegistration : IEventDispatcherRegistration
-    ///     {
-    ///         public void RegisterDispatchers(Action&lt;Type, DispatchEventDelegate&gt; register)
-    ///         {
-    ///             register(typeof(OrderCreatedEvent), (@event, dispatcher, ct) =>
-    ///             {
-    ///                 var typedEvent = (OrderCreatedEvent)@event;
-    ///                 return dispatcher.DispatchAsync(typedEvent, ct);
-    ///             });
-    ///             // ... generated for all event types
-    ///         }
-    ///     }
+    ///     // The Synapse.Generator emits RegisterGroup which implements both IRegisterGroup
+    ///     // and IEventDispatcherRegistration. A single AddRegisterGroup call wires everything:
+    ///     services.AddSynapse(cfg => cfg.AddRegisterGroup(new RegisterGroup()));
     ///     </code>
     ///     <para>
     ///         <b>Option 2: Manual registration</b>

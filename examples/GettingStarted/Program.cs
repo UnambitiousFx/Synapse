@@ -27,9 +27,9 @@ var services = new ServiceCollection()
     .AddSingleton<TaskRepository>() // Register our in-memory repository
     .AddSynapse(cfg =>
     {
-        // Register handlers using source generation
+        // Register handlers using source generation.
+        // RegisterGroup also implements IEventDispatcherRegistration — one call wires everything.
         cfg.AddRegisterGroup(new RegisterGroup());
-        cfg.UseEventDispatcherRegistration<EventDispatcherRegistration>();
     })
     .BuildServiceProvider();
 

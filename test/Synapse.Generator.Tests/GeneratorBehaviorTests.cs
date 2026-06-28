@@ -679,10 +679,10 @@ public sealed class GeneratorBehaviorTests
             generated);
     }
 
-    // ── EventDispatcherRegistration.g.cs is generated for IEvent types ───
+    // ── RegisterGroup.g.cs contains RegisterDispatchers for IEvent types ───
 
     [Fact]
-    public void EventDispatcherRegistration_IsGenerated()
+    public void RegisterGroup_ContainsRegisterDispatchers_ForEventTypes()
     {
         // Arrange (Given) — source that contains an IEvent implementation and its handler
         const string source = """
@@ -704,12 +704,15 @@ public sealed class GeneratorBehaviorTests
             """;
 
         // Act (When)
-        var generated = RunGeneratorAndGetFile(source, "EventDispatcherRegistration.g.cs");
+        var generated = RunGeneratorAndGetRegistrationGroup(source);
 
-        // Assert (Then)
+        // Assert (Then) — RegisterGroup now implements IEventDispatcherRegistration; dispatcher
+        // registration is folded in (no separate EventDispatcherRegistration.g.cs is emitted).
         Assert.NotNull(generated);
+        Assert.Contains("IEventDispatcherRegistration", generated);
+        Assert.Contains("RegisterDispatchers", generated);
         Assert.Contains("UserCreated", generated);
-        Assert.Contains("EventDispatcherRegistration", generated);
+        Assert.Contains("DynamicDependency", generated);
     }
 
     // ── CQRS boundary enforcement via [assembly: EnableSynapseCqrsBoundaryEnforcement] ─
