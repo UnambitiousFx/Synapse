@@ -1,0 +1,13 @@
+.git
+.github
+docs
+benchmarks
+bin
+obj
+test
+examples/Application
+examples/ConsoleApp
+examples/GettingStarted
+examples/WebApi
+examples/WebApi.Tests
+examples/WebApiAot
