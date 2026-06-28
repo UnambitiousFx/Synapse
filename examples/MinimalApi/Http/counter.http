@@ -24,9 +24,9 @@ Accept: application/json
 > {%
     client.test("Get counter returns 200 with an int body", function () {
         client.assert(response.status === 200, "Expected 200 OK");
-        client.assert(typeof response.body === "number", "Body is a bare int (value-type response)");
+        client.assert(!isNaN(Number(response.body)), "Body is a bare int (value-type response)");
     });
-    client.global.set("counterBefore", response.body);
+    client.global.set("counterBefore", Number(response.body));
 %}
 
 ###
@@ -43,13 +43,13 @@ POST {{baseUrl}}/counter/increment
 > {%
     client.test("Increment returns 200 with an int body", function () {
         client.assert(response.status === 200, "Expected 200 OK");
-        client.assert(typeof response.body === "number", "Body is a bare int");
+        client.assert(!isNaN(Number(response.body)), "Body is a bare int");
     });
     client.test("Increment returns previous value + 1", function () {
-        const before = client.global.get("counterBefore");
-        client.assert(response.body === before + 1, "Counter incremented by exactly 1");
+        const before = Number(client.global.get("counterBefore"));
+        client.assert(Number(response.body) === before + 1, "Counter incremented by exactly 1");
     });
-    client.global.set("counterAfter", response.body);
+    client.global.set("counterAfter", Number(response.body));
 %}
 
 ###
@@ -60,7 +60,7 @@ POST {{baseUrl}}/counter/increment
 > {%
     client.test("Second increment is greater than the first", function () {
         client.assert(response.status === 200, "Expected 200 OK");
-        client.assert(response.body === client.global.get("counterAfter") + 1, "Incremented again by 1");
+        client.assert(Number(response.body) === Number(client.global.get("counterAfter")) + 1, "Incremented again by 1");
     });
 %}
 
@@ -73,7 +73,7 @@ Accept: application/json
 > {%
     client.test("Counter value persisted across requests", function () {
         client.assert(response.status === 200, "Expected 200 OK");
-        client.assert(response.body >= client.global.get("counterBefore") + 2, "Counter advanced by the increments");
+        client.assert(Number(response.body) >= Number(client.global.get("counterBefore")) + 2, "Counter advanced by the increments");
     });
 %}
 

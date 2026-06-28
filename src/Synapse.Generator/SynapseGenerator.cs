@@ -176,18 +176,24 @@ public class SynapseGenerator : IIncrementalGenerator
         var crossAssemblyDisabledProvider = compilationProvider
             .Select(static (compilation, _) => compilation.IsCrossAssemblyBehaviorsDisabled());
 
+        // Extract event info here so it can be folded into the RegisterGroup output (RegisterGroup
+        // now also implements IEventDispatcherRegistration — no separate file is generated).
+        var eventInfoProvider = compilationProvider
+            .Select(static (compilation, _) => ExtractEventInfo(compilation));
+
         var combinedProvider = allHandlerDetails
             .Combine(rootNamespaceProvider)
             .Combine(behaviorDetails)
             .Combine(cqrsEnabledProvider)
             .Combine(behaviorTargetsProvider)
             .Combine(crossAssemblyDisabledProvider)
-            .Combine(validatorDetails);
+            .Combine(validatorDetails)
+            .Combine(eventInfoProvider);
 
         context.RegisterSourceOutput(combinedProvider, static (ctx, tuple) =>
         {
-            var ((((((details, rootNamespace), behaviors), cqrsEnabled), behaviorTargets), crossAssemblyDisabled),
-                validatorScans) = tuple;
+            var (((((((details, rootNamespace), behaviors), cqrsEnabled), behaviorTargets), crossAssemblyDisabled),
+                validatorScans), eventInfo) = tuple;
 
             ctx.ReportDiagnostic(Diagnostic.Create(
                 new DiagnosticDescriptor(
@@ -346,27 +352,8 @@ public class SynapseGenerator : IIncrementalGenerator
                 validatorList.Add(validator);
             }
 
-            ctx.AddSource("RegisterGroup.g.cs",
-                RegisterGroupFactory.Create(rootNamespace, AbstractionsNamespace, details,
-                    behaviorList.ToImmutable(), cqrsEnabled, behaviorTargets, crossAssemblyDisabled,
-                    validatorList.ToImmutable()));
-        });
-
-        // Generate event dispatcher registrations for NativeAOT support
-        var eventInfoProvider = compilationProvider
-            .Select(static (compilation, _) => ExtractEventInfo(compilation));
-
-        var eventDispatcherProvider = eventInfoProvider.Combine(rootNamespaceProvider);
-
-        context.RegisterSourceOutput(eventDispatcherProvider, static (ctx, tuple) =>
-        {
-            var (eventInfo, rootNamespace) = tuple;
-
-            if (string.IsNullOrEmpty(rootNamespace))
-            {
-                return;
-            }
-
+            // Report event-type diagnostics alongside the RegisterGroup output (dispatcher registration
+            // is now folded into RegisterGroup; no separate file is generated).
             if (eventInfo.EventTypes.Length == 0)
             {
                 ctx.ReportDiagnostic(Diagnostic.Create(
@@ -378,23 +365,26 @@ public class SynapseGenerator : IIncrementalGenerator
                         DiagnosticSeverity.Info,
                         true),
                     Location.None));
-                return;
+            }
+            else
+            {
+                ctx.ReportDiagnostic(Diagnostic.Create(
+                    new DiagnosticDescriptor(
+                        "MDG007",
+                        "Event dispatcher registration included in RegisterGroup",
+                        "Generating event dispatcher registrations for {0} event types with {1} handlers (included in RegisterGroup.g.cs)",
+                        "Synapse.Generator",
+                        DiagnosticSeverity.Info,
+                        true),
+                    Location.None,
+                    eventInfo.EventTypes.Length,
+                    eventInfo.HandlerTypes.Length));
             }
 
-            ctx.ReportDiagnostic(Diagnostic.Create(
-                new DiagnosticDescriptor(
-                    "MDG007",
-                    "Event dispatcher generation started",
-                    "Generating event dispatcher registrations for {0} event types with {1} handlers",
-                    "Synapse.Generator",
-                    DiagnosticSeverity.Info,
-                    true),
-                Location.None,
-                eventInfo.EventTypes.Length,
-                eventInfo.HandlerTypes.Length));
-
-            ctx.AddSource("EventDispatcherRegistration.g.cs",
-                EventDispatcherRegistrationFactory.Create(rootNamespace, AbstractionsNamespace, eventInfo));
+            ctx.AddSource("RegisterGroup.g.cs",
+                RegisterGroupFactory.Create(rootNamespace, AbstractionsNamespace, details,
+                    behaviorList.ToImmutable(), cqrsEnabled, behaviorTargets, crossAssemblyDisabled,
+                    validatorList.ToImmutable(), eventInfo));
         });
     }
 

@@ -6,7 +6,7 @@ description: Roslyn incremental source generator that eliminates manual handler 
 
 # Source Generator
 
-`UnambitiousFx.Synapse.Generator` is a Roslyn incremental source generator that reads your handler class attributes and emits two registration classes at compile time. This eliminates manual `RegisterRequestHandler` / `RegisterEventHandler` calls and makes the codebase NativeAOT-compatible by capturing dispatch delegates without reflection.
+`UnambitiousFx.Synapse.Generator` is a Roslyn incremental source generator that reads your handler class attributes and emits a registration class at compile time. This eliminates manual `RegisterRequestHandler` / `RegisterEventHandler` calls and makes the codebase NativeAOT-compatible by capturing dispatch delegates without reflection.
 
 ## Install
 
@@ -80,17 +80,17 @@ public class StreamTasksQueryHandler : IStreamRequestHandler<StreamTasksQuery, T
 }
 ```
 
-## Generated classes
+## Generated class
 
-The generator produces two classes in the root namespace of your assembly.
+The generator produces one class in the root namespace of your assembly.
 
 ### `RegisterGroup`
 
-Implements `IRegisterGroup`. Contains one `RegisterXxxHandler<...>()` call per annotated handler:
+Implements both `IRegisterGroup` and `IEventDispatcherRegistration`. Contains one `RegisterXxxHandler<...>()` call per annotated handler, plus one AOT-safe dispatch delegate per `IEvent` type found in the assembly:
 
 ```csharp
 // Generated — do not edit
-public sealed class RegisterGroup : IRegisterGroup
+public sealed class RegisterGroup : IRegisterGroup, IEventDispatcherRegistration
 {
     public void Register(IDependencyInjectionBuilder builder)
     {
@@ -99,17 +99,7 @@ public sealed class RegisterGroup : IRegisterGroup
         builder.RegisterEventHandler<AuditTaskCreated, TaskCreatedEvent>();
         builder.RegisterStreamRequestHandler<StreamTasksQueryHandler, StreamTasksQuery, TaskDto>();
     }
-}
-```
 
-### `EventDispatcherRegistration`
-
-Implements `IEventDispatcherRegistration`. Contains one dispatch delegate per event type. Required for NativeAOT environments where polymorphic dispatch via `typeof(T)` at runtime is not permitted:
-
-```csharp
-// Generated — do not edit
-public sealed class EventDispatcherRegistration : IEventDispatcherRegistration
-{
     public void RegisterDispatchers(Action<Type, DispatchEventDelegate> register)
     {
         register(
@@ -119,27 +109,22 @@ public sealed class EventDispatcherRegistration : IEventDispatcherRegistration
 }
 ```
 
-## Wire up the generated classes
+## Wire up the generated class
 
-Pass both generated classes to `AddSynapse`:
+Pass the generated class to `AddSynapse`:
 
 ```csharp
 services.AddSynapse(cfg =>
 {
     cfg.AddRegisterGroup(new RegisterGroup());
-    cfg.UseEventDispatcherRegistration<EventDispatcherRegistration>();
 });
 ```
 
-That replaces all manual `RegisterRequestHandler` / `RegisterEventHandler` calls.
+`AddRegisterGroup` automatically detects that `RegisterGroup` implements `IEventDispatcherRegistration` and registers the AOT-safe dispatch delegates — no second call needed.
 
 :::caution NativeAOT requirement
-`UseEventDispatcherRegistration` is **required** when publishing with `PublishAot=true` or full trimming. Without it, event dispatch falls back to runtime `typeof(T)` resolution which the AOT compiler cannot analyze.
+`RegisterGroup` implements `IEventDispatcherRegistration`, so the single `AddRegisterGroup` call is sufficient for NativeAOT. Without the source generator, event dispatch falls back to runtime `typeof(T)` resolution which the AOT compiler cannot analyze.
 :::
-
-## When to use `UseEventDispatcherRegistration`
-
-`UseEventDispatcherRegistration` is **required** when publishing as NativeAOT or with full trimming. In standard .NET runtimes it is optional but recommended for performance (avoids a dictionary lookup per event type).
 
 ## Incremental generation
 

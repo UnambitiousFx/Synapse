@@ -9,6 +9,9 @@
         <Project Path="examples/GettingStarted/GettingStarted.csproj" />
         <Project Path="examples/MinimalApi/MinimalApi.csproj" />
         <Project Path="examples/MinimalApi.Counter/MinimalApi.Counter.csproj" />
+        <Project Path="examples/MinimalApi.Modules.Contracts/MinimalApi.Modules.Contracts.csproj" />
+        <Project Path="examples/MinimalApi.Modules.Orders/MinimalApi.Modules.Orders.csproj" />
+        <Project Path="examples/MinimalApi.Modules.Notifications/MinimalApi.Modules.Notifications.csproj" />
         <Project Path="examples/MinimalApi.Tests/MinimalApi.Tests.csproj" />
     </Folder>
     <Folder Name="/examples/_/">

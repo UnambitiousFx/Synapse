@@ -2,8 +2,6 @@
 
     <PropertyGroup>
         <IsAotCompatible>true</IsAotCompatible>
-        <!-- Endpoints are mapped in this library, so the Request Delegate Generator must run here (it only
-             transforms MapGet/MapPost calls in the compilation that declares them) to keep them AOT-safe. -->
         <EnableRequestDelegateGenerator>true</EnableRequestDelegateGenerator>
     </PropertyGroup>
 
@@ -11,14 +9,15 @@
         <FrameworkReference Include="Microsoft.AspNetCore.App" />
     </ItemGroup>
 
+    <!--
+        Intentionally NO Synapse.Generator reference — handlers in this module are registered
+        manually via cfg.RegisterEventHandler<THandler, TEvent>() instead of the source generator.
+        This is the contrast to MinimalApi.Modules.Orders which uses [EventHandler<T>] + RegisterGroup.
+    -->
     <ItemGroup>
         <ProjectReference Include="..\..\src\Synapse.AspNetCore\Synapse.AspNetCore.csproj" />
         <ProjectReference Include="..\..\src\Synapse\Synapse.csproj" />
-        <ProjectReference Include="..\..\src\Synapse.Generator\Synapse.Generator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
-    </ItemGroup>
-
-    <ItemGroup>
-      <Folder Include="Events\" />
+        <ProjectReference Include="..\MinimalApi.Modules.Contracts\MinimalApi.Modules.Contracts.csproj" />
     </ItemGroup>
 
 </Project>

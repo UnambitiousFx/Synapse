@@ -1,42 +1,29 @@
 using System.Text;
-using Microsoft.CodeAnalysis.Text;
 
 namespace UnambitiousFx.Synapse.Generator;
 
 /// <summary>
-///     Factory for generating event dispatcher registrations for NativeAOT compatibility.
+///     Helper that emits the <c>RegisterDispatchers</c> method and NativeAOT <c>[DynamicDependency]</c>
+///     attributes into a <see cref="StringBuilder" /> owned by <see cref="RegisterGroupFactory" />.
 /// </summary>
 internal static class EventDispatcherRegistrationFactory
 {
-    public static SourceText Create(
-        string? rootNamespace,
+    /// <summary>
+    ///     Emits the <c>RegisterDispatchers</c> method implementation into <paramref name="sb" />.
+    ///     The caller is responsible for the surrounding class context.
+    /// </summary>
+    public static void EmitRegisterDispatchers(
+        StringBuilder sb,
         string abstractionsNamespace,
         EventInfo eventInfo)
     {
-        var sb = new StringBuilder();
-
-        sb.AppendLine("using System;");
-        sb.AppendLine("using System.Diagnostics.CodeAnalysis;");
-        sb.AppendLine($"using global::{abstractionsNamespace};");
-        sb.AppendLine("using global::UnambitiousFx.Functional;");
-        sb.AppendLine();
-        sb.AppendLine($"namespace {rootNamespace};");
-        sb.AppendLine();
-        sb.AppendLine("/// <summary>");
-        sb.AppendLine("///     Generated event dispatcher registrations for NativeAOT compatibility.");
-        sb.AppendLine(
-            "///     This class provides typed delegates for each event type to avoid reflection during outbox replay.");
-        sb.AppendLine("/// </summary>");
-        sb.AppendLine(
-            $"public sealed class EventDispatcherRegistration : global::{abstractionsNamespace}.IEventDispatcherRegistration");
-        sb.AppendLine("{");
         sb.AppendLine("    /// <summary>");
         sb.AppendLine("    ///     Registers dispatcher delegates for all event types in the assembly.");
         sb.AppendLine("    /// </summary>");
         sb.AppendLine(
             "    /// <param name=\"register\">A callback to register each event type with its dispatcher delegate.</param>");
         sb.AppendLine(
-            "    public void RegisterDispatchers(Action<Type, global::UnambitiousFx.Synapse.Abstractions.DispatchEventDelegate> register)");
+            $"    public void RegisterDispatchers(global::System.Action<global::System.Type, global::{abstractionsNamespace}.DispatchEventDelegate> register)");
         sb.AppendLine("    {");
 
         foreach (var eventType in eventInfo.EventTypes)
@@ -49,7 +36,7 @@ internal static class EventDispatcherRegistrationFactory
             var globalizedType = GlobalizeType(eventType);
 
             sb.AppendLine(
-                $"        register(typeof({globalizedType}), new global::UnambitiousFx.Synapse.Abstractions.DispatchEventDelegate(");
+                $"        register(typeof({globalizedType}), new global::{abstractionsNamespace}.DispatchEventDelegate(");
             sb.AppendLine("            (@event, dispatcher, ct) =>");
             sb.AppendLine("            {");
             sb.AppendLine($"                var typedEvent = ({globalizedType})@event;");
@@ -62,15 +49,10 @@ internal static class EventDispatcherRegistrationFactory
         sb.AppendLine("    }");
         sb.AppendLine();
 
-        // Generate DynamicDependency attributes for trimming support
-        GenerateDynamicDependencyAttributes(sb, abstractionsNamespace, eventInfo);
-
-        sb.AppendLine("}");
-
-        return SourceText.From(sb.ToString(), Encoding.UTF8);
+        EmitDynamicDependencyAttributes(sb, abstractionsNamespace, eventInfo);
     }
 
-    private static void GenerateDynamicDependencyAttributes(
+    private static void EmitDynamicDependencyAttributes(
         StringBuilder sb,
         string abstractionsNamespace,
         EventInfo eventInfo)
@@ -80,7 +62,6 @@ internal static class EventDispatcherRegistrationFactory
         sb.AppendLine("    ///     This method is never called but ensures the trimmer preserves necessary types.");
         sb.AppendLine("    /// </summary>");
 
-        // Preserve event types
         foreach (var eventType in eventInfo.EventTypes)
         {
             if (string.IsNullOrWhiteSpace(eventType))
@@ -89,10 +70,10 @@ internal static class EventDispatcherRegistrationFactory
             }
 
             var globalizedType = GlobalizeType(eventType);
-            sb.AppendLine($"    [DynamicDependency(DynamicallyAccessedMemberTypes.All, typeof({globalizedType}))]");
+            sb.AppendLine(
+                $"    [global::System.Diagnostics.CodeAnalysis.DynamicDependency(global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.All, typeof({globalizedType}))]");
         }
 
-        // Preserve handler types
         foreach (var handlerType in eventInfo.HandlerTypes)
         {
             if (string.IsNullOrWhiteSpace(handlerType))
@@ -101,21 +82,21 @@ internal static class EventDispatcherRegistrationFactory
             }
 
             var globalizedType = GlobalizeType(handlerType);
-            sb.AppendLine($"    [DynamicDependency(DynamicallyAccessedMemberTypes.All, typeof({globalizedType}))]");
+            sb.AppendLine(
+                $"    [global::System.Diagnostics.CodeAnalysis.DynamicDependency(global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.All, typeof({globalizedType}))]");
         }
 
-        // Preserve core mediator types
         sb.AppendLine(
-            $"    [DynamicDependency(DynamicallyAccessedMemberTypes.All, typeof(global::{abstractionsNamespace}.IEventDispatcher))]");
+            $"    [global::System.Diagnostics.CodeAnalysis.DynamicDependency(global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.All, typeof(global::{abstractionsNamespace}.IEventDispatcher))]");
         sb.AppendLine(
-            $"    [DynamicDependency(DynamicallyAccessedMemberTypes.All, typeof(global::{abstractionsNamespace}.IEventHandler<>))]");
+            $"    [global::System.Diagnostics.CodeAnalysis.DynamicDependency(global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.All, typeof(global::{abstractionsNamespace}.IEventHandler<>))]");
         sb.AppendLine("    private static void PreserveTypesForTrimming()");
         sb.AppendLine("    {");
         sb.AppendLine("        // This method is never called but ensures the trimmer preserves necessary types");
         sb.AppendLine("    }");
     }
 
-    private static string GlobalizeType(string input)
+    internal static string GlobalizeType(string input)
     {
         if (input.Contains("<"))
         {

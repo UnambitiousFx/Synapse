@@ -129,3 +129,43 @@ jobs:
             echo "Tried: http://localhost:5000/ and http://localhost:8080/"
             exit 1
           fi
+
+  http-smoke:
+    name: HTTP Smoke Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build Docker image
+        run: docker build -t minimalapi -f examples/MinimalApi/Dockerfile .
+
+      - name: Start MinimalApi container
+        run: docker run -d -p 5225:5225 --name minimalapi minimalapi
+
+      - name: Wait for app ready
+        run: |
+          for _ in {1..30}; do
+            if curl -fsS http://localhost:5225/ > /dev/null 2>&1; then
+              echo "App ready on port 5225"
+              break
+            fi
+            sleep 1
+          done
+
+      - name: Install httpyac
+        run: npm install -g httpyac
+
+      - name: Run HTTP smoke tests
+        run: |
+          httpyac send examples/MinimalApi/Http/requests.http --all
+          httpyac send examples/MinimalApi/Http/events.http --all
+          httpyac send examples/MinimalApi/Http/counter.http --all
+          httpyac send examples/MinimalApi/Http/pipeline-behaviors.http --all
+          httpyac send examples/MinimalApi/Http/streaming.http --all
+          httpyac send examples/MinimalApi/Http/modules.http --all

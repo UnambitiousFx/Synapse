@@ -161,16 +161,16 @@ public sealed class SynapseConfigTests
         Assert.IsType<SlimContextFactory>(factory);
     }
 
-    // ── UseEventDispatcherRegistration ───────────────────────────────────────
+    // ── AddRegisterGroup — IEventDispatcherRegistration auto-detection ──────
 
     [Fact]
-    public void UseEventDispatcherRegistration_RegistersDispatcherDelegate()
+    public void AddRegisterGroup_WhenGroupImplementsIEventDispatcherRegistration_RegistersDispatcherDelegate()
     {
-        // Arrange (Given)
+        // Arrange (Given) — a register group that also implements IEventDispatcherRegistration
         var services = new ServiceCollection()
             .AddSynapse(cfg =>
             {
-                cfg.UseEventDispatcherRegistration<TestEventDispatcherRegistration>();
+                cfg.AddRegisterGroup(new TestRegisterGroupWithDispatchers());
             })
             .AddLogging()
             .BuildServiceProvider();
@@ -178,7 +178,7 @@ public sealed class SynapseConfigTests
         // Act (When)
         var options = services.GetRequiredService<IOptions<EventDispatcherOptions>>().Value;
 
-        // Assert (Then)
+        // Assert (Then) — dispatch delegate for EventExample registered automatically
         Assert.Contains(typeof(EventExample), options.Dispatchers.Keys);
     }
 
@@ -646,8 +646,13 @@ public sealed class SynapseConfigTests
             => ValueTask.FromResult<TimeSpan?>(null);
     }
 
-    private sealed class TestEventDispatcherRegistration : IEventDispatcherRegistration
+    private sealed class TestRegisterGroupWithDispatchers : IRegisterGroup, IEventDispatcherRegistration
     {
+        public void Register(IDependencyInjectionBuilder builder)
+        {
+            // No handlers to register in this test fixture.
+        }
+
         public void RegisterDispatchers(Action<Type, DispatchEventDelegate> register)
         {
             register(typeof(EventExample), (@event, dispatcher, ct) =>

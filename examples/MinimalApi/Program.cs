@@ -6,6 +6,8 @@ using UnambitiousFx.Examples.MinimalApi.Features.Tasks.Validators;
 using UnambitiousFx.Examples.MinimalApi.Infrastructure;
 using UnambitiousFx.Examples.MinimalApi.Infrastructure.Pipelines;
 using UnambitiousFx.Examples.MinimalApi.Counter;
+using UnambitiousFx.Examples.MinimalApi.Modules.Notifications;
+using UnambitiousFx.Examples.MinimalApi.Modules.Orders;
 using UnambitiousFx.Synapse;
 using UnambitiousFx.Synapse.Abstractions;
 using UnambitiousFx.Synapse.AspNetCore;
@@ -33,6 +35,10 @@ builder.Services.AddSingleton<TaskRepository>();
 
 // Counter feature (separate assembly) — registers its CounterStore singleton.
 builder.Services.AddCounterFeature();
+
+// Modular-monolith modules — each is an independent assembly sharing only the Contracts library.
+builder.Services.AddOrdersModule();
+builder.Services.AddNotificationsModule();
 
 // Required by AuthorizationBehavior to read the X-User-Permissions header
 builder.Services.AddHttpContextAccessor();
@@ -65,9 +71,20 @@ builder.Services.AddSynapse(cfg =>
     // cross-assembly RegisterGroup composition, including closed CQRS + value-type (int) pipeline registrations.
     cfg.AddRegisterGroup(new global::UnambitiousFx.Examples.MinimalApi.Counter.RegisterGroup());
 
-    // Wires event dispatchers generated alongside RegisterGroup so that
-    // IEmitter.EmitAsync can route TaskCreatedEvent, TaskCompletedEvent, etc.
-    cfg.UseEventDispatcherRegistration<global::UnambitiousFx.Examples.MinimalApi.EventDispatcherRegistration>();
+    // ── Modular monolith: cross-assembly event communication ──────────────
+    //
+    // Orders module — SOURCE GENERATOR path.
+    // PlaceOrderCommandHandler carries [RequestHandler<PlaceOrderCommand, Guid>]; the generator
+    // emits Orders.RegisterGroup with the closed handler + CQRS enforcement registrations.
+    cfg.AddRegisterGroup(new global::UnambitiousFx.Examples.MinimalApi.Modules.Orders.RegisterGroup());
+
+    // Notifications module — MANUAL path (no source generator in that assembly).
+    // AddNotificationsHandlers calls cfg.RegisterEventHandler<OrderPlacedNotificationHandler, OrderPlacedEvent>()
+    // which registers the DI service and the AOT-safe dispatch delegate in one call.
+    cfg.AddNotificationsHandlers();
+
+    // RegisterGroup also implements IEventDispatcherRegistration; AddRegisterGroup automatically
+    // detected and registered the AOT-safe dispatch delegates for all IEvent types above.
 
     // ── Validators ─────────────────────────────────────────────────────
     // CreateTaskCommandValidator carries [Validator], so the generated RegisterGroup above already
@@ -127,6 +144,12 @@ app.MapGet("/", () => Results.Ok(new ApiInfo()));
 
 // ── Counter feature endpoints (defined in examples/MinimalApi.Counter) ──
 app.MapCounterEndpoints();
+
+// ── Modular-monolith: Orders + Notifications endpoints ────────────────
+// POST /orders     — place an order; PlaceOrderCommandHandler emits OrderPlacedEvent
+// GET  /notifications — list notifications recorded by OrderPlacedNotificationHandler
+app.MapOrdersEndpoints();
+app.MapNotificationsEndpoints();
 
 // ── Task endpoints ────────────────────────────────────────────────────
 var tasks = app.MapGroup("/tasks").WithTags("Tasks");
@@ -250,7 +273,10 @@ namespace UnambitiousFx.Examples.MinimalApi
             "Value-type response under AOT — PurgeCompletedTasks → int (closed CQRS + auth registrations)",
             // Cross-cutting
             "Context & correlation — IContext.CorrelationId → X-Correlation-Id header",
-            "CQRS boundary enforcement — [assembly: EnableSynapseCqrsBoundaryEnforcement]"
+            "CQRS boundary enforcement — [assembly: EnableSynapseCqrsBoundaryEnforcement]",
+            // Modular monolith
+            "Modular monolith (Orders) — cross-assembly event via source-generated RegisterGroup",
+            "Modular monolith (Notifications) — cross-assembly event via manual cfg.RegisterEventHandler<>()"
         ];
 
         public string[] Endpoints { get; init; } =
@@ -263,7 +289,9 @@ namespace UnambitiousFx.Examples.MinimalApi
             "PUT    /tasks/{id}              — Update task (Command, audited)",
             "POST   /tasks/{id}/complete     — Complete task (2 concurrent event handlers, audited)",
             "DELETE /tasks/{id}              — Delete task (domain event, audited)",
-            "POST   /tasks/admin/purge       — Purge completed tasks (AuthorizationBehavior, short-circuit)"
+            "POST   /tasks/admin/purge       — Purge completed tasks (AuthorizationBehavior, short-circuit)",
+            "POST   /orders                  — Place order (Orders module, source-gen) — emits OrderPlacedEvent",
+            "GET    /notifications           — List notifications (Notifications module, manual) — shows received events"
         ];
     }
 
@@ -276,10 +304,13 @@ namespace UnambitiousFx.Examples.MinimalApi
     [JsonSerializable(typeof(List<TaskDto>))]
     [JsonSerializable(typeof(IAsyncEnumerable<TaskDto>))]
     [JsonSerializable(typeof(CreateTaskResult))]   // CreateTaskCommand response (TaskId unwrapped to Guid in endpoint)
-    [JsonSerializable(typeof(Guid))]               // body: Results.Created(..., result.TaskId)
+    [JsonSerializable(typeof(Guid))]               // body: Results.Created(..., result.TaskId) — also PlaceOrderCommand response
     [JsonSerializable(typeof(int))]                // PurgeCompletedTasksCommand response (value-type, AOT regression case)
     [JsonSerializable(typeof(ProblemDetails))]
     [JsonSerializable(typeof(HttpValidationProblemDetails))]
+    // Modular-monolith example types
+    [JsonSerializable(typeof(PlaceOrderRequest))]
+    [JsonSerializable(typeof(NotificationEntry[]))]
     internal partial class AppJsonSerializerContext : JsonSerializerContext
     {
     }
