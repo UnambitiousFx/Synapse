@@ -407,12 +407,13 @@ public class SynapseGenerator : IIncrementalGenerator
 
             var className = classDeclaration.Identifier.ValueText;
             var @namespace = classDeclaration.GetNamespace();
-            var (requestType, responseType, requestSatisfying, responseSatisfying) = GetRequestInfo(attribute);
+            var (requestType, responseType, requestSatisfying, responseSatisfying, requestShape, responseShape) =
+                GetRequestInfo(attribute);
             var location = LocationInfo.CreateFrom(classDeclaration.GetLocation());
             var handlerType = HandlerType.StreamRequestHandler;
             var fullyQualifiedName = GetFullyQualifiedName(ctx, @namespace, className);
             return new HandlerDetail(handlerType, className, @namespace, fullyQualifiedName, requestType, responseType,
-                location, requestSatisfying, responseSatisfying);
+                location, requestSatisfying, responseSatisfying, requestShape, responseShape);
         }
 
         return null;
@@ -437,14 +438,15 @@ public class SynapseGenerator : IIncrementalGenerator
 
             var className = classDeclaration.Identifier.ValueText;
             var @namespace = classDeclaration.GetNamespace();
-            var (requestType, responseType, requestSatisfying, responseSatisfying) = GetRequestInfo(attribute);
+            var (requestType, responseType, requestSatisfying, responseSatisfying, requestShape, responseShape) =
+                GetRequestInfo(attribute);
 
 
             var location = LocationInfo.CreateFrom(classDeclaration.GetLocation());
             var handlerType = HandlerType.RequestHandler;
             var fullyQualifiedName = GetFullyQualifiedName(ctx, @namespace, className);
             return new HandlerDetail(handlerType, className, @namespace, fullyQualifiedName, requestType, responseType,
-                location, requestSatisfying, responseSatisfying);
+                location, requestSatisfying, responseSatisfying, requestShape, responseShape);
         }
 
         return null;
@@ -468,13 +470,14 @@ public class SynapseGenerator : IIncrementalGenerator
 
             var className = classDeclaration.Identifier.ValueText;
             var @namespace = classDeclaration.GetNamespace();
-            var (requestType, responseType, requestSatisfying, responseSatisfying) = GetRequestInfo(attribute);
+            var (requestType, responseType, requestSatisfying, responseSatisfying, requestShape, responseShape) =
+                GetRequestInfo(attribute);
 
             var location = LocationInfo.CreateFrom(classDeclaration.GetLocation());
 
             var fullyQualifiedName = GetFullyQualifiedName(ctx, @namespace, className);
             return new HandlerDetail(HandlerType.EventHandler, className, @namespace, fullyQualifiedName, requestType,
-                responseType, location, requestSatisfying, responseSatisfying);
+                responseType, location, requestSatisfying, responseSatisfying, requestShape, responseShape);
         }
 
         return null;
@@ -518,7 +521,8 @@ public class SynapseGenerator : IIncrementalGenerator
                     : ToEmitName(iface.TypeArguments[0]);
                 behaviors.Add(new BehaviorDetail(className, @namespace, fullyQualifiedName, BehaviorKind.Request,
                     isOpenGeneric, requestType, null, GetConstraintNames(iface.TypeArguments[0]), default,
-                    BuildClosingTypeArgumentMap(classSymbol, iface, isOpenGeneric)));
+                    BuildClosingTypeArgumentMap(classSymbol, iface, isOpenGeneric),
+                    GetSpecialConstraints(iface.TypeArguments[0])));
             }
             else if (ifaceFullName == $"{RequestPipelineBehaviorInterfaceName}`2" && iface.TypeArguments.Length == 2)
             {
@@ -531,7 +535,8 @@ public class SynapseGenerator : IIncrementalGenerator
                 behaviors.Add(new BehaviorDetail(className, @namespace, fullyQualifiedName,
                     BehaviorKind.RequestWithResponse, isOpenGeneric, requestType, responseType,
                     GetConstraintNames(iface.TypeArguments[0]), GetConstraintNames(iface.TypeArguments[1]),
-                    BuildClosingTypeArgumentMap(classSymbol, iface, isOpenGeneric)));
+                    BuildClosingTypeArgumentMap(classSymbol, iface, isOpenGeneric),
+                    GetSpecialConstraints(iface.TypeArguments[0]), GetSpecialConstraints(iface.TypeArguments[1])));
             }
             else if (ifaceFullName == $"{EventPipelineBehaviorInterfaceName}`1" && iface.TypeArguments.Length == 1)
             {
@@ -540,7 +545,8 @@ public class SynapseGenerator : IIncrementalGenerator
                     : ToEmitName(iface.TypeArguments[0]);
                 behaviors.Add(new BehaviorDetail(className, @namespace, fullyQualifiedName, BehaviorKind.Event,
                     isOpenGeneric, eventType, null, GetConstraintNames(iface.TypeArguments[0]), default,
-                    BuildClosingTypeArgumentMap(classSymbol, iface, isOpenGeneric)));
+                    BuildClosingTypeArgumentMap(classSymbol, iface, isOpenGeneric),
+                    GetSpecialConstraints(iface.TypeArguments[0])));
             }
             else if (ifaceFullName == $"{StreamRequestPipelineBehaviorInterfaceName}`2" &&
                      iface.TypeArguments.Length == 2)
@@ -554,7 +560,8 @@ public class SynapseGenerator : IIncrementalGenerator
                 behaviors.Add(new BehaviorDetail(className, @namespace, fullyQualifiedName, BehaviorKind.StreamRequest,
                     isOpenGeneric, requestType, itemType, GetConstraintNames(iface.TypeArguments[0]),
                     GetConstraintNames(iface.TypeArguments[1]),
-                    BuildClosingTypeArgumentMap(classSymbol, iface, isOpenGeneric)));
+                    BuildClosingTypeArgumentMap(classSymbol, iface, isOpenGeneric),
+                    GetSpecialConstraints(iface.TypeArguments[0]), GetSpecialConstraints(iface.TypeArguments[1])));
             }
         }
 
@@ -716,6 +723,83 @@ public class SynapseGenerator : IIncrementalGenerator
         return names.Count > 0 ? EquatableArray<string>.From(names) : default;
     }
 
+    /// <summary>
+    ///     Returns the special (non-type) constraints on an open-generic behavior's type parameter —
+    ///     <c>class</c>/<c>struct</c>/<c>unmanaged</c>/<c>notnull</c>/<c>new()</c>. These are flags on the
+    ///     type-parameter symbol, not constraint <em>types</em>, so they are invisible to
+    ///     <see cref="GetConstraintNames" /> and must be captured separately for the cross-product to honour
+    ///     them. Returns <see cref="SpecialConstraints.None" /> for closed type arguments.
+    /// </summary>
+    private static SpecialConstraints GetSpecialConstraints(ITypeSymbol typeArgument)
+    {
+        if (typeArgument is not ITypeParameterSymbol typeParameter)
+        {
+            return SpecialConstraints.None;
+        }
+
+        var constraints = SpecialConstraints.None;
+        if (typeParameter.HasReferenceTypeConstraint)
+        {
+            constraints |= SpecialConstraints.ReferenceType;
+        }
+
+        if (typeParameter.HasValueTypeConstraint)
+        {
+            constraints |= SpecialConstraints.ValueType;
+        }
+
+        if (typeParameter.HasUnmanagedTypeConstraint)
+        {
+            // `unmanaged` is a stricter `struct`; record both so a value-type check also passes.
+            constraints |= SpecialConstraints.Unmanaged | SpecialConstraints.ValueType;
+        }
+
+        if (typeParameter.HasNotNullConstraint)
+        {
+            constraints |= SpecialConstraints.NotNull;
+        }
+
+        if (typeParameter.HasConstructorConstraint)
+        {
+            constraints |= SpecialConstraints.Constructor;
+        }
+
+        return constraints;
+    }
+
+    /// <summary>
+    ///     Captures the equatable shape of a request/event/response type (reference vs value, unmanaged,
+    ///     non-nullable, parameterless-ctor availability) used to evaluate a behavior's special constraints in
+    ///     the symbol-free emit stage. Returns <c>default</c> (all false) for a null symbol.
+    /// </summary>
+    private static TypeShape GetTypeShape(ITypeSymbol? type)
+    {
+        if (type is null)
+        {
+            return default;
+        }
+
+        // `new()` is satisfied by a value type, or a non-abstract class exposing an accessible
+        // parameterless constructor (a class with no declared instance constructors has the implicit one).
+        var hasParameterlessCtor = type.IsValueType
+                                   || (type is INamedTypeSymbol named
+                                       && !named.IsAbstract
+                                       && (named.InstanceConstructors.Length == 0
+                                           || named.InstanceConstructors.Any(c =>
+                                               c.Parameters.Length == 0
+                                               && c.DeclaredAccessibility == Accessibility.Public)));
+
+        // `notnull`: value types always satisfy; reference types only when not annotated nullable.
+        var isNotNull = type.IsValueType || type.NullableAnnotation != NullableAnnotation.Annotated;
+
+        return new TypeShape(
+            type.IsReferenceType,
+            type.IsValueType,
+            type.IsUnmanagedType,
+            isNotNull,
+            hasParameterlessCtor);
+    }
+
     private static bool ContainsTypeParameter(ITypeSymbol type)
     {
         switch (type)
@@ -740,14 +824,15 @@ public class SynapseGenerator : IIncrementalGenerator
     }
 
     private static (string RequestType, string? ResponseType, EquatableArray<string> RequestSatisfying,
-        EquatableArray<string> ResponseSatisfying) GetRequestInfo(AttributeData attribute)
+        EquatableArray<string> ResponseSatisfying, TypeShape RequestShape, TypeShape ResponseShape)
+        GetRequestInfo(AttributeData attribute)
     {
         // Get the attribute constructor's type arguments
         var typeArgs = attribute.AttributeClass?.TypeArguments;
         if (typeArgs is null ||
             typeArgs.Value.Length == 0)
         {
-            return (string.Empty, null, default, default);
+            return (string.Empty, null, default, default, default, default);
         }
 
 
@@ -755,18 +840,21 @@ public class SynapseGenerator : IIncrementalGenerator
         var requestSymbol = typeArgs.Value[0];
         var requestType = ToEmitName(requestSymbol);
         var requestSatisfying = GetSatisfyingTypeNames(requestSymbol);
+        var requestShape = GetTypeShape(requestSymbol);
 
         // Check if there's a response type (generic attribute with 2 type parameters)
         string? responseType = null;
         var responseSatisfying = default(EquatableArray<string>);
+        var responseShape = default(TypeShape);
         if (typeArgs.Value.Length > 1)
         {
             var responseSymbol = typeArgs.Value[1];
             responseType = ToEmitName(responseSymbol);
             responseSatisfying = GetSatisfyingTypeNames(responseSymbol);
+            responseShape = GetTypeShape(responseSymbol);
         }
 
-        return (requestType, responseType, requestSatisfying, responseSatisfying);
+        return (requestType, responseType, requestSatisfying, responseSatisfying, requestShape, responseShape);
     }
 
     /// <summary>
@@ -944,7 +1032,8 @@ public class SynapseGenerator : IIncrementalGenerator
             }
 
             _targets.Add(new HandlerDetail(handlerType, string.Empty, string.Empty, string.Empty, targetType,
-                responseType, null, GetSatisfyingTypeNames(target), GetSatisfyingTypeNames(response)));
+                responseType, null, GetSatisfyingTypeNames(target), GetSatisfyingTypeNames(response),
+                GetTypeShape(target), GetTypeShape(response)));
         }
     }
 

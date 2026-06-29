@@ -1311,7 +1311,298 @@ public sealed class GeneratorBehaviorTests
             generated);
     }
 
+    // ── Special generic constraints (class/struct/unmanaged/new()) ────────
+
+    [Fact]
+    public void OpenGenericBehavior_StructResponseConstraint_OnlyRegistersValueTypeResponses()
+    {
+        // Arrange (Given) — a behavior constrained to `where TResponse : struct`. Before the fix the
+        // generator dropped the struct constraint and cross-producted every handler, emitting a closed
+        // type that violates the constraint (CS0453). It must now register only the value-type response.
+        const string source = """
+            using System.Threading;
+            using System.Threading.Tasks;
+            using UnambitiousFx.Functional;
+            using UnambitiousFx.Synapse.Abstractions;
+
+            namespace TestNs;
+
+            public sealed record IntRequest : IRequest<int>;
+            public sealed record StringRequest : IRequest<string>;
+
+            [RequestHandler<IntRequest, int>]
+            public sealed class IntHandler : IRequestHandler<IntRequest, int>
+            {
+                public ValueTask<Result<int>> HandleAsync(IntRequest request, CancellationToken ct = default)
+                    => ValueTask.FromResult(Result.Success(1));
+            }
+
+            [RequestHandler<StringRequest, string>]
+            public sealed class StringHandler : IRequestHandler<StringRequest, string>
+            {
+                public ValueTask<Result<string>> HandleAsync(StringRequest request, CancellationToken ct = default)
+                    => ValueTask.FromResult(Result.Success("x"));
+            }
+
+            [PipelineBehavior]
+            public sealed class StructCache<TRequest, TResponse> : IRequestPipelineBehavior<TRequest, TResponse>
+                where TRequest : IRequest<TResponse>
+                where TResponse : struct
+            {
+                public ValueTask<Result<TResponse>> HandleAsync(TRequest request, RequestHandlerDelegate<TRequest, TResponse> next, CancellationToken ct = default)
+                    => next(request, ct);
+            }
+            """;
+
+        // Act (When)
+        var generated = RunGeneratorAndGetRegistrationGroup(source);
+
+        // Assert (Then) — only the value-type response is wrapped; the reference-type one is excluded and
+        // the generated registration compiles.
+        Assert.Contains(
+            "builder.RegisterRequestPipelineBehavior<global::TestNs.StructCache<global::TestNs.IntRequest, int>, global::TestNs.IntRequest, int>()",
+            generated);
+        Assert.DoesNotContain("StructCache<global::TestNs.StringRequest", generated);
+        AssertGeneratedCompiles(source);
+    }
+
+    [Fact]
+    public void OpenGenericBehavior_ClassRequestConstraint_OnlyRegistersReferenceTypes()
+    {
+        // Arrange (Given) — `where TRequest : class` must exclude a value-type (struct) request.
+        const string source = """
+            using System.Threading;
+            using System.Threading.Tasks;
+            using UnambitiousFx.Functional;
+            using UnambitiousFx.Synapse.Abstractions;
+
+            namespace TestNs;
+
+            public sealed record ClassRequest : IRequest;
+            public readonly record struct StructRequest : IRequest;
+
+            [RequestHandler<ClassRequest>]
+            public sealed class ClassHandler : IRequestHandler<ClassRequest>
+            {
+                public ValueTask<Result> HandleAsync(ClassRequest request, CancellationToken ct = default)
+                    => ValueTask.FromResult(Result.Success());
+            }
+
+            [RequestHandler<StructRequest>]
+            public sealed class StructHandler : IRequestHandler<StructRequest>
+            {
+                public ValueTask<Result> HandleAsync(StructRequest request, CancellationToken ct = default)
+                    => ValueTask.FromResult(Result.Success());
+            }
+
+            [PipelineBehavior]
+            public sealed class ClassOnly<TRequest> : IRequestPipelineBehavior<TRequest>
+                where TRequest : class, IRequest
+            {
+                public ValueTask<Result> HandleAsync(TRequest request, RequestHandlerDelegate<TRequest> next, CancellationToken ct = default)
+                    => next(request, ct);
+            }
+            """;
+
+        // Act (When)
+        var generated = RunGeneratorAndGetRegistrationGroup(source);
+
+        // Assert (Then)
+        Assert.Contains(
+            "builder.RegisterRequestPipelineBehavior<global::TestNs.ClassOnly<global::TestNs.ClassRequest>, global::TestNs.ClassRequest>()",
+            generated);
+        Assert.DoesNotContain("ClassOnly<global::TestNs.StructRequest", generated);
+        AssertGeneratedCompiles(source);
+    }
+
+    [Fact]
+    public void OpenGenericBehavior_NewConstraint_OnlyRegistersTypesWithParameterlessCtor()
+    {
+        // Arrange (Given) — `where TRequest : new()` must exclude a request that has no parameterless ctor
+        // (a positional record with a required parameter).
+        const string source = """
+            using System.Threading;
+            using System.Threading.Tasks;
+            using UnambitiousFx.Functional;
+            using UnambitiousFx.Synapse.Abstractions;
+
+            namespace TestNs;
+
+            public sealed record HasCtor : IRequest;
+            public sealed record NoCtor(int X) : IRequest;
+
+            [RequestHandler<HasCtor>]
+            public sealed class HasCtorHandler : IRequestHandler<HasCtor>
+            {
+                public ValueTask<Result> HandleAsync(HasCtor request, CancellationToken ct = default)
+                    => ValueTask.FromResult(Result.Success());
+            }
+
+            [RequestHandler<NoCtor>]
+            public sealed class NoCtorHandler : IRequestHandler<NoCtor>
+            {
+                public ValueTask<Result> HandleAsync(NoCtor request, CancellationToken ct = default)
+                    => ValueTask.FromResult(Result.Success());
+            }
+
+            [PipelineBehavior]
+            public sealed class NewOnly<TRequest> : IRequestPipelineBehavior<TRequest>
+                where TRequest : IRequest, new()
+            {
+                public ValueTask<Result> HandleAsync(TRequest request, RequestHandlerDelegate<TRequest> next, CancellationToken ct = default)
+                    => next(request, ct);
+            }
+            """;
+
+        // Act (When)
+        var generated = RunGeneratorAndGetRegistrationGroup(source);
+
+        // Assert (Then)
+        Assert.Contains(
+            "builder.RegisterRequestPipelineBehavior<global::TestNs.NewOnly<global::TestNs.HasCtor>, global::TestNs.HasCtor>()",
+            generated);
+        Assert.DoesNotContain("NewOnly<global::TestNs.NoCtor", generated);
+        AssertGeneratedCompiles(source);
+    }
+
+    [Fact]
+    public void OpenGenericBehavior_UnmanagedResponseConstraint_OnlyRegistersUnmanagedResponses()
+    {
+        // Arrange (Given) — `where TResponse : unmanaged` must exclude a managed (reference) response.
+        const string source = """
+            using System.Threading;
+            using System.Threading.Tasks;
+            using UnambitiousFx.Functional;
+            using UnambitiousFx.Synapse.Abstractions;
+
+            namespace TestNs;
+
+            public sealed record IntRequest : IRequest<int>;
+            public sealed record StringRequest : IRequest<string>;
+
+            [RequestHandler<IntRequest, int>]
+            public sealed class IntHandler : IRequestHandler<IntRequest, int>
+            {
+                public ValueTask<Result<int>> HandleAsync(IntRequest request, CancellationToken ct = default)
+                    => ValueTask.FromResult(Result.Success(1));
+            }
+
+            [RequestHandler<StringRequest, string>]
+            public sealed class StringHandler : IRequestHandler<StringRequest, string>
+            {
+                public ValueTask<Result<string>> HandleAsync(StringRequest request, CancellationToken ct = default)
+                    => ValueTask.FromResult(Result.Success("x"));
+            }
+
+            [PipelineBehavior]
+            public sealed class UnmanagedCache<TRequest, TResponse> : IRequestPipelineBehavior<TRequest, TResponse>
+                where TRequest : IRequest<TResponse>
+                where TResponse : unmanaged
+            {
+                public ValueTask<Result<TResponse>> HandleAsync(TRequest request, RequestHandlerDelegate<TRequest, TResponse> next, CancellationToken ct = default)
+                    => next(request, ct);
+            }
+            """;
+
+        // Act (When)
+        var generated = RunGeneratorAndGetRegistrationGroup(source);
+
+        // Assert (Then)
+        Assert.Contains(
+            "builder.RegisterRequestPipelineBehavior<global::TestNs.UnmanagedCache<global::TestNs.IntRequest, int>, global::TestNs.IntRequest, int>()",
+            generated);
+        Assert.DoesNotContain("UnmanagedCache<global::TestNs.StringRequest", generated);
+        AssertGeneratedCompiles(source);
+    }
+
+    [Fact]
+    public void OpenGenericBehavior_NamedAndSpecialConstraints_BothEnforced()
+    {
+        // Arrange (Given) — a behavior with both a marker-interface constraint and a `struct` response
+        // constraint. A handler must satisfy *both* to be wrapped.
+        const string source = """
+            using System.Threading;
+            using System.Threading.Tasks;
+            using UnambitiousFx.Functional;
+            using UnambitiousFx.Synapse.Abstractions;
+
+            namespace TestNs;
+
+            public interface IAuditable { }
+
+            public sealed record AuditedInt : IRequest<int>, IAuditable;
+            public sealed record PlainInt : IRequest<int>;
+            public sealed record AuditedString : IRequest<string>, IAuditable;
+
+            [RequestHandler<AuditedInt, int>]
+            public sealed class AuditedIntHandler : IRequestHandler<AuditedInt, int>
+            {
+                public ValueTask<Result<int>> HandleAsync(AuditedInt request, CancellationToken ct = default)
+                    => ValueTask.FromResult(Result.Success(1));
+            }
+
+            [RequestHandler<PlainInt, int>]
+            public sealed class PlainIntHandler : IRequestHandler<PlainInt, int>
+            {
+                public ValueTask<Result<int>> HandleAsync(PlainInt request, CancellationToken ct = default)
+                    => ValueTask.FromResult(Result.Success(1));
+            }
+
+            [RequestHandler<AuditedString, string>]
+            public sealed class AuditedStringHandler : IRequestHandler<AuditedString, string>
+            {
+                public ValueTask<Result<string>> HandleAsync(AuditedString request, CancellationToken ct = default)
+                    => ValueTask.FromResult(Result.Success("x"));
+            }
+
+            [PipelineBehavior]
+            public sealed class AuditValueCache<TRequest, TResponse> : IRequestPipelineBehavior<TRequest, TResponse>
+                where TRequest : IRequest<TResponse>, IAuditable
+                where TResponse : struct
+            {
+                public ValueTask<Result<TResponse>> HandleAsync(TRequest request, RequestHandlerDelegate<TRequest, TResponse> next, CancellationToken ct = default)
+                    => next(request, ct);
+            }
+            """;
+
+        // Act (When)
+        var generated = RunGeneratorAndGetRegistrationGroup(source);
+
+        // Assert (Then) — only the auditable + value-type-response handler qualifies.
+        Assert.Contains(
+            "builder.RegisterRequestPipelineBehavior<global::TestNs.AuditValueCache<global::TestNs.AuditedInt, int>, global::TestNs.AuditedInt, int>()",
+            generated);
+        Assert.DoesNotContain("AuditValueCache<global::TestNs.PlainInt", generated);     // fails named constraint
+        Assert.DoesNotContain("AuditValueCache<global::TestNs.AuditedString", generated); // fails struct constraint
+        AssertGeneratedCompiles(source);
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────
+
+    /// <summary>
+    ///     Runs the generator, feeds its output back into the compilation, and asserts there are no
+    ///     compiler errors — the core regression guard: an open-generic behavior closed over a handler that
+    ///     violates its constraints would surface as CS0453 (and friends) here.
+    /// </summary>
+    private static void AssertGeneratedCompiles(string source)
+    {
+        var compilation = CSharpCompilation.Create(
+            "TestAssembly",
+            [CSharpSyntaxTree.ParseText(source)],
+            GetMetadataReferences(),
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary,
+                nullableContextOptions: NullableContextOptions.Enable));
+
+        var driver = CSharpGeneratorDriver.Create(new SynapseGenerator());
+        driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out _);
+
+        var errors = outputCompilation.GetDiagnostics()
+            .Where(d => d.Severity == DiagnosticSeverity.Error)
+            .ToArray();
+
+        Assert.True(errors.Length == 0,
+            "Generated code should compile, but got: " + string.Join("; ", errors.Select(e => e.ToString())));
+    }
 
     private static string RunGeneratorWithReference(string referencedSource, string mainSource)
     {

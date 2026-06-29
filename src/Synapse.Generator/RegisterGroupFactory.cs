@@ -188,7 +188,9 @@ internal static class RegisterGroupFactory
                 case BehaviorKind.Request when handler.HandlerType == HandlerType.RequestHandler
                                                && handler.FullResponseType is null
                                                && Satisfies(behavior.RequestConstraints,
-                                                   handler.TargetSatisfyingTypes):
+                                                   handler.TargetSatisfyingTypes)
+                                               && SatisfiesSpecial(behavior.RequestSpecialConstraints,
+                                                   handler.RequestShape):
                 {
                     var req = handler.FullTargetTypeName;
                     var closedBehavior = CloseBehavior(behavior, behaviorBaseName, req, null);
@@ -200,7 +202,11 @@ internal static class RegisterGroupFactory
                                                           && Satisfies(behavior.RequestConstraints,
                                                               handler.TargetSatisfyingTypes)
                                                           && Satisfies(behavior.ResponseConstraints,
-                                                              handler.ResponseSatisfyingTypes):
+                                                              handler.ResponseSatisfyingTypes)
+                                                          && SatisfiesSpecial(behavior.RequestSpecialConstraints,
+                                                              handler.RequestShape)
+                                                          && SatisfiesSpecial(behavior.ResponseSpecialConstraints,
+                                                              handler.ResponseShape):
                 {
                     var req = handler.FullTargetTypeName;
                     var respType = resp;
@@ -211,7 +217,9 @@ internal static class RegisterGroupFactory
                 }
                 case BehaviorKind.Event when handler.HandlerType == HandlerType.EventHandler
                                              && Satisfies(behavior.RequestConstraints,
-                                                 handler.TargetSatisfyingTypes):
+                                                 handler.TargetSatisfyingTypes)
+                                             && SatisfiesSpecial(behavior.RequestSpecialConstraints,
+                                                 handler.RequestShape):
                 {
                     var evt = handler.FullTargetTypeName;
                     var closedBehavior = CloseBehavior(behavior, behaviorBaseName, evt, null);
@@ -223,7 +231,11 @@ internal static class RegisterGroupFactory
                                                     && Satisfies(behavior.RequestConstraints,
                                                         handler.TargetSatisfyingTypes)
                                                     && Satisfies(behavior.ResponseConstraints,
-                                                        handler.ResponseSatisfyingTypes):
+                                                        handler.ResponseSatisfyingTypes)
+                                                    && SatisfiesSpecial(behavior.RequestSpecialConstraints,
+                                                        handler.RequestShape)
+                                                    && SatisfiesSpecial(behavior.ResponseSpecialConstraints,
+                                                        handler.ResponseShape):
                 {
                     var req = handler.FullTargetTypeName;
                     var itemType = item;
@@ -322,4 +334,45 @@ internal static class RegisterGroupFactory
         return true;
     }
 
+    /// <summary>
+    ///     Returns true when the candidate type's shape satisfies every special (non-type) constraint the
+    ///     behavior places on the corresponding type parameter — <c>class</c>/<c>struct</c>/<c>unmanaged</c>/
+    ///     <c>notnull</c>/<c>new()</c>. Without this, closing an open-generic behavior over a non-conforming
+    ///     handler emits code that fails to compile (e.g. CS0453 for a <c>struct</c>-constrained parameter
+    ///     bound to a reference type). No special constraints means every type qualifies.
+    /// </summary>
+    private static bool SatisfiesSpecial(SpecialConstraints required, TypeShape shape)
+    {
+        if (required == SpecialConstraints.None)
+        {
+            return true;
+        }
+
+        if ((required & SpecialConstraints.ReferenceType) != 0 && !shape.IsReferenceType)
+        {
+            return false;
+        }
+
+        if ((required & SpecialConstraints.ValueType) != 0 && !shape.IsValueType)
+        {
+            return false;
+        }
+
+        if ((required & SpecialConstraints.Unmanaged) != 0 && !shape.IsUnmanaged)
+        {
+            return false;
+        }
+
+        if ((required & SpecialConstraints.NotNull) != 0 && !shape.IsNotNull)
+        {
+            return false;
+        }
+
+        if ((required & SpecialConstraints.Constructor) != 0 && !shape.HasParameterlessCtor)
+        {
+            return false;
+        }
+
+        return true;
+    }
 }

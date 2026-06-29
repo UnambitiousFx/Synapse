@@ -1,6 +1,33 @@
 namespace UnambitiousFx.Synapse.Generator;
 
 /// <summary>
+///     The C# "special" generic constraints on a behavior's type parameter that are not expressed as
+///     constraint <em>types</em> (so they are invisible to <see cref="BehaviorDetail.RequestConstraints" />)
+///     but as flags on the type-parameter symbol. Captured as an equatable value so the cross-product can
+///     enforce them without carrying Roslyn symbols into the emit stage.
+/// </summary>
+[Flags]
+public enum SpecialConstraints : byte
+{
+    None = 0,
+
+    /// <summary><c>where T : class</c>.</summary>
+    ReferenceType = 1,
+
+    /// <summary><c>where T : struct</c>.</summary>
+    ValueType = 2,
+
+    /// <summary><c>where T : unmanaged</c> (also implies value type).</summary>
+    Unmanaged = 4,
+
+    /// <summary><c>where T : notnull</c>.</summary>
+    NotNull = 8,
+
+    /// <summary><c>where T : new()</c>.</summary>
+    Constructor = 16
+}
+
+/// <summary>
 ///     Describes a class decorated with <c>[PipelineBehavior]</c> discovered by the source generator.
 /// </summary>
 public readonly record struct BehaviorDetail
@@ -15,7 +42,9 @@ public readonly record struct BehaviorDetail
         string? fullResponseOrItemTypeName,
         EquatableArray<string> requestConstraints,
         EquatableArray<string> responseConstraints,
-        EquatableArray<int> closingTypeArgumentMap)
+        EquatableArray<int> closingTypeArgumentMap,
+        SpecialConstraints requestSpecialConstraints = SpecialConstraints.None,
+        SpecialConstraints responseSpecialConstraints = SpecialConstraints.None)
     {
         ClassName = className;
         Namespace = @namespace;
@@ -27,6 +56,8 @@ public readonly record struct BehaviorDetail
         RequestConstraints = requestConstraints;
         ResponseConstraints = responseConstraints;
         ClosingTypeArgumentMap = closingTypeArgumentMap;
+        RequestSpecialConstraints = requestSpecialConstraints;
+        ResponseSpecialConstraints = responseSpecialConstraints;
     }
 
     /// <summary>Simple class name (without namespace).</summary>
@@ -82,6 +113,20 @@ public readonly record struct BehaviorDetail
     ///     order and arity of type arguments emitted when the class is closed over a matching handler.
     /// </summary>
     public EquatableArray<int> ClosingTypeArgumentMap { get; }
+
+    /// <summary>
+    ///     Special (non-type) constraints on the first (request/event) type parameter of an open-generic
+    ///     behavior — <c>class</c>/<c>struct</c>/<c>unmanaged</c>/<c>notnull</c>/<c>new()</c>. A handler is
+    ///     only cross-producted when its request type's shape satisfies these. <see cref="SpecialConstraints.None" />
+    ///     for closed behaviors and unconstrained parameters.
+    /// </summary>
+    public SpecialConstraints RequestSpecialConstraints { get; }
+
+    /// <summary>
+    ///     Special (non-type) constraints on the second (response/item) type parameter of an open-generic
+    ///     behavior. <see cref="SpecialConstraints.None" /> for closed behaviors and single-parameter behaviors.
+    /// </summary>
+    public SpecialConstraints ResponseSpecialConstraints { get; }
 
     /// <summary>
     ///     True when at least one class type parameter cannot be bound from the implemented pipeline interface
