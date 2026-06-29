@@ -746,9 +746,10 @@ public sealed class GeneratorBehaviorTests
         // Act (When)
         var generated = RunGeneratorAndGetRegistrationGroup(source);
 
-        // Assert (Then) — closed, value-type, deduplicated front-of-pipeline registration; no open-generic descriptor.
+        // Assert (Then) — closed, value-type registration of the built-in enforcement behavior (now emitted via
+        // the unified global-behavior path); no open-generic descriptor.
         Assert.Contains(
-            "builder.RegisterCqrsBoundaryEnforcement<global::TestNs.MyRequest, int>()",
+            "builder.RegisterRequestPipelineBehavior<global::UnambitiousFx.Synapse.Pipelines.CqrsBoundaryEnforcementBehavior<global::TestNs.MyRequest, int>, global::TestNs.MyRequest, int>()",
             generated);
         Assert.DoesNotContain("IRequestPipelineBehavior<,>", generated);
     }
@@ -1011,10 +1012,166 @@ public sealed class GeneratorBehaviorTests
         // Act (When)
         var generated = RunGeneratorWithReference(referencedSource, mainSource);
 
-        // Assert (Then) — CQRS enforcement emitted for the referenced value-type request, AOT-safe.
+        // Assert (Then) — CQRS enforcement emitted for the referenced value-type request, AOT-safe (via the
+        // unified global-behavior path).
         Assert.Contains(
-            "builder.RegisterCqrsBoundaryEnforcement<global::LibNs.LibRequest, int>()",
+            "builder.RegisterRequestPipelineBehavior<global::UnambitiousFx.Synapse.Pipelines.CqrsBoundaryEnforcementBehavior<global::LibNs.LibRequest, int>, global::LibNs.LibRequest, int>()",
             generated);
+    }
+
+    // ── Global behaviors via [assembly: SynapseGlobalBehavior(typeof(...))] ─
+
+    [Fact]
+    public void GlobalBehavior_WhenOpenGenericRegistered_EmitsClosedRegistrationPerHandler()
+    {
+        // Arrange (Given) — an open-generic behavior registered globally via the assembly attribute, NOT
+        // decorated with [PipelineBehavior]. Two request handlers should each get a closed registration.
+        const string source = """
+            using System.Threading;
+            using System.Threading.Tasks;
+            using UnambitiousFx.Functional;
+            using UnambitiousFx.Synapse.Abstractions;
+
+            [assembly: SynapseGlobalBehavior(typeof(TestNs.LoggingBehavior<,>))]
+
+            namespace TestNs;
+
+            public sealed record RequestA : IRequest<int>;
+            public sealed record RequestB : IRequest<string>;
+
+            [RequestHandler<RequestA, int>]
+            public sealed class HandlerA : IRequestHandler<RequestA, int>
+            {
+                public ValueTask<Result<int>> HandleAsync(RequestA request, CancellationToken ct = default)
+                    => ValueTask.FromResult(Result.Success(1));
+            }
+
+            [RequestHandler<RequestB, string>]
+            public sealed class HandlerB : IRequestHandler<RequestB, string>
+            {
+                public ValueTask<Result<string>> HandleAsync(RequestB request, CancellationToken ct = default)
+                    => ValueTask.FromResult(Result.Success("x"));
+            }
+
+            public sealed class LoggingBehavior<TRequest, TResponse> : IRequestPipelineBehavior<TRequest, TResponse>
+                where TRequest : IRequest<TResponse>
+                where TResponse : notnull
+            {
+                public ValueTask<Result<TResponse>> HandleAsync(TRequest request, RequestHandlerDelegate<TRequest, TResponse> next, CancellationToken ct = default)
+                    => next(request, ct);
+            }
+            """;
+
+        // Act (When)
+        var generated = RunGeneratorAndGetRegistrationGroup(source);
+
+        // Assert (Then) — one closed registration per handler.
+        Assert.Contains(
+            "builder.RegisterRequestPipelineBehavior<global::TestNs.LoggingBehavior<global::TestNs.RequestA, int>, global::TestNs.RequestA, int>()",
+            generated);
+        Assert.Contains(
+            "builder.RegisterRequestPipelineBehavior<global::TestNs.LoggingBehavior<global::TestNs.RequestB, string>, global::TestNs.RequestB, string>()",
+            generated);
+        AssertGeneratedCompiles(source);
+    }
+
+    [Fact]
+    public void GlobalBehavior_FromReferencedAssembly_EmitsRegistration()
+    {
+        // Arrange (Given) — the NuGet scenario: an open-generic behavior defined in a referenced assembly
+        // (undecorated), opted into globally at the composition root. The handler also lives in the package.
+        const string referencedSource = """
+            using System.Threading;
+            using System.Threading.Tasks;
+            using UnambitiousFx.Functional;
+            using UnambitiousFx.Synapse.Abstractions;
+
+            namespace LibNs;
+
+            public sealed record LibRequest : IRequest<int>;
+
+            [RequestHandler<LibRequest, int>]
+            public sealed class LibHandler : IRequestHandler<LibRequest, int>
+            {
+                public ValueTask<Result<int>> HandleAsync(LibRequest request, CancellationToken ct = default)
+                    => ValueTask.FromResult(Result.Success(1));
+            }
+
+            public sealed class LoggingBehavior<TRequest, TResponse> : IRequestPipelineBehavior<TRequest, TResponse>
+                where TRequest : IRequest<TResponse>
+                where TResponse : notnull
+            {
+                public ValueTask<Result<TResponse>> HandleAsync(TRequest request, RequestHandlerDelegate<TRequest, TResponse> next, CancellationToken ct = default)
+                    => next(request, ct);
+            }
+            """;
+
+        const string mainSource = """
+            using UnambitiousFx.Synapse.Abstractions;
+
+            [assembly: SynapseGlobalBehavior(typeof(LibNs.LoggingBehavior<,>))]
+
+            namespace AppNs;
+            """;
+
+        // Act (When)
+        var generated = RunGeneratorWithReference(referencedSource, mainSource);
+
+        // Assert (Then) — closed registration emitted for the referenced value-type request, AOT-safe.
+        Assert.Contains(
+            "builder.RegisterRequestPipelineBehavior<global::LibNs.LoggingBehavior<global::LibNs.LibRequest, int>, global::LibNs.LibRequest, int>()",
+            generated);
+    }
+
+    [Fact]
+    public void GlobalBehavior_WhenTypeImplementsNoPipelineInterface_ReportsDiagnostic()
+    {
+        // Arrange (Given) — the typeof argument is not a pipeline behavior.
+        const string source = """
+            using UnambitiousFx.Synapse.Abstractions;
+
+            [assembly: SynapseGlobalBehavior(typeof(TestNs.NotABehavior))]
+
+            namespace TestNs;
+
+            public sealed class NotABehavior;
+            """;
+
+        // Act (When)
+        var (diagnostics, _) = RunGenerator(source);
+
+        // Assert (Then)
+        Assert.Contains(diagnostics, d => d.Id == "MDG013");
+    }
+
+    [Fact]
+    public void GlobalBehavior_WhenTypeNotPublic_ReportsDiagnostic()
+    {
+        // Arrange (Given) — a valid behavior, but non-public, so the generated registration cannot name it.
+        const string source = """
+            using System.Threading;
+            using System.Threading.Tasks;
+            using UnambitiousFx.Functional;
+            using UnambitiousFx.Synapse.Abstractions;
+
+            [assembly: SynapseGlobalBehavior(typeof(TestNs.SecretBehavior<,>))]
+
+            namespace TestNs;
+
+            internal sealed class SecretBehavior<TRequest, TResponse> : IRequestPipelineBehavior<TRequest, TResponse>
+                where TRequest : IRequest<TResponse>
+                where TResponse : notnull
+            {
+                public ValueTask<Result<TResponse>> HandleAsync(TRequest request, RequestHandlerDelegate<TRequest, TResponse> next, CancellationToken ct = default)
+                    => next(request, ct);
+            }
+            """;
+
+        // Act (When)
+        var (diagnostics, _) = RunGenerator(source);
+
+        // Assert (Then)
+        Assert.Contains(diagnostics, d => d.Id == "MDG014");
     }
 
     // ── [Validator] discovery ─────────────────────────────────────────────

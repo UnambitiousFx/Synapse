@@ -10,7 +10,6 @@ internal static class RegisterGroupFactory
         string abstractionsNamespace,
         ImmutableArray<HandlerDetail?> details,
         ImmutableArray<BehaviorDetail> behaviors,
-        bool cqrsBoundaryEnforcementEnabled,
         ImmutableArray<HandlerDetail> behaviorTargets,
         bool crossAssemblyBehaviorsDisabled,
         ImmutableArray<ValidatorDetail> validators,
@@ -51,23 +50,16 @@ internal static class RegisterGroupFactory
             }
         }
 
-        // Behaviors and CQRS enforcement are applied to every handler target visible in the compilation
-        // (own assembly + referenced assemblies), so registering them in the composition root covers the
-        // whole reference graph. The opt-out attribute restricts this to same-assembly handlers. Handler
-        // registration always stays scoped to `details` (this assembly) so handlers aren't double-registered;
-        // CQRS registration is deduplicated at the service-collection level, so emitting it for a referenced
-        // request that its own assembly also covers is harmless.
+        // Behaviors (including the built-in CQRS enforcement behavior, now a global behavior) are applied to
+        // every handler target visible in the compilation (own assembly + referenced assemblies), so
+        // registering them in the composition root covers the whole reference graph. The opt-out attribute
+        // restricts this to same-assembly handlers. Handler registration always stays scoped to `details`
+        // (this assembly) so handlers aren't double-registered; behavior registration is deduplicated at the
+        // service-collection level, so emitting it for a referenced request that its own assembly also covers
+        // is harmless.
         var openGenericTargets = crossAssemblyBehaviorsDisabled
             ? details.Where(d => d is not null).Select(d => d!.Value).ToArray()
             : behaviorTargets.ToArray();
-
-        // Emit CQRS boundary enforcement registrations (when opted-in via the assembly attribute). The
-        // behavior implements IOrderedPipelineBehavior with First, so it stays outermost at runtime
-        // regardless of registration order.
-        if (cqrsBoundaryEnforcementEnabled)
-        {
-            EmitCqrsBoundaryRegistrations(sb, openGenericTargets);
-        }
 
         // Emit behavior registrations in a deterministic order (namespace + class name) so the generated
         // source is reproducible across (incremental) compilations. Runtime pipeline position is decided
@@ -104,29 +96,6 @@ internal static class RegisterGroupFactory
 
         sb.AppendLine("}");
         return SourceText.From(sb.ToString(), Encoding.UTF8);
-    }
-
-    private static void EmitCqrsBoundaryRegistrations(StringBuilder sb, IReadOnlyList<HandlerDetail> handlers)
-    {
-        foreach (var handler in handlers)
-        {
-            if (handler.HandlerType != HandlerType.RequestHandler)
-            {
-                continue;
-            }
-
-            var req = handler.FullTargetTypeName;
-
-            if (handler.FullResponseType is { } resp)
-            {
-                // req and resp are already fully qualified (ToEmitName / FullyQualifiedFormat); emit verbatim.
-                sb.AppendLine($"        builder.RegisterCqrsBoundaryEnforcement<{req}, {resp}>();");
-            }
-            else
-            {
-                sb.AppendLine($"        builder.RegisterCqrsBoundaryEnforcement<{req}>();");
-            }
-        }
     }
 
     private static void EmitValidatorRegistrations(StringBuilder sb, ImmutableArray<ValidatorDetail> validators)

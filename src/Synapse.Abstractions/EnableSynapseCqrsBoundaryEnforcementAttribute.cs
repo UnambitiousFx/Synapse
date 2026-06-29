@@ -21,4 +21,8 @@ namespace UnambitiousFx.Synapse.Abstractions;
 ///     </para>
 /// </remarks>
 [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = false, Inherited = false)]
+[Obsolete(
+    "Use [assembly: SynapseGlobalBehavior(typeof(CqrsBoundaryEnforcementBehavior<>))] and " +
+    "[assembly: SynapseGlobalBehavior(typeof(CqrsBoundaryEnforcementBehavior<,>))] instead. " +
+    "This attribute remains a working alias for the same registrations.")]
 public sealed class EnableSynapseCqrsBoundaryEnforcementAttribute : Attribute;

@@ -169,6 +169,56 @@ public readonly record struct BehaviorScan
     public EquatableArray<BehaviorDetail> Behaviors { get; }
 }
 
+/// <summary>
+///     Why a <c>[assembly: SynapseGlobalBehavior(typeof(...))]</c> entry could not be turned into a
+///     registration, used to emit a precise diagnostic instead of letting generated code fail to compile.
+/// </summary>
+public enum GlobalBehaviorProblem
+{
+    /// <summary>The <c>typeof</c> argument did not resolve to a named type.</summary>
+    NotAType,
+
+    /// <summary>The type implements none of the known Synapse pipeline interfaces.</summary>
+    NoPipelineInterface,
+
+    /// <summary>The type is not <c>public</c>, so the generated registration could not reference it.</summary>
+    Inaccessible
+}
+
+/// <summary>A rejected global-behavior entry: the offending type's display name and the reason.</summary>
+public readonly record struct GlobalBehaviorDiagnostic
+{
+    public GlobalBehaviorDiagnostic(string typeName, GlobalBehaviorProblem problem)
+    {
+        TypeName = typeName;
+        Problem = problem;
+    }
+
+    public string TypeName { get; }
+
+    public GlobalBehaviorProblem Problem { get; }
+}
+
+/// <summary>
+///     Result of scanning the assembly for <c>[assembly: SynapseGlobalBehavior(typeof(...))]</c> (and the
+///     <c>[assembly: EnableSynapseCqrsBoundaryEnforcement]</c> alias): the analyzed behaviors to emit and any
+///     diagnostics for entries that could not be used. Fully materialized (no Roslyn symbols) so it can flow
+///     through the incremental pipeline.
+/// </summary>
+public readonly record struct GlobalBehaviorInfo
+{
+    public GlobalBehaviorInfo(EquatableArray<BehaviorDetail> behaviors,
+        EquatableArray<GlobalBehaviorDiagnostic> diagnostics)
+    {
+        Behaviors = behaviors;
+        Diagnostics = diagnostics;
+    }
+
+    public EquatableArray<BehaviorDetail> Behaviors { get; }
+
+    public EquatableArray<GlobalBehaviorDiagnostic> Diagnostics { get; }
+}
+
 /// <summary>The pipeline interface kind a behavior implements.</summary>
 public enum BehaviorKind
 {
