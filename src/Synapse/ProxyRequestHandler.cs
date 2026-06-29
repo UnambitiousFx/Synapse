@@ -1,77 +1,74 @@
-using System.Collections.Immutable;
 using UnambitiousFx.Functional;
 using UnambitiousFx.Synapse.Abstractions;
 using UnambitiousFx.Synapse.Pipelines;
 
 namespace UnambitiousFx.Synapse;
 
-internal sealed class ProxyRequestHandler<TRequestHandler, TRequest>(
-    TRequestHandler handler,
-    IEnumerable<IRequestPipelineBehavior<TRequest>> behaviors)
+internal sealed class ProxyRequestHandler<TRequestHandler, TRequest>
     : IRequestHandler<TRequest>
     where TRequestHandler : class, IRequestHandler<TRequest>
     where TRequest : IRequest
 {
-    private readonly ImmutableArray<IRequestPipelineBehavior<TRequest>> _behaviors =
-        [.. behaviors.OrderBy(PipelineBehaviorOrdering.OrderOf)];
+    // The behavior chain is composed once here rather than recursed per dispatch: each dispatch then
+    // just invokes the head delegate, with no per-behavior closure allocation on the hot path. The proxy
+    // shares its handler's lifetime, so a singleton handler composes the chain exactly once.
+    private readonly RequestHandlerDelegate<TRequest> _pipeline;
+
+    public ProxyRequestHandler(TRequestHandler handler,
+        IEnumerable<IRequestPipelineBehavior<TRequest>> behaviors)
+    {
+        // Ordered by runtime pipeline position (IOrderedPipelineBehavior); the stable sort keeps
+        // registration order for behaviors that share an Order.
+        var sorted = behaviors.OrderBy(PipelineBehaviorOrdering.OrderOf).ToArray();
+
+        RequestHandlerDelegate<TRequest> next = handler.HandleAsync;
+        // Wrap in reverse so the lowest-Order behavior ends up outermost (runs first).
+        for (var i = sorted.Length - 1; i >= 0; i--)
+        {
+            var behavior = sorted[i];
+            var captured = next;
+            next = (req, ct) => behavior.HandleAsync(req, captured, ct);
+        }
+
+        _pipeline = next;
+    }
 
     public ValueTask<Result> HandleAsync(TRequest request,
         CancellationToken cancellationToken = default)
     {
-        return ExecutePipelineAsync(request, 0, cancellationToken);
-    }
-
-    private ValueTask<Result> ExecutePipelineAsync(TRequest request,
-        int index,
-        CancellationToken cancellationToken)
-    {
-        if (index >= _behaviors.Length)
-        {
-            return handler.HandleAsync(request, cancellationToken);
-        }
-
-        return _behaviors[index]
-            .HandleAsync(request, Next, cancellationToken);
-
-        ValueTask<Result> Next(TRequest inRequest, CancellationToken inCancellationToken)
-        {
-            return ExecutePipelineAsync(inRequest, index + 1, inCancellationToken);
-        }
+        return _pipeline(request, cancellationToken);
     }
 }
 
-internal sealed class ProxyRequestHandler<TRequestHandler, TRequest, TResponse>(
-    TRequestHandler handler,
-    IEnumerable<IRequestPipelineBehavior<TRequest, TResponse>> behaviors)
+internal sealed class ProxyRequestHandler<TRequestHandler, TRequest, TResponse>
     : IRequestHandler<TRequest, TResponse>
     where TRequestHandler : class, IRequestHandler<TRequest, TResponse>
     where TRequest : IRequest<TResponse>
     where TResponse : notnull
 {
-    private readonly ImmutableArray<IRequestPipelineBehavior<TRequest, TResponse>> _behaviors =
-        [.. behaviors.OrderBy(PipelineBehaviorOrdering.OrderOf)];
+    // See the no-response proxy above: the chain is composed once and invoked per dispatch.
+    private readonly RequestHandlerDelegate<TRequest, TResponse> _pipeline;
+
+    public ProxyRequestHandler(TRequestHandler handler,
+        IEnumerable<IRequestPipelineBehavior<TRequest, TResponse>> behaviors)
+    {
+        var sorted = behaviors.OrderBy(PipelineBehaviorOrdering.OrderOf).ToArray();
+
+        RequestHandlerDelegate<TRequest, TResponse> next = handler.HandleAsync;
+        // Wrap in reverse so the lowest-Order behavior ends up outermost (runs first).
+        for (var i = sorted.Length - 1; i >= 0; i--)
+        {
+            var behavior = sorted[i];
+            var captured = next;
+            next = (req, ct) => behavior.HandleAsync(req, captured, ct);
+        }
+
+        _pipeline = next;
+    }
 
     public ValueTask<Result<TResponse>> HandleAsync(TRequest request,
         CancellationToken cancellationToken = default)
     {
-        return ExecutePipelineAsync(request, 0, cancellationToken);
-    }
-
-    private ValueTask<Result<TResponse>> ExecutePipelineAsync(TRequest request,
-        int index,
-        CancellationToken cancellationToken)
-    {
-        if (index >= _behaviors.Length)
-        {
-            return handler.HandleAsync(request, cancellationToken);
-        }
-
-        return _behaviors[index]
-            .HandleAsync(request, Next, cancellationToken);
-
-        ValueTask<Result<TResponse>> Next(TRequest inRequest, CancellationToken inCancellationToken)
-        {
-            return ExecutePipelineAsync(inRequest, index + 1, inCancellationToken);
-        }
+        return _pipeline(request, cancellationToken);
     }
 }
