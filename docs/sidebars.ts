@@ -27,6 +27,11 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: 'category',
+      label: 'Performance',
+      items: ['benchmarks'],
+    },
+    {
+      type: 'category',
       label: 'Project',
       items: ['examples', 'changelog', 'using-with-ai'],
     },
