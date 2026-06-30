@@ -9,13 +9,14 @@ namespace UnambitiousFx.Examples.MinimalApi.Infrastructure.Pipelines;
 // ═══════════════════════════════════════════════════════════════
 // StreamLoggingBehavior — stream pipeline behavior demo
 //
-// Mechanism: RUNTIME open-generic registration via
-//   cfg.AddOpenGenericStreamRequestPipelineBehavior(typeof(StreamLoggingBehavior<,>))
+// Mechanism: SOURCE GENERATOR via [PipelineBehavior]. The generator cross-products this
+// open-generic behavior with every discovered stream handler (here StreamTasksQuery → TaskDto)
+// and emits the closed registration — Native-AOT safe, no runtime open-generic descriptor.
 //
-// Demonstrates IStreamRequestPipelineBehavior<TRequest, TItem> — the streaming
-// variant of the pipeline.  Unlike request behaviors, the "next" delegate returns
-// IAsyncEnumerable<Result<TItem>> rather than a single Result.  This behavior
-// wraps the enumerable to count yielded items and log a summary at stream end.
+// Demonstrates IStreamRequestPipelineBehavior<TRequest, TItem> — the streaming variant of the
+// pipeline.  Unlike request behaviors, the "next" delegate returns IAsyncEnumerable<Result<TItem>>
+// rather than a single Result.  This behavior wraps the enumerable to count yielded items and log a
+// summary at stream end.
 //
 // Observe in stdout: "🔢 Streamed N StreamTasksQuery item(s) in <elapsed>"
 // ═══════════════════════════════════════════════════════════════
@@ -24,6 +25,7 @@ namespace UnambitiousFx.Examples.MinimalApi.Infrastructure.Pipelines;
 ///     Streaming pipeline behavior that counts yielded items and logs a summary
 ///     after the stream completes.  Applied to all stream requests.
 /// </summary>
+[PipelineBehavior]
 public sealed class StreamLoggingBehavior<TRequest, TItem> : IStreamRequestPipelineBehavior<TRequest, TItem>
     where TRequest : IStreamRequest<TItem>
     where TItem : notnull

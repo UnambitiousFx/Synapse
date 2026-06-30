@@ -39,7 +39,7 @@ MinimalApi.Modules.Orders/
 └── OrdersModule.cs                  # AddOrdersModule() + MapOrdersEndpoints()
 ```
 
-`OrderTracingBehavior<TRequest, TResponse>` is an open-generic `[PipelineBehavior]` — the source generator cross-products it with `PlaceOrderCommand → Guid` and emits a **closed** registration safe under Native AOT (mirrors `CounterTracingBehavior` in `MinimalApi.Counter`).
+`OrderTracingBehavior<TRequest, TResponse>` is an open-generic `[PipelineBehavior]` — the source generator cross-products it with `PlaceOrderCommand → Guid` and emits a **closed** registration safe under Native AOT, even though `Guid` is a value type.
 
 ## Endpoints
 

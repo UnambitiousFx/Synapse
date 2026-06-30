@@ -10,8 +10,8 @@ namespace UnambitiousFx.Examples.MinimalApi.Modules.Orders.Behaviors;
 ///     and emits <strong>closed</strong> registrations — here, closed over <c>Guid</c> (a value type).
 /// </summary>
 /// <remarks>
-///     This mirrors <c>CounterTracingBehavior</c> in <c>MinimalApi.Counter</c> and demonstrates that
-///     <c>[PipelineBehavior]</c> works correctly inside a cross-assembly module: the generator emits
+///     Demonstrates that <c>[PipelineBehavior]</c> works correctly inside a cross-assembly module: the
+///     generator emits
 ///     <c>RegisterRequestPipelineBehavior&lt;OrderTracingBehavior&lt;PlaceOrderCommand, Guid&gt;, PlaceOrderCommand, Guid&gt;()</c>
 ///     in <c>RegisterGroup.g.cs</c>, which is Native-AOT safe even though <c>Guid</c> is a value type.
 /// </remarks>

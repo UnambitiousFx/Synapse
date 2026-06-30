@@ -107,6 +107,16 @@ By default an assembly's `[PipelineBehavior]` classes are applied to handlers in
 Registering an open-generic behavior at runtime (`AddOpenGenericRequestPipelineBehavior(typeof(...))`) is supported but is **not** Native-AOT safe for value-type responses. Prefer `[PipelineBehavior]` so the generator emits closed registrations.
 :::
 
+### Registering a behavior you don't own (e.g. from a NuGet package)
+
+`[PipelineBehavior]` requires decorating the behavior class, so it only works for behaviors whose source you control. When a behavior ships in a referenced package — for example a company's shared pipeline library — opt into it from the composition root with `[assembly: SynapseGlobalBehavior(typeof(...))]`. The generator treats it exactly like a `[PipelineBehavior]` open generic: it closes the behavior over every matching handler and emits one closed, Native-AOT-safe registration per match.
+
+```csharp
+[assembly: SynapseGlobalBehavior(typeof(CompanyShared.LoggingBehavior<,>))]
+```
+
+Pass the **unbound** generic definition (`typeof(Foo<,>)`) — a non-generic `typeof` is the only way to hand an open generic to an attribute. The behavior type must be `public` and implement one of the pipeline interfaces; its open-generic constraints (named-type and `class`/`struct`/`unmanaged`/`notnull`/`new()`) are honoured, and pipeline position is controlled by the behavior implementing `IOrderedPipelineBehavior`. The same cross-assembly and `[assembly: DisableSynapseCrossAssemblyBehaviors]` rules apply.
+
 ## Built-in behaviors
 
 ### `SimpleLoggingBehavior<TRequest, TResponse>` / `SimpleLoggingEventBehavior<TEvent>`
@@ -142,11 +152,16 @@ cfg.RegisterCqrsBoundaryEnforcement<CreateTaskCommand, Guid>();
 cfg.RegisterCqrsBoundaryEnforcement<DeleteTaskCommand>();
 ```
 
-Or turn it on for the whole assembly with the source generator, which emits the closed (AOT-safe) registrations for every handler:
+Or turn it on for the whole assembly by registering the built-in behavior globally — the source generator emits the closed (AOT-safe) registrations for every handler:
 
 ```csharp
-[assembly: EnableSynapseCqrsBoundaryEnforcement]
+[assembly: SynapseGlobalBehavior(typeof(CqrsBoundaryEnforcementBehavior<>))]
+[assembly: SynapseGlobalBehavior(typeof(CqrsBoundaryEnforcementBehavior<,>))]
 ```
+
+:::note
+`[assembly: EnableSynapseCqrsBoundaryEnforcement]` still works as an alias for the two registrations above, but is now `[Obsolete]` — `SynapseGlobalBehavior` is the general mechanism (see [Registering a behavior you don't own](#registering-a-behavior-you-dont-own-eg-from-a-nuget-package)).
+:::
 
 :::warning
 The old runtime switch `cfg.EnableCqrsBoundaryEnforcement()` was removed — it is now `[Obsolete(error: true)]` and throws. Use `RegisterCqrsBoundaryEnforcement<...>()` or the assembly attribute instead.

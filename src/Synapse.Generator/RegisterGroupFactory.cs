@@ -10,7 +10,6 @@ internal static class RegisterGroupFactory
         string abstractionsNamespace,
         ImmutableArray<HandlerDetail?> details,
         ImmutableArray<BehaviorDetail> behaviors,
-        bool cqrsBoundaryEnforcementEnabled,
         ImmutableArray<HandlerDetail> behaviorTargets,
         bool crossAssemblyBehaviorsDisabled,
         ImmutableArray<ValidatorDetail> validators,
@@ -51,23 +50,16 @@ internal static class RegisterGroupFactory
             }
         }
 
-        // Behaviors and CQRS enforcement are applied to every handler target visible in the compilation
-        // (own assembly + referenced assemblies), so registering them in the composition root covers the
-        // whole reference graph. The opt-out attribute restricts this to same-assembly handlers. Handler
-        // registration always stays scoped to `details` (this assembly) so handlers aren't double-registered;
-        // CQRS registration is deduplicated at the service-collection level, so emitting it for a referenced
-        // request that its own assembly also covers is harmless.
+        // Behaviors (including the built-in CQRS enforcement behavior, now a global behavior) are applied to
+        // every handler target visible in the compilation (own assembly + referenced assemblies), so
+        // registering them in the composition root covers the whole reference graph. The opt-out attribute
+        // restricts this to same-assembly handlers. Handler registration always stays scoped to `details`
+        // (this assembly) so handlers aren't double-registered; behavior registration is deduplicated at the
+        // service-collection level, so emitting it for a referenced request that its own assembly also covers
+        // is harmless.
         var openGenericTargets = crossAssemblyBehaviorsDisabled
             ? details.Where(d => d is not null).Select(d => d!.Value).ToArray()
             : behaviorTargets.ToArray();
-
-        // Emit CQRS boundary enforcement registrations (when opted-in via the assembly attribute). The
-        // behavior implements IOrderedPipelineBehavior with First, so it stays outermost at runtime
-        // regardless of registration order.
-        if (cqrsBoundaryEnforcementEnabled)
-        {
-            EmitCqrsBoundaryRegistrations(sb, openGenericTargets);
-        }
 
         // Emit behavior registrations in a deterministic order (namespace + class name) so the generated
         // source is reproducible across (incremental) compilations. Runtime pipeline position is decided
@@ -104,29 +96,6 @@ internal static class RegisterGroupFactory
 
         sb.AppendLine("}");
         return SourceText.From(sb.ToString(), Encoding.UTF8);
-    }
-
-    private static void EmitCqrsBoundaryRegistrations(StringBuilder sb, IReadOnlyList<HandlerDetail> handlers)
-    {
-        foreach (var handler in handlers)
-        {
-            if (handler.HandlerType != HandlerType.RequestHandler)
-            {
-                continue;
-            }
-
-            var req = handler.FullTargetTypeName;
-
-            if (handler.FullResponseType is { } resp)
-            {
-                // req and resp are already fully qualified (ToEmitName / FullyQualifiedFormat); emit verbatim.
-                sb.AppendLine($"        builder.RegisterCqrsBoundaryEnforcement<{req}, {resp}>();");
-            }
-            else
-            {
-                sb.AppendLine($"        builder.RegisterCqrsBoundaryEnforcement<{req}>();");
-            }
-        }
     }
 
     private static void EmitValidatorRegistrations(StringBuilder sb, ImmutableArray<ValidatorDetail> validators)
@@ -188,7 +157,9 @@ internal static class RegisterGroupFactory
                 case BehaviorKind.Request when handler.HandlerType == HandlerType.RequestHandler
                                                && handler.FullResponseType is null
                                                && Satisfies(behavior.RequestConstraints,
-                                                   handler.TargetSatisfyingTypes):
+                                                   handler.TargetSatisfyingTypes)
+                                               && SatisfiesSpecial(behavior.RequestSpecialConstraints,
+                                                   handler.RequestShape):
                 {
                     var req = handler.FullTargetTypeName;
                     var closedBehavior = CloseBehavior(behavior, behaviorBaseName, req, null);
@@ -200,7 +171,11 @@ internal static class RegisterGroupFactory
                                                           && Satisfies(behavior.RequestConstraints,
                                                               handler.TargetSatisfyingTypes)
                                                           && Satisfies(behavior.ResponseConstraints,
-                                                              handler.ResponseSatisfyingTypes):
+                                                              handler.ResponseSatisfyingTypes)
+                                                          && SatisfiesSpecial(behavior.RequestSpecialConstraints,
+                                                              handler.RequestShape)
+                                                          && SatisfiesSpecial(behavior.ResponseSpecialConstraints,
+                                                              handler.ResponseShape):
                 {
                     var req = handler.FullTargetTypeName;
                     var respType = resp;
@@ -211,7 +186,9 @@ internal static class RegisterGroupFactory
                 }
                 case BehaviorKind.Event when handler.HandlerType == HandlerType.EventHandler
                                              && Satisfies(behavior.RequestConstraints,
-                                                 handler.TargetSatisfyingTypes):
+                                                 handler.TargetSatisfyingTypes)
+                                             && SatisfiesSpecial(behavior.RequestSpecialConstraints,
+                                                 handler.RequestShape):
                 {
                     var evt = handler.FullTargetTypeName;
                     var closedBehavior = CloseBehavior(behavior, behaviorBaseName, evt, null);
@@ -223,7 +200,11 @@ internal static class RegisterGroupFactory
                                                     && Satisfies(behavior.RequestConstraints,
                                                         handler.TargetSatisfyingTypes)
                                                     && Satisfies(behavior.ResponseConstraints,
-                                                        handler.ResponseSatisfyingTypes):
+                                                        handler.ResponseSatisfyingTypes)
+                                                    && SatisfiesSpecial(behavior.RequestSpecialConstraints,
+                                                        handler.RequestShape)
+                                                    && SatisfiesSpecial(behavior.ResponseSpecialConstraints,
+                                                        handler.ResponseShape):
                 {
                     var req = handler.FullTargetTypeName;
                     var itemType = item;
@@ -322,4 +303,45 @@ internal static class RegisterGroupFactory
         return true;
     }
 
+    /// <summary>
+    ///     Returns true when the candidate type's shape satisfies every special (non-type) constraint the
+    ///     behavior places on the corresponding type parameter — <c>class</c>/<c>struct</c>/<c>unmanaged</c>/
+    ///     <c>notnull</c>/<c>new()</c>. Without this, closing an open-generic behavior over a non-conforming
+    ///     handler emits code that fails to compile (e.g. CS0453 for a <c>struct</c>-constrained parameter
+    ///     bound to a reference type). No special constraints means every type qualifies.
+    /// </summary>
+    private static bool SatisfiesSpecial(SpecialConstraints required, TypeShape shape)
+    {
+        if (required == SpecialConstraints.None)
+        {
+            return true;
+        }
+
+        if ((required & SpecialConstraints.ReferenceType) != 0 && !shape.IsReferenceType)
+        {
+            return false;
+        }
+
+        if ((required & SpecialConstraints.ValueType) != 0 && !shape.IsValueType)
+        {
+            return false;
+        }
+
+        if ((required & SpecialConstraints.Unmanaged) != 0 && !shape.IsUnmanaged)
+        {
+            return false;
+        }
+
+        if ((required & SpecialConstraints.NotNull) != 0 && !shape.IsNotNull)
+        {
+            return false;
+        }
+
+        if ((required & SpecialConstraints.Constructor) != 0 && !shape.HasParameterlessCtor)
+        {
+            return false;
+        }
+
+        return true;
+    }
 }
