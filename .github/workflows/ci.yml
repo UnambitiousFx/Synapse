@@ -40,25 +40,25 @@ jobs:
 
       - name: Test (coverage + TRX)
         run: >
-          dotnet test Synapse.slnx
+          dotnet test --solution Synapse.slnx
           --no-build
           --configuration Release
-          --verbosity normal
-          --collect:"XPlat Code Coverage"
+          --report-trx
+          --coverage --coverage-output-format cobertura --coverage-output coverage.cobertura.xml
           --results-directory ./test-results
-          --logger "trx;LogFileName=test-results.trx"
 
       - name: Convert TRX to JUnit (for Codecov test results)
         if: matrix.os == 'ubuntu-latest'
         run: |
           dotnet tool install --global trx2junit
-          trx2junit ./test-results/test-results.trx --output ./test-results/junit.xml
+          trx2junit ./test-results/*.trx --output ./test-results/junit
 
       - name: Upload coverage reports to Codecov
         if: matrix.os == 'ubuntu-latest'
         uses: codecov/codecov-action@v7
         with:
-          directory: ./test-results
+          files: ./test-results/*.cobertura.xml
+          disable_search: true
           token: ${{ secrets.CODECOV_TOKEN }}
 
       - name: Upload test results to Codecov
@@ -66,7 +66,7 @@ jobs:
         uses: codecov/codecov-action@v7
         with:
           report_type: test_results
-          files: ./test-results/junit.xml
+          files: ./test-results/junit/*.xml
           token: ${{ secrets.CODECOV_TOKEN }}
 
   native-aot:

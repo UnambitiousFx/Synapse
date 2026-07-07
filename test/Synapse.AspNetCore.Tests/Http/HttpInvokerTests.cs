@@ -23,7 +23,7 @@ public sealed class HttpInvokerTests
             .Returns(ValueTask.FromResult(Result.Success(10)));
 
         // Act (When)
-        var result = await sut.InvokeAsync(request, _ => expectedResult, CancellationToken.None);
+        var result = await sut.InvokeAsync(request, _ => expectedResult, TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.Same(expectedResult, result);
@@ -42,7 +42,7 @@ public sealed class HttpInvokerTests
             .Returns(ValueTask.FromResult(Result.Success(42)));
 
         // Act (When)
-        var result = await sut.InvokeAsync(request, CancellationToken.None);
+        var result = await sut.InvokeAsync(request, TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.NotNull(result);
@@ -61,7 +61,7 @@ public sealed class HttpInvokerTests
             .Returns(ValueTask.FromResult(Result.Success()));
 
         // Act (When)
-        var result = await sut.InvokeAsync(request, CancellationToken.None);
+        var result = await sut.InvokeAsync(request, TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.NotNull(result);
@@ -81,7 +81,7 @@ public sealed class HttpInvokerTests
 
         // Act (When)
         var items = new List<int>();
-        await foreach (var item in sut.InvokeStreamAsync(request, CancellationToken.None))
+        await foreach (var item in sut.InvokeStreamAsync(request, TestContext.Current.CancellationToken))
         {
             items.Add(item);
         }

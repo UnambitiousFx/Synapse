@@ -66,17 +66,17 @@ public sealed class ContextTests
             .Returns(ValueTask.FromResult(Result.Success()));
 
         // Act (When)
-        var publishResult = await context.PublishEventAsync(@event, CancellationToken.None);
-        var publishWithModeResult = await context.PublishEventAsync(@event, EmitMode.Outbox, CancellationToken.None);
-        var commitResult = await context.CommitEventsAsync(CancellationToken.None);
+        var publishResult = await context.PublishEventAsync(@event, TestContext.Current.CancellationToken);
+        var publishWithModeResult = await context.PublishEventAsync(@event, EmitMode.Outbox, TestContext.Current.CancellationToken);
+        var commitResult = await context.CommitEventsAsync(TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.True(publishResult.IsSuccess);
         Assert.True(publishWithModeResult.IsSuccess);
         Assert.True(commitResult.IsSuccess);
-        await emitter.Received(1).EmitAsync(@event, CancellationToken.None);
-        await emitter.Received(1).EmitAsync(@event, EmitMode.Outbox, CancellationToken.None);
-        await outboxCommit.Received(1).CommitAsync(CancellationToken.None);
+        await emitter.Received(1).EmitAsync(@event, TestContext.Current.CancellationToken);
+        await emitter.Received(1).EmitAsync(@event, EmitMode.Outbox, TestContext.Current.CancellationToken);
+        await outboxCommit.Received(1).CommitAsync(TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -167,8 +167,8 @@ public sealed class ContextTests
 
         // Act (When)
         var context = factory.Create();
-        var publishResult = await context.PublishEventAsync(@event, CancellationToken.None);
-        var commitResult = await context.CommitEventsAsync(CancellationToken.None);
+        var publishResult = await context.PublishEventAsync(@event, TestContext.Current.CancellationToken);
+        var commitResult = await context.CommitEventsAsync(TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.NotEqual(Guid.Empty, context.CorrelationId);

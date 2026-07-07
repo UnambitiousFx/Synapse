@@ -26,7 +26,7 @@ public sealed class RequestValidationBehaviorTests
         {
             nextCalled = true;
             return ValueTask.FromResult(Result.Success(42));
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.True(nextCalled);
@@ -51,7 +51,7 @@ public sealed class RequestValidationBehaviorTests
         {
             nextCalled = true;
             return ValueTask.FromResult(Result.Success(42));
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.False(nextCalled);
@@ -77,7 +77,7 @@ public sealed class RequestValidationBehaviorTests
         {
             nextCalled = true;
             return ValueTask.FromResult(Result.Success());
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.True(nextCalled);
@@ -101,7 +101,7 @@ public sealed class RequestValidationBehaviorTests
         {
             nextCalled = true;
             return ValueTask.FromResult(Result.Success());
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.False(nextCalled);
@@ -121,7 +121,7 @@ public sealed class RequestValidationBehaviorTests
         {
             nextCalled = true;
             return ValueTask.FromResult(Result.Success());
-        }, CancellationToken.None);
+        }, TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.True(nextCalled);

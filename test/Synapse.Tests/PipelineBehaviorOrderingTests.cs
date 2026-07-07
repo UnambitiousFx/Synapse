@@ -31,7 +31,7 @@ public sealed class PipelineBehaviorOrderingTests
         var sender = provider.GetRequiredService<IInvoker>();
 
         // Act (When)
-        await sender.InvokeAsync(new SampleRequest());
+        await sender.InvokeAsync(new SampleRequest(), TestContext.Current.CancellationToken);
 
         // Assert (Then) — outermost (lowest Order) first.
         Assert.Equal(["First", "Hundred", "Middle", "DefaultLast"], executionOrder);
@@ -55,7 +55,7 @@ public sealed class PipelineBehaviorOrderingTests
         var sender = provider.GetRequiredService<IInvoker>();
 
         // Act (When)
-        await sender.InvokeAsync(new SampleRequest());
+        await sender.InvokeAsync(new SampleRequest(), TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.Equal(["First", "DefaultLast"], executionOrder);

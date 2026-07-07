@@ -90,7 +90,7 @@ public sealed class OutboxManagerTests
         var manager = BuildManager(outboxStorage, eventDispatcher, metrics, logger);
 
         // Act (When)
-        var result = await manager.ProcessPendingAsync(CancellationToken.None);
+        var result = await manager.ProcessPendingAsync(TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.True(result.IsSuccess);
@@ -121,7 +121,7 @@ public sealed class OutboxManagerTests
         var manager = BuildManager(outboxStorage, eventDispatcher, metrics, logger, options);
 
         // Act (When)
-        var result = await manager.ProcessPendingAsync(CancellationToken.None);
+        var result = await manager.ProcessPendingAsync(TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.True(result.IsSuccess);
@@ -145,7 +145,7 @@ public sealed class OutboxManagerTests
         var manager = BuildManager(outboxStorage, eventDispatcher, metrics, logger, options);
 
         // Act (When)
-        var result = await manager.ProcessPendingAsync(CancellationToken.None);
+        var result = await manager.ProcessPendingAsync(TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.False(result.IsSuccess);
@@ -185,7 +185,7 @@ public sealed class OutboxManagerTests
         var manager = BuildManager(outboxStorage, eventDispatcher, metrics, logger, options, outboxOptions);
 
         // Act (When)
-        var result = await manager.ProcessPendingAsync(CancellationToken.None);
+        var result = await manager.ProcessPendingAsync(TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.False(result.IsSuccess);
@@ -226,7 +226,7 @@ public sealed class OutboxManagerTests
         var manager = BuildManager(outboxStorage, eventDispatcher, metrics, logger, options, outboxOptions);
 
         // Act (When)
-        await manager.ProcessPendingAsync(CancellationToken.None);
+        await manager.ProcessPendingAsync(TestContext.Current.CancellationToken);
 
         // Assert (Then)
         await outboxStorage.Received(1).MarkAsFailedAsync(
@@ -268,7 +268,7 @@ public sealed class OutboxManagerTests
         var manager = BuildManager(outboxStorage, eventDispatcher, metrics, logger, options, outboxOptions);
 
         // Act (When)
-        await manager.ProcessPendingAsync(CancellationToken.None);
+        await manager.ProcessPendingAsync(TestContext.Current.CancellationToken);
 
         // Assert (Then)
         await outboxStorage.Received(1).MarkAsFailedAsync(
@@ -304,7 +304,7 @@ public sealed class OutboxManagerTests
         var manager = BuildManager(outboxStorage, eventDispatcher, metrics, logger, options);
 
         // Act (When)
-        var result = await manager.ProcessPendingAsync(CancellationToken.None);
+        var result = await manager.ProcessPendingAsync(TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.False(result.IsSuccess);
@@ -343,7 +343,7 @@ public sealed class OutboxManagerTests
         var manager = BuildManager(outboxStorage, eventDispatcher, metrics, logger, options, outboxOptions);
 
         // Act (When)
-        await manager.ProcessPendingAsync(CancellationToken.None);
+        await manager.ProcessPendingAsync(TestContext.Current.CancellationToken);
 
         // Assert (Then)
         await outboxStorage.Received(2).MarkAsProcessedAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
@@ -360,7 +360,7 @@ public sealed class OutboxManagerTests
         var manager = BuildManager(outboxStorage, eventDispatcher, metrics, logger);
 
         // Act (When)
-        var result = await manager.StoreAsync(@event, CancellationToken.None);
+        var result = await manager.StoreAsync(@event, TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.True(result.IsSuccess);

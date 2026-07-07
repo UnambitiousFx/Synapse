@@ -35,7 +35,7 @@ public sealed class TasksApiTests
         var client = _factory.CreateClient();
 
         // Act
-        var response = await client.PostAsJsonAsync("/tasks", new { Title = "My Task", Description = "My description" });
+        var response = await client.PostAsJsonAsync("/tasks", new { Title = "My Task", Description = "My description" }, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
@@ -50,7 +50,7 @@ public sealed class TasksApiTests
         var client = _factory.CreateClient();
 
         // Act — empty title triggers CreateTaskCommandValidator via RequestValidationBehavior
-        var response = await client.PostAsJsonAsync("/tasks", new { Title = "", Description = "Some description" });
+        var response = await client.PostAsJsonAsync("/tasks", new { Title = "", Description = "Some description" }, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.False(response.IsSuccessStatusCode);
@@ -64,11 +64,11 @@ public sealed class TasksApiTests
         var id = await CreateTaskAsync(client, "Get Me", "Get this task");
 
         // Act
-        var response = await client.GetAsync($"/tasks/{id}");
+        var response = await client.GetAsync($"/tasks/{id}", TestContext.Current.CancellationToken);
 
         // Assert
         response.EnsureSuccessStatusCode();
-        var task = await response.Content.ReadFromJsonAsync<TaskDto>();
+        var task = await response.Content.ReadFromJsonAsync<TaskDto>(TestContext.Current.CancellationToken);
         Assert.NotNull(task);
         Assert.Equal(id, task.Id);
         Assert.Equal("Get Me", task.Title);
@@ -84,11 +84,11 @@ public sealed class TasksApiTests
         await CreateTaskAsync(client, "Task B", "Description B");
 
         // Act
-        var response = await client.GetAsync("/tasks");
+        var response = await client.GetAsync("/tasks", TestContext.Current.CancellationToken);
 
         // Assert
         response.EnsureSuccessStatusCode();
-        var taskList = await response.Content.ReadFromJsonAsync<List<TaskDto>>();
+        var taskList = await response.Content.ReadFromJsonAsync<List<TaskDto>>(TestContext.Current.CancellationToken);
         Assert.NotNull(taskList);
         Assert.NotEmpty(taskList);
     }
@@ -101,7 +101,7 @@ public sealed class TasksApiTests
         var id = await CreateTaskAsync(client);
 
         // Act
-        var response = await client.PutAsJsonAsync($"/tasks/{id}", new { Title = "Updated Title", Description = "Updated description" });
+        var response = await client.PutAsJsonAsync($"/tasks/{id}", new { Title = "Updated Title", Description = "Updated description" }, TestContext.Current.CancellationToken);
 
         // Assert
         response.EnsureSuccessStatusCode();
@@ -115,7 +115,7 @@ public sealed class TasksApiTests
         var id = await CreateTaskAsync(client);
 
         // Act — no request body; only the route id is needed
-        var response = await client.PostAsync($"/tasks/{id}/complete", content: null);
+        var response = await client.PostAsync($"/tasks/{id}/complete", content: null, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         response.EnsureSuccessStatusCode();
@@ -129,7 +129,7 @@ public sealed class TasksApiTests
         var id = await CreateTaskAsync(client);
 
         // Act
-        var response = await client.DeleteAsync($"/tasks/{id}");
+        var response = await client.DeleteAsync($"/tasks/{id}", TestContext.Current.CancellationToken);
 
         // Assert
         response.EnsureSuccessStatusCode();
@@ -147,11 +147,11 @@ public sealed class TasksApiTests
         request.Headers.Add("X-User-Permissions", "tasks:admin");
 
         // Act
-        var response = await client.SendAsync(request);
+        var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
 
         // Assert — success with a value-type int body (no AOT/DI value-type resolution failure).
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var purgedCount = await response.Content.ReadFromJsonAsync<int>();
+        var purgedCount = await response.Content.ReadFromJsonAsync<int>(TestContext.Current.CancellationToken);
         Assert.True(purgedCount >= 0);
     }
 
@@ -162,7 +162,7 @@ public sealed class TasksApiTests
         var client = _factory.CreateClient();
 
         // Act
-        var response = await client.PostAsync("/tasks/admin/purge", content: null);
+        var response = await client.PostAsync("/tasks/admin/purge", content: null, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert — handler never runs; the typed UnauthorizedFailure maps to 401 Unauthorized
         // (DefaultFailureHttpMapper, package 2.0.3 — see known-issue 003). Either 401 or 403 is

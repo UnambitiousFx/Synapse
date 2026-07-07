@@ -9,6 +9,10 @@
   "prConcurrentLimit": 10,
   "packageRules": [
     {
+      "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
+      "automerge": true
+    },
+    {
       "matchManagers": ["nuget"],
       "matchPackageNames": ["Microsoft.**"],
       "groupName": "microsoft"

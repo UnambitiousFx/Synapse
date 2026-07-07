@@ -306,7 +306,7 @@ public sealed class SynapseConfigTests
         var invoker = services.GetRequiredService<IInvoker>();
 
         // Act (When)
-        var result = await invoker.InvokeAsync(new RequestWithResponseExample());
+        var result = await invoker.InvokeAsync(new RequestWithResponseExample(), TestContext.Current.CancellationToken);
 
         // Assert (Then) — validation ran and rejected the request before the handler returned success.
         Assert.False(result.IsSuccess);
@@ -460,7 +460,7 @@ public sealed class SynapseConfigTests
         var invoker = services.GetRequiredService<IInvoker>();
 
         // Act (When)
-        var result = await invoker.InvokeAsync(new RequestWithResponseExample(), CancellationToken.None);
+        var result = await invoker.InvokeAsync(new RequestWithResponseExample(), TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.True(result.IsSuccess);
@@ -480,7 +480,7 @@ public sealed class SynapseConfigTests
         var invoker = services.GetRequiredService<IInvoker>();
 
         // Act (When)
-        var result = await invoker.InvokeAsync(new RequestExample(), CancellationToken.None);
+        var result = await invoker.InvokeAsync(new RequestExample(), TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.True(result.IsSuccess);
@@ -506,7 +506,7 @@ public sealed class SynapseConfigTests
             .Returns(ValueTask.FromResult(Result.Success()));
 
         // Act (When)
-        var result = await del(new EventExample("test"), eventDispatcher, CancellationToken.None);
+        var result = await del(new EventExample("test"), eventDispatcher, TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.True(result.IsSuccess);
@@ -530,7 +530,7 @@ public sealed class SynapseConfigTests
 
         // Act & Assert (When & Then)
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => del(new WrongSynapseConfigEvent(), eventDispatcher, CancellationToken.None).AsTask());
+            () => del(new WrongSynapseConfigEvent(), eventDispatcher, TestContext.Current.CancellationToken).AsTask());
     }
 
     // ── Apply — EventDispatcherOptions concat branch (pre-existing dispatchers) ──

@@ -43,7 +43,7 @@ public sealed class LoggingEnrichmentBehaviorTests
         };
 
         // Act (When)
-        var result = await behavior.HandleAsync(new RequestWithResponseExample(), next, CancellationToken.None);
+        var result = await behavior.HandleAsync(new RequestWithResponseExample(), next, TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.True(result.IsSuccess);

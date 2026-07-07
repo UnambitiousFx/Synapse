@@ -13,7 +13,7 @@ public sealed class RequestHandlerTests
         var handler = new IntRequestHandler();
 
         // Act (When)
-        var result = await handler.HandleAsync(new IntRequest(5), CancellationToken.None);
+        var result = await handler.HandleAsync(new IntRequest(5), TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.True(result.IsSuccess);
@@ -27,7 +27,7 @@ public sealed class RequestHandlerTests
         var handler = new VoidRequestHandler();
 
         // Act (When)
-        var result = await handler.HandleAsync(new VoidRequest(true), CancellationToken.None);
+        var result = await handler.HandleAsync(new VoidRequest(true), TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.True(result.IsSuccess);

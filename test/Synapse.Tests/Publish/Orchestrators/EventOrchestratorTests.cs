@@ -17,7 +17,7 @@ public sealed class EventOrchestratorTests
         var orchestrator = new SequentialEventOrchestrator();
 
         // Act (When)
-        var result = await orchestrator.RunAsync(new[] { handler1, handler2 }, @event, CancellationToken.None);
+        var result = await orchestrator.RunAsync(new[] { handler1, handler2 }, @event, TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.True(result.IsSuccess);
@@ -36,7 +36,7 @@ public sealed class EventOrchestratorTests
         var orchestrator = new SequentialEventOrchestrator();
 
         // Act (When)
-        var result = await orchestrator.RunAsync(new[] { handler1, handler2 }, @event, CancellationToken.None);
+        var result = await orchestrator.RunAsync(new[] { handler1, handler2 }, @event, TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.False(result.IsSuccess);
@@ -53,7 +53,7 @@ public sealed class EventOrchestratorTests
         var orchestrator = new ConcurrentEventOrchestrator();
 
         // Act (When)
-        var result = await orchestrator.RunAsync(new[] { handler1, handler2 }, @event, CancellationToken.None);
+        var result = await orchestrator.RunAsync(new[] { handler1, handler2 }, @event, TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.False(result.IsSuccess);

@@ -25,7 +25,7 @@ public sealed class TypedRequestPipelineBehaviorTests
             .OfType<OnlyTypedSampleRequestBehavior>().Single();
 
         // Act (When)
-        await sender.InvokeAsync(new TypedSampleRequest());
+        await sender.InvokeAsync(new TypedSampleRequest(), TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.Equal(1, behavior.ExecutionCount);
@@ -46,7 +46,7 @@ public sealed class TypedRequestPipelineBehaviorTests
         var sender = provider.GetRequiredService<IInvoker>();
 
         // Act (When) — dispatch a with-response request
-        await sender.InvokeAsync(new TypedSampleRequestWithResponse(42));
+        await sender.InvokeAsync(new TypedSampleRequestWithResponse(42), TestContext.Current.CancellationToken);
 
         // Assert (Then) — behavior for TypedSampleRequest was NOT resolved for this handler
         var behaviorsForWithResponse =
@@ -73,7 +73,7 @@ public sealed class TypedRequestPipelineBehaviorTests
             .OfType<OnlyTypedSampleRequestWithResponseBehavior>().Single();
 
         // Act (When)
-        var result = await sender.InvokeAsync(new TypedSampleRequestWithResponse(42));
+        var result = await sender.InvokeAsync(new TypedSampleRequestWithResponse(42), TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.True(result.TryGet(out var value, out _));
@@ -99,7 +99,7 @@ public sealed class TypedRequestPipelineBehaviorTests
         var sender = provider.GetRequiredService<IInvoker>();
 
         // Act (When)
-        await sender.InvokeAsync(new TypedSampleRequest());
+        await sender.InvokeAsync(new TypedSampleRequest(), TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.Equal(["First", "Second"], executionOrder);

@@ -23,7 +23,7 @@ public sealed class MvcInvokerTests
             .Returns(ValueTask.FromResult(Result.Success(22)));
 
         // Act (When)
-        var result = await sut.InvokeAsync(request, _ => expected, CancellationToken.None);
+        var result = await sut.InvokeAsync(request, _ => expected, TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.Same(expected, result);
@@ -42,7 +42,7 @@ public sealed class MvcInvokerTests
             .Returns(ValueTask.FromResult(Result.Success(5)));
 
         // Act (When)
-        var result = await sut.InvokeAsync(request, CancellationToken.None);
+        var result = await sut.InvokeAsync(request, TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.NotNull(result);
@@ -61,7 +61,7 @@ public sealed class MvcInvokerTests
             .Returns(ValueTask.FromResult(Result.Success()));
 
         // Act (When)
-        var result = await sut.InvokeAsync(request, CancellationToken.None);
+        var result = await sut.InvokeAsync(request, TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.NotNull(result);

@@ -21,7 +21,7 @@ public sealed class AddRegisterGroupTests
         var invoker = services.GetRequiredService<IInvoker>();
 
         // Act (When)
-        var result = await invoker.InvokeAsync(new TestRequest(), CancellationToken.None);
+        var result = await invoker.InvokeAsync(new TestRequest(), TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.True(result.IsSuccess);
@@ -42,7 +42,7 @@ public sealed class AddRegisterGroupTests
         var emitter = services.GetRequiredService<IEmitter>();
 
         // Act (When)
-        var result = await emitter.EmitAsync(new TestEvent());
+        var result = await emitter.EmitAsync(new TestEvent(), TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.True(result.IsSuccess);
@@ -64,7 +64,7 @@ public sealed class AddRegisterGroupTests
 
         // Act (When)
         var items = new List<Result<int>>();
-        await foreach (var item in invoker.InvokeStreamAsync(new TestStreamRequest()))
+        await foreach (var item in invoker.InvokeStreamAsync(new TestStreamRequest(), TestContext.Current.CancellationToken))
         {
             items.Add(item);
         }
@@ -89,7 +89,7 @@ public sealed class AddRegisterGroupTests
         var emitter = services.GetRequiredService<IEmitter>();
 
         // Act (When) — TEvent=TestBaseEvent but runtime type is TestDerivedEvent, forcing dictionary lookup
-        var result = await emitter.EmitAsync<TestBaseEvent>(new TestDerivedEvent());
+        var result = await emitter.EmitAsync<TestBaseEvent>(new TestDerivedEvent(), TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.True(result.IsSuccess);
