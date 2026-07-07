@@ -15,7 +15,7 @@ public sealed class StreamRequestTests
         var items = new List<int>();
 
         // Act
-        await foreach (var result in handler.HandleAsync(request))
+        await foreach (var result in handler.HandleAsync(request, TestContext.Current.CancellationToken))
         {
             Assert.True(result.IsSuccess);
             items.Add(result.Match(v => v, _ => -1));
@@ -61,7 +61,7 @@ public sealed class StreamRequestTests
         var items = new List<int>();
 
         // Act
-        await foreach (var result in handler.HandleAsync(request))
+        await foreach (var result in handler.HandleAsync(request, TestContext.Current.CancellationToken))
         {
             items.Add(result.Match(v => v, _ => -1));
         }
@@ -98,7 +98,7 @@ public sealed class StreamRequestTests
         }
 
         // Act
-        await foreach (var result in ErrorProducingHandler())
+        await foreach (var result in ErrorProducingHandler(TestContext.Current.CancellationToken))
         {
             if (result.IsSuccess)
             {

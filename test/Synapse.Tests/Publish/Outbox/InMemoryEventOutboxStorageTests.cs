@@ -18,19 +18,19 @@ public sealed class InMemoryEventOutboxStorageTests
         try
         {
             CorrelationContext.CurrentCorrelationId = Guid.NewGuid();
-            await storage.AddAsync(new EventExample("same-value"), CancellationToken.None);
-            await storage.AddAsync(new EventExample("same-value"), CancellationToken.None);
+            await storage.AddAsync(new EventExample("same-value"), TestContext.Current.CancellationToken);
+            await storage.AddAsync(new EventExample("same-value"), TestContext.Current.CancellationToken);
 
-            var entries = (await storage.GetPendingEventsAsync(CancellationToken.None)).ToList();
+            var entries = (await storage.GetPendingEventsAsync(TestContext.Current.CancellationToken)).ToList();
 
             // Act (When)
             // Two value-equal events each get a distinct identity, so each can be marked on its own
             // without affecting the other.
-            var firstResult = await storage.MarkAsProcessedAsync(entries[0].Id, CancellationToken.None);
-            var afterFirst = (await storage.GetPendingEventsAsync(CancellationToken.None)).ToList();
+            var firstResult = await storage.MarkAsProcessedAsync(entries[0].Id, TestContext.Current.CancellationToken);
+            var afterFirst = (await storage.GetPendingEventsAsync(TestContext.Current.CancellationToken)).ToList();
 
-            var secondResult = await storage.MarkAsProcessedAsync(entries[1].Id, CancellationToken.None);
-            var afterSecond = (await storage.GetPendingEventsAsync(CancellationToken.None)).ToList();
+            var secondResult = await storage.MarkAsProcessedAsync(entries[1].Id, TestContext.Current.CancellationToken);
+            var afterSecond = (await storage.GetPendingEventsAsync(TestContext.Current.CancellationToken)).ToList();
 
             // Assert (Then)
             Assert.True(firstResult.IsSuccess);
@@ -59,12 +59,12 @@ public sealed class InMemoryEventOutboxStorageTests
         try
         {
             CorrelationContext.CurrentCorrelationId = Guid.NewGuid();
-            await storage.AddAsync(new EventExample("to-process"), CancellationToken.None);
-            var entry = (await storage.GetPendingEventsAsync(CancellationToken.None)).Single();
+            await storage.AddAsync(new EventExample("to-process"), TestContext.Current.CancellationToken);
+            var entry = (await storage.GetPendingEventsAsync(TestContext.Current.CancellationToken)).Single();
 
             // Act (When)
-            var result = await storage.MarkAsProcessedAsync(entry.Id, CancellationToken.None);
-            var pendingCount = await storage.GetPendingCountAsync(CancellationToken.None);
+            var result = await storage.MarkAsProcessedAsync(entry.Id, TestContext.Current.CancellationToken);
+            var pendingCount = await storage.GetPendingCountAsync(TestContext.Current.CancellationToken);
 
             // Assert (Then)
             Assert.True(result.IsSuccess);
@@ -87,16 +87,16 @@ public sealed class InMemoryEventOutboxStorageTests
         {
             CorrelationContext.CurrentCorrelationId = Guid.NewGuid();
             var firstEvent = new EventExample("first");
-            await storage.AddAsync(firstEvent, CancellationToken.None);
+            await storage.AddAsync(firstEvent, TestContext.Current.CancellationToken);
 
             CorrelationContext.CurrentCorrelationId = Guid.NewGuid();
             var secondEvent = new EventExample("second");
-            await storage.AddAsync(secondEvent, CancellationToken.None);
+            await storage.AddAsync(secondEvent, TestContext.Current.CancellationToken);
 
             CorrelationContext.CurrentCorrelationId = Guid.NewGuid();
 
             // Act (When)
-            var pendingEvents = (await storage.GetPendingEventsAsync(CancellationToken.None)).ToList();
+            var pendingEvents = (await storage.GetPendingEventsAsync(TestContext.Current.CancellationToken)).ToList();
 
             // Assert (Then)
             Assert.Equal(2, pendingEvents.Count);
@@ -119,16 +119,16 @@ public sealed class InMemoryEventOutboxStorageTests
         try
         {
             CorrelationContext.CurrentCorrelationId = Guid.NewGuid();
-            await storage.AddAsync(new EventExample("first"), CancellationToken.None);
+            await storage.AddAsync(new EventExample("first"), TestContext.Current.CancellationToken);
 
             CorrelationContext.CurrentCorrelationId = Guid.NewGuid();
-            await storage.AddAsync(new EventExample("second"), CancellationToken.None);
+            await storage.AddAsync(new EventExample("second"), TestContext.Current.CancellationToken);
 
             CorrelationContext.CurrentCorrelationId = Guid.NewGuid();
 
             // Act (When)
-            var clearResult = await storage.ClearAsync(CancellationToken.None);
-            var pendingCount = await storage.GetPendingCountAsync(CancellationToken.None);
+            var clearResult = await storage.ClearAsync(TestContext.Current.CancellationToken);
+            var pendingCount = await storage.GetPendingCountAsync(TestContext.Current.CancellationToken);
 
             // Assert (Then)
             Assert.True(clearResult.IsSuccess);
@@ -147,7 +147,7 @@ public sealed class InMemoryEventOutboxStorageTests
         var storage = new InMemoryEventOutboxStorage();
 
         // Act (When)
-        var result = await storage.MarkAsProcessedAsync(Guid.NewGuid(), CancellationToken.None);
+        var result = await storage.MarkAsProcessedAsync(Guid.NewGuid(), TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.False(result.IsSuccess);
@@ -161,7 +161,7 @@ public sealed class InMemoryEventOutboxStorageTests
 
         // Act (When)
         var result = await storage.MarkAsFailedAsync(Guid.NewGuid(), "error", false, null,
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.False(result.IsSuccess);
@@ -178,15 +178,15 @@ public sealed class InMemoryEventOutboxStorageTests
         {
             CorrelationContext.CurrentCorrelationId = Guid.NewGuid();
             var @event = new EventExample("dead-letter");
-            await storage.AddAsync(@event, CancellationToken.None);
-            var entry = (await storage.GetPendingEventsAsync(CancellationToken.None)).Single();
+            await storage.AddAsync(@event, TestContext.Current.CancellationToken);
+            var entry = (await storage.GetPendingEventsAsync(TestContext.Current.CancellationToken)).Single();
 
             // Act (When)
-            var failResult = await storage.MarkAsFailedAsync(entry.Id, "boom", true, null, CancellationToken.None);
-            var deadLetter = (await storage.GetDeadLetterEventsAsync(CancellationToken.None)).ToList();
-            var pending = (await storage.GetPendingEventsAsync(CancellationToken.None)).ToList();
-            var retryingCount = await storage.GetRetryingCountAsync(CancellationToken.None);
-            var deadLetterCount = await storage.GetDeadLetterCountAsync(CancellationToken.None);
+            var failResult = await storage.MarkAsFailedAsync(entry.Id, "boom", true, null, TestContext.Current.CancellationToken);
+            var deadLetter = (await storage.GetDeadLetterEventsAsync(TestContext.Current.CancellationToken)).ToList();
+            var pending = (await storage.GetPendingEventsAsync(TestContext.Current.CancellationToken)).ToList();
+            var retryingCount = await storage.GetRetryingCountAsync(TestContext.Current.CancellationToken);
+            var deadLetterCount = await storage.GetDeadLetterCountAsync(TestContext.Current.CancellationToken);
 
             // Assert (Then)
             Assert.True(failResult.IsSuccess);
@@ -214,16 +214,16 @@ public sealed class InMemoryEventOutboxStorageTests
         {
             CorrelationContext.CurrentCorrelationId = Guid.NewGuid();
             var @event = new EventExample("retry-later");
-            await storage.AddAsync(@event, CancellationToken.None);
-            var entry = (await storage.GetPendingEventsAsync(CancellationToken.None)).Single();
+            await storage.AddAsync(@event, TestContext.Current.CancellationToken);
+            var entry = (await storage.GetPendingEventsAsync(TestContext.Current.CancellationToken)).Single();
             var nextAttemptAt = DateTimeOffset.UtcNow.AddMinutes(10);
 
             // Act (When)
-            await storage.MarkAsFailedAsync(entry.Id, "temporary", false, nextAttemptAt, CancellationToken.None);
-            var pending = (await storage.GetPendingEventsAsync(CancellationToken.None)).ToList();
-            var attemptCount = await storage.GetAttemptCountAsync(entry.Id, CancellationToken.None);
-            var retryingCount = await storage.GetRetryingCountAsync(CancellationToken.None);
-            var deadLetterCount = await storage.GetDeadLetterCountAsync(CancellationToken.None);
+            await storage.MarkAsFailedAsync(entry.Id, "temporary", false, nextAttemptAt, TestContext.Current.CancellationToken);
+            var pending = (await storage.GetPendingEventsAsync(TestContext.Current.CancellationToken)).ToList();
+            var attemptCount = await storage.GetAttemptCountAsync(entry.Id, TestContext.Current.CancellationToken);
+            var retryingCount = await storage.GetRetryingCountAsync(TestContext.Current.CancellationToken);
+            var deadLetterCount = await storage.GetDeadLetterCountAsync(TestContext.Current.CancellationToken);
 
             // Assert (Then)
             Assert.Empty(pending);
@@ -245,7 +245,7 @@ public sealed class InMemoryEventOutboxStorageTests
         var storage = new InMemoryEventOutboxStorage();
 
         // Act (When)
-        var attempts = await storage.GetAttemptCountAsync(Guid.NewGuid(), CancellationToken.None);
+        var attempts = await storage.GetAttemptCountAsync(Guid.NewGuid(), TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.Null(attempts);
@@ -258,7 +258,7 @@ public sealed class InMemoryEventOutboxStorageTests
         var storage = new InMemoryEventOutboxStorage();
 
         // Act (When)
-        var age = await storage.GetOldestPendingAgeAsync(CancellationToken.None);
+        var age = await storage.GetOldestPendingAgeAsync(TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.Null(age);
@@ -274,10 +274,10 @@ public sealed class InMemoryEventOutboxStorageTests
         try
         {
             CorrelationContext.CurrentCorrelationId = Guid.NewGuid();
-            await storage.AddAsync(new EventExample("oldest"), CancellationToken.None);
+            await storage.AddAsync(new EventExample("oldest"), TestContext.Current.CancellationToken);
 
             // Act (When)
-            var age = await storage.GetOldestPendingAgeAsync(CancellationToken.None);
+            var age = await storage.GetOldestPendingAgeAsync(TestContext.Current.CancellationToken);
 
             // Assert (Then)
             Assert.NotNull(age);

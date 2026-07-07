@@ -23,7 +23,7 @@ public sealed class DependencyInjectionExtensionsTests
         services.GetRequiredService<IContextFactory>()
             .Create();
 
-        var result = await handler.HandleAsync(new RequestWithResponseExample(), CancellationToken.None);
+        var result = await handler.HandleAsync(new RequestWithResponseExample(), TestContext.Current.CancellationToken);
 
         Assert.True(result.IsSuccess);
     }
@@ -45,7 +45,7 @@ public sealed class DependencyInjectionExtensionsTests
         services.GetRequiredService<IContextFactory>()
             .Create();
 
-        var result = await handler.HandleAsync(new RequestWithResponseExample(), CancellationToken.None);
+        var result = await handler.HandleAsync(new RequestWithResponseExample(), TestContext.Current.CancellationToken);
 
         Assert.True(result.IsSuccess);
     }
@@ -70,7 +70,7 @@ public sealed class DependencyInjectionExtensionsTests
         Assert.NotNull(handler);
         services.GetRequiredService<IContextFactory>()
             .Create();
-        var result = await handler.HandleAsync(new RequestWithResponseExample(), CancellationToken.None);
+        var result = await handler.HandleAsync(new RequestWithResponseExample(), TestContext.Current.CancellationToken);
         Assert.True(result.IsSuccess);
     }
 
@@ -142,7 +142,7 @@ public sealed class DependencyInjectionExtensionsTests
         var invoker = services.GetRequiredService<IInvoker>();
 
         // Act (When)
-        var result = await invoker.InvokeAsync(new RequestWithResponseExample(), CancellationToken.None);
+        var result = await invoker.InvokeAsync(new RequestWithResponseExample(), TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.True(result.IsSuccess);
@@ -165,7 +165,7 @@ public sealed class DependencyInjectionExtensionsTests
 
         // Act & Assert (When & Then)
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            invoker.InvokeAsync(new RequestWithResponseExample(), CancellationToken.None).AsTask());
+            invoker.InvokeAsync(new RequestWithResponseExample(), TestContext.Current.CancellationToken).AsTask());
     }
 
     [Fact]

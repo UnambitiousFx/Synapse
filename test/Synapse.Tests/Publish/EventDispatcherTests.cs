@@ -59,7 +59,7 @@ public sealed class EventDispatcherTests
             .Returns(Result.Success());
 
         // Act (When)
-        var result = await dispatcher.DispatchAsync(@event, CancellationToken.None);
+        var result = await dispatcher.DispatchAsync(@event, TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.True(result.IsSuccess);
@@ -86,7 +86,7 @@ public sealed class EventDispatcherTests
             .Returns(Result.Success());
 
         // Act (When)
-        var result = await dispatcher.DispatchAsync(@event, CancellationToken.None);
+        var result = await dispatcher.DispatchAsync(@event, TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.True(result.IsSuccess);
@@ -111,7 +111,7 @@ public sealed class EventDispatcherTests
             .Returns(Result.Success());
 
         // Act (When)
-        var result = await dispatcher.DispatchAsync(@event, CancellationToken.None);
+        var result = await dispatcher.DispatchAsync(@event, TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.True(result.IsSuccess);
@@ -139,14 +139,14 @@ public sealed class EventDispatcherTests
             .Returns(callInfo =>
             {
                 var next = callInfo.Arg<EventHandlerDelegate<EventExample>>();
-                return next(@event, CancellationToken.None);
+                return next(@event, TestContext.Current.CancellationToken);
             });
 
         _eventOrchestrator.RunAsync(Arg.Any<IEventHandler<EventExample>[]>(), @event, Arg.Any<CancellationToken>())
             .Returns(Result.Success());
 
         // Act (When)
-        var result = await dispatcher.DispatchAsync(@event, CancellationToken.None);
+        var result = await dispatcher.DispatchAsync(@event, TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.True(result.IsSuccess);
@@ -173,8 +173,8 @@ public sealed class EventDispatcherTests
             .Returns(Result.Success());
 
         // Act (When)
-        await dispatcher.DispatchAsync(@event, CancellationToken.None);
-        await dispatcher.DispatchAsync(@event, CancellationToken.None);
+        await dispatcher.DispatchAsync(@event, TestContext.Current.CancellationToken);
+        await dispatcher.DispatchAsync(@event, TestContext.Current.CancellationToken);
 
         // Assert (Then) — the sorted behavior array is cached per event type for the dispatcher's
         // lifetime, so behaviors are resolved only once across both dispatches.
@@ -212,7 +212,7 @@ public sealed class EventDispatcherTests
             .Returns(Result.Success());
 
         // Act (When) - Dispatch as base type
-        var result = await dispatcher.DispatchAsync<BaseEventExample>(@event, CancellationToken.None);
+        var result = await dispatcher.DispatchAsync<BaseEventExample>(@event, TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.True(result.IsSuccess);
@@ -238,7 +238,7 @@ public sealed class EventDispatcherTests
             .Returns(Result.Success());
 
         // Act (When)
-        var result = await dispatcher.DispatchAsync(@event, CancellationToken.None);
+        var result = await dispatcher.DispatchAsync(@event, TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.True(result.IsSuccess);
@@ -262,7 +262,7 @@ public sealed class EventDispatcherTests
             .Returns(Result.Failure("Test failure"));
 
         // Act (When)
-        var result = await dispatcher.DispatchAsync(@event, CancellationToken.None);
+        var result = await dispatcher.DispatchAsync(@event, TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.False(result.IsSuccess);
@@ -282,7 +282,7 @@ public sealed class EventDispatcherTests
         });
 
         // Act (When) — dispatch as base type so runtimeType != genericType path is taken
-        var result = await dispatcher.DispatchAsync<BaseEventExample>(@event, CancellationToken.None);
+        var result = await dispatcher.DispatchAsync<BaseEventExample>(@event, TestContext.Current.CancellationToken);
 
         // Assert (Then) — no dispatcher registered → Result.Failure
         Assert.False(result.IsSuccess);

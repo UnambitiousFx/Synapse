@@ -47,7 +47,7 @@ public sealed class PipelineBehaviorDeduplicationTests
         var sender = provider.GetRequiredService<IInvoker>();
 
         // Act (When)
-        await sender.InvokeAsync(new DedupRequest());
+        await sender.InvokeAsync(new DedupRequest(), TestContext.Current.CancellationToken);
 
         // Assert (Then) — the behavior ran exactly once, not once per opted-in group.
         Assert.Equal(1, counter.Count);
@@ -97,7 +97,7 @@ public sealed class PipelineBehaviorDeduplicationTests
 
         // ...and it runs exactly once.
         var provider = services.BuildServiceProvider();
-        await provider.GetRequiredService<IInvoker>().InvokeAsync(new DedupRequest());
+        await provider.GetRequiredService<IInvoker>().InvokeAsync(new DedupRequest(), TestContext.Current.CancellationToken);
         Assert.Equal(1, counter.Count);
     }
 
@@ -120,7 +120,7 @@ public sealed class PipelineBehaviorDeduplicationTests
         var sender = provider.CreateScope().ServiceProvider.GetRequiredService<IInvoker>();
 
         // Act (When)
-        var result = await sender.InvokeAsync(new DedupRequest());
+        var result = await sender.InvokeAsync(new DedupRequest(), TestContext.Current.CancellationToken);
 
         // Assert (Then) — deduped to a single instance, so no spurious boundary violation.
         Assert.True(result.IsSuccess);

@@ -44,11 +44,11 @@ public sealed class InvokerTests
 
         _resolver.GetRequiredService<IRequestHandler<RequestWithResponseExample, int>>()
             .Returns(handler);
-        handler.HandleAsync(request, CancellationToken.None)
+        handler.HandleAsync(request, TestContext.Current.CancellationToken)
             .Returns(Result.Success(42));
 
         // Act (When)
-        var result = await _invoker.InvokeAsync(request, CancellationToken.None);
+        var result = await _invoker.InvokeAsync(request, TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.True(result.IsSuccess);
@@ -71,11 +71,11 @@ public sealed class InvokerTests
 
         _resolver.GetRequiredService<IRequestHandler<RequestExample>>()
             .Returns(handler);
-        handler.HandleAsync(request, CancellationToken.None)
+        handler.HandleAsync(request, TestContext.Current.CancellationToken)
             .Returns(Result.Success());
 
         // Act (When)
-        var result = await _invoker.InvokeAsync(request, CancellationToken.None);
+        var result = await _invoker.InvokeAsync(request, TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.True(result.IsSuccess);
@@ -90,11 +90,11 @@ public sealed class InvokerTests
 
         _resolver.GetRequiredService<IRequestHandler<RequestWithResponseExample, int>>()
             .Returns(handler);
-        handler.HandleAsync((RequestWithResponseExample)request, CancellationToken.None)
+        handler.HandleAsync((RequestWithResponseExample)request, TestContext.Current.CancellationToken)
             .Returns(Result.Success(42));
 
         // Act (When)
-        var result = await _invoker.InvokeAsync(request, CancellationToken.None);
+        var result = await _invoker.InvokeAsync(request, TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.True(result.IsSuccess);
@@ -109,11 +109,11 @@ public sealed class InvokerTests
 
         _resolver.GetRequiredService<IRequestHandler<RequestExample>>()
             .Returns(handler);
-        handler.HandleAsync((RequestExample)request, CancellationToken.None)
+        handler.HandleAsync((RequestExample)request, TestContext.Current.CancellationToken)
             .Returns(Result.Success());
 
         // Act (When)
-        var result = await _invoker.InvokeAsync(request, CancellationToken.None);
+        var result = await _invoker.InvokeAsync(request, TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.True(result.IsSuccess);
@@ -127,7 +127,7 @@ public sealed class InvokerTests
 
         // Act (When)
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
-            await _invoker.InvokeAsync(request, CancellationToken.None));
+            await _invoker.InvokeAsync(request, TestContext.Current.CancellationToken));
 
         // Assert (Then)
         Assert.Contains("No handler registered for request type", exception.Message);

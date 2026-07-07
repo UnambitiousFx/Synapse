@@ -44,7 +44,7 @@ public sealed class CqrsBoundaryEnforcementTests
         // Act & Assert
         var exception =
             await Assert.ThrowsAsync<CqrsBoundaryViolationException>(async () =>
-                await sender.InvokeAsync(new FirstRequest()));
+                await sender.InvokeAsync(new FirstRequest(), TestContext.Current.CancellationToken));
 
         Assert.Contains("CQRS boundary violation", exception.Message);
         Assert.Contains("SecondRequest", exception.Message);
@@ -70,7 +70,7 @@ public sealed class CqrsBoundaryEnforcementTests
         // Act & Assert
         var exception =
             await Assert.ThrowsAsync<CqrsBoundaryViolationException>(async () =>
-                await sender.InvokeAsync(new FirstRequest())
+                await sender.InvokeAsync(new FirstRequest(), TestContext.Current.CancellationToken)
             );
 
         Assert.Contains("CQRS boundary violation", exception.Message);
@@ -98,7 +98,7 @@ public sealed class CqrsBoundaryEnforcementTests
 
         // Act & Assert
         var exception = await Assert.ThrowsAsync<CqrsBoundaryViolationException>(async () =>
-            await sender.InvokeAsync(new FirstRequestWithResponse())
+            await sender.InvokeAsync(new FirstRequestWithResponse(), TestContext.Current.CancellationToken)
         );
 
         Assert.Contains("CQRS boundary violation", exception.Message);
@@ -121,7 +121,7 @@ public sealed class CqrsBoundaryEnforcementTests
         var sender = provider.GetRequiredService<IInvoker>();
 
         // Act & Assert - Should not throw
-        var result = await sender.InvokeAsync(new FirstRequest());
+        var result = await sender.InvokeAsync(new FirstRequest(), TestContext.Current.CancellationToken);
         Assert.True(result.IsSuccess);
     }
 
@@ -140,7 +140,7 @@ public sealed class CqrsBoundaryEnforcementTests
         var sender = provider.GetRequiredService<IInvoker>();
 
         // Act & Assert - Should not throw
-        var result = await sender.InvokeAsync(new FirstRequest());
+        var result = await sender.InvokeAsync(new FirstRequest(), TestContext.Current.CancellationToken);
         Assert.True(result.IsSuccess);
     }
 
@@ -159,7 +159,7 @@ public sealed class CqrsBoundaryEnforcementTests
         var sender = provider.GetRequiredService<IInvoker>();
 
         // Act & Assert - Should not throw
-        var result = await sender.InvokeAsync(new FirstRequestWithResponse());
+        var result = await sender.InvokeAsync(new FirstRequestWithResponse(), TestContext.Current.CancellationToken);
         Assert.True(result.IsSuccess);
         if (result.TryGet(out var value, out _))
         {
@@ -188,10 +188,10 @@ public sealed class CqrsBoundaryEnforcementTests
         var sender = provider.GetRequiredService<IInvoker>();
 
         // Act & Assert - Should not throw when requests are independent (not nested)
-        var result1 = await sender.InvokeAsync(new FirstRequest());
+        var result1 = await sender.InvokeAsync(new FirstRequest(), TestContext.Current.CancellationToken);
         Assert.True(result1.IsSuccess);
 
-        var result2 = await sender.InvokeAsync(new SecondRequest());
+        var result2 = await sender.InvokeAsync(new SecondRequest(), TestContext.Current.CancellationToken);
         Assert.True(result2.IsSuccess);
     }
 
@@ -214,7 +214,7 @@ public sealed class CqrsBoundaryEnforcementTests
         // Act & Assert
         var exception =
             await Assert.ThrowsAsync<CqrsBoundaryViolationException>(async () =>
-                await sender.InvokeAsync(new FirstRequest())
+                await sender.InvokeAsync(new FirstRequest(), TestContext.Current.CancellationToken)
             );
 
         // Verify error message contains useful debugging information
@@ -247,7 +247,7 @@ public sealed class CqrsBoundaryEnforcementTests
         // Act — dispatch a top-level request; a duplicate would have thrown a spurious boundary violation.
         var provider = services.BuildServiceProvider();
         var sender = provider.GetRequiredService<IInvoker>();
-        var result = await sender.InvokeAsync(new SecondRequest());
+        var result = await sender.InvokeAsync(new SecondRequest(), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.True(result.IsSuccess);
@@ -280,7 +280,7 @@ public sealed class CqrsBoundaryEnforcementTests
 
         // Act & Assert — the nested send is now detected.
         var exception = await Assert.ThrowsAsync<CqrsBoundaryViolationException>(async () =>
-            await sender.InvokeAsync(new FirstRequest()));
+            await sender.InvokeAsync(new FirstRequest(), TestContext.Current.CancellationToken));
 
         Assert.Contains("CQRS boundary violation", exception.Message);
         Assert.Contains("SecondRequest", exception.Message);
@@ -311,7 +311,7 @@ public sealed class CqrsBoundaryEnforcementTests
         // Act — a top-level send must succeed; a duplicate would have thrown a spurious boundary violation.
         var provider = services.BuildServiceProvider();
         var sender = provider.GetRequiredService<IInvoker>();
-        var result = await sender.InvokeAsync(new SecondRequest());
+        var result = await sender.InvokeAsync(new SecondRequest(), TestContext.Current.CancellationToken);
 
         // Assert
         Assert.True(result.IsSuccess);
@@ -333,7 +333,7 @@ public sealed class CqrsBoundaryEnforcementTests
         var sender = provider.GetRequiredService<IInvoker>();
 
         // Act & Assert - Should not throw because enforcement is not enabled
-        var result = await sender.InvokeAsync(new FirstRequest());
+        var result = await sender.InvokeAsync(new FirstRequest(), TestContext.Current.CancellationToken);
         Assert.True(result.IsSuccess);
     }
 
@@ -354,7 +354,7 @@ public sealed class CqrsBoundaryEnforcementTests
         // Act & Assert
         var exception =
             await Assert.ThrowsAsync<CqrsBoundaryViolationException>(async () =>
-                await sender.InvokeAsync(new FirstRequest())
+                await sender.InvokeAsync(new FirstRequest(), TestContext.Current.CancellationToken)
             );
 
         Assert.Contains("CQRS boundary enforcement metadata was missing", exception.Message);
@@ -379,7 +379,7 @@ public sealed class CqrsBoundaryEnforcementTests
 
         // Act & Assert
         var exception = await Assert.ThrowsAsync<CqrsBoundaryViolationException>(async () =>
-            await sender.InvokeAsync(new FirstRequestWithResponse())
+            await sender.InvokeAsync(new FirstRequestWithResponse(), TestContext.Current.CancellationToken)
         );
 
         Assert.Contains("CQRS boundary enforcement metadata was missing", exception.Message);
@@ -404,11 +404,11 @@ public sealed class CqrsBoundaryEnforcementTests
 
         // Act & Assert — the original handler exception is surfaced, not masked.
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
-            await sender.InvokeAsync(new FirstRequest()));
+            await sender.InvokeAsync(new FirstRequest(), TestContext.Current.CancellationToken));
         Assert.Equal("handler boom", exception.Message);
 
         // A later independent send in the same scope must see a clean boundary state.
-        var result = await sender.InvokeAsync(new SecondRequest());
+        var result = await sender.InvokeAsync(new SecondRequest(), TestContext.Current.CancellationToken);
         Assert.True(result.IsSuccess);
     }
 
@@ -430,11 +430,11 @@ public sealed class CqrsBoundaryEnforcementTests
 
         // Act & Assert — the original handler exception is surfaced, not masked.
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
-            await sender.InvokeAsync(new FirstRequestWithResponse()));
+            await sender.InvokeAsync(new FirstRequestWithResponse(), TestContext.Current.CancellationToken));
         Assert.Equal("handler boom", exception.Message);
 
         // A later independent send in the same scope must see a clean boundary state.
-        var result = await sender.InvokeAsync(new SecondRequestWithResponse());
+        var result = await sender.InvokeAsync(new SecondRequestWithResponse(), TestContext.Current.CancellationToken);
         Assert.True(result.IsSuccess);
     }
 

@@ -16,7 +16,7 @@ public sealed class ProxyStreamRequestHandlerTests
             Array.Empty<IStreamRequestPipelineBehavior<StreamRequest, int>>());
 
         // Act (When)
-        var results = await ToValuesAsync(proxy.HandleAsync(new StreamRequest(3), CancellationToken.None));
+        var results = await ToValuesAsync(proxy.HandleAsync(new StreamRequest(3), TestContext.Current.CancellationToken));
 
         // Assert (Then)
         Assert.Equal([1, 2, 3], results);
@@ -37,7 +37,7 @@ public sealed class ProxyStreamRequestHandlerTests
         var proxy = new ProxyStreamRequestHandler<TestStreamHandler, StreamRequest, int>(handler, behaviors);
 
         // Act (When)
-        var results = await ToValuesAsync(proxy.HandleAsync(new StreamRequest(2), CancellationToken.None));
+        var results = await ToValuesAsync(proxy.HandleAsync(new StreamRequest(2), TestContext.Current.CancellationToken));
 
         // Assert (Then)
         Assert.Equal([1, 2], results);

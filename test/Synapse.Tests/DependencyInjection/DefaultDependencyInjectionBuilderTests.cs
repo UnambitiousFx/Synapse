@@ -291,7 +291,7 @@ public sealed class DefaultDependencyInjectionBuilderTests
             new Dictionary<Type, object> { [typeof(IRequestHandler<TestRequestWithResponse, int>)] = handler });
 
         // Act (When)
-        var result = await func(new TestRequestWithResponse(), resolver, CancellationToken.None);
+        var result = await func(new TestRequestWithResponse(), resolver, TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.True(result.IsSuccess);
@@ -310,7 +310,7 @@ public sealed class DefaultDependencyInjectionBuilderTests
             new Dictionary<Type, object> { [typeof(IRequestHandler<TestRequest>)] = handler });
 
         // Act (When)
-        var result = await func(new TestRequest(), resolver, CancellationToken.None);
+        var result = await func(new TestRequest(), resolver, TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.True(result.IsSuccess);
@@ -328,7 +328,7 @@ public sealed class DefaultDependencyInjectionBuilderTests
             .Returns(ValueTask.FromResult(Result.Success()));
 
         // Act (When)
-        var result = await dispatcher(new TestEvent(), eventDispatcher, CancellationToken.None);
+        var result = await dispatcher(new TestEvent(), eventDispatcher, TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.True(result.IsSuccess);
@@ -346,7 +346,7 @@ public sealed class DefaultDependencyInjectionBuilderTests
 
         // Act & Assert (When & Then)
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => dispatcher(new OtherTestEvent(), eventDispatcher, CancellationToken.None).AsTask());
+            () => dispatcher(new OtherTestEvent(), eventDispatcher, TestContext.Current.CancellationToken).AsTask());
     }
 
     [Fact]
@@ -364,7 +364,7 @@ public sealed class DefaultDependencyInjectionBuilderTests
 
         // Act (When)
         var results = new List<Result<int>>();
-        await foreach (var item in func(new TestStreamRequest(), resolver, CancellationToken.None))
+        await foreach (var item in func(new TestStreamRequest(), resolver, TestContext.Current.CancellationToken))
         {
             results.Add(item);
         }

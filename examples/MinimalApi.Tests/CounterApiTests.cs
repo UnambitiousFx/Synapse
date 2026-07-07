@@ -30,14 +30,14 @@ public sealed class CounterApiTests
         // Arrange — read current value, then increment. Assert on the delta so the test is robust against
         // the shared singleton CounterStore and the ordering of other tests.
         var client = _factory.CreateClient();
-        var before = await (await client.GetAsync("/counter")).Content.ReadFromJsonAsync<int>();
+        var before = await (await client.GetAsync("/counter", TestContext.Current.CancellationToken)).Content.ReadFromJsonAsync<int>(TestContext.Current.CancellationToken);
 
         // Act — value-type int response through the referenced library's RegisterGroup + closed CQRS + behavior.
-        var response = await client.PostAsync("/counter/increment", content: null);
+        var response = await client.PostAsync("/counter/increment", content: null, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var after = await response.Content.ReadFromJsonAsync<int>();
+        var after = await response.Content.ReadFromJsonAsync<int>(TestContext.Current.CancellationToken);
         Assert.Equal(before + 1, after);
     }
 
@@ -52,7 +52,7 @@ public sealed class CounterApiTests
         var client = factory.CreateClient();
 
         // Act
-        var response = await client.PostAsync("/counter/increment", content: null);
+        var response = await client.PostAsync("/counter/increment", content: null, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert — the main-assembly behavior wrapped the cross-assembly request.
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -67,11 +67,11 @@ public sealed class CounterApiTests
         var client = _factory.CreateClient();
 
         // Act
-        var response = await client.GetAsync("/counter");
+        var response = await client.GetAsync("/counter", TestContext.Current.CancellationToken);
 
         // Assert — value-type int response resolves and serializes.
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var value = await response.Content.ReadFromJsonAsync<int>();
+        var value = await response.Content.ReadFromJsonAsync<int>(TestContext.Current.CancellationToken);
         Assert.True(value >= 0);
     }
 
@@ -82,17 +82,17 @@ public sealed class CounterApiTests
         var factory = _factory.WithWebHostBuilder(b => b.UseEnvironment("Development"));
         var client = factory.CreateClient();
 
-        var before = await (await client.GetAsync("/counter")).Content.ReadFromJsonAsync<int>();
+        var before = await (await client.GetAsync("/counter", TestContext.Current.CancellationToken)).Content.ReadFromJsonAsync<int>(TestContext.Current.CancellationToken);
 
         // Act — the handler sends a nested request, which the closed CqrsBoundaryEnforcementBehavior rejects.
-        var response = await client.PostAsync("/counter/illegal-nested", content: null);
+        var response = await client.PostAsync("/counter/illegal-nested", content: null, cancellationToken: TestContext.Current.CancellationToken);
 
         // Assert — the request fails and the CQRS violation surfaces; the handler short-circuited (no state change).
         Assert.False(response.IsSuccessStatusCode);
-        var body = await response.Content.ReadAsStringAsync();
+        var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
         Assert.Contains("CQRS boundary", body, StringComparison.OrdinalIgnoreCase);
 
-        var after = await (await client.GetAsync("/counter")).Content.ReadFromJsonAsync<int>();
+        var after = await (await client.GetAsync("/counter", TestContext.Current.CancellationToken)).Content.ReadFromJsonAsync<int>(TestContext.Current.CancellationToken);
         Assert.Equal(before, after);
     }
 

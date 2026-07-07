@@ -26,7 +26,8 @@ public sealed class StreamPipelineBehaviorTests
         // Act
         await foreach (var result in behavior.HandleAsync(
                            new TestStreamRequest { Count = 10 },
-                           Handler))
+                           Handler,
+                           TestContext.Current.CancellationToken))
         {
             items.Add(result.Match(v => v, _ => -1));
         }
@@ -63,7 +64,8 @@ public sealed class StreamPipelineBehaviorTests
         // Act
         await foreach (var result in behavior.HandleAsync(
                            new TestStreamRequest { Count = 10 },
-                           Handler))
+                           Handler,
+                           TestContext.Current.CancellationToken))
         {
             items.Add(result.Match(v => v, _ => -1));
         }
@@ -103,7 +105,8 @@ public sealed class StreamPipelineBehaviorTests
                            new TestStreamRequest { Count = 10 },
                            () => filteringBehavior.HandleAsync(
                                new TestStreamRequest { Count = 10 },
-                               Handler)))
+                               Handler),
+                           TestContext.Current.CancellationToken))
         {
             items.Add(result.Match(v => v, _ => -1));
         }

@@ -37,7 +37,7 @@ public sealed class EmitterTests
 
         var result = await _emitter.EmitAsync(
             @event,
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.True(result.IsSuccess);
     }
@@ -54,7 +54,7 @@ public sealed class EmitterTests
         var result = await _emitter.EmitAsync(
             @event,
             EmitMode.Outbox,
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         Assert.True(result.IsSuccess);
     }
@@ -67,7 +67,7 @@ public sealed class EmitterTests
             .Returns(Result.Success());
 
         var outboxCommit = new OutboxCommit(_outboxManager);
-        var result = await outboxCommit.CommitAsync(CancellationToken.None);
+        var result = await outboxCommit.CommitAsync(TestContext.Current.CancellationToken);
 
         Assert.True(result.IsSuccess);
         await _outboxManager.Received(1).ProcessPendingAsync(Arg.Any<CancellationToken>());

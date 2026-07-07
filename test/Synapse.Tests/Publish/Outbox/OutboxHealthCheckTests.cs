@@ -15,7 +15,7 @@ public sealed class OutboxHealthCheckTests
         var check = new OutboxHealthCheck(storage);
 
         // Act (When)
-        var result = await check.CheckHealthAsync(new HealthCheckContext(), CancellationToken.None);
+        var result = await check.CheckHealthAsync(new HealthCheckContext(), TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.Equal(HealthStatus.Healthy, result.Status);
@@ -32,7 +32,7 @@ public sealed class OutboxHealthCheckTests
         var check = new OutboxHealthCheck(storage);
 
         // Act (When)
-        var result = await check.CheckHealthAsync(new HealthCheckContext(), CancellationToken.None);
+        var result = await check.CheckHealthAsync(new HealthCheckContext(), TestContext.Current.CancellationToken);
 
         // Assert (Then) — retrying must not trip the health check
         Assert.Equal(HealthStatus.Healthy, result.Status);
@@ -48,7 +48,7 @@ public sealed class OutboxHealthCheckTests
         var check = new OutboxHealthCheck(storage);
 
         // Act (When)
-        var result = await check.CheckHealthAsync(new HealthCheckContext(), CancellationToken.None);
+        var result = await check.CheckHealthAsync(new HealthCheckContext(), TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.Equal(HealthStatus.Unhealthy, result.Status);
@@ -63,7 +63,7 @@ public sealed class OutboxHealthCheckTests
         var check = new OutboxHealthCheck(storage);
 
         // Act (When)
-        var result = await check.CheckHealthAsync(new HealthCheckContext(), CancellationToken.None);
+        var result = await check.CheckHealthAsync(new HealthCheckContext(), TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.Equal(HealthStatus.Unhealthy, result.Status);
@@ -78,7 +78,7 @@ public sealed class OutboxHealthCheckTests
         var check = new OutboxHealthCheck(storage);
 
         // Act (When)
-        var result = await check.CheckHealthAsync(new HealthCheckContext(), CancellationToken.None);
+        var result = await check.CheckHealthAsync(new HealthCheckContext(), TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.Equal(HealthStatus.Unhealthy, result.Status);
@@ -93,7 +93,7 @@ public sealed class OutboxHealthCheckTests
         var check = new OutboxHealthCheck(storage);
 
         // Act (When)
-        var result = await check.CheckHealthAsync(new HealthCheckContext(), CancellationToken.None);
+        var result = await check.CheckHealthAsync(new HealthCheckContext(), TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.Equal(HealthStatus.Degraded, result.Status);
@@ -107,7 +107,7 @@ public sealed class OutboxHealthCheckTests
         var check = new OutboxHealthCheck(storage);
 
         // Act (When)
-        var result = await check.CheckHealthAsync(new HealthCheckContext(), CancellationToken.None);
+        var result = await check.CheckHealthAsync(new HealthCheckContext(), TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.Equal(HealthStatus.Degraded, result.Status);
@@ -121,7 +121,7 @@ public sealed class OutboxHealthCheckTests
         var check = new OutboxHealthCheck(storage);
 
         // Act (When)
-        var result = await check.CheckHealthAsync(new HealthCheckContext(), CancellationToken.None);
+        var result = await check.CheckHealthAsync(new HealthCheckContext(), TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.Equal(HealthStatus.Degraded, result.Status);
@@ -138,7 +138,7 @@ public sealed class OutboxHealthCheckTests
         var check = new OutboxHealthCheck(storage);
 
         // Act (When)
-        var result = await check.CheckHealthAsync(new HealthCheckContext(), CancellationToken.None);
+        var result = await check.CheckHealthAsync(new HealthCheckContext(), TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.Equal(HealthStatus.Unhealthy, result.Status);

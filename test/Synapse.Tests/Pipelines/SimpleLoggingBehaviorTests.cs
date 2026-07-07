@@ -16,7 +16,7 @@ public sealed class SimpleLoggingBehaviorTests
         // Act (When)
         var result = await behavior.HandleAsync(new TestEvent(),
             (_, _) => ValueTask.FromResult(Result.Success()),
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.True(result.IsSuccess);
@@ -31,7 +31,7 @@ public sealed class SimpleLoggingBehaviorTests
         // Act (When)
         var result = await behavior.HandleAsync(new TestEvent(),
             (_, _) => ValueTask.FromResult(Result.Failure("event failure")),
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.False(result.IsSuccess);
@@ -46,7 +46,7 @@ public sealed class SimpleLoggingBehaviorTests
         // Act (When)
         var result = await behavior.HandleAsync(new RequestWithoutResponse(),
             (_, _) => ValueTask.FromResult(Result.Success()),
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.True(result.IsSuccess);
@@ -61,7 +61,7 @@ public sealed class SimpleLoggingBehaviorTests
         // Act (When)
         var result = await behavior.HandleAsync(new RequestWithoutResponse(),
             (_, _) => ValueTask.FromResult(Result.Failure("request failure")),
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.False(result.IsSuccess);
@@ -76,7 +76,7 @@ public sealed class SimpleLoggingBehaviorTests
         // Act (When)
         var result = await behavior.HandleAsync(new RequestWithResponse(),
             (_, _) => ValueTask.FromResult(Result.Success(7)),
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.True(result.IsSuccess);
@@ -91,7 +91,7 @@ public sealed class SimpleLoggingBehaviorTests
         // Act (When)
         var result = await behavior.HandleAsync(new RequestWithResponse(),
             (_, _) => ValueTask.FromResult(Result.Failure<int>("typed request failure")),
-            CancellationToken.None);
+            TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.False(result.IsSuccess);
