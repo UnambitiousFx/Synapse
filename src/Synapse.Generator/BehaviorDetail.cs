@@ -1,6 +1,33 @@
 namespace UnambitiousFx.Synapse.Generator;
 
 /// <summary>
+///     The C# "special" generic constraints on a behavior's type parameter that are not expressed as
+///     constraint <em>types</em> (so they are invisible to <see cref="BehaviorDetail.RequestConstraints" />)
+///     but as flags on the type-parameter symbol. Captured as an equatable value so the cross-product can
+///     enforce them without carrying Roslyn symbols into the emit stage.
+/// </summary>
+[Flags]
+public enum SpecialConstraints : byte
+{
+    None = 0,
+
+    /// <summary><c>where T : class</c>.</summary>
+    ReferenceType = 1,
+
+    /// <summary><c>where T : struct</c>.</summary>
+    ValueType = 2,
+
+    /// <summary><c>where T : unmanaged</c> (also implies value type).</summary>
+    Unmanaged = 4,
+
+    /// <summary><c>where T : notnull</c>.</summary>
+    NotNull = 8,
+
+    /// <summary><c>where T : new()</c>.</summary>
+    Constructor = 16
+}
+
+/// <summary>
 ///     Describes a class decorated with <c>[PipelineBehavior]</c> discovered by the source generator.
 /// </summary>
 public readonly record struct BehaviorDetail
@@ -15,7 +42,9 @@ public readonly record struct BehaviorDetail
         string? fullResponseOrItemTypeName,
         EquatableArray<string> requestConstraints,
         EquatableArray<string> responseConstraints,
-        EquatableArray<int> closingTypeArgumentMap)
+        EquatableArray<int> closingTypeArgumentMap,
+        SpecialConstraints requestSpecialConstraints = SpecialConstraints.None,
+        SpecialConstraints responseSpecialConstraints = SpecialConstraints.None)
     {
         ClassName = className;
         Namespace = @namespace;
@@ -27,6 +56,8 @@ public readonly record struct BehaviorDetail
         RequestConstraints = requestConstraints;
         ResponseConstraints = responseConstraints;
         ClosingTypeArgumentMap = closingTypeArgumentMap;
+        RequestSpecialConstraints = requestSpecialConstraints;
+        ResponseSpecialConstraints = responseSpecialConstraints;
     }
 
     /// <summary>Simple class name (without namespace).</summary>
@@ -84,6 +115,20 @@ public readonly record struct BehaviorDetail
     public EquatableArray<int> ClosingTypeArgumentMap { get; }
 
     /// <summary>
+    ///     Special (non-type) constraints on the first (request/event) type parameter of an open-generic
+    ///     behavior — <c>class</c>/<c>struct</c>/<c>unmanaged</c>/<c>notnull</c>/<c>new()</c>. A handler is
+    ///     only cross-producted when its request type's shape satisfies these. <see cref="SpecialConstraints.None" />
+    ///     for closed behaviors and unconstrained parameters.
+    /// </summary>
+    public SpecialConstraints RequestSpecialConstraints { get; }
+
+    /// <summary>
+    ///     Special (non-type) constraints on the second (response/item) type parameter of an open-generic
+    ///     behavior. <see cref="SpecialConstraints.None" /> for closed behaviors and single-parameter behaviors.
+    /// </summary>
+    public SpecialConstraints ResponseSpecialConstraints { get; }
+
+    /// <summary>
     ///     True when at least one class type parameter cannot be bound from the implemented pipeline interface
     ///     (a <c>-1</c> entry in <see cref="ClosingTypeArgumentMap" />), so the class cannot be closed safely.
     /// </summary>
@@ -122,6 +167,56 @@ public readonly record struct BehaviorScan
     public LocationInfo? Location { get; }
 
     public EquatableArray<BehaviorDetail> Behaviors { get; }
+}
+
+/// <summary>
+///     Why a <c>[assembly: SynapseGlobalBehavior(typeof(...))]</c> entry could not be turned into a
+///     registration, used to emit a precise diagnostic instead of letting generated code fail to compile.
+/// </summary>
+public enum GlobalBehaviorProblem
+{
+    /// <summary>The <c>typeof</c> argument did not resolve to a named type.</summary>
+    NotAType,
+
+    /// <summary>The type implements none of the known Synapse pipeline interfaces.</summary>
+    NoPipelineInterface,
+
+    /// <summary>The type is not <c>public</c>, so the generated registration could not reference it.</summary>
+    Inaccessible
+}
+
+/// <summary>A rejected global-behavior entry: the offending type's display name and the reason.</summary>
+public readonly record struct GlobalBehaviorDiagnostic
+{
+    public GlobalBehaviorDiagnostic(string typeName, GlobalBehaviorProblem problem)
+    {
+        TypeName = typeName;
+        Problem = problem;
+    }
+
+    public string TypeName { get; }
+
+    public GlobalBehaviorProblem Problem { get; }
+}
+
+/// <summary>
+///     Result of scanning the assembly for <c>[assembly: SynapseGlobalBehavior(typeof(...))]</c> (and the
+///     <c>[assembly: EnableSynapseCqrsBoundaryEnforcement]</c> alias): the analyzed behaviors to emit and any
+///     diagnostics for entries that could not be used. Fully materialized (no Roslyn symbols) so it can flow
+///     through the incremental pipeline.
+/// </summary>
+public readonly record struct GlobalBehaviorInfo
+{
+    public GlobalBehaviorInfo(EquatableArray<BehaviorDetail> behaviors,
+        EquatableArray<GlobalBehaviorDiagnostic> diagnostics)
+    {
+        Behaviors = behaviors;
+        Diagnostics = diagnostics;
+    }
+
+    public EquatableArray<BehaviorDetail> Behaviors { get; }
+
+    public EquatableArray<GlobalBehaviorDiagnostic> Diagnostics { get; }
 }
 
 /// <summary>The pipeline interface kind a behavior implements.</summary>

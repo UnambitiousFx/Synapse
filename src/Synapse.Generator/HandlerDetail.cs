@@ -1,5 +1,32 @@
 namespace UnambitiousFx.Synapse.Generator;
 
+/// <summary>
+///     The shape of a request/event/response type, as the equatable facts needed to evaluate an
+///     open-generic behavior's special constraints (<c>class</c>/<c>struct</c>/<c>unmanaged</c>/
+///     <c>notnull</c>/<c>new()</c>) without carrying Roslyn symbols into the emit stage.
+/// </summary>
+public readonly record struct TypeShape
+{
+    public TypeShape(bool isReferenceType,
+        bool isValueType,
+        bool isUnmanaged,
+        bool isNotNull,
+        bool hasParameterlessCtor)
+    {
+        IsReferenceType = isReferenceType;
+        IsValueType = isValueType;
+        IsUnmanaged = isUnmanaged;
+        IsNotNull = isNotNull;
+        HasParameterlessCtor = hasParameterlessCtor;
+    }
+
+    public bool IsReferenceType { get; }
+    public bool IsValueType { get; }
+    public bool IsUnmanaged { get; }
+    public bool IsNotNull { get; }
+    public bool HasParameterlessCtor { get; }
+}
+
 public readonly record struct HandlerDetail
 {
     public HandlerDetail(HandlerType handlerType,
@@ -10,7 +37,9 @@ public readonly record struct HandlerDetail
         string? fullResponseType,
         LocationInfo? location,
         EquatableArray<string> targetSatisfyingTypes,
-        EquatableArray<string> responseSatisfyingTypes)
+        EquatableArray<string> responseSatisfyingTypes,
+        TypeShape requestShape = default,
+        TypeShape responseShape = default)
     {
         HandlerType = handlerType;
         ClassName = className;
@@ -21,6 +50,8 @@ public readonly record struct HandlerDetail
         Location = location;
         TargetSatisfyingTypes = targetSatisfyingTypes;
         ResponseSatisfyingTypes = responseSatisfyingTypes;
+        RequestShape = requestShape;
+        ResponseShape = responseShape;
     }
 
     public string ClassName { get; }
@@ -50,6 +81,12 @@ public readonly record struct HandlerDetail
     ///     display strings. Empty when the handler has no response.
     /// </summary>
     public EquatableArray<string> ResponseSatisfyingTypes { get; }
+
+    /// <summary>The request/event type's shape, used to evaluate behavior special constraints.</summary>
+    public TypeShape RequestShape { get; }
+
+    /// <summary>The response/item type's shape. <c>default</c> when the handler has no response.</summary>
+    public TypeShape ResponseShape { get; }
 
     public string FullHandlerTypeName => FullyQualifiedName;
 }

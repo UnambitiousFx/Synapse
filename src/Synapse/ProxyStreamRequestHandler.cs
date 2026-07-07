@@ -24,6 +24,12 @@ internal sealed class ProxyStreamRequestHandler<TRequestHandler, TRequest, TItem
     private readonly ImmutableArray<IStreamRequestPipelineBehavior<TRequest, TItem>> _behaviors =
         [.. behaviors.OrderBy(PipelineBehaviorOrdering.OrderOf)];
 
+    // Unlike the request/event proxies, the streaming chain is NOT composed once in the constructor:
+    // StreamRequestHandlerDelegate<TItem> takes no parameters, so each behavior's `next` must capture the
+    // per-dispatch request and cancellation token — it cannot be built ahead of a dispatch. The dominant
+    // per-dispatch cost here is the async-iterator state machine, not the small `next` closure, so the
+    // recursive driver below is kept deliberately. Behaviors are still sorted once, above.
+
     public async IAsyncEnumerable<Result<TItem>> HandleAsync(TRequest request,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {

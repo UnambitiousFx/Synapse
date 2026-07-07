@@ -172,10 +172,15 @@ runtime interface.)
 generated closed registrations would double-wrap the pipeline and make `CqrsBoundaryMetadata.Validate()`
 throw on every request).
 
-**2. User open-generic behaviors use `[PipelineBehavior]`.**
+**2. User open-generic behaviors use `[PipelineBehavior]` (or `[assembly: SynapseGlobalBehavior]`).**
 The generator already cross-products `[PipelineBehavior]`-attributed open generics into closed
 registrations (honouring generic constraints). `examples/MinimalApi`'s `AuthorizationBehavior<,>` now
 carries `[PipelineBehavior]` instead of being registered via `cfg.AddOpenGenericRequestWithResponsePipelineBehavior(...)`.
+For behaviors the consumer does not own (e.g. shipped in a referenced NuGet package, so they cannot be
+decorated at the source), `[assembly: SynapseGlobalBehavior(typeof(MyBehavior<,>))]` opts into the same
+closed cross-product from the composition root. The CQRS opt-in is now itself expressed this way:
+`[assembly: EnableSynapseCqrsBoundaryEnforcement]` is a (deprecated) alias for
+`[assembly: SynapseGlobalBehavior(typeof(CqrsBoundaryEnforcementBehavior<>))]` plus its with-response variant.
 
 **3. Runtime open-generic APIs that can close over a value type are annotated.**
 `AddOpenGenericRequestWithResponsePipelineBehavior` and `AddOpenGenericStreamRequestPipelineBehavior` are

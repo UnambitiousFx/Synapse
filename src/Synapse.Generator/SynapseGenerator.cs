@@ -29,6 +29,21 @@ public class SynapseGenerator : IIncrementalGenerator
     private const string FullEventHandlerAttributeName = $"{AbstractionsNamespace}.{LongEventHandlerAttributeName}";
     private const string FullPipelineBehaviorAttributeName = $"{AbstractionsNamespace}.PipelineBehaviorAttribute";
     private const string FullValidatorAttributeName = $"{AbstractionsNamespace}.ValidatorAttribute";
+    private const string GlobalBehaviorAttributeName = "SynapseGlobalBehaviorAttribute";
+
+    private const string FullGlobalBehaviorAttributeName =
+        $"{AbstractionsNamespace}.{GlobalBehaviorAttributeName}";
+
+    // The built-in CQRS boundary enforcement behavior, expressed as a global behavior so the
+    // [assembly: EnableSynapseCqrsBoundaryEnforcement] opt-in is just an alias for registering it globally.
+    // Its shape is fixed and owned by this library, so its BehaviorDetails are synthesized directly rather
+    // than resolved from a symbol — the behavior type lives in the Synapse runtime assembly, which the
+    // generator (and its unit tests) need not reference at generation time.
+    private const string CqrsBoundaryBehaviorClassName = "CqrsBoundaryEnforcementBehavior";
+    private const string CqrsBoundaryBehaviorNamespace = $"{BaseNamespace}.Pipelines";
+
+    private const string CqrsBoundaryBehaviorFullName =
+        $"global::{CqrsBoundaryBehaviorNamespace}.{CqrsBoundaryBehaviorClassName}";
 
     private const string FullRequestStreamHandlerAttributeName =
         $"{AbstractionsNamespace}.{LongRequestStreamHandlerAttributeName}";
@@ -159,11 +174,13 @@ public class SynapseGenerator : IIncrementalGenerator
             static (ctx, _) => GetValidatorDetail(ctx))
             .Collect();
 
-        // Detect the assembly-level opt-in for CQRS boundary enforcement. A runtime fluent call is
-        // invisible to the generator, so enforcement is expressed as an assembly attribute the generator
-        // can see and turn into closed (AOT-safe) registrations.
-        var cqrsEnabledProvider = compilationProvider
-            .Select(static (compilation, _) => compilation.IsCqrsBoundaryEnforcementEnabled());
+        // Collect behaviors requested globally via [assembly: SynapseGlobalBehavior(typeof(...))] — including
+        // the built-in CQRS enforcement behavior aliased by the deprecated [assembly:
+        // EnableSynapseCqrsBoundaryEnforcement]. A runtime fluent call is invisible to the generator, so
+        // global registration is expressed as an assembly attribute the generator can see and turn into
+        // closed (AOT-safe) registrations.
+        var globalBehaviorProvider = compilationProvider
+            .Select(static (compilation, _) => ExtractGlobalBehaviors(compilation));
 
         // Discover every request/event/stream handler target visible in the compilation — including
         // those declared in referenced assemblies — so an assembly's open-generic behaviors can be
@@ -184,7 +201,7 @@ public class SynapseGenerator : IIncrementalGenerator
         var combinedProvider = allHandlerDetails
             .Combine(rootNamespaceProvider)
             .Combine(behaviorDetails)
-            .Combine(cqrsEnabledProvider)
+            .Combine(globalBehaviorProvider)
             .Combine(behaviorTargetsProvider)
             .Combine(crossAssemblyDisabledProvider)
             .Combine(validatorDetails)
@@ -192,7 +209,7 @@ public class SynapseGenerator : IIncrementalGenerator
 
         context.RegisterSourceOutput(combinedProvider, static (ctx, tuple) =>
         {
-            var (((((((details, rootNamespace), behaviors), cqrsEnabled), behaviorTargets), crossAssemblyDisabled),
+            var (((((((details, rootNamespace), behaviors), globalBehaviors), behaviorTargets), crossAssemblyDisabled),
                 validatorScans), eventInfo) = tuple;
 
             ctx.ReportDiagnostic(Diagnostic.Create(
@@ -311,6 +328,49 @@ public class SynapseGenerator : IIncrementalGenerator
                 }
             }
 
+            // Report diagnostics for [assembly: SynapseGlobalBehavior(typeof(...))] entries that could not be
+            // used, then fold the usable global behaviors into the same emit list as [PipelineBehavior] classes
+            // (subject to the same MDG010 uninferable-type-parameter guard).
+            foreach (var diagnostic in globalBehaviors.Diagnostics)
+            {
+                var (id, title, message) = diagnostic.Problem switch
+                {
+                    GlobalBehaviorProblem.NotAType => (
+                        "MDG012", "Invalid global behavior",
+                        "[SynapseGlobalBehavior] requires a typeof(...) argument naming a pipeline behavior type."),
+                    GlobalBehaviorProblem.NoPipelineInterface => (
+                        "MDG013", "Invalid global behavior",
+                        $"[SynapseGlobalBehavior(typeof({diagnostic.TypeName}))] names a type that implements no known pipeline interface. Ensure it implements IRequestPipelineBehavior<>, IEventPipelineBehavior<>, or IStreamRequestPipelineBehavior<,>."),
+                    GlobalBehaviorProblem.Inaccessible => (
+                        "MDG014", "Inaccessible global behavior",
+                        $"[SynapseGlobalBehavior(typeof({diagnostic.TypeName}))] names a non-public type; the generated registration cannot reference it. Make the behavior type public."),
+                    _ => ("MDG012", "Invalid global behavior", "[SynapseGlobalBehavior] entry could not be used.")
+                };
+
+                ctx.ReportDiagnostic(Diagnostic.Create(
+                    new DiagnosticDescriptor(id, title, message, "Synapse.Generator", DiagnosticSeverity.Error, true),
+                    Location.None));
+            }
+
+            foreach (var behavior in globalBehaviors.Behaviors)
+            {
+                if (behavior.HasUnbindableTypeParameter)
+                {
+                    ctx.ReportDiagnostic(Diagnostic.Create(
+                        new DiagnosticDescriptor(
+                            "MDG010",
+                            "Open-generic behavior has uninferable type parameter",
+                            $"Open-generic behavior '{behavior.ClassName}' has a type parameter that is not bound by the pipeline interface it implements, so it cannot be closed over a handler. Remove the extra type parameter or bind it through the interface.",
+                            "Synapse.Generator",
+                            DiagnosticSeverity.Error,
+                            true),
+                        Location.None));
+                    continue;
+                }
+
+                behaviorList.Add(behavior);
+            }
+
             // Validate validators — warn if a [Validator] class implements no IRequestValidator<> interface,
             // and collect the rest for emission.
             var validatorList = ImmutableArray.CreateBuilder<ValidatorDetail>();
@@ -383,7 +443,7 @@ public class SynapseGenerator : IIncrementalGenerator
 
             ctx.AddSource("RegisterGroup.g.cs",
                 RegisterGroupFactory.Create(rootNamespace, AbstractionsNamespace, details,
-                    behaviorList.ToImmutable(), cqrsEnabled, behaviorTargets, crossAssemblyDisabled,
+                    behaviorList.ToImmutable(), behaviorTargets, crossAssemblyDisabled,
                     validatorList.ToImmutable(), eventInfo));
         });
     }
@@ -407,12 +467,13 @@ public class SynapseGenerator : IIncrementalGenerator
 
             var className = classDeclaration.Identifier.ValueText;
             var @namespace = classDeclaration.GetNamespace();
-            var (requestType, responseType, requestSatisfying, responseSatisfying) = GetRequestInfo(attribute);
+            var (requestType, responseType, requestSatisfying, responseSatisfying, requestShape, responseShape) =
+                GetRequestInfo(attribute);
             var location = LocationInfo.CreateFrom(classDeclaration.GetLocation());
             var handlerType = HandlerType.StreamRequestHandler;
             var fullyQualifiedName = GetFullyQualifiedName(ctx, @namespace, className);
             return new HandlerDetail(handlerType, className, @namespace, fullyQualifiedName, requestType, responseType,
-                location, requestSatisfying, responseSatisfying);
+                location, requestSatisfying, responseSatisfying, requestShape, responseShape);
         }
 
         return null;
@@ -437,14 +498,15 @@ public class SynapseGenerator : IIncrementalGenerator
 
             var className = classDeclaration.Identifier.ValueText;
             var @namespace = classDeclaration.GetNamespace();
-            var (requestType, responseType, requestSatisfying, responseSatisfying) = GetRequestInfo(attribute);
+            var (requestType, responseType, requestSatisfying, responseSatisfying, requestShape, responseShape) =
+                GetRequestInfo(attribute);
 
 
             var location = LocationInfo.CreateFrom(classDeclaration.GetLocation());
             var handlerType = HandlerType.RequestHandler;
             var fullyQualifiedName = GetFullyQualifiedName(ctx, @namespace, className);
             return new HandlerDetail(handlerType, className, @namespace, fullyQualifiedName, requestType, responseType,
-                location, requestSatisfying, responseSatisfying);
+                location, requestSatisfying, responseSatisfying, requestShape, responseShape);
         }
 
         return null;
@@ -468,13 +530,14 @@ public class SynapseGenerator : IIncrementalGenerator
 
             var className = classDeclaration.Identifier.ValueText;
             var @namespace = classDeclaration.GetNamespace();
-            var (requestType, responseType, requestSatisfying, responseSatisfying) = GetRequestInfo(attribute);
+            var (requestType, responseType, requestSatisfying, responseSatisfying, requestShape, responseShape) =
+                GetRequestInfo(attribute);
 
             var location = LocationInfo.CreateFrom(classDeclaration.GetLocation());
 
             var fullyQualifiedName = GetFullyQualifiedName(ctx, @namespace, className);
             return new HandlerDetail(HandlerType.EventHandler, className, @namespace, fullyQualifiedName, requestType,
-                responseType, location, requestSatisfying, responseSatisfying);
+                responseType, location, requestSatisfying, responseSatisfying, requestShape, responseShape);
         }
 
         return null;
@@ -492,11 +555,26 @@ public class SynapseGenerator : IIncrementalGenerator
             return null;
         }
 
-        var isOpenGeneric = classSymbol.IsGenericType;
-        var className = classDeclaration.Identifier.ValueText;
-        var @namespace = classDeclaration.GetNamespace();
-        var fullyQualifiedName = classSymbol.ToDisplayString(FullyQualifiedNoGenericsFormat);
         var location = LocationInfo.CreateFrom(classDeclaration.GetLocation());
+
+        // An empty Behaviors collection signals MDG008 (no known pipeline interface implemented).
+        return new BehaviorScan(location, EquatableArray<BehaviorDetail>.From(AnalyzeBehaviorSymbol(classSymbol)));
+    }
+
+    /// <summary>
+    ///     Symbol-only analysis of a behavior class: walks the implemented pipeline interfaces and produces a
+    ///     <see cref="BehaviorDetail" /> for each, capturing arity, constraints, special constraints and the
+    ///     closing-type-argument map. Shared by <c>[PipelineBehavior]</c> discovery (which has syntax) and the
+    ///     <c>[assembly: SynapseGlobalBehavior(typeof(...))]</c> path (which only has the type symbol, possibly
+    ///     from a referenced assembly). A class may implement more than one pipeline interface, so the result
+    ///     can hold multiple behaviors; an empty list means no known pipeline interface is implemented.
+    /// </summary>
+    internal static List<BehaviorDetail> AnalyzeBehaviorSymbol(INamedTypeSymbol classSymbol)
+    {
+        var isOpenGeneric = classSymbol.IsGenericType;
+        var className = classSymbol.Name;
+        var @namespace = classSymbol.ContainingNamespace?.ToDisplayString() ?? string.Empty;
+        var fullyQualifiedName = classSymbol.ToDisplayString(FullyQualifiedNoGenericsFormat);
 
         // A class may implement more than one pipeline interface — emit a behavior for each, rather
         // than arbitrarily picking the first one found in AllInterfaces.
@@ -518,7 +596,8 @@ public class SynapseGenerator : IIncrementalGenerator
                     : ToEmitName(iface.TypeArguments[0]);
                 behaviors.Add(new BehaviorDetail(className, @namespace, fullyQualifiedName, BehaviorKind.Request,
                     isOpenGeneric, requestType, null, GetConstraintNames(iface.TypeArguments[0]), default,
-                    BuildClosingTypeArgumentMap(classSymbol, iface, isOpenGeneric)));
+                    BuildClosingTypeArgumentMap(classSymbol, iface, isOpenGeneric),
+                    GetSpecialConstraints(iface.TypeArguments[0])));
             }
             else if (ifaceFullName == $"{RequestPipelineBehaviorInterfaceName}`2" && iface.TypeArguments.Length == 2)
             {
@@ -531,7 +610,8 @@ public class SynapseGenerator : IIncrementalGenerator
                 behaviors.Add(new BehaviorDetail(className, @namespace, fullyQualifiedName,
                     BehaviorKind.RequestWithResponse, isOpenGeneric, requestType, responseType,
                     GetConstraintNames(iface.TypeArguments[0]), GetConstraintNames(iface.TypeArguments[1]),
-                    BuildClosingTypeArgumentMap(classSymbol, iface, isOpenGeneric)));
+                    BuildClosingTypeArgumentMap(classSymbol, iface, isOpenGeneric),
+                    GetSpecialConstraints(iface.TypeArguments[0]), GetSpecialConstraints(iface.TypeArguments[1])));
             }
             else if (ifaceFullName == $"{EventPipelineBehaviorInterfaceName}`1" && iface.TypeArguments.Length == 1)
             {
@@ -540,7 +620,8 @@ public class SynapseGenerator : IIncrementalGenerator
                     : ToEmitName(iface.TypeArguments[0]);
                 behaviors.Add(new BehaviorDetail(className, @namespace, fullyQualifiedName, BehaviorKind.Event,
                     isOpenGeneric, eventType, null, GetConstraintNames(iface.TypeArguments[0]), default,
-                    BuildClosingTypeArgumentMap(classSymbol, iface, isOpenGeneric)));
+                    BuildClosingTypeArgumentMap(classSymbol, iface, isOpenGeneric),
+                    GetSpecialConstraints(iface.TypeArguments[0])));
             }
             else if (ifaceFullName == $"{StreamRequestPipelineBehaviorInterfaceName}`2" &&
                      iface.TypeArguments.Length == 2)
@@ -554,12 +635,12 @@ public class SynapseGenerator : IIncrementalGenerator
                 behaviors.Add(new BehaviorDetail(className, @namespace, fullyQualifiedName, BehaviorKind.StreamRequest,
                     isOpenGeneric, requestType, itemType, GetConstraintNames(iface.TypeArguments[0]),
                     GetConstraintNames(iface.TypeArguments[1]),
-                    BuildClosingTypeArgumentMap(classSymbol, iface, isOpenGeneric)));
+                    BuildClosingTypeArgumentMap(classSymbol, iface, isOpenGeneric),
+                    GetSpecialConstraints(iface.TypeArguments[0]), GetSpecialConstraints(iface.TypeArguments[1])));
             }
         }
 
-        // An empty Behaviors collection signals MDG008 (no known pipeline interface implemented).
-        return new BehaviorScan(location, EquatableArray<BehaviorDetail>.From(behaviors));
+        return behaviors;
     }
 
     private static ValidatorScan? GetValidatorDetail(GeneratorAttributeSyntaxContext ctx)
@@ -716,6 +797,83 @@ public class SynapseGenerator : IIncrementalGenerator
         return names.Count > 0 ? EquatableArray<string>.From(names) : default;
     }
 
+    /// <summary>
+    ///     Returns the special (non-type) constraints on an open-generic behavior's type parameter —
+    ///     <c>class</c>/<c>struct</c>/<c>unmanaged</c>/<c>notnull</c>/<c>new()</c>. These are flags on the
+    ///     type-parameter symbol, not constraint <em>types</em>, so they are invisible to
+    ///     <see cref="GetConstraintNames" /> and must be captured separately for the cross-product to honour
+    ///     them. Returns <see cref="SpecialConstraints.None" /> for closed type arguments.
+    /// </summary>
+    private static SpecialConstraints GetSpecialConstraints(ITypeSymbol typeArgument)
+    {
+        if (typeArgument is not ITypeParameterSymbol typeParameter)
+        {
+            return SpecialConstraints.None;
+        }
+
+        var constraints = SpecialConstraints.None;
+        if (typeParameter.HasReferenceTypeConstraint)
+        {
+            constraints |= SpecialConstraints.ReferenceType;
+        }
+
+        if (typeParameter.HasValueTypeConstraint)
+        {
+            constraints |= SpecialConstraints.ValueType;
+        }
+
+        if (typeParameter.HasUnmanagedTypeConstraint)
+        {
+            // `unmanaged` is a stricter `struct`; record both so a value-type check also passes.
+            constraints |= SpecialConstraints.Unmanaged | SpecialConstraints.ValueType;
+        }
+
+        if (typeParameter.HasNotNullConstraint)
+        {
+            constraints |= SpecialConstraints.NotNull;
+        }
+
+        if (typeParameter.HasConstructorConstraint)
+        {
+            constraints |= SpecialConstraints.Constructor;
+        }
+
+        return constraints;
+    }
+
+    /// <summary>
+    ///     Captures the equatable shape of a request/event/response type (reference vs value, unmanaged,
+    ///     non-nullable, parameterless-ctor availability) used to evaluate a behavior's special constraints in
+    ///     the symbol-free emit stage. Returns <c>default</c> (all false) for a null symbol.
+    /// </summary>
+    private static TypeShape GetTypeShape(ITypeSymbol? type)
+    {
+        if (type is null)
+        {
+            return default;
+        }
+
+        // `new()` is satisfied by a value type, or a non-abstract class exposing an accessible
+        // parameterless constructor (a class with no declared instance constructors has the implicit one).
+        var hasParameterlessCtor = type.IsValueType
+                                   || (type is INamedTypeSymbol named
+                                       && !named.IsAbstract
+                                       && (named.InstanceConstructors.Length == 0
+                                           || named.InstanceConstructors.Any(c =>
+                                               c.Parameters.Length == 0
+                                               && c.DeclaredAccessibility == Accessibility.Public)));
+
+        // `notnull`: value types always satisfy; reference types only when not annotated nullable.
+        var isNotNull = type.IsValueType || type.NullableAnnotation != NullableAnnotation.Annotated;
+
+        return new TypeShape(
+            type.IsReferenceType,
+            type.IsValueType,
+            type.IsUnmanagedType,
+            isNotNull,
+            hasParameterlessCtor);
+    }
+
     private static bool ContainsTypeParameter(ITypeSymbol type)
     {
         switch (type)
@@ -740,14 +898,15 @@ public class SynapseGenerator : IIncrementalGenerator
     }
 
     private static (string RequestType, string? ResponseType, EquatableArray<string> RequestSatisfying,
-        EquatableArray<string> ResponseSatisfying) GetRequestInfo(AttributeData attribute)
+        EquatableArray<string> ResponseSatisfying, TypeShape RequestShape, TypeShape ResponseShape)
+        GetRequestInfo(AttributeData attribute)
     {
         // Get the attribute constructor's type arguments
         var typeArgs = attribute.AttributeClass?.TypeArguments;
         if (typeArgs is null ||
             typeArgs.Value.Length == 0)
         {
-            return (string.Empty, null, default, default);
+            return (string.Empty, null, default, default, default, default);
         }
 
 
@@ -755,18 +914,21 @@ public class SynapseGenerator : IIncrementalGenerator
         var requestSymbol = typeArgs.Value[0];
         var requestType = ToEmitName(requestSymbol);
         var requestSatisfying = GetSatisfyingTypeNames(requestSymbol);
+        var requestShape = GetTypeShape(requestSymbol);
 
         // Check if there's a response type (generic attribute with 2 type parameters)
         string? responseType = null;
         var responseSatisfying = default(EquatableArray<string>);
+        var responseShape = default(TypeShape);
         if (typeArgs.Value.Length > 1)
         {
             var responseSymbol = typeArgs.Value[1];
             responseType = ToEmitName(responseSymbol);
             responseSatisfying = GetSatisfyingTypeNames(responseSymbol);
+            responseShape = GetTypeShape(responseSymbol);
         }
 
-        return (requestType, responseType, requestSatisfying, responseSatisfying);
+        return (requestType, responseType, requestSatisfying, responseSatisfying, requestShape, responseShape);
     }
 
     /// <summary>
@@ -844,6 +1006,85 @@ public class SynapseGenerator : IIncrementalGenerator
         visitor.Visit(compilation.GlobalNamespace);
 
         return targets.ToImmutable();
+    }
+
+    /// <summary>
+    ///     Collects the behaviors requested globally via <c>[assembly: SynapseGlobalBehavior(typeof(...))]</c>,
+    ///     plus the built-in CQRS boundary enforcement behavior when the (deprecated) opt-in
+    ///     <c>[assembly: EnableSynapseCqrsBoundaryEnforcement]</c> attribute is present — both are funnelled
+    ///     through the same open-generic cross-product as <c>[PipelineBehavior]</c> classes, yielding closed,
+    ///     AOT-safe registrations. Entries that cannot be used (not a type, no pipeline interface, or not
+    ///     public) are recorded as diagnostics rather than silently dropped. Rides on the compilation, so it
+    ///     re-runs on every edit — matching the existing event-dispatcher / behavior-target tradeoff.
+    /// </summary>
+    private static GlobalBehaviorInfo ExtractGlobalBehaviors(Compilation compilation)
+    {
+        var behaviors = new List<BehaviorDetail>();
+        var diagnostics = new List<GlobalBehaviorDiagnostic>();
+
+        // The CQRS opt-in is an alias for registering the built-in enforcement behavior globally.
+        if (compilation.IsCqrsBoundaryEnforcementEnabled())
+        {
+            behaviors.AddRange(BuildCqrsBoundaryBehaviors());
+        }
+
+        foreach (var attr in compilation.Assembly.GetAttributes())
+        {
+            if (attr.AttributeClass?.Name != GlobalBehaviorAttributeName &&
+                attr.AttributeClass?.ToDisplayString() != FullGlobalBehaviorAttributeName)
+            {
+                continue;
+            }
+
+            if (attr.ConstructorArguments.Length == 0 ||
+                attr.ConstructorArguments[0].Value is not INamedTypeSymbol typeSymbol)
+            {
+                diagnostics.Add(new GlobalBehaviorDiagnostic("<unknown>", GlobalBehaviorProblem.NotAType));
+                continue;
+            }
+
+            // typeof(Foo<>) yields the unbound definition; typeof(Foo<int>) a constructed type. Normalize to
+            // the definition so the cross-product closes it over each matching handler.
+            var definition = typeSymbol.OriginalDefinition;
+
+            if (definition.DeclaredAccessibility != Accessibility.Public)
+            {
+                diagnostics.Add(new GlobalBehaviorDiagnostic(definition.ToDisplayString(),
+                    GlobalBehaviorProblem.Inaccessible));
+                continue;
+            }
+
+            var analyzed = AnalyzeBehaviorSymbol(definition);
+            if (analyzed.Count == 0)
+            {
+                diagnostics.Add(new GlobalBehaviorDiagnostic(definition.ToDisplayString(),
+                    GlobalBehaviorProblem.NoPipelineInterface));
+                continue;
+            }
+
+            behaviors.AddRange(analyzed);
+        }
+
+        return new GlobalBehaviorInfo(EquatableArray<BehaviorDetail>.From(behaviors),
+            EquatableArray<GlobalBehaviorDiagnostic>.From(diagnostics));
+    }
+
+    /// <summary>
+    ///     Synthesizes the two <see cref="BehaviorDetail" />s for the built-in
+    ///     <c>CqrsBoundaryEnforcementBehavior&lt;TRequest&gt;</c> / <c>&lt;TRequest, TResponse&gt;</c>, matching
+    ///     what <see cref="AnalyzeBehaviorSymbol" /> would produce for them: open-generic, no constraints (so
+    ///     they apply to every request handler, as the previous dedicated CQRS path did), closing the request
+    ///     slot (index 0) and — for the with-response variant — the response slot (index 1).
+    /// </summary>
+    private static IEnumerable<BehaviorDetail> BuildCqrsBoundaryBehaviors()
+    {
+        yield return new BehaviorDetail(CqrsBoundaryBehaviorClassName, CqrsBoundaryBehaviorNamespace,
+            CqrsBoundaryBehaviorFullName, BehaviorKind.Request, true, "TRequest", null, default, default,
+            EquatableArray<int>.From(new[] { 0 }));
+
+        yield return new BehaviorDetail(CqrsBoundaryBehaviorClassName, CqrsBoundaryBehaviorNamespace,
+            CqrsBoundaryBehaviorFullName, BehaviorKind.RequestWithResponse, true, "TRequest", "TResponse", default,
+            default, EquatableArray<int>.From(new[] { 0, 1 }));
     }
 
     /// <summary>
@@ -944,7 +1185,8 @@ public class SynapseGenerator : IIncrementalGenerator
             }
 
             _targets.Add(new HandlerDetail(handlerType, string.Empty, string.Empty, string.Empty, targetType,
-                responseType, null, GetSatisfyingTypeNames(target), GetSatisfyingTypeNames(response)));
+                responseType, null, GetSatisfyingTypeNames(target), GetSatisfyingTypeNames(response),
+                GetTypeShape(target), GetTypeShape(response)));
         }
     }
 

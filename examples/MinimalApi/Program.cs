@@ -5,7 +5,6 @@ using UnambitiousFx.Examples.MinimalApi.Features.Tasks;
 using UnambitiousFx.Examples.MinimalApi.Features.Tasks.Validators;
 using UnambitiousFx.Examples.MinimalApi.Infrastructure;
 using UnambitiousFx.Examples.MinimalApi.Infrastructure.Pipelines;
-using UnambitiousFx.Examples.MinimalApi.Counter;
 using UnambitiousFx.Examples.MinimalApi.Modules.Notifications;
 using UnambitiousFx.Examples.MinimalApi.Modules.Orders;
 using UnambitiousFx.Synapse;
@@ -15,11 +14,23 @@ using UnambitiousFx.Synapse.AspNetCore.Http;
 using UnambitiousFx.Synapse.Pipelines;
 using UnambitiousFx.Synapse.Publish.Orchestrators;
 
-// Opt into CQRS boundary enforcement. The source generator emits closed (Native-AOT safe)
-// CqrsBoundaryEnforcementBehavior registrations — one per request handler, inserted at the front
-// of the pipeline — instead of an open-generic descriptor that would throw at resolve time when
-// the response is a value type (see known-issue 001).
-[assembly: EnableSynapseCqrsBoundaryEnforcement]
+// ── Global pipeline behaviors (composition root) ──────────────────────────
+// [assembly: SynapseGlobalBehavior(typeof(X<>))] registers an open-generic behavior once, here at the
+// composition root. The source generator closes it over every matching handler — including handlers in
+// REFERENCED assemblies (Orders, Notifications) — and emits one closed, Native-AOT-safe registration per
+// match. This is how the host applies a behavior to plugged-in modules without those modules opting in.
+// (Add [assembly: DisableSynapseCrossAssemblyBehaviors] to scope globals to this assembly's handlers only.)
+
+// CQRS boundary enforcement, outermost. Closed registrations are required because open generics cannot
+// close over value-type responses (e.g. Guid, int) under Native AOT — see known-issue 001.
+[assembly: SynapseGlobalBehavior(typeof(CqrsBoundaryEnforcementBehavior<>))]
+[assembly: SynapseGlobalBehavior(typeof(CqrsBoundaryEnforcementBehavior<,>))]
+
+// Built-in logging behaviors. They ship in the Synapse package, so they cannot carry [PipelineBehavior]
+// at their source — the global-behavior attribute is the way to enable them from the consumer. Both arities
+// close over reference types (IRequest / IEvent), and the one registration covers the modules too.
+[assembly: SynapseGlobalBehavior(typeof(SimpleLoggingBehavior<>))]
+[assembly: SynapseGlobalBehavior(typeof(SimpleLoggingEventBehavior<>))]
 
 // Use CreateSlimBuilder for Native AOT compatibility
 var builder = WebApplication.CreateSlimBuilder(args);
@@ -33,9 +44,6 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 // Infrastructure
 builder.Services.AddSingleton<TaskRepository>();
 
-// Counter feature (separate assembly) — registers its CounterStore singleton.
-builder.Services.AddCounterFeature();
-
 // Modular-monolith modules — each is an independent assembly sharing only the Contracts library.
 builder.Services.AddOrdersModule();
 builder.Services.AddNotificationsModule();
@@ -48,88 +56,30 @@ builder.Services.AddSynapseAspNetCore();
 
 builder.Services.AddSynapse(cfg =>
 {
-    // ── Handlers + source-gen pipeline behaviors ───────────────────────
+    // Every behavior is declared by an attribute, so wiring is just composing register groups.
     //
-    // AddRegisterGroup activates two source-generator outputs:
-    //   1. RegisterGroup     — auto-registers every [RequestHandler<>] /
-    //                          [EventHandler<>] / [StreamRequestHandler<>]
-    //                          in this assembly (replaces the manual
-    //                          cfg.RegisterRequestHandler<...>() calls).
-    //   2. MetricsBehavior   — [PipelineBehavior] + IOrderedPipelineBehavior (Order 10),
-    //                          unconstrained. Applied to EVERY discovered request.
-    //   3. AuditBehavior     — [PipelineBehavior] + IOrderedPipelineBehavior (Order 20),
-    //                          constrained: where TRequest : IAuditableRequest.
-    //                          Applied only to the four mutating commands;
-    //                          queries and PurgeCompletedTasksCommand are skipped.
-    //
-    // Each behavior declares its pipeline position at runtime via IOrderedPipelineBehavior, so
-    // Metrics (10) always wraps Audit (20) regardless of registration source or order.
+    // Pipeline order (outermost → innermost), decided by each behavior's IOrderedPipelineBehavior.Order
+    // (default Last), NOT by registration order:
+    //   [CqrsBoundaryEnforcement] → [Authorization:5] → [Metrics:10] → [Audit:20]
+    //     → [SimpleLogging] → [RequestValidation] → [Handler]
+
+    // Host assembly (Tasks feature) — SOURCE-GENERATOR path. The generated RegisterGroup auto-registers
+    // every [RequestHandler<>] / [EventHandler<>] / [StreamRequestHandler<>] / [Validator] and the
+    // host's own [PipelineBehavior] classes (Metrics, Audit, Authorization, StreamLogging). It also
+    // implements IEventDispatcherRegistration, so AOT-safe event dispatch delegates are wired here too.
     cfg.AddRegisterGroup(new global::UnambitiousFx.Examples.MinimalApi.RegisterGroup());
 
-    // Compose the Counter feature, whose handlers/behaviors live in a SEPARATE assembly
-    // (examples/MinimalApi.Counter) and are wired through ITS OWN generated RegisterGroup. This proves
-    // cross-assembly RegisterGroup composition, including closed CQRS + value-type (int) pipeline registrations.
-    cfg.AddRegisterGroup(new global::UnambitiousFx.Examples.MinimalApi.Counter.RegisterGroup());
-
-    // ── Modular monolith: cross-assembly event communication ──────────────
-    //
-    // Orders module — SOURCE GENERATOR path.
-    // PlaceOrderCommandHandler carries [RequestHandler<PlaceOrderCommand, Guid>]; the generator
-    // emits Orders.RegisterGroup with the closed handler + CQRS enforcement registrations.
+    // Orders module — SOURCE-GENERATOR path, in a SEPARATE assembly. PlaceOrderCommandHandler carries
+    // [RequestHandler<PlaceOrderCommand, Guid>]; the module's own generated RegisterGroup plugs in here.
     cfg.AddRegisterGroup(new global::UnambitiousFx.Examples.MinimalApi.Modules.Orders.RegisterGroup());
 
-    // Notifications module — MANUAL path (no source generator in that assembly).
-    // AddNotificationsHandlers calls cfg.RegisterEventHandler<OrderPlacedNotificationHandler, OrderPlacedEvent>()
-    // which registers the DI service and the AOT-safe dispatch delegate in one call.
+    // Notifications module — MANUAL path (no source generator in that assembly). AddNotificationsHandlers
+    // calls cfg.RegisterEventHandler<OrderPlacedNotificationHandler, OrderPlacedEvent>(), which registers
+    // the DI service and the AOT-safe dispatch delegate in one call.
     cfg.AddNotificationsHandlers();
 
-    // RegisterGroup also implements IEventDispatcherRegistration; AddRegisterGroup automatically
-    // detected and registered the AOT-safe dispatch delegates for all IEvent types above.
-
-    // ── Validators ─────────────────────────────────────────────────────
-    // CreateTaskCommandValidator carries [Validator], so the generated RegisterGroup above already
-    // registered it together with RequestValidationBehavior<CreateTaskCommand, CreateTaskResult>.
-    // No cfg.AddValidator<...>() call is required (that runtime API still exists for non-generated setups).
-
-    // ── Pipeline behaviors ──────────────────────────────────────────────
-    //
-    // Resulting pipeline order (outermost → innermost):
-    //   [CqrsBoundaryEnforcement]  ← source-gen, closed; IOrderedPipelineBehavior.First (outermost)
-    //     [AuthorizationBehavior:5]  ← source-gen, only ISecuredRequest (short-circuit) [PipelineBehavior]
-    //       [MetricsBehavior:10]     ← source-gen, unconstrained [PipelineBehavior]
-    //         [AuditBehavior:20]     ← source-gen, only IAuditableRequest [PipelineBehavior]
-    //           [SimpleLoggingBehavior]  ← runtime open-generic (request-only, ref type → AOT-safe; Last)
-    //             [RequestValidationBehavior]  ← source-gen from [Validator]; IOrderedPipelineBehavior.Last
-    //               [Handler]
-    // Position is decided entirely by each behavior's IOrderedPipelineBehavior.Order (default Last),
-    // not by registration order.
-
-    // Open-generic logging — library behaviors that cannot carry [PipelineBehavior] (the generator
-    // only scans this assembly, not referenced ones). Registered at runtime. The request-only and
-    // event-only arities close over reference types (IRequest / IEvent), so they remain AOT-safe.
-    // The response-bearing SimpleLoggingBehavior<,> is intentionally NOT registered — MetricsBehavior<,>
-    // covers response-bearing requests as a closed [PipelineBehavior] registration instead.
-    cfg.AddOpenGenericRequestPipelineBehavior(typeof(SimpleLoggingBehavior<>));
-    cfg.AddOpenGenericEventPipelineBehavior(typeof(SimpleLoggingEventBehavior<>));
-
-    // Stream-specific behavior — wraps IAsyncEnumerable<Result<TItem>> from next() and emits a
-    // "🔢 Streamed N items" summary. Registered as a CLOSED generic for the concrete stream type so it
-    // stays Native-AOT safe (the open-generic AddOpenGenericStreamRequestPipelineBehavior is annotated
-    // [RequiresDynamicCode] because its item type could be a value type).
-    cfg.RegisterStreamRequestPipelineBehavior<StreamLoggingBehavior<StreamTasksQuery, TaskDto>, StreamTasksQuery, TaskDto>();
-
-    // Typed validation for CreateTaskCommand is wired by the [Validator] attribute on
-    // CreateTaskCommandValidator (emitted into RegisterGroup as a closed, deduplicated registration),
-    // so no manual RequestValidationBehavior registration is needed here.
-
-    // ── Event orchestration ────────────────────────────────────────────
-    // Both TaskCompleted handlers run concurrently (observe interleaved logs)
+    // Run both TaskCompleted event handlers concurrently (observe interleaved logs).
     cfg.SetEventOrchestrator<ConcurrentEventOrchestrator>();
-
-    // ── CQRS enforcement ────────────────────────────────────────────────
-    // Opted-in via [assembly: EnableSynapseCqrsBoundaryEnforcement] at the top of this file.
-    // The generator emits closed CqrsBoundaryEnforcementBehavior<Req[,Resp]> registrations at the
-    // front of the pipeline, so it stays outermost and is Native-AOT safe even for value-type responses.
 });
 
 var app = builder.Build();
@@ -141,9 +91,6 @@ app.UseCorrelationId();
 
 // ── Root ──────────────────────────────────────────────────────────────
 app.MapGet("/", () => Results.Ok(new ApiInfo()));
-
-// ── Counter feature endpoints (defined in examples/MinimalApi.Counter) ──
-app.MapCounterEndpoints();
 
 // ── Modular-monolith: Orders + Notifications endpoints ────────────────
 // POST /orders     — place an order; PlaceOrderCommandHandler emits OrderPlacedEvent
@@ -269,11 +216,11 @@ namespace UnambitiousFx.Examples.MinimalApi
             "Behavior ordering — MetricsBehavior(Order=10) wraps AuditBehavior(Order=20) [source-gen]",
             "Constraint-based open generic — AuditBehavior only on IAuditableRequest commands [source-gen]",
             "Short-circuit behavior — AuthorizationBehavior halts pipeline on missing permission [source-gen]",
-            "Stream pipeline behavior — StreamLoggingBehavior counts yielded items [typed/closed]",
+            "Stream pipeline behavior — StreamLoggingBehavior counts yielded items [source-gen]",
             "Value-type response under AOT — PurgeCompletedTasks → int (closed CQRS + auth registrations)",
             // Cross-cutting
             "Context & correlation — IContext.CorrelationId → X-Correlation-Id header",
-            "CQRS boundary enforcement — [assembly: EnableSynapseCqrsBoundaryEnforcement]",
+            "Global behaviors — [assembly: SynapseGlobalBehavior] registers CQRS + logging once, cross-assembly",
             // Modular monolith
             "Modular monolith (Orders) — cross-assembly event via source-generated RegisterGroup",
             "Modular monolith (Notifications) — cross-assembly event via manual cfg.RegisterEventHandler<>()"

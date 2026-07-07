@@ -27,6 +27,7 @@ This page records issues discovered and resolved while hardening the library. Al
 | [012](https://github.com/UnambitiousFx/Synapse/blob/feature/typed-pipeline-behaviors/docs/known-issues/012-globalizetype-breaks-on-tuple-and-pointer-types.md) | `GlobalizeType` emits invalid `global::` prefix for tuple / pointer / function-pointer types | Medium |
 | [017](https://github.com/UnambitiousFx/Synapse/blob/feature/typed-pipeline-behaviors/docs/known-issues/017-splittoplevelargs-ignores-tuple-parentheses.md) | `SplitTopLevelArgs` ignored tuple `()` — a tuple nested as a generic argument emitted uncompilable code | Medium |
 | [022](https://github.com/UnambitiousFx/Synapse/blob/feature/typed-pipeline-behaviors/docs/known-issues/022-validator-attribute-picks-first-irequest-response.md) | `[Validator]` derived the response type from the first `IRequest<T>` found; multi-`IRequest` requests now emit diagnostic MDG011 | Low |
+| [024](https://github.com/UnambitiousFx/Synapse/blob/feature/typed-pipeline-behaviors/docs/known-issues/024-open-generic-behavior-special-constraints-ignored.md) | Open-generic behavior special constraints (`class`/`struct`/`unmanaged`/`notnull`/`new()`) were dropped, closing the behavior over non-conforming handlers → uncompilable code (CS0453); now captured as equatable flags and enforced in the cross-product | **High** |
 
 ## Pipeline & CQRS
 

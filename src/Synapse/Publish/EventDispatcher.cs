@@ -18,11 +18,12 @@ internal sealed class EventDispatcher : IEventDispatcher
     private readonly ISynapseMetrics _metrics;
     private readonly EventDispatcherOptions _options;
 
-    // Sorted event behaviors cached per event type for the dispatcher's (scoped) lifetime, so the
-    // OrderBy/ToArray cost is paid once per type per scope rather than on every dispatch — matching
-    // how the request/stream proxies sort once in their constructor. ConcurrentDictionary guards the
-    // case where a single scope issues concurrent dispatches (e.g. Task.WhenAll over publishes).
-    private readonly ConcurrentDictionary<Type, object> _behaviorCache = new();
+    // The fully-composed behavior chain (an EventHandlerDelegate&lt;TEvent&gt;) cached per event type for the
+    // dispatcher's (scoped) lifetime. The sort and the nested-delegate composition are paid once per type
+    // per scope; each subsequent publish just invokes the cached delegate with no per-dispatch closure
+    // allocation — matching how the request proxies compose once in their constructor. ConcurrentDictionary
+    // guards the case where a single scope issues concurrent dispatches (e.g. Task.WhenAll over publishes).
+    private readonly ConcurrentDictionary<Type, object> _pipelineCache = new();
 
 
     public EventDispatcher(
@@ -68,51 +69,44 @@ internal sealed class EventDispatcher : IEventDispatcher
         }
 
 
-        // Get handlers and behaviors as arrays to avoid repeated enumeration.
-        // Behaviors are resolved as IEventPipelineBehavior<TEvent> so only behaviors declared
-        // for this exact event type are returned — no runtime type-filtering needed.
-        var handlersArray = _dependencyResolver.GetServices<IEventHandler<TEvent>>() as IEventHandler<TEvent>[] ??
-                            _dependencyResolver.GetServices<IEventHandler<TEvent>>().ToArray();
-        // Behaviors are ordered by their runtime pipeline position (IOrderedPipelineBehavior); the
-        // stable sort keeps registration order for behaviors that share an Order. The resolved and
-        // sorted array is cached per event type so the sort runs once per type within the scope.
-        var behaviorsArray = (IEventPipelineBehavior<TEvent>[])_behaviorCache.GetOrAdd(
+        // Resolve handlers + behaviors and compose the chain once per event type (cached). The static
+        // factory captures no state (only the type parameter), so on a cache hit no closure is allocated.
+        var pipeline = (EventHandlerDelegate<TEvent>)_pipelineCache.GetOrAdd(
             genericType,
-            static (_, resolver) => resolver
-                .GetServices<IEventPipelineBehavior<TEvent>>()
-                .OrderBy(Pipelines.PipelineBehaviorOrdering.OrderOf)
-                .ToArray(),
-            _dependencyResolver);
+            static (_, state) => state.BuildPipeline<TEvent>(),
+            this);
 
-        return ExecutePipelineAsync(
-            @event,
-            handlersArray,
-            behaviorsArray,
-            0,
-            cancellationToken);
+        return pipeline(@event, cancellationToken);
     }
 
-
-    private ValueTask<Result> ExecutePipelineAsync<TEvent>(
-        TEvent @event,
-        IEventHandler<TEvent>[] handlers,
-        IEventPipelineBehavior<TEvent>[] behaviors,
-        int index,
-        CancellationToken cancellationToken)
+    /// <summary>
+    ///     Composes the behavior chain for <typeparamref name="TEvent" /> into a single delegate: the
+    ///     terminal fans the event out to all handlers, and each behavior (lowest <c>Order</c> outermost)
+    ///     wraps the next. Built once per type per scope; the resolved handler/behavior instances are
+    ///     captured for the dispatcher's (scoped) lifetime, consistent with scoped-service stability.
+    /// </summary>
+    private EventHandlerDelegate<TEvent> BuildPipeline<TEvent>()
         where TEvent : class, IEvent
     {
-        if (index >= behaviors.Length)
+        // Behaviors are resolved as IEventPipelineBehavior<TEvent> so only behaviors declared for this
+        // exact event type are returned — no runtime type-filtering needed.
+        var handlers = _dependencyResolver.GetServices<IEventHandler<TEvent>>() as IEventHandler<TEvent>[] ??
+                       _dependencyResolver.GetServices<IEventHandler<TEvent>>().ToArray();
+        // Ordered by runtime pipeline position (IOrderedPipelineBehavior); the stable sort keeps
+        // registration order for behaviors that share an Order.
+        var behaviors = _dependencyResolver.GetServices<IEventPipelineBehavior<TEvent>>()
+            .OrderBy(Pipelines.PipelineBehaviorOrdering.OrderOf)
+            .ToArray();
+
+        EventHandlerDelegate<TEvent> next = (e, ct) => DispatchToHandlersAsync(e, handlers, ct);
+        for (var i = behaviors.Length - 1; i >= 0; i--)
         {
-            return DispatchToHandlersAsync(@event, handlers, cancellationToken);
+            var behavior = behaviors[i];
+            var captured = next;
+            next = (e, ct) => behavior.HandleAsync(e, captured, ct);
         }
 
-        return behaviors[index].HandleAsync(@event, Next, cancellationToken);
-
-        ValueTask<Result> Next(TEvent inEvent, CancellationToken inCancellationToken)
-        {
-            return ExecutePipelineAsync(inEvent, handlers, behaviors, index + 1,
-                inCancellationToken);
-        }
+        return next;
     }
 
     private async ValueTask<Result> DispatchToHandlersAsync<TEvent>(

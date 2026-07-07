@@ -19,7 +19,7 @@ namespace UnambitiousFx.Benchmarks.SynapseBenchmark;
 [GroupBenchmarksBy(BenchmarkLogicalGroupRule.ByCategory)]
 [CategoriesColumn]
 [HideColumns(Column.RatioSD, Column.StdDev)]
-public class SynapseVsMediatRBenchmarks
+public class SynapseVsMediatorsBenchmarks
 {
     private static readonly RequestWithResponse RrRequest = new(41, 1);
     private static readonly RequestWithoutResponse RqRequest = new();
@@ -29,9 +29,17 @@ public class SynapseVsMediatRBenchmarks
     private static readonly MediatRRequestWithoutResponse MrRqRequest = new();
     private static readonly MrNotification MrEvt = new();
 
+    private static readonly MediatorRequestWithResponse MediatorRrRequest = new(41, 1);
+    private static readonly MediatorCommandVoid MediatorVoidRequest = new();
+    private static readonly MediatorNotification MediatorEvt = new();
+
     private IMediator _mrMediatorBase = default!;
     private IMediator _mrMediator1Beh = default!;
     private IMediator _mrMediator3Beh = default!;
+
+    private Mediator.IMediator _mediatorBase = default!;
+    private Mediator.IMediator _mediator1Beh = default!;
+    private Mediator.IMediator _mediator3Beh = default!;
 
     private IEmitter _synapseEmitterBase = default!;
     private IInvoker _synapseInvokerBase = default!;
@@ -61,6 +69,14 @@ public class SynapseVsMediatRBenchmarks
         _mrMediatorBase = mrBaseSp.GetRequiredService<IMediator>();
         _mrMediator1Beh = mr1BehSp.GetRequiredService<IMediator>();
         _mrMediator3Beh = mr3BehSp.GetRequiredService<IMediator>();
+
+        var mediatorBaseSp = BuildMediatorSp(0);
+        var mediator1BehSp = BuildMediatorSp(1);
+        var mediator3BehSp = BuildMediatorSp(3);
+
+        _mediatorBase = mediatorBaseSp.GetRequiredService<Mediator.IMediator>();
+        _mediator1Beh = mediator1BehSp.GetRequiredService<Mediator.IMediator>();
+        _mediator3Beh = mediator3BehSp.GetRequiredService<Mediator.IMediator>();
     }
 
     private static IServiceProvider BuildOurSp(int behaviors, bool slimContext)
@@ -159,6 +175,32 @@ public class SynapseVsMediatRBenchmarks
         return services.BuildServiceProvider();
     }
 
+    private static IServiceProvider BuildMediatorSp(int behaviors)
+    {
+        var services = new ServiceCollection();
+        // Transient to mirror MediatR's transient handler registration (apples-to-apples DI cost).
+        // Source generator auto-discovers handlers + notification handlers in this assembly.
+        services.AddMediator(opts => opts.ServiceLifetime = ServiceLifetime.Transient);
+
+        // Open-generic no-op behaviors, registered conditionally (TResponse = Unit for the void command)
+        if (behaviors >= 1)
+        {
+            services.AddTransient(typeof(Mediator.IPipelineBehavior<,>), typeof(MediatorNoOpBehavior1<,>));
+        }
+
+        if (behaviors >= 2)
+        {
+            services.AddTransient(typeof(Mediator.IPipelineBehavior<,>), typeof(MediatorNoOpBehavior2<,>));
+        }
+
+        if (behaviors >= 3)
+        {
+            services.AddTransient(typeof(Mediator.IPipelineBehavior<,>), typeof(MediatorNoOpBehavior3<,>));
+        }
+
+        return services.BuildServiceProvider();
+    }
+
     // ── Send with response ───────────────────────────────────────────────────
 
     [BenchmarkCategory("Send (response)"), Benchmark(Baseline = true, Description = "Synapse")]
@@ -172,6 +214,12 @@ public class SynapseVsMediatRBenchmarks
     public Task<int> MediatR_Send_Response()
     {
         return _mrMediatorBase.Send(MrRrRequest);
+    }
+
+    [BenchmarkCategory("Send (response)"), Benchmark(Description = "Mediator")]
+    public ValueTask<int> Mediator_Send_Response()
+    {
+        return _mediatorBase.Send(MediatorRrRequest);
     }
 
     [BenchmarkCategory("Send (response)"), Benchmark(Description = "Synapse (direct handler)")]
@@ -197,6 +245,13 @@ public class SynapseVsMediatRBenchmarks
         return true;
     }
 
+    [BenchmarkCategory("Send (void)"), Benchmark(Description = "Mediator")]
+    public async Task<bool> Mediator_Send_Void()
+    {
+        await _mediatorBase.Send(MediatorVoidRequest);
+        return true;
+    }
+
     [BenchmarkCategory("Send (void)"), Benchmark(Description = "Synapse (direct handler)")]
     public async Task<bool> Synapse_Send_Void_Direct()
     {
@@ -219,6 +274,12 @@ public class SynapseVsMediatRBenchmarks
         return _mrMediatorBase.Publish(MrEvt);
     }
 
+    [BenchmarkCategory("Publish (5 handlers)"), Benchmark(Description = "Mediator")]
+    public ValueTask Mediator_Publish_5Handlers()
+    {
+        return _mediatorBase.Publish(MediatorEvt);
+    }
+
     // ── Pipeline: 1 behavior ─────────────────────────────────────────────────
 
     [BenchmarkCategory("Pipeline (1 behavior)"), Benchmark(Baseline = true, Description = "Synapse")]
@@ -234,6 +295,12 @@ public class SynapseVsMediatRBenchmarks
         return _mrMediator1Beh.Send(MrRrRequest);
     }
 
+    [BenchmarkCategory("Pipeline (1 behavior)"), Benchmark(Description = "Mediator")]
+    public ValueTask<int> Mediator_Send_1Behavior()
+    {
+        return _mediator1Beh.Send(MediatorRrRequest);
+    }
+
     // ── Pipeline: 3 behaviors ────────────────────────────────────────────────
 
     [BenchmarkCategory("Pipeline (3 behaviors)"), Benchmark(Baseline = true, Description = "Synapse")]
@@ -247,6 +314,12 @@ public class SynapseVsMediatRBenchmarks
     public Task<int> MediatR_Send_3Behaviors()
     {
         return _mrMediator3Beh.Send(MrRrRequest);
+    }
+
+    [BenchmarkCategory("Pipeline (3 behaviors)"), Benchmark(Description = "Mediator")]
+    public ValueTask<int> Mediator_Send_3Behaviors()
+    {
+        return _mediator3Beh.Send(MediatorRrRequest);
     }
 
     // ===== Types for Our Mediator =====
@@ -508,5 +581,96 @@ public class SynapseVsMediatRBenchmarks
         {
             return Task.CompletedTask;
         }
+    }
+
+    // ===== Types for Mediator (martinothamar) =====
+    public sealed record MediatorRequestWithResponse(
+        int A,
+        int B) : Mediator.IRequest<int>;
+
+    public sealed record MediatorCommandVoid : Mediator.ICommand;
+
+    public sealed class MediatorRequestWithResponseHandler : Mediator.IRequestHandler<MediatorRequestWithResponse, int>
+    {
+        public ValueTask<int> Handle(MediatorRequestWithResponse request,
+            CancellationToken cancellationToken)
+        {
+            return new ValueTask<int>(request.A + request.B);
+        }
+    }
+
+    public sealed class MediatorCommandVoidHandler : Mediator.ICommandHandler<MediatorCommandVoid>
+    {
+        public ValueTask<Mediator.Unit> Handle(MediatorCommandVoid command,
+            CancellationToken cancellationToken)
+        {
+            return Mediator.Unit.ValueTask;
+        }
+    }
+
+    public sealed class MediatorNoOpBehavior1<TMessage, TResponse> : Mediator.IPipelineBehavior<TMessage, TResponse>
+        where TMessage : Mediator.IMessage
+    {
+        public ValueTask<TResponse> Handle(TMessage message,
+            Mediator.MessageHandlerDelegate<TMessage, TResponse> next,
+            CancellationToken cancellationToken)
+            => next(message, cancellationToken);
+    }
+
+    public sealed class MediatorNoOpBehavior2<TMessage, TResponse> : Mediator.IPipelineBehavior<TMessage, TResponse>
+        where TMessage : Mediator.IMessage
+    {
+        public ValueTask<TResponse> Handle(TMessage message,
+            Mediator.MessageHandlerDelegate<TMessage, TResponse> next,
+            CancellationToken cancellationToken)
+            => next(message, cancellationToken);
+    }
+
+    public sealed class MediatorNoOpBehavior3<TMessage, TResponse> : Mediator.IPipelineBehavior<TMessage, TResponse>
+        where TMessage : Mediator.IMessage
+    {
+        public ValueTask<TResponse> Handle(TMessage message,
+            Mediator.MessageHandlerDelegate<TMessage, TResponse> next,
+            CancellationToken cancellationToken)
+            => next(message, cancellationToken);
+    }
+
+    public sealed class MediatorNotification : Mediator.INotification
+    {
+    }
+
+    public sealed class MediatorNotificationHandler1 : Mediator.INotificationHandler<MediatorNotification>
+    {
+        public ValueTask Handle(MediatorNotification notification,
+            CancellationToken cancellationToken)
+            => default;
+    }
+
+    public sealed class MediatorNotificationHandler2 : Mediator.INotificationHandler<MediatorNotification>
+    {
+        public ValueTask Handle(MediatorNotification notification,
+            CancellationToken cancellationToken)
+            => default;
+    }
+
+    public sealed class MediatorNotificationHandler3 : Mediator.INotificationHandler<MediatorNotification>
+    {
+        public ValueTask Handle(MediatorNotification notification,
+            CancellationToken cancellationToken)
+            => default;
+    }
+
+    public sealed class MediatorNotificationHandler4 : Mediator.INotificationHandler<MediatorNotification>
+    {
+        public ValueTask Handle(MediatorNotification notification,
+            CancellationToken cancellationToken)
+            => default;
+    }
+
+    public sealed class MediatorNotificationHandler5 : Mediator.INotificationHandler<MediatorNotification>
+    {
+        public ValueTask Handle(MediatorNotification notification,
+            CancellationToken cancellationToken)
+            => default;
     }
 }
