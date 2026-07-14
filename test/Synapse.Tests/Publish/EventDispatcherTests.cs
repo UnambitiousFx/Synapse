@@ -64,7 +64,7 @@ public sealed class EventDispatcherTests
         // Assert (Then)
         Assert.True(result.IsSuccess);
         await _eventOrchestrator.Received(1).RunAsync(
-            Arg.Is<IEventHandler<EventExample>[]>(h => h.Length == 1),
+            Arg.Is<IEventHandler<EventExample>[]>(h => h != null && h.Length == 1),
             @event,
             Arg.Any<CancellationToken>());
     }
@@ -91,7 +91,7 @@ public sealed class EventDispatcherTests
         // Assert (Then)
         Assert.True(result.IsSuccess);
         await _eventOrchestrator.Received(1).RunAsync(
-            Arg.Is<IEventHandler<EventExample>[]>(h => h.Length == 2),
+            Arg.Is<IEventHandler<EventExample>[]>(h => h != null && h.Length == 2),
             @event,
             Arg.Any<CancellationToken>());
     }
@@ -116,7 +116,7 @@ public sealed class EventDispatcherTests
         // Assert (Then)
         Assert.True(result.IsSuccess);
         await _eventOrchestrator.Received(1).RunAsync(
-            Arg.Is<IEventHandler<EventExample>[]>(h => h.Length == 0),
+            Arg.Is<IEventHandler<EventExample>[]>(h => h != null && h.Length == 0),
             @event,
             Arg.Any<CancellationToken>());
     }
@@ -139,7 +139,7 @@ public sealed class EventDispatcherTests
             .Returns(callInfo =>
             {
                 var next = callInfo.Arg<EventHandlerDelegate<EventExample>>();
-                return next(@event, TestContext.Current.CancellationToken);
+                return next!(@event, TestContext.Current.CancellationToken);
             });
 
         _eventOrchestrator.RunAsync(Arg.Any<IEventHandler<EventExample>[]>(), @event, Arg.Any<CancellationToken>())

@@ -49,6 +49,7 @@ public sealed class LoggingEnrichmentBehaviorTests
         Assert.True(result.IsSuccess);
         Assert.True(disposed);
         logger.Received(1).BeginScope(Arg.Is<Dictionary<string, object>>(state =>
+            state != null &&
             state.ContainsKey("CorrelationId") &&
             state.ContainsKey("Metadata_Tenant")));
     }
