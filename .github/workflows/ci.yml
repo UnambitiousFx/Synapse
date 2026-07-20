@@ -36,7 +36,18 @@ jobs:
         run: dotnet restore Synapse.slnx
 
       - name: Build
-        run: dotnet build Synapse.slnx --no-restore --configuration Release -p:UseAppHost=false
+        shell: bash
+        run: |
+          set -e
+          n=0
+          until [ $n -ge 3 ]; do
+            dotnet build Synapse.slnx --no-restore --configuration Release && exit 0
+            n=$((n+1))
+            echo "Build attempt $n failed, retrying in 5s..."
+            sleep 5
+          done
+          echo "Build failed after 3 attempts"
+          exit 1
 
       - name: Test (coverage + TRX)
         run: >
