@@ -43,8 +43,8 @@ jobs:
           until [ $n -ge 3 ]; do
             dotnet build Synapse.slnx --no-restore --configuration Release && exit 0
             n=$((n+1))
-            echo "Build attempt $n failed, retrying in 5s..."
-            sleep 5
+            echo "Build attempt $n failed, clearing apphost package cache and retrying..."
+            rm -rf "$HOME/.nuget/packages/microsoft.netcore.app.host."* 2>/dev/null || true
           done
           echo "Build failed after 3 attempts"
           exit 1
