@@ -36,7 +36,7 @@ jobs:
         run: dotnet restore Synapse.slnx
 
       - name: Build
-        run: dotnet build Synapse.slnx --no-restore --configuration Release
+        run: dotnet build Synapse.slnx --no-restore --configuration Release -m:1
 
       - name: Test (coverage + TRX)
         run: >
