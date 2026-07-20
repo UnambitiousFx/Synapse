@@ -30,24 +30,16 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: ${{ env.DOTNET_VERSION }}
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            ${{ env.DOTNET_VERSION }}
 
       - name: Restore dependencies
         run: dotnet restore Synapse.slnx
 
       - name: Build
-        shell: bash
-        run: |
-          set -e
-          n=0
-          until [ $n -ge 3 ]; do
-            dotnet build Synapse.slnx --no-restore --configuration Release && exit 0
-            n=$((n+1))
-            echo "Build attempt $n failed, clearing apphost package cache and retrying..."
-            rm -rf "$HOME/.nuget/packages/microsoft.netcore.app.host."* 2>/dev/null || true
-          done
-          echo "Build failed after 3 attempts"
-          exit 1
+        run: dotnet build Synapse.slnx --no-restore --configuration Release
 
       - name: Test (coverage + TRX)
         run: >
