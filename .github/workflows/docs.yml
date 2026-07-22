@@ -2,10 +2,8 @@ name: Deploy Docs
 
 on:
   push:
-    branches: [main]
-    paths:
-      - "docs/**"
-      - ".github/workflows/docs.yml"
+    tags:
+      - 'v*'
   workflow_dispatch:
 
 # Allow GITHUB_TOKEN to deploy to GitHub Pages.
