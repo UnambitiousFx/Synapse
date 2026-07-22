@@ -139,7 +139,7 @@ public class TasksRegisterGroup : IRegisterGroup
 services.AddSynapse(cfg => cfg.AddRegisterGroup(new TasksRegisterGroup()));
 ```
 
-The [Source Generator](./source-generator) can generate this class automatically from handler attributes.
+The [Source Generator](./source-generator) can generate this class automatically from handler attributes — either as the default `RegisterGroup` in your root namespace, or into a `partial class` of your own choosing via the [`[RegisterGroup]` attribute](./source-generator#customize-the-generated-class).
 
 ## See also
 

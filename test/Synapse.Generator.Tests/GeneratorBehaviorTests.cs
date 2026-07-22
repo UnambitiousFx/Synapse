@@ -1858,4 +1858,211 @@ public sealed class GeneratorBehaviorTests
 
         return refs;
     }
+
+    // ── RootNamespace resolution ───────────────────────────────────────────
+
+    [Fact]
+    public void Generate_WithRootNamespaceProperty_UsesRootNamespace()
+    {
+        // Arrange (Given): assembly name differs from the MSBuild RootNamespace.
+        const string source = """
+            using System.Threading;
+            using System.Threading.Tasks;
+            using UnambitiousFx.Functional;
+            using UnambitiousFx.Synapse.Abstractions;
+
+            namespace Contoso.Billing.Worker;
+
+            public sealed record MyRequest : IRequest;
+
+            [RequestHandler<MyRequest>]
+            public sealed class MyHandler : IRequestHandler<MyRequest>
+            {
+                public ValueTask<Result> HandleAsync(MyRequest request, CancellationToken ct = default)
+                    => ValueTask.FromResult(Result.Success());
+            }
+            """;
+
+        // Act (When)
+        var generated = RunGeneratorWithOptions(source, "Worker",
+            new Dictionary<string, string> { ["build_property.RootNamespace"] = "Contoso.Billing.Worker" });
+
+        // Assert (Then)
+        Assert.Contains("namespace Contoso.Billing.Worker;", generated);
+        Assert.DoesNotContain("namespace Worker;", generated);
+    }
+
+    [Fact]
+    public void Generate_WithoutRootNamespaceProperty_FallsBackToAssemblyName()
+    {
+        // Arrange (Given): no build_property.RootNamespace supplied.
+        const string source = """
+            using UnambitiousFx.Synapse.Abstractions;
+
+            namespace Whatever;
+
+            public sealed record MyRequest : IRequest;
+            """;
+
+        // Act (When)
+        var generated = RunGeneratorWithOptions(source, "TestAssembly", new Dictionary<string, string>());
+
+        // Assert (Then)
+        Assert.Contains("namespace TestAssembly;", generated);
+    }
+
+    // ── [RegisterGroup] partial class ──────────────────────────────────────
+
+    [Fact]
+    public void Generate_WithRegisterGroupPartialClass_EmitsPartialInUserNamespace()
+    {
+        // Arrange (Given)
+        const string source = """
+            using System.Threading;
+            using System.Threading.Tasks;
+            using UnambitiousFx.Functional;
+            using UnambitiousFx.Synapse.Abstractions;
+
+            namespace MyApp;
+
+            public sealed record MyRequest : IRequest;
+
+            [RequestHandler<MyRequest>]
+            public sealed class MyHandler : IRequestHandler<MyRequest>
+            {
+                public ValueTask<Result> HandleAsync(MyRequest request, CancellationToken ct = default)
+                    => ValueTask.FromResult(Result.Success());
+            }
+
+            [RegisterGroup]
+            public partial class AppRegistrations;
+            """;
+
+        // Act (When)
+        var generated = RunGeneratorAndGetRegistrationGroup(source);
+
+        // Assert (Then): emitted into the user's namespace/type, as a partial, without `sealed`.
+        Assert.Contains("namespace MyApp;", generated);
+        Assert.Contains("partial class AppRegistrations :", generated);
+        Assert.DoesNotContain("sealed class", generated);
+        Assert.DoesNotContain("class RegisterGroup", generated);
+
+        // And the user partial + generated partial merge into a compilable type.
+        AssertGeneratedCompiles(source);
+    }
+
+    [Fact]
+    public void Generate_WithoutRegisterGroupAttribute_EmitsSealedRegisterGroup()
+    {
+        // Arrange (Given)
+        const string source = """
+            using UnambitiousFx.Synapse.Abstractions;
+
+            namespace MyApp;
+
+            public sealed record MyRequest : IRequest;
+            """;
+
+        // Act (When)
+        var generated = RunGeneratorAndGetRegistrationGroup(source);
+
+        // Assert (Then)
+        Assert.Contains("public sealed class RegisterGroup :", generated);
+    }
+
+    [Fact]
+    public void Generate_WithNonPartialRegisterGroupClass_ReportsDiagnostic()
+    {
+        // Arrange (Given)
+        const string source = """
+            using UnambitiousFx.Synapse.Abstractions;
+
+            namespace MyApp;
+
+            [RegisterGroup]
+            public class AppRegistrations;
+            """;
+
+        // Act (When)
+        var (diagnostics, _) = RunGenerator(source);
+
+        // Assert (Then)
+        Assert.Contains(diagnostics, d => d.Id == "MDG016");
+    }
+
+    [Fact]
+    public void Generate_WithMultipleRegisterGroupClasses_ReportsDiagnostic()
+    {
+        // Arrange (Given)
+        const string source = """
+            using UnambitiousFx.Synapse.Abstractions;
+
+            namespace MyApp;
+
+            [RegisterGroup]
+            public partial class FirstGroup;
+
+            [RegisterGroup]
+            public partial class SecondGroup;
+            """;
+
+        // Act (When)
+        var (diagnostics, _) = RunGenerator(source);
+
+        // Assert (Then)
+        Assert.Contains(diagnostics, d => d.Id == "MDG015");
+    }
+
+    private static string RunGeneratorWithOptions(string source,
+        string assemblyName,
+        Dictionary<string, string> globalOptions)
+    {
+        var compilation = CSharpCompilation.Create(
+            assemblyName,
+            [CSharpSyntaxTree.ParseText(source)],
+            GetMetadataReferences(),
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary,
+                nullableContextOptions: NullableContextOptions.Enable));
+
+        var optionsProvider = new TestAnalyzerConfigOptionsProvider(globalOptions);
+        var driver = CSharpGeneratorDriver
+            .Create([new SynapseGenerator().AsSourceGenerator()], optionsProvider: optionsProvider)
+            .RunGenerators(compilation);
+
+        var generatedFile = driver.GetRunResult().GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.EndsWith("RegisterGroup.g.cs", StringComparison.Ordinal));
+
+        return generatedFile?.GetText().ToString() ?? string.Empty;
+    }
+
+    private sealed class TestAnalyzerConfigOptionsProvider(Dictionary<string, string> globalOptions)
+        : Microsoft.CodeAnalysis.Diagnostics.AnalyzerConfigOptionsProvider
+    {
+        private readonly TestAnalyzerConfigOptions _global = new(globalOptions);
+
+        public override Microsoft.CodeAnalysis.Diagnostics.AnalyzerConfigOptions GlobalOptions => _global;
+
+        public override Microsoft.CodeAnalysis.Diagnostics.AnalyzerConfigOptions GetOptions(SyntaxTree tree)
+            => _global;
+
+        public override Microsoft.CodeAnalysis.Diagnostics.AnalyzerConfigOptions GetOptions(AdditionalText textFile)
+            => _global;
+    }
+
+    private sealed class TestAnalyzerConfigOptions(Dictionary<string, string> options)
+        : Microsoft.CodeAnalysis.Diagnostics.AnalyzerConfigOptions
+    {
+        public override bool TryGetValue(string key,
+            [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out string value)
+        {
+            if (options.TryGetValue(key, out var found))
+            {
+                value = found;
+                return true;
+            }
+
+            value = null!;
+            return false;
+        }
+    }
 }

@@ -6,7 +6,9 @@ internal static class CompilationExtensions
 {
     public static string GetRootNamespaceFromAssemblyAttributes(this Compilation compilation)
     {
-        // Look for the RootNamespace assembly attribute
+        // Fallback used only when the MSBuild RootNamespace (build_property.RootNamespace) is unavailable.
+        // AssemblyDefaultAliasAttribute is not populated from RootNamespace, so this is a best-effort guess
+        // that ultimately degrades to the assembly name — which can differ from the intended root namespace.
         var rootNamespaceAttribute = compilation.Assembly.GetAttributes()
             .FirstOrDefault(attr =>
                 attr.AttributeClass?.Name == "AssemblyDefaultAliasAttribute" ||
