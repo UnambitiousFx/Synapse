@@ -6,7 +6,9 @@ namespace UnambitiousFx.Synapse.Generator;
 
 internal static class RegisterGroupFactory
 {
-    public static SourceText Create(string? rootNamespace,
+    public static SourceText Create(string? @namespace,
+        string className,
+        bool asPartial,
         string abstractionsNamespace,
         ImmutableArray<HandlerDetail?> details,
         ImmutableArray<BehaviorDetail> behaviors,
@@ -17,11 +19,20 @@ internal static class RegisterGroupFactory
     {
         var sb = new StringBuilder();
 
-        sb.AppendLine($"namespace {rootNamespace};");
-        sb.AppendLine();
+        // A user-declared [RegisterGroup] class may live in the global namespace — skip the namespace line
+        // rather than emit an invalid `namespace ;`.
+        if (!string.IsNullOrEmpty(@namespace))
+        {
+            sb.AppendLine($"namespace {@namespace};");
+            sb.AppendLine();
+        }
 
+        // For the user-partial path emit no accessibility or `sealed`: the declaring partial supplies the
+        // modifiers, and partial declarations must not specify conflicting ones. The default path owns the
+        // full declaration and emits `public sealed`.
+        var classModifiers = asPartial ? "partial class" : "public sealed class";
         sb.AppendLine(
-            $"public sealed class RegisterGroup : global::{abstractionsNamespace}.IRegisterGroup, global::{abstractionsNamespace}.IEventDispatcherRegistration");
+            $"{classModifiers} {className} : global::{abstractionsNamespace}.IRegisterGroup, global::{abstractionsNamespace}.IEventDispatcherRegistration");
         sb.AppendLine("{");
         sb.AppendLine($"    public void Register(global::{abstractionsNamespace}.IDependencyInjectionBuilder builder)");
         sb.AppendLine("    {");

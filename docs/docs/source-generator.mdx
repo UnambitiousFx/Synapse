@@ -82,7 +82,10 @@ public class StreamTasksQueryHandler : IStreamRequestHandler<StreamTasksQuery, T
 
 ## Generated class
 
-The generator produces one class in the root namespace of your assembly.
+By default the generator produces one class named `RegisterGroup` in your assembly's **root namespace**
+— the MSBuild `RootNamespace` property (which may differ from the assembly name, e.g. assembly `App`
+with `<RootNamespace>Company.App</RootNamespace>`). Prefer a specific namespace, name, or accessibility?
+See [Customize the generated class](#customize-the-generated-class) below.
 
 ### `RegisterGroup`
 
@@ -125,6 +128,41 @@ services.AddSynapse(cfg =>
 :::caution NativeAOT requirement
 `RegisterGroup` implements `IEventDispatcherRegistration`, so the single `AddRegisterGroup` call is sufficient for NativeAOT. Without the source generator, event dispatch falls back to runtime `typeof(T)` resolution which the AOT compiler cannot analyze.
 :::
+
+## Customize the generated class
+
+To choose the namespace, name, or accessibility of the generated class, declare your own **`partial`
+class** and mark it with `[RegisterGroup]`. The generator then fills that class in as a partial —
+implementing `IRegisterGroup` and `IEventDispatcherRegistration` — instead of emitting the default
+`RegisterGroup` in the root namespace:
+
+```csharp
+using UnambitiousFx.Synapse.Abstractions;
+
+namespace Company.App.Composition;
+
+[RegisterGroup]
+public partial class AppRegistrations;   // the generator supplies the implementation
+```
+
+Wire it up by its own name:
+
+```csharp
+services.AddSynapse(cfg =>
+{
+    cfg.AddRegisterGroup(new AppRegistrations());
+});
+```
+
+Rules:
+
+- The class must be a **top-level, non-generic `partial class`** (diagnostics `MDG016`/`MDG017` otherwise).
+- Declare **at most one** `[RegisterGroup]` class per assembly (diagnostic `MDG015` otherwise).
+- The generator emits no accessibility modifier on its partial, so the visibility (`public`,
+  `internal`, …) is whatever you declare on your own partial.
+
+When no `[RegisterGroup]` class is present, the default `public sealed class RegisterGroup` in the root
+namespace is generated as shown above.
 
 ## Incremental generation
 

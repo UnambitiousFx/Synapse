@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace UnambitiousFx.Synapse.Generator;
@@ -33,6 +34,8 @@ public class SynapseGenerator : IIncrementalGenerator
 
     private const string FullGlobalBehaviorAttributeName =
         $"{AbstractionsNamespace}.{GlobalBehaviorAttributeName}";
+
+    private const string FullRegisterGroupAttributeName = $"{AbstractionsNamespace}.RegisterGroupAttribute";
 
     // The built-in CQRS boundary enforcement behavior, expressed as a global behavior so the
     // [assembly: EnableSynapseCqrsBoundaryEnforcement] opt-in is just an alias for registering it globally.
@@ -101,10 +104,23 @@ public class SynapseGenerator : IIncrementalGenerator
         // Get the compilation
         var compilationProvider = context.CompilationProvider;
 
-        // Transform the compilation to extract the root namespace
-        var rootNamespaceProvider = compilationProvider
-            .Select(static (compilation,
-                _) => compilation.GetRootNamespaceFromAssemblyAttributes());
+        // Resolve the root namespace used for the fallback (no [RegisterGroup] class) output. The MSBuild
+        // RootNamespace is the source of truth and is surfaced to generators as build_property.RootNamespace;
+        // it can differ from the assembly name (e.g. assembly "App" with RootNamespace "Keeple.Auth.App").
+        // Fall back to the assembly-attribute/assembly-name heuristic when the property is absent.
+        var rootNamespaceProvider = context.AnalyzerConfigOptionsProvider
+            .Combine(compilationProvider)
+            .Select(static (tuple, _) =>
+            {
+                var (options, compilation) = tuple;
+                if (options.GlobalOptions.TryGetValue("build_property.RootNamespace", out var rootNamespace)
+                    && !string.IsNullOrWhiteSpace(rootNamespace))
+                {
+                    return rootNamespace;
+                }
+
+                return compilation.GetRootNamespaceFromAssemblyAttributes();
+            });
 
 
         var requestHandlerWithResponseDetails = context.SyntaxProvider.ForAttributeWithMetadataName(
@@ -198,6 +214,15 @@ public class SynapseGenerator : IIncrementalGenerator
         var eventInfoProvider = compilationProvider
             .Select(static (compilation, _) => ExtractEventInfo(compilation));
 
+        // Discover an optional user-declared [RegisterGroup] partial class. When present (and valid) the
+        // generated register group is emitted as a partial of that class — its namespace, name and
+        // accessibility win over the default `public sealed class RegisterGroup` in the root namespace.
+        var registerGroupTargetProvider = context.SyntaxProvider.ForAttributeWithMetadataName(
+                FullRegisterGroupAttributeName,
+                static (node, _) => node is ClassDeclarationSyntax,
+                static (ctx, _) => GetRegisterGroupTarget(ctx))
+            .Collect();
+
         var combinedProvider = allHandlerDetails
             .Combine(rootNamespaceProvider)
             .Combine(behaviorDetails)
@@ -205,12 +230,19 @@ public class SynapseGenerator : IIncrementalGenerator
             .Combine(behaviorTargetsProvider)
             .Combine(crossAssemblyDisabledProvider)
             .Combine(validatorDetails)
-            .Combine(eventInfoProvider);
+            .Combine(eventInfoProvider)
+            .Combine(registerGroupTargetProvider);
 
         context.RegisterSourceOutput(combinedProvider, static (ctx, tuple) =>
         {
-            var (((((((details, rootNamespace), behaviors), globalBehaviors), behaviorTargets), crossAssemblyDisabled),
-                validatorScans), eventInfo) = tuple;
+            var ((((((((details, rootNamespace), behaviors), globalBehaviors), behaviorTargets),
+                crossAssemblyDisabled), validatorScans), eventInfo), registerGroupTargets) = tuple;
+
+            // Resolve the optional user-declared [RegisterGroup] partial class. A single valid target
+            // (top-level, non-generic, partial) redirects the output to a partial of that class; invalid or
+            // duplicate targets are reported and suppress emission; no target falls back to the default
+            // sealed RegisterGroup in the resolved root namespace.
+            var registerGroupTarget = ResolveRegisterGroupTarget(ctx, registerGroupTargets, out var hasTarget);
 
             ctx.ReportDiagnostic(Diagnostic.Create(
                 new DiagnosticDescriptor(
@@ -223,7 +255,9 @@ public class SynapseGenerator : IIncrementalGenerator
                 Location.None,
                 details.Length, rootNamespace));
 
-            if (string.IsNullOrEmpty(rootNamespace))
+            // MDG001 only applies to the fallback path: a valid [RegisterGroup] class supplies its own
+            // namespace, so the assembly root namespace is irrelevant there.
+            if (registerGroupTarget is null && !hasTarget && string.IsNullOrEmpty(rootNamespace))
             {
                 ctx.ReportDiagnostic(Diagnostic.Create(
                     new DiagnosticDescriptor(
@@ -441,11 +475,113 @@ public class SynapseGenerator : IIncrementalGenerator
                     eventInfo.HandlerTypes.Length));
             }
 
+            // A [RegisterGroup] class was declared but is invalid (not partial, nested, generic, or more
+            // than one) — the diagnostics are already reported; suppress emission rather than emit a
+            // conflicting default type in the root namespace.
+            if (hasTarget && registerGroupTarget is null)
+            {
+                return;
+            }
+
+            var (emitNamespace, emitClassName, emitAsPartial) = registerGroupTarget is { } target
+                ? (target.Namespace, target.ClassName, true)
+                : (rootNamespace, "RegisterGroup", false);
+
             ctx.AddSource("RegisterGroup.g.cs",
-                RegisterGroupFactory.Create(rootNamespace, AbstractionsNamespace, details,
-                    behaviorList.ToImmutable(), behaviorTargets, crossAssemblyDisabled,
+                RegisterGroupFactory.Create(emitNamespace, emitClassName, emitAsPartial, AbstractionsNamespace,
+                    details, behaviorList.ToImmutable(), behaviorTargets, crossAssemblyDisabled,
                     validatorList.ToImmutable(), eventInfo));
         });
+    }
+
+    /// <summary>
+    ///     Captures the shape of a class decorated with <c>[RegisterGroup]</c>: its namespace, name and the
+    ///     modifiers that determine whether the generator can emit a matching partial (partial, top-level,
+    ///     non-generic). Validation and diagnostics are deferred to <see cref="ResolveRegisterGroupTarget" />.
+    /// </summary>
+    private static RegisterGroupTarget? GetRegisterGroupTarget(GeneratorAttributeSyntaxContext ctx)
+    {
+        if (ctx.TargetNode is not ClassDeclarationSyntax classDeclaration)
+        {
+            return null;
+        }
+
+        var className = classDeclaration.Identifier.ValueText;
+        var @namespace = classDeclaration.GetNamespace();
+        var isPartial = classDeclaration.Modifiers.Any(SyntaxKind.PartialKeyword);
+        var isNested = classDeclaration.Parent is TypeDeclarationSyntax;
+        var isGeneric = classDeclaration.TypeParameterList is { Parameters.Count: > 0 };
+        var location = LocationInfo.CreateFrom(classDeclaration.GetLocation());
+
+        return new RegisterGroupTarget(@namespace, className, isPartial, isNested, isGeneric, location);
+    }
+
+    /// <summary>
+    ///     Validates the discovered <c>[RegisterGroup]</c> targets and returns the single usable one, or null.
+    ///     Reports MDG015 (more than one), MDG016 (not partial) and MDG017 (nested or generic).
+    ///     <paramref name="hasTarget" /> is true when at least one <c>[RegisterGroup]</c> class was declared —
+    ///     used by the caller to suppress the default fallback output even when the target is unusable.
+    /// </summary>
+    private static RegisterGroupTarget? ResolveRegisterGroupTarget(SourceProductionContext ctx,
+        ImmutableArray<RegisterGroupTarget?> targets, out bool hasTarget)
+    {
+        var valid = targets.Where(t => t is not null).Select(t => t!.Value).ToArray();
+        hasTarget = valid.Length > 0;
+
+        if (valid.Length == 0)
+        {
+            return null;
+        }
+
+        if (valid.Length > 1)
+        {
+            foreach (var target in valid)
+            {
+                ctx.ReportDiagnostic(Diagnostic.Create(
+                    new DiagnosticDescriptor(
+                        "MDG015",
+                        "Multiple [RegisterGroup] classes",
+                        "More than one class is marked with [RegisterGroup]; declare at most one per assembly.",
+                        "Synapse.Generator",
+                        DiagnosticSeverity.Error,
+                        true),
+                    target.Location?.ToLocation() ?? Location.None));
+            }
+
+            return null;
+        }
+
+        var candidate = valid[0];
+
+        if (candidate.IsNested || candidate.IsGeneric)
+        {
+            ctx.ReportDiagnostic(Diagnostic.Create(
+                new DiagnosticDescriptor(
+                    "MDG017",
+                    "Invalid [RegisterGroup] class",
+                    "A [RegisterGroup] class must be a top-level, non-generic class.",
+                    "Synapse.Generator",
+                    DiagnosticSeverity.Error,
+                    true),
+                candidate.Location?.ToLocation() ?? Location.None));
+            return null;
+        }
+
+        if (!candidate.IsPartial)
+        {
+            ctx.ReportDiagnostic(Diagnostic.Create(
+                new DiagnosticDescriptor(
+                    "MDG016",
+                    "[RegisterGroup] class must be partial",
+                    "A [RegisterGroup] class must be declared 'partial' so the generator can emit its implementation.",
+                    "Synapse.Generator",
+                    DiagnosticSeverity.Error,
+                    true),
+                candidate.Location?.ToLocation() ?? Location.None));
+            return null;
+        }
+
+        return candidate;
     }
 
     private static HandlerDetail? GetStreamRequestHandlerDetail(GeneratorAttributeSyntaxContext ctx)

@@ -30,6 +30,7 @@ filed as a GitHub issue with minimal editing.
 | [022](022-validator-attribute-picks-first-irequest-response.md) | `[Validator]` derived the response type from the first `IRequest<T>` found; multi-`IRequest` requests now emit diagnostic MDG011 and skip registration instead of guessing | ✅ Resolved | Low | Generator / Validation |
 | [023](023-recordoutbox-methods-are-dead-noops.md) | `RecordOutbox*` metric methods were dead no-ops on `ISynapseMetrics` (superseded by observable gauges); removed | ✅ Resolved | Low | Observability |
 | [024](024-open-generic-behavior-special-constraints-ignored.md) | Open-generic behavior special constraints (`class`/`struct`/`unmanaged`/`notnull`/`new()`) were dropped, closing the behavior over non-conforming handlers → uncompilable code (CS0453); they are now captured as equatable flags and enforced in the cross-product | ✅ Resolved | **High** | Generator |
+| [025](025-registergroup-namespace-ignores-rootnamespace.md) | Generated `RegisterGroup` namespace was derived from the assembly name, ignoring MSBuild `RootNamespace`; it now reads `build_property.RootNamespace` first (and a new `[RegisterGroup]` partial class lets users pick the namespace/name explicitly) | ✅ Resolved | Medium | Generator |
 
 > **Discovery context:** 001–003 were found while building the pipeline-behavior showcase in
 > `examples/MinimalApi` on branch `feature/typed-pipeline-behaviors` against .NET 10 with
