@@ -64,29 +64,34 @@ In `src/Synapse/Observability/SynapseMetrics.cs`:
 
 ## Resolution
 
-The three `ObserveOutbox*` callbacks already existed (with last-known-value fallback and a
+The `ObserveOutbox*` callbacks already existed (with last-known-value fallback and a
 read-failure counter); they were simply never wired to a gauge. The constructor now registers
-them via `meter.CreateObservableGauge(...)` in `src/Synapse/Observability/SynapseMetrics.cs`:
+them via `meter.CreateObservableGauge(...)` in `src/Synapse/Observability/SynapseMetrics.cs`
+(four gauges — the original failed-count callback was later split into retrying + dead-letter by issue
+[020](020-outbox-failed-count-counts-retrying-events.md)):
 
 - `mediator.outbox.queue_depth` → `ObserveOutboxQueueDepth` (unit `{event}`)
 - `mediator.outbox.processing_lag` → `ObserveOutboxProcessingLag` (unit `s`)
 - `mediator.outbox.retrying_count` → `ObserveOutboxRetryingCount` (unit `{event}`)
 - `mediator.outbox.dead_letter_count` → `ObserveOutboxDeadLetterCount` (unit `{event}`)
 
-The `RecordOutbox*` methods stay as documented no-ops (kept for interface compatibility); the
-values flow through the observable gauges.
+The `RecordOutbox*` gauge-setter methods were left as documented no-ops here, for interface
+compatibility; the values flow through the observable gauges instead. Issue
+[023](023-recordoutbox-methods-are-dead-noops.md) later removed them from `ISynapseMetrics` altogether,
+since nothing called them.
 
 **Verification.** New `test/Synapse.Tests/Observability/SynapseMetricsTests.cs` uses a
 `MeterListener` against the `Unambitious.Synapse` meter and calls
 `RecordObservableInstruments()` to fire the callbacks:
 
-- `OutboxGauges_AfterOutboxPopulated_ReportCurrentValues` — asserts the three gauges report the
-  stubbed storage values (5 / 42s / 3).
+- `OutboxGauges_AfterOutboxPopulated_ReportCurrentValues` — asserts the gauges report the
+  stubbed storage values (5 / 42s / 3, plus a dead-letter count of 2 once 020 split that gauge).
 - `OutboxGauges_WhenStorageThrows_FallBackAndCountReadFailure` — asserts fallback to last-known
   value (0) and that `mediator.outbox.metrics.read_failures` increments per read.
 - `OutboxGauges_WithoutStorage_ReportZero` — asserts zero when no outbox storage is wired.
 
-All three pass; full solution builds clean.
+All three pass; full solution builds clean. (The `To address` note above says "three gauges" because
+the retrying/dead-letter split did not exist yet.)
 
 ## Library version
 

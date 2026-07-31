@@ -37,7 +37,7 @@ info: Synapse[0] CreateTaskCommand completed in 4ms
 
 ### `LoggingEnrichmentBehavior<TRequest, TResponse>`
 
-Enriches the `ILogger` scope with `CorrelationId` and all context metadata so every log entry emitted during the request automatically includes them — no manual `BeginScope` calls needed:
+Enriches the `ILogger` scope with the context's [flow identity](./context.mdx#flow-identity) and its [baggage](./context.mdx#baggage), so every log entry emitted during the request automatically includes them — no manual `BeginScope` calls needed:
 
 ```csharp
 cfg.RegisterRequestPipelineBehavior<
@@ -50,10 +50,22 @@ Every `ILogger` call inside the handler or any downstream service will include:
 
 ```json
 {
-  "CorrelationId": "019550a7-0000-7000-0000-000000000000",
-  "OccuredAt": "2026-04-08T10:00:00Z"
+  "TraceId": "0af7651916cd43dd8448eb211c80319c",
+  "CausationId": "b7ad6b7169203331",
+  "OccurredAt": "2026-04-08T10:00:00Z",
+  "Baggage_tenant.id": "acme"
 }
 ```
+
+`TraceId` is the W3C trace id, so this value is exactly what your tracing backend shows for the same flow — one string searches both. `CausationId` is the caller's span id and is omitted at the root of a flow or when nothing upstream was recording.
+
+Context **features** are deliberately not surfaced: they hold process-local state, and putting them in the log scope would mean internal markers appearing in every log entry.
+
+:::note Duplicate `TraceId` field
+A host that enables `ActivityTrackingOptions.TraceId` gets a `TraceId` field from `ILogger` itself. The two
+agree whenever both are set, because Synapse takes its value from the same activity. Synapse's is
+additionally present when no activity exists at all.
+:::
 
 ## Distributed tracing
 

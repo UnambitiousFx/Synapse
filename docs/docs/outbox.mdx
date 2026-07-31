@@ -13,7 +13,7 @@ The outbox pattern decouples event publishing from handler execution. Instead of
 ```mermaid
 stateDiagram-v2
     [*] --> Pending : EmitAsync (EmitMode.Outbox)
-    Pending --> Processing : CommitEventsAsync / IOutboxCommit.CommitAsync
+    Pending --> Processing : IOutboxCommit.CommitAsync
     Processing --> Completed : all event handlers succeed
     Processing --> Failed : handler fails after max retries
     Failed --> [*]
@@ -21,7 +21,7 @@ stateDiagram-v2
 ```
 
 1. `EmitAsync(event, EmitMode.Outbox)` stores the event in `IEventOutboxStorage`. No dispatch occurs.
-2. Calling `context.CommitEventsAsync()` or `IOutboxCommit.CommitAsync()` moves pending events through the event pipeline and handlers.
+2. Calling `IOutboxCommit.CommitAsync()` moves pending events through the event pipeline and handlers.
 3. If a handler fails, the outbox retries with exponential backoff up to `MaxRetryAttempts`.
 4. After all retry attempts are exhausted, the event is marked `Failed` (dead-lettered).
 
@@ -31,7 +31,7 @@ stateDiagram-v2
 
 ```csharp
 // Store event in outbox — nothing dispatched yet
-await context.PublishEventAsync(new TaskCreatedEvent(id, title), EmitMode.Outbox, ct);
+await emitter.EmitAsync(new TaskCreatedEvent(id, title), EmitMode.Outbox, ct);
 ```
 
 ### Flush after your side-effects commit
@@ -40,12 +40,14 @@ await context.PublishEventAsync(new TaskCreatedEvent(id, title), EmitMode.Outbox
 public class CreateTaskHandler : IRequestHandler<CreateTaskCommand, Guid>
 {
     private readonly ITaskRepository _repository;
-    private readonly IContext _context;
+    private readonly IEmitter _emitter;
+    private readonly IOutboxCommit _outboxCommit;
 
-    public CreateTaskHandler(ITaskRepository repository, IContext context)
+    public CreateTaskHandler(ITaskRepository repository, IEmitter emitter, IOutboxCommit outboxCommit)
     {
         _repository = repository;
-        _context = context;
+        _emitter = emitter;
+        _outboxCommit = outboxCommit;
     }
 
     public async ValueTask<Result<Guid>> HandleAsync(CreateTaskCommand cmd, CancellationToken ct = default)
@@ -54,18 +56,19 @@ public class CreateTaskHandler : IRequestHandler<CreateTaskCommand, Guid>
 
         await _repository.SaveAsync(id, cmd.Title, ct); // ← side-effect
 
-        await _context.PublishEventAsync(
+        await _emitter.EmitAsync(
             new TaskCreatedEvent(id, cmd.Title),
             EmitMode.Outbox, ct);                        // ← store, don't dispatch yet
 
-        await _context.CommitEventsAsync(ct);            // ← dispatch after save succeeded
+        await _outboxCommit.CommitAsync(ct);             // ← dispatch after save succeeded
 
         return Result.Success(id);
     }
 }
 ```
 
-You can also inject `IOutboxCommit` directly and call it outside the handler:
+`IOutboxCommit` can equally be injected somewhere else and called outside the handler — for example from a
+transaction wrapper that flushes once the whole unit of work has committed:
 
 ```csharp
 await outboxCommit.CommitAsync(ct);

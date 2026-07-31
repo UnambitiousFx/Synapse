@@ -45,17 +45,28 @@ public sealed class LoggingEnrichmentBehavior<TRequest, TResponse> : IRequestPip
         }
     }
 
-    private Dictionary<string, object> CreateState(IContext context)
+    private static Dictionary<string, object> CreateState(IContext context)
     {
+        // TraceId is the W3C trace id, so this value matches what the tracing backend shows. A host that also
+        // enables ActivityTrackingOptions.TraceId gets an equal value from ILogger itself; ours is additionally
+        // present when no activity exists.
         var state = new Dictionary<string, object>
         {
-            ["CorrelationId"] = context.CorrelationId
+            ["TraceId"] = context.TraceId,
+            ["OccurredAt"] = context.OccurredAt
         };
 
-
-        foreach (var metadata in context.Metadata)
+        if (context.CausationId is { } causationId)
         {
-            state[$"Metadata_{metadata.Key}"] = metadata.Value;
+            state["CausationId"] = causationId;
+        }
+
+        // Only baggage is surfaced: it is the context state that is explicitly meant to travel and be
+        // observed. Features stay out of the log scope on purpose — they hold process-local state such as
+        // the CQRS boundary marker, which has no business appearing in every log entry.
+        foreach (var entry in context.Baggage)
+        {
+            state[$"Baggage_{entry.Key}"] = entry.Value;
         }
 
         return state;

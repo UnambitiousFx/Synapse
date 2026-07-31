@@ -4,9 +4,14 @@
 **Area:** `Synapse.Generator`
 **Discovered on:** `feature/typed-pipeline-behaviors`, .NET 10
 **Status:** ✅ **Resolved** — request/target/event/behavior/validator types now globalized at the
-symbol level via `ToEmitName` (`FullyQualifiedFormat`), and the string-munging `GlobalizeType` /
-`SplitTopLevelArgs` parser was deleted. Covered by
+symbol level via `ToEmitName` (`FullyQualifiedFormat`), and `RegisterGroupFactory`'s string-munging
+`GlobalizeType` / `SplitTopLevelArgs` parser was deleted. Covered by
 `RequestHandler_WithTupleAsGenericArgument_EmitsCorrectlyGlobalizedRegistration`.
+
+> **Scope note:** this fix covered `RegisterGroupFactory` only. A second copy of the same hand-rolled
+> globalizer lived on in `EventDispatcherRegistrationFactory` and was removed by issue
+> [030](030-generic-event-declarations-break-dispatcher-emission.md), which is where the dispatcher
+> emission path was actually breaking.
 
 ---
 

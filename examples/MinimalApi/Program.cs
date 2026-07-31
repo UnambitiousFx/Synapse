@@ -87,7 +87,7 @@ var app = builder.Build();
 // ── Correlation ID response header ────────────────────────────────────
 // Reads the Synapse IContext.CorrelationId after the handler runs and adds it
 // to the response so callers can trace requests end-to-end.
-app.UseCorrelationId();
+app.UseSynapsePropagation();
 
 // ── Root ──────────────────────────────────────────────────────────────
 app.MapGet("/", () => Results.Ok(new ApiInfo()));

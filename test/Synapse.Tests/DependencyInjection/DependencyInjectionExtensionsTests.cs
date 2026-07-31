@@ -21,7 +21,7 @@ public sealed class DependencyInjectionExtensionsTests
 
         var handler = services.GetRequiredService<IRequestHandler<RequestWithResponseExample, int>>();
         services.GetRequiredService<IContextFactory>()
-            .Create();
+            .Create(PropagatedContext.None);
 
         var result = await handler.HandleAsync(new RequestWithResponseExample(), TestContext.Current.CancellationToken);
 
@@ -43,7 +43,7 @@ public sealed class DependencyInjectionExtensionsTests
 
         var handler = services.GetRequiredService<IRequestHandler<RequestWithResponseExample, int>>();
         services.GetRequiredService<IContextFactory>()
-            .Create();
+            .Create(PropagatedContext.None);
 
         var result = await handler.HandleAsync(new RequestWithResponseExample(), TestContext.Current.CancellationToken);
 
@@ -69,7 +69,7 @@ public sealed class DependencyInjectionExtensionsTests
         // Assert
         Assert.NotNull(handler);
         services.GetRequiredService<IContextFactory>()
-            .Create();
+            .Create(PropagatedContext.None);
         var result = await handler.HandleAsync(new RequestWithResponseExample(), TestContext.Current.CancellationToken);
         Assert.True(result.IsSuccess);
     }

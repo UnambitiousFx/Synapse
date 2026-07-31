@@ -64,7 +64,7 @@ The two concepts were split explicitly (second option above):
   at least once and are awaiting retry — transient backpressure, predicate unchanged). A new
   **`GetDeadLetterCountAsync`** counts `DeadLetter` items (operator-actionable).
 - `OutboxHealthCheck` now keys its Degraded/Unhealthy thresholds off the **dead-letter** count
-  (options renamed `Degraded`/`CriticalDeadLetterThreshold`); the retrying count is surfaced in the
+  (options renamed `DegradedDeadLetterThreshold` / `CriticalDeadLetterThreshold`); the retrying count is surfaced in the
   result `data` (`retrying_count`, `dead_letter_count`) but never trips the status. Retrying events
   alone keep the outbox `Healthy`.
 - Metrics: gauge `mediator.outbox.failed_count` → **`mediator.outbox.retrying_count`**, plus a new

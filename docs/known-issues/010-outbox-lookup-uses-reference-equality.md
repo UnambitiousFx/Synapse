@@ -5,6 +5,12 @@
 **Discovered on:** `feature/typed-pipeline-behaviors`, .NET 10
 **Status:** ✅ **Resolved** on `feature/typed-pipeline-behaviors` — see [Resolution](#resolution).
 
+> **Superseded:** the value-equality fix below was replaced by issue
+> [014](014-outbox-lookup-matches-value-equal-event-across-scopes.md), which took the option this
+> Resolution rejected: stored items carry a stable `Guid` surfaced through `OutboxEntry`, and lifecycle
+> operations address items by id (`MarkAsProcessedAsync(Guid id, …)`), not by event instance. Read the
+> Resolution here as history, not as current behaviour.
+
 ---
 
 ## Describe the bug
@@ -75,9 +81,11 @@ equal-but-distinct instances (reconstructed or deserialized) now locate their ou
 `object.Equals` falls back to reference equality for classes that don't override it, so no existing
 caller regresses, and the internal replay path (same instance) still matches.
 
-Lookup-by-stable-id was rejected: `IEvent` is a bare marker with no id, and `GetPendingEventsAsync`
-hands callers back only `IEvent` objects — they have no id to pass back — so it is not viable
-without a contract change.
+Lookup-by-stable-id was rejected at the time: `IEvent` is a bare marker with no id, and
+`GetPendingEventsAsync` handed callers back only `IEvent` objects — they had no id to pass back — so it
+was not viable without a contract change. Issue
+[014](014-outbox-lookup-matches-value-equal-event-across-scopes.md) subsequently made that contract
+change, because value equality turned out to be unsound across scopes.
 
 Tests in `test/Synapse.Tests/Publish/Outbox/InMemoryEventOutboxStorageTests.cs`: added
 `MarkAsProcessedAsync_WithEqualButDistinctInstance_FindsAndMarksItem` (the regression), and reworked

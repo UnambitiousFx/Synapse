@@ -715,43 +715,93 @@ public sealed class GeneratorBehaviorTests
         Assert.Contains("DynamicDependency", generated);
     }
 
-    // ── CQRS boundary enforcement via [assembly: EnableSynapseCqrsBoundaryEnforcement] ─
-
     [Fact]
-    public void CqrsEnforcement_WhenAssemblyOptIn_EmitsClosedRegistrationForValueTypeResponse()
+    public void RegisterDispatchers_WithGenericEventDeclaration_SkipsItAndStillCompiles()
     {
-        // Arrange (Given) — opt-in attribute + a handler whose response is a value type (int).
-        // This is the known-issue 001 regression case: an open-generic descriptor closed over a
-        // value type throws under Native AOT, so the generator must emit a CLOSED registration.
+        // Arrange (Given) — a generic event and a generic handler declared alongside a concrete pair.
+        // This is the known-issue 030 regression case: the dispatcher emitter globalized type-name
+        // strings by hand, so the generic *definitions* were emitted as `typeof(global::TestNs.Changed<T>)`
+        // (`global::T` before this, plain `T` after) — a type parameter that is not in scope at the
+        // registration site, so RegisterGroup.g.cs did not compile.
         const string source = """
             using System.Threading;
             using System.Threading.Tasks;
             using UnambitiousFx.Functional;
             using UnambitiousFx.Synapse.Abstractions;
 
-            [assembly: EnableSynapseCqrsBoundaryEnforcement]
-
             namespace TestNs;
 
-            public sealed record MyRequest : IRequest<int>;
+            public sealed record Changed<T>(T Value) : IEvent;
 
-            [RequestHandler<MyRequest, int>]
-            public sealed class MyHandler : IRequestHandler<MyRequest, int>
+            public sealed class ChangedHandler<T> : IEventHandler<Changed<T>>
             {
-                public ValueTask<Result<int>> HandleAsync(MyRequest request, CancellationToken ct = default)
-                    => ValueTask.FromResult(Result.Success(42));
+                public ValueTask<Result> HandleAsync(Changed<T> @event, CancellationToken ct = default)
+                    => ValueTask.FromResult(Result.Success());
+            }
+
+            public sealed record UserCreated : IEvent;
+
+            [EventHandler<UserCreated>]
+            public sealed class UserCreatedHandler : IEventHandler<UserCreated>
+            {
+                public ValueTask<Result> HandleAsync(UserCreated @event, CancellationToken ct = default)
+                    => ValueTask.FromResult(Result.Success());
             }
             """;
 
         // Act (When)
         var generated = RunGeneratorAndGetRegistrationGroup(source);
 
-        // Assert (Then) — closed, value-type registration of the built-in enforcement behavior (now emitted via
-        // the unified global-behavior path); no open-generic descriptor.
-        Assert.Contains(
-            "builder.RegisterRequestPipelineBehavior<global::UnambitiousFx.Synapse.Pipelines.CqrsBoundaryEnforcementBehavior<global::TestNs.MyRequest, int>, global::TestNs.MyRequest, int>()",
-            generated);
-        Assert.DoesNotContain("IRequestPipelineBehavior<,>", generated);
+        // Assert (Then) — the concrete event is still registered, the generic definitions are skipped
+        // (they have no closed runtime type to dispatch on), and the output compiles.
+        Assert.Contains("register(typeof(global::TestNs.UserCreated)", generated);
+        Assert.DoesNotContain("Changed<", generated);
+        AssertGeneratedCompiles(source);
+    }
+
+    [Fact]
+    public void RegisterDispatchers_WithEventNestedInAGenericType_SkipsItAndStillCompiles()
+    {
+        // Arrange (Given) — a non-generic event and handler nested inside a generic type. The type parameter
+        // comes from the enclosing type rather than from the event itself, so an arity check on the event alone
+        // let it through and emitted `typeof(global::TestNs.Box<T>.Opened)` — `T` is not in scope at the
+        // registration site, the same CS0246 as known issue 030.
+        const string source = """
+            using System.Threading;
+            using System.Threading.Tasks;
+            using UnambitiousFx.Functional;
+            using UnambitiousFx.Synapse.Abstractions;
+
+            namespace TestNs;
+
+            public class Box<T>
+            {
+                public sealed record Opened : IEvent;
+
+                public sealed class OpenedHandler : IEventHandler<Opened>
+                {
+                    public ValueTask<Result> HandleAsync(Opened @event, CancellationToken ct = default)
+                        => ValueTask.FromResult(Result.Success());
+                }
+            }
+
+            public sealed record UserCreated : IEvent;
+
+            [EventHandler<UserCreated>]
+            public sealed class UserCreatedHandler : IEventHandler<UserCreated>
+            {
+                public ValueTask<Result> HandleAsync(UserCreated @event, CancellationToken ct = default)
+                    => ValueTask.FromResult(Result.Success());
+            }
+            """;
+
+        // Act (When)
+        var generated = RunGeneratorAndGetRegistrationGroup(source);
+
+        // Assert (Then)
+        Assert.Contains("register(typeof(global::TestNs.UserCreated)", generated);
+        Assert.DoesNotContain("Box<", generated);
+        AssertGeneratedCompiles(source);
     }
 
     [Fact]
@@ -846,35 +896,6 @@ public sealed class GeneratorBehaviorTests
         Assert.Contains(
             "builder.RegisterRequestPipelineBehavior<global::TestNs.LoggingBehavior<global::TestNs.Query<(int Id, string Name)>, int>, global::TestNs.Query<(int Id, string Name)>, int>()",
             generated);
-    }
-
-    [Fact]
-    public void CqrsEnforcement_WithoutAssemblyOptIn_EmitsNoRegistration()
-    {
-        // Arrange (Given) — same handler, but no opt-in attribute.
-        const string source = """
-            using System.Threading;
-            using System.Threading.Tasks;
-            using UnambitiousFx.Functional;
-            using UnambitiousFx.Synapse.Abstractions;
-
-            namespace TestNs;
-
-            public sealed record MyRequest : IRequest<int>;
-
-            [RequestHandler<MyRequest, int>]
-            public sealed class MyHandler : IRequestHandler<MyRequest, int>
-            {
-                public ValueTask<Result<int>> HandleAsync(MyRequest request, CancellationToken ct = default)
-                    => ValueTask.FromResult(Result.Success(42));
-            }
-            """;
-
-        // Act (When)
-        var generated = RunGeneratorAndGetRegistrationGroup(source);
-
-        // Assert (Then) — no CQRS behavior emitted when not opted-in.
-        Assert.DoesNotContain("RegisterCqrsBoundaryEnforcement", generated);
     }
 
     // ── Cross-assembly behavior application ───────────────────────────────
@@ -976,47 +997,6 @@ public sealed class GeneratorBehaviorTests
 
         // Assert (Then) — the referenced handler is not blanketed when opted out.
         Assert.DoesNotContain("LibRequest", generated);
-    }
-
-    [Fact]
-    public void CqrsEnforcement_WhenRootOptsIn_EmitsRegistrationForReferencedAssemblyHandler()
-    {
-        // Arrange (Given) — only the composition root opts into CQRS enforcement; the handler lives in a
-        // referenced assembly that does NOT carry the attribute. The root must still cover it.
-        const string referencedSource = """
-            using System.Threading;
-            using System.Threading.Tasks;
-            using UnambitiousFx.Functional;
-            using UnambitiousFx.Synapse.Abstractions;
-
-            namespace LibNs;
-
-            public sealed record LibRequest : IRequest<int>;
-
-            [RequestHandler<LibRequest, int>]
-            public sealed class LibHandler : IRequestHandler<LibRequest, int>
-            {
-                public ValueTask<Result<int>> HandleAsync(LibRequest request, CancellationToken ct = default)
-                    => ValueTask.FromResult(Result.Success(1));
-            }
-            """;
-
-        const string mainSource = """
-            using UnambitiousFx.Synapse.Abstractions;
-
-            [assembly: EnableSynapseCqrsBoundaryEnforcement]
-
-            namespace AppNs;
-            """;
-
-        // Act (When)
-        var generated = RunGeneratorWithReference(referencedSource, mainSource);
-
-        // Assert (Then) — CQRS enforcement emitted for the referenced value-type request, AOT-safe (via the
-        // unified global-behavior path).
-        Assert.Contains(
-            "builder.RegisterRequestPipelineBehavior<global::UnambitiousFx.Synapse.Pipelines.CqrsBoundaryEnforcementBehavior<global::LibNs.LibRequest, int>, global::LibNs.LibRequest, int>()",
-            generated);
     }
 
     // ── Global behaviors via [assembly: SynapseGlobalBehavior(typeof(...))] ─

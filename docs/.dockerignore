@@ -1,0 +1,11 @@
+node_modules
+build
+.docusaurus
+.cache-loader
+Dockerfile
+.dockerignore
+docker-compose.yml
+.DS_Store
+*.log
+.env.local
+.env.*.local

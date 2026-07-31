@@ -130,7 +130,7 @@ disabling the former does not affect the latter.
 
 The root cause was removed by the fix for issue
 [001](001-open-generic-pipeline-behavior-aot-value-type.md). CQRS enforcement is opted in via
-`[assembly: EnableSynapseCqrsBoundaryEnforcement]`, and the source generator emits **closed**
+`[assembly: SynapseGlobalBehavior(typeof(CqrsBoundaryEnforcementBehavior<,>))]`, and the source generator emits **closed**
 `CqrsBoundaryEnforcementBehavior<TRequest, TResponse>` registrations (one per handler) instead of an
 open-generic `IRequestPipelineBehavior<,>` descriptor. With no open-generic descriptor, MS DI's
 `VerifyOpenGenericAotCompatibility` is never invoked for the CQRS path — neither during the startup
@@ -148,13 +148,3 @@ Status of the original action items:
 3. **Add a note** to the AOT documentation explaining that `ValidateOnBuild` governs startup sweeps
    only — ⏳ **not done / optional follow-up.** Tracked here so it isn't lost; the runtime crash it
    would have warned about is no longer reachable for the CQRS path.
-
-### To address
-
-1. **Remove the misleading workaround** from `examples/MinimalApi/Program.cs` — it has already
-   been removed after this was understood; ensure it does not reappear in documentation or
-   samples.
-2. **Fix issue [001]** at the root — once `CqrsBoundaryEnforcementBehavior` no longer registers
-   as an open generic, `ValidateOnBuild` becomes irrelevant to this scenario.
-3. **Add a note** to the AOT documentation section explaining that `ValidateOnBuild` governs
-   startup sweeps only and that AOT type-instantiation rules are enforced separately at runtime.

@@ -2,10 +2,12 @@ using System.Diagnostics.CodeAnalysis;
 using System.Diagnostics.Metrics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using UnambitiousFx.Synapse.Abstractions;
 using UnambitiousFx.Synapse.Contexts;
 using UnambitiousFx.Synapse.Observability;
 using UnambitiousFx.Synapse.Pipelines;
+using UnambitiousFx.Synapse.Propagation;
 using UnambitiousFx.Synapse.Publish;
 using UnambitiousFx.Synapse.Publish.Outbox;
 using UnambitiousFx.Synapse.Resolvers;
@@ -36,14 +38,21 @@ public static class DependencyInjectionExtensions
         services.TryAddScoped<IEventDispatcher, EventDispatcher>();
         services.TryAddScoped<IInvoker, Invoker>();
         services.TryAddScoped<IEmitter, Emitter>();
-        services.TryAddScoped<IContextFactory, DefaultContextFactory>();
+        // IContextFactory is not registered here: cfg.Apply() above always registers it, defaulting to
+        // DefaultContextFactory unless UseSlimContextFactory or UseContextFactory<T> picked another.
+        services.TryAddScoped<IInboundContextStore, InboundContextStore>();
+        services.TryAddSingleton<IContextPropagator>(sp =>
+            new W3CContextPropagator(sp.GetService<ILogger<W3CContextPropagator>>()));
+
+        // Transient so it can be chained onto a named HttpClient with AddHttpMessageHandler.
+        services.TryAddTransient<SynapsePropagationHandler>();
         services.TryAddScoped(sp =>
         {
             var factory = sp.GetRequiredService<IContextFactory>();
-            return new ContextHandler(factory);
+            var inbound = sp.GetRequiredService<IInboundContextStore>();
+            return new ContextHandler(factory, inbound);
         });
         services.TryAddScoped<IContextAccessor>(sp => sp.GetRequiredService<ContextHandler>());
-        services.TryAddScoped<IContextSetter>(sp => sp.GetRequiredService<ContextHandler>());
         services.AddScoped<IContext>(sp => sp.GetRequiredService<IContextAccessor>().Context);
 
         services.TryAddSingleton<ISynapseMetrics>(sp =>

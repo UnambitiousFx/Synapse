@@ -3,6 +3,18 @@
 **Severity:** Medium
 **Area:** Observability / `Context`
 **Discovered on:** `feature/typed-pipeline-behaviors`, .NET 10
+**Status:** ✅ **Resolved** — see the supersession note below.
+
+> **Superseded by the v2 context-propagation refactor.** `Context.CaptureTracingContext`, the
+> `Tracing.TraceId` / `Tracing.ParentSpanId` metadata keys and the `IContext` metadata bag they wrote to
+> no longer exist. Trace state is no longer snapshotted into the context at all: it stays ambient on
+> `Activity.Current`, and the context carries a typed `ContextIdentity` (`TraceId`, `CausationId`,
+> `OccurredAt`) computed once via `ContextIdentity.ForUnitOfWork` — one `ToHexString()` per id, and span
+> ids guarded against `default`.
+>
+> The all-zeros trace id described here outlived the rewrite in one spot, the ambient-`Activity` fallback
+> in `ForUnitOfWork`, and was fixed as issue
+> [031](031-zero-ambient-trace-id-accepted-as-identity.md).
 
 ---
 

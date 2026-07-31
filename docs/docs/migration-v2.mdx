@@ -1,0 +1,270 @@
+---
+sidebar_position: 13.5
+title: Migrating to v2
+description: Breaking changes in Synapse v2 and how to update — the context metadata bag, correlation-id mutation, the outbox storage contract, and the removed CQRS enforcement opt-ins.
+---
+
+# Migrating to v2
+
+Synapse v2 reshapes `IContext` so that flow identity can travel out of the application and be recovered on the way in. See [Propagation](./propagation.mdx) for the feature itself; this page is the mechanical upgrade.
+
+Seven changes affect existing code:
+
+1. the metadata bag is gone, replaced by typed identity, baggage and features;
+2. **`CorrelationId` is gone** — identity is now the W3C trace id;
+3. a context's identity is fixed at creation — `WithCorrelationId` and `IContextSetter` are gone;
+4. `IEventOutboxStorage.AddAsync` takes propagation headers;
+5. **`IContext` no longer publishes events** — `PublishEventAsync` and `CommitEventsAsync` are gone, and so is `CorrelationContext`;
+6. `UseCorrelationId` is now `UseSynapsePropagation`, and reads `traceparent` instead of `X-Correlation-Id`;
+7. the two deprecated CQRS-enforcement opt-ins are gone — `[assembly: EnableSynapseCqrsBoundaryEnforcement]` and `cfg.EnableCqrsBoundaryEnforcement()`.
+
+## 1. The metadata bag is gone
+
+`IContext.Metadata`, `SetMetadata`, `GetMetadata`, `TryGetMetadata` and `RemoveMetadata` have been removed. A single `string → object` bag could not answer the one question that matters at a process boundary — *is this value safe and possible to serialize?* — so it has been split into three surfaces with fixed propagation semantics. See [Context](./context.mdx).
+
+| v1 | v2 |
+| --- | --- |
+| `context.SetMetadata("TenantId", "acme")` | `context.SetBaggage("tenant.id", "acme")` |
+| `context.GetMetadata<string>("TenantId")` | `context.GetBaggage("tenant.id")` |
+| `context.TryGetMetadata<string>(k, out v)` | `context.TryGetBaggage(k, out v)` |
+| `context.RemoveMetadata(k)` | `context.RemoveBaggage(k)` |
+| `context.GetMetadata<DateTimeOffset>("OccuredAt")` | `context.OccurredAt` — now typed, and the spelling is fixed |
+| metadata holding process-local state | an [`IContextFeature`](./context.mdx#feature-bag) |
+
+Two behaviour changes to be aware of:
+
+- **Baggage is `string → string`, not `string → object`.** Serialize richer values yourself, or use a feature if the value never leaves the process.
+- **`SetBaggage` can refuse an entry.** Where `SetMetadata` was `void` and always stored, `SetBaggage` returns `bool`: it refuses entries that would exceed the W3C limits of 64 entries / 8192 bytes, or whose key or value cannot go in a header. Check the result if you care.
+
+If a value was in metadata purely so it would show up in logs, baggage is the right home — `LoggingEnrichmentBehavior` surfaces baggage as `Baggage_<key>`, replacing v1's `Metadata_<key>`. It no longer dumps arbitrary metadata into the log scope, which also means internal framework markers — the `Tracing.*` entries and the CQRS boundary flags — stop appearing in every log entry.
+
+## 2. Identity is the W3C trace id
+
+`Guid CorrelationId` is gone. `IContext` now exposes:
+
+| v1 | v2 |
+| --- | --- |
+| `Guid CorrelationId` | `string TraceId` — the 32-character hex W3C trace id |
+| *(nothing)* | `string? CausationId` — the caller's 16-character hex span id, new in v2 |
+| *(nothing)* | `DateTimeOffset OccurredAt` — was the `"OccuredAt"` metadata entry |
+
+The rename is not cosmetic. The value **is** the trace id your tracing backend shows, so one search string works in both your logs and Jaeger, Tempo or Application Insights. Keeping the name `CorrelationId` for it would have been a synonym for something the platform already names.
+
+`CausationId` has no v1 counterpart: v1 tracked only the flat flow id, so nothing recorded which specific caller produced a unit of work. `traceparent` already carries the sender's span id, so v2 surfaces it rather than minting an identifier of its own.
+
+```csharp
+// v1
+_logger.LogInformation("Handling {CorrelationId}", context.CorrelationId);
+
+// v2 — paste the logged value straight into your tracing backend
+_logger.LogInformation("Handling {TraceId}", context.TraceId);
+```
+
+Consequences worth knowing:
+
+- **`CausationId` is `null` when nothing upstream was recording.** It comes from the inbound
+  `traceparent`, so a caller with no tracing wired supplies none. Causation is a diagnostic nicety;
+  `TraceId` is always populated.
+- **`TraceId` is never null or empty**, even with no OpenTelemetry configured. It is sourced from the
+  inbound `traceparent`, then `Activity.Current`, then minted — so the zero-configuration host still
+  correlates. Whenever an activity exists, `TraceId == Activity.Current.TraceId.ToHexString()`.
+- **`CorrelationContext` is gone entirely** — with it the `AsyncLocal<Guid>` its only member,
+  `CurrentCorrelationId`, exposed. Read identity from an injected `IContext`, and ask
+  `IContextAccessor.IsInitialized` when you need to know whether one exists. See
+  [section 5](#5-icontext-no-longer-publishes-events) for why. If you implemented `IEventOutboxStorage`
+  with a `Guid`-keyed partition — as the built-in in-memory storage did, keyed on
+  `CorrelationContext.CurrentCorrelationId` — drop the partitioning: entries carry their own `Headers`,
+  which is what ties each one back to the flow that produced it.
+- **Synapse no longer copies tracing state into the context bag.** v1 wrote `Tracing.TraceId`,
+  `Tracing.SpanId`, `Tracing.ParentSpanId` and `Tracing.Baggage.<key>` into metadata. `TraceId` and
+  `CausationId` are now first-class, and baggage carries business values only. The one entry Synapse
+  writes is `client.trace_id`, and only at an untrusted edge (see [section 6](#6-usecorrelationid-is-now-usesynapsepropagation)).
+
+## 3. Identity is fixed at creation
+
+Removed: `IContext.WithCorrelationId(Guid)`, and the whole `IContextSetter` interface. `IContextAccessor.Context` is now get-only.
+
+In v1 a boundary adapter would create a context and then patch the correlation id onto it. Because `IContext` is a scoped DI registration, whichever component resolved it first pinned the instance — so patching left earlier readers holding the old identity while later ones saw the new one. Handlers could log one correlation id while the response header reported another.
+
+In v2, inbound state goes into `IInboundContextStore` and the factory consumes it:
+
+```csharp
+// v1
+var setter = services.GetRequiredService<IContextSetter>();
+setter.Context = setter.Context.WithCorrelationId(incomingId);
+
+// v2
+var store = services.GetRequiredService<IInboundContextStore>();
+store.Inbound = propagator.Extract(carrier);   // trace context + baggage
+```
+
+The store only has to be populated before the first component *reads* the context, so ordering against other middleware no longer matters.
+
+### Custom context factories
+
+`IContextFactory.Create()` is now `Create(PropagatedContext inbound)`. `PropagatedContext` is new in v2 — a readonly record struct holding the inbound trace context plus baggage, with `PropagatedContext.None` for a unit of work that starts in this process:
+
+```csharp
+public sealed class MyContextFactory : IContextFactory
+{
+    public IContext Create(PropagatedContext inbound)
+    {
+        // ForUnitOfWork applies the sourcing rules: inbound traceparent, then Activity.Current, then minted
+        var identity = ContextIdentity.ForUnitOfWork(inbound);
+
+        // ... build your context, then copy inbound.Baggage onto it
+    }
+}
+```
+
+Use `ContextIdentity.ForUnitOfWork(inbound)` rather than deriving the trace id yourself — it is what guarantees the id is never empty in a host with no `ActivityListener`, and that it matches `Activity.Current` when one exists.
+
+A custom factory also no longer needs `IEmitter` or `IOutboxCommit` constructor dependencies — see [section 5](#5-icontext-no-longer-publishes-events). If yours took them only to hand to the context, delete them.
+
+### New: `IContextAccessor.IsInitialized`
+
+Custom `IContextAccessor` implementations must add `IsInitialized`. It reports whether a context exists *without* creating one — reading `Context` is what creates it, so a component that only wants to observe an existing context has no other way to ask.
+
+## 4. Outbox storage takes headers
+
+`IEventOutboxStorage.AddAsync` gained a `headers` parameter, and `OutboxEntry` gained a `Headers` property:
+
+```csharp
+// v1
+ValueTask<Result> AddAsync<TEvent>(TEvent @event, CancellationToken ct = default)
+
+// v2
+ValueTask<Result> AddAsync<TEvent>(TEvent @event,
+    IReadOnlyDictionary<string, string> headers,
+    CancellationToken ct = default)
+```
+
+:::warning
+A custom `IEventOutboxStorage` **must persist `headers` alongside the payload** and return them on `OutboxEntry`. They hold the trace context and flow identity captured when the event was stored — by dispatch time the producing request is gone, so this is the only record of what caused the entry. Dropping them silently breaks the chain at exactly the boundary propagation exists to cross.
+:::
+
+`OutboxEntry` keeps a two-argument constructor that supplies empty headers, for tests and storage implementations that genuinely have nothing to record.
+
+## 5. `IContext` no longer publishes events
+
+Removed: `IContext.PublishEventAsync` (both overloads), `IContext.CommitEventsAsync`, and the
+`CorrelationContext` static class. Inject `IEmitter` and `IOutboxCommit` instead:
+
+| v1 | v2 |
+| --- | --- |
+| `context.PublishEventAsync(evt, ct)` | `emitter.EmitAsync(evt, ct)` |
+| `context.PublishEventAsync(evt, EmitMode.Outbox, ct)` | `emitter.EmitAsync(evt, EmitMode.Outbox, ct)` |
+| `context.CommitEventsAsync(ct)` | `outboxCommit.CommitAsync(ct)` |
+| `CorrelationContext.CurrentCorrelationId` | `context.TraceId` on an injected `IContext` |
+
+The two methods were only ever sugar — they forwarded straight to `IEmitter` and `IOutboxCommit` — but the
+sugar cost more than it saved. Holding those two dependencies put the context *downstream of the publish
+stack*, which closed a dependency cycle: `IContext → IContextFactory → IEmitter → IOutboxManager`. The outbox
+needs the current flow to capture propagation headers when it stores an event, so with that cycle in place it
+could not take `IContextAccessor` as a dependency, and reached for ambient `AsyncLocal` state instead. That is
+what `CorrelationContext` was.
+
+Ambient state is not equivalent to the scoped context, and the difference is a real bug rather than a
+stylistic one: an `AsyncLocal` flows across DI scopes, so a nested or sibling scope could read the
+correlation id of a *different* unit of work and store an event stamped with the wrong flow. In v2 the context is
+a plain data holder, the cycle does not exist, and the outbox injects the accessor like anything else.
+
+:::note
+`IEmitter` was always the documented way to publish, and is what the examples already used, so most code needs
+no change. If a handler injected `IContext` *only* to publish, swap the dependency for `IEmitter`.
+:::
+
+## 6. `UseCorrelationId` is now `UseSynapsePropagation`
+
+The whole "correlation" vocabulary is gone from the API, because the value it named is the W3C trace id and one value should not answer to two names:
+
+| v1 | v2 |
+| --- | --- |
+| `app.UseCorrelationId()` | `app.UseSynapsePropagation()`, optionally `UseSynapsePropagation(o => …)` |
+| *(no options — everything hardcoded)* | `PropagationOptions`, new in v2 |
+| header name hardcoded to `X-Correlation-Id` | `options.TraceIdHeaderName`, defaulting to `PropagationOptions.DefaultTraceIdHeaderName` (`"Trace-Id"`) |
+| response header `X-Correlation-Id` | response header `Trace-Id`, plus `traceresponse` |
+
+The behaviour changed materially too:
+
+- **The inbound `X-Correlation-Id` header is no longer read.** Identity comes from `traceparent` only.
+  Callers that relied on sending `X-Correlation-Id` must send `traceparent` instead, or they will start a
+  new flow. This is the one change likely to need coordination with clients.
+- **The response header is now `Trace-Id`**, not `X-Correlation-Id`. Anything reading the old name must be
+  updated, or set `options.TraceIdHeaderName = "X-Correlation-Id"` to keep it.
+- **A second response header, `traceresponse`, is now emitted** — the W3C Trace Context Level 2 form,
+  `00-<trace-id>-<span-id>-<flags>`. Disable it with `options.EmitTraceResponse = false`. It is written
+  only when a W3C activity exists, since it reports the response's span.
+- The bare-trace-id response header now carries a 32-hex string rather than a dashed `Guid`. Anything
+  parsing it as a `Guid` needs updating.
+- **Inbound baggage falls back to the pre-W3C `Correlation-Context` header** when `baggage` is absent, so
+  business values from older ASP.NET Core services are no longer silently dropped. Only the W3C name is
+  written.
+- The response header is written **only** when a context was created during the request. In v1 every
+  static-file and health-check response got a freshly invented correlation id.
+- Baggage and trace context are recovered, and the outbox dispatch now **opens a span parented on the
+  stored trace context** — v1 opened no span for an outbox dispatch at all — so the request that stored an
+  entry and the work that results from it read as one trace.
+
+New options are available for the response header name and untrusted-edge behaviour — see
+[ASP.NET Core Integration](./aspnetcore#options).
+
+## 7. The deprecated CQRS enforcement opt-ins are removed
+
+Both v1 ways of turning on CQRS boundary enforcement carried `[Obsolete]` and are now deleted:
+
+| v1 | v2 |
+| --- | --- |
+| `[assembly: EnableSynapseCqrsBoundaryEnforcement]` | `[assembly: SynapseGlobalBehavior(typeof(CqrsBoundaryEnforcementBehavior<>))]` **and** `[assembly: SynapseGlobalBehavior(typeof(CqrsBoundaryEnforcementBehavior<,>))]` |
+| `cfg.EnableCqrsBoundaryEnforcement()` | `cfg.RegisterCqrsBoundaryEnforcement<TRequest>()` / `<TRequest, TResponse>()` |
+
+The behaviour itself is unchanged — `CqrsBoundaryEnforcementBehavior<…>` still runs outermost and still
+throws `CqrsBoundaryViolationException`. Only the opt-in spelling changed. See
+[Pipelines](./pipelines.mdx#cqrs-boundary-enforcement).
+
+**The assembly attribute** was already documented as an alias in v1: it did nothing the two
+`SynapseGlobalBehavior` attributes do not, but it forced the generator to carry a second, CQRS-only path
+alongside the general one. Removing it is source-breaking — the type no longer exists, so an assembly still
+carrying it fails to compile. That is the intended failure: a silently-ignored attribute would drop all
+enforcement, which is the bug [known issue 015](https://github.com/UnambitiousFx/Synapse/blob/main/docs/known-issues/015-enablecqrsboundaryenforcement-is-a-silent-noop.md) was about.
+
+Note that the two attributes are **not** interchangeable one-for-one: you need both, the one-generic-parameter
+form for requests with no response and the two-parameter form for requests that return one. The single v1
+attribute covered both.
+
+**The runtime method** was `[Obsolete(error: true)]` in v1 and its body threw `NotSupportedException`, so no
+code that compiled could call it — nothing that works today breaks. It is replaced by the per-request
+`RegisterCqrsBoundaryEnforcement<…>()`, which emits a closed (Native-AOT safe) registration; the removed method
+registered an open generic, which cannot close over a value-type response under Native AOT
+([known issue 001](https://github.com/UnambitiousFx/Synapse/blob/main/docs/known-issues/001-open-generic-pipeline-behavior-aot-value-type.md)).
+Use it for handlers the generator cannot see — those registered manually at runtime, or living in an assembly
+it does not scan.
+
+## Checklist
+
+- [ ] Replace `*Metadata` calls with baggage, typed identity, or a feature.
+- [ ] Rename `OccuredAt` reads to the `OccurredAt` property.
+- [ ] Replace `CorrelationId` reads with `TraceId`.
+- [ ] Update anything that treated the correlation id as a `Guid` — it is now a 32-hex `string`.
+- [ ] Make browser and service callers send `traceparent`; allow it in CORS.
+- [ ] Rename `UseCorrelationId` → `UseSynapsePropagation`.
+- [ ] Update anything reading `X-Correlation-Id` off a response to `Trace-Id`, or set
+      `options.TraceIdHeaderName` back to the old value.
+- [ ] Expose `traceresponse` and `Trace-Id` in CORS if a browser needs to read them.
+- [ ] Replace `IContextSetter` / `WithCorrelationId` with `IInboundContextStore`.
+- [ ] Replace `context.PublishEventAsync` with `emitter.EmitAsync`, and `context.CommitEventsAsync` with
+      `outboxCommit.CommitAsync`. Where `IContext` was injected only to publish, inject `IEmitter` instead.
+- [ ] Replace `CorrelationContext.CurrentCorrelationId` with `TraceId` on an injected `IContext`, using
+      `IContextAccessor.IsInitialized` where you must not create one.
+- [ ] Update custom `IContextFactory` implementations to use `ContextIdentity.ForUnitOfWork(inbound)`, and drop
+      any `IEmitter` / `IOutboxCommit` constructor dependencies they only passed to the context.
+- [ ] Add `IsInitialized` to custom `IContextAccessor` implementations.
+- [ ] Update custom `IEventOutboxStorage` implementations to store and return `headers`, and drop any
+      partitioning keyed on the correlation id — entries carry their own `Headers` now.
+- [ ] Replace `[assembly: EnableSynapseCqrsBoundaryEnforcement]` with **both**
+      `[assembly: SynapseGlobalBehavior(typeof(CqrsBoundaryEnforcementBehavior<>))]` and
+      `[assembly: SynapseGlobalBehavior(typeof(CqrsBoundaryEnforcementBehavior<,>))]`.
+- [ ] Replace `cfg.EnableCqrsBoundaryEnforcement()` with `cfg.RegisterCqrsBoundaryEnforcement<TRequest>()`
+      (or the `<TRequest, TResponse>` overload) for each request that needs it.
+- [ ] On internet-facing apps, set `TrustIncomingHeader = false`.
+- [ ] Check that anything you moved into baggage is not confidential — baggage reaches every downstream service.

@@ -1,103 +1,85 @@
-using System.Diagnostics;
-using UnambitiousFx.Functional;
 using UnambitiousFx.Synapse.Abstractions;
 using UnambitiousFx.Synapse.Abstractions.Exceptions;
 
 namespace UnambitiousFx.Synapse.Contexts;
 
-internal readonly record struct Context : IContext
+/// <summary>
+///     Default <see cref="IContext" /> implementation.
+/// </summary>
+/// <remarks>
+///     <para>
+///         A reference type on purpose. Every consumer holds this through the <see cref="IContext" /> interface —
+///         the scoped DI registration, the accessor's field, every injected handler — so a struct would be boxed
+///         at each of those points and two boxes could disagree about the identity while sharing the same
+///         baggage and feature dictionaries.
+///     </para>
+///     <para>
+///         Because one instance is shared that widely, and an event published to several handlers runs them
+///         concurrently, both mutable stores are safe for concurrent use (see known issue 035). Both are also
+///         copy-on-write over a shared empty dictionary, so a unit of work that sets no baggage and no features
+///         allocates neither store.
+///     </para>
+/// </remarks>
+internal sealed class Context : IContext
 {
-    private readonly IEmitter _emitter;
-    private readonly Dictionary<Type, IContextFeature> _features;
-    private readonly Dictionary<string, object> _metadata;
-    private readonly IOutboxCommit _outboxCommit;
+    private static readonly Dictionary<Type, IContextFeature> NoFeatures = new(0);
 
-    public Context(IEmitter emitter,
-        IOutboxCommit outboxCommit,
-        Guid correlationId,
-        IReadOnlyDictionary<Type, IContextFeature>? features = null,
-        IReadOnlyDictionary<string, object>? metadata = null)
+    private readonly BaggageCollection _baggage;
+    private Dictionary<Type, IContextFeature> _features = NoFeatures;
+
+    public Context(ContextIdentity identity)
     {
-        _emitter = emitter;
-        _outboxCommit = outboxCommit;
-        CorrelationId = correlationId;
-        _metadata = metadata?.ToDictionary() ?? new Dictionary<string, object>();
-        _features = features?.ToDictionary() ?? new Dictionary<Type, IContextFeature>();
-
-        // Capture distributed tracing context from current Activity
-        CaptureTracingContext();
+        Identity = identity;
+        _baggage = new BaggageCollection();
     }
 
+    /// <summary>
+    ///     Gets the durable identity of this unit of work.
+    /// </summary>
+    public ContextIdentity Identity { get; }
 
-    public Context(Context context,
-        IReadOnlyDictionary<Type, IContextFeature>? features = null,
-        IReadOnlyDictionary<string, object>? metadata = null)
+    public string TraceId => Identity.TraceId;
+
+    public string? CausationId => Identity.CausationId;
+
+    public DateTimeOffset OccurredAt => Identity.OccurredAt;
+
+    public IReadOnlyDictionary<string, string> Baggage => _baggage.Entries;
+
+    public bool SetBaggage(string key,
+        string value)
     {
-        _emitter = context._emitter;
-        _outboxCommit = context._outboxCommit;
-        CorrelationId = context.CorrelationId;
-        _metadata = metadata is not null ? Merge(metadata, context._metadata) : context._metadata;
-        _features = features is not null ? Merge(features, context._features) : context._features;
+        return _baggage.Set(key, value);
     }
 
-    public Guid CorrelationId { get; private init; }
-
-    public void SetMetadata(string key,
-        object value)
+    public bool RemoveBaggage(string key)
     {
-        _metadata[key] = value;
+        return _baggage.Remove(key);
     }
 
-    public bool RemoveMetadata(string key)
+    /// <summary>
+    ///     Applies baggage recovered at an inbound boundary in a single write.
+    /// </summary>
+    /// <remarks>
+    ///     Same per-entry rules as <see cref="SetBaggage" />; see <see cref="BaggageCollection.SetRange" /> for why
+    ///     the batch exists.
+    /// </remarks>
+    internal void RestoreBaggage(IReadOnlyDictionary<string, string> baggage)
     {
-        return _metadata.Remove(key);
+        _baggage.SetRange(baggage);
     }
 
-    public bool TryGetMetadata<T>(string key,
-        out T? value)
+    public bool TryGetBaggage(string key,
+        out string? value)
     {
-        if (_metadata.TryGetValue(key, out var obj) &&
-            obj is T tValue)
-        {
-            value = tValue;
-            return true;
-        }
-
-        value = default;
-        return false;
+        return _baggage.TryGet(key, out value);
     }
 
-    public T? GetMetadata<T>(string key)
+    public string? GetBaggage(string key)
     {
-        if (_metadata.TryGetValue(key, out var obj) &&
-            obj is T tValue)
-        {
-            return tValue;
-        }
-
-        return default;
-    }
-
-    public IReadOnlyDictionary<string, object> Metadata => _metadata;
-
-    public ValueTask<Result> PublishEventAsync<TEvent>(TEvent @event,
-        CancellationToken cancellationToken = default)
-        where TEvent : class, IEvent
-    {
-        return _emitter.EmitAsync(@event, cancellationToken);
-    }
-
-    public ValueTask<Result> PublishEventAsync<TEvent>(TEvent @event,
-        EmitMode mode,
-        CancellationToken cancellationToken = default)
-        where TEvent : class, IEvent
-    {
-        return _emitter.EmitAsync(@event, mode, cancellationToken);
-    }
-
-    public ValueTask<Result> CommitEventsAsync(CancellationToken cancellationToken = default)
-    {
-        return _outboxCommit.CommitAsync(cancellationToken);
+        return _baggage.TryGet(key, out var value)
+            ? value
+            : null;
     }
 
     public bool TryGetFeature<TFeature>(out TFeature? feature) where TFeature : class, IContextFeature
@@ -108,7 +90,8 @@ internal readonly record struct Context : IContext
 
     public TFeature? GetFeature<TFeature>() where TFeature : class, IContextFeature
     {
-        return _features.TryGetValue(typeof(TFeature), out var value)
+        return Volatile.Read(ref _features)
+                       .TryGetValue(typeof(TFeature), out var value)
             ? (TFeature)value
             : null;
     }
@@ -121,64 +104,52 @@ internal readonly record struct Context : IContext
 
     public void SetFeature<TFeature>(TFeature feature) where TFeature : class, IContextFeature
     {
-        _features[typeof(TFeature)] = feature;
+        Mutate(features => new Dictionary<Type, IContextFeature>(features)
+        {
+            [typeof(TFeature)] = feature
+        });
     }
 
     public void RemoveFeature<TFeature>() where TFeature : class, IContextFeature
     {
-        _features.Remove(typeof(TFeature));
-    }
-
-    public IContext WithCorrelationId(Guid correlationId)
-    {
-        return this with { CorrelationId = correlationId };
-    }
-
-    private static Dictionary<TKey, TValue> Merge<TKey, TValue>(params IReadOnlyDictionary<TKey, TValue>[] dictionaries)
-        where TKey : notnull
-    {
-        var merged = new Dictionary<TKey, TValue>();
-        foreach (var dictionary in dictionaries)
-        foreach (var kvp in dictionary)
+        Mutate(features =>
         {
-            merged[kvp.Key] = kvp.Value;
-        }
-
-        return merged;
-    }
-
-    private void CaptureTracingContext()
-    {
-        var activity = Activity.Current;
-        if (activity == null)
-        {
-            return;
-        }
-
-        // Store trace and span IDs for distributed tracing correlation.
-        // Guard on the actual default (all-zero) id, not on string emptiness:
-        // a default ActivityTraceId/ActivitySpanId stringifies to a non-empty all-zeros string.
-        if (activity.TraceId != default)
-        {
-            SetMetadata("Tracing.TraceId", activity.TraceId.ToString());
-        }
-
-        if (activity.SpanId != default)
-        {
-            SetMetadata("Tracing.SpanId", activity.SpanId.ToString());
-        }
-
-        if (activity.ParentSpanId != default)
-        {
-            SetMetadata("Tracing.ParentSpanId", activity.ParentSpanId.ToString());
-        }
-
-        // Store baggage for cross-service correlation
-        foreach (var baggage in activity.Baggage)
-        {
-            if (baggage.Value != null)
+            if (!features.ContainsKey(typeof(TFeature)))
             {
-                SetMetadata($"Tracing.Baggage.{baggage.Key}", baggage.Value);
+                return null;
+            }
+
+            var next = new Dictionary<Type, IContextFeature>(features);
+            next.Remove(typeof(TFeature));
+            return next;
+        });
+    }
+
+    /// <summary>
+    ///     Replaces the feature store with the result of <paramref name="change" />, retrying if another thread
+    ///     published in between.
+    /// </summary>
+    /// <remarks>
+    ///     Copy-on-write with an interlocked swap rather than a lock: features carry no cross-field invariant — the
+    ///     size cap that forces <see cref="BaggageCollection" /> to hold a lock has no counterpart here — so the
+    ///     compare-and-swap is the whole synchronization. Readers hold a dictionary nobody will mutate, so they
+    ///     need no lock and cannot see a half-applied change. Returning <c>null</c> from
+    ///     <paramref name="change" /> means "nothing to do".
+    /// </remarks>
+    private void Mutate(Func<Dictionary<Type, IContextFeature>, Dictionary<Type, IContextFeature>?> change)
+    {
+        while (true)
+        {
+            var current = Volatile.Read(ref _features);
+            var next = change(current);
+            if (next is null)
+            {
+                return;
+            }
+
+            if (ReferenceEquals(Interlocked.CompareExchange(ref _features, next, current), current))
+            {
+                return;
             }
         }
     }

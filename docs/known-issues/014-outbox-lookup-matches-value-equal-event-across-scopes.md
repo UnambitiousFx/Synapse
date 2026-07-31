@@ -5,6 +5,11 @@
 **Discovered on:** `feature/typed-pipeline-behaviors`, .NET 10
 **Status:** ✅ **Resolved** — stored items now carry a stable `Guid` identity; lifecycle operations address items by id.
 
+> **Note:** the correlation-scoped storage this report describes (`_scopedItems`) is gone. The v2
+> context-propagation work replaced it with a single flat item collection, so the "two different scopes"
+> framing below is historical — the ambiguity it describes can no longer arise from partitioning, only
+> from duplicate value-equal events, which id-based lookup already handles.
+
 ---
 
 ## Describe the bug
@@ -82,7 +87,9 @@ There is no stable per-item identity. Value equality + global scan = ambiguous m
 ## Resolution
 
 Each stored outbox item now carries a stable `Guid Id` (`InMemoryEventOutboxStorage.Item.Id`). A new
-`OutboxEntry(Guid Id, IEvent Event)` handle (in `Synapse.Abstractions`) is returned by
+`OutboxEntry(Guid Id, IEvent Event)` handle (in `Synapse.Abstractions`; the v2 propagation work later
+added a third member, `IReadOnlyDictionary<string, string> Headers`, carrying the flow identity, and
+`AddAsync` gained a matching `headers` parameter) is returned by
 `GetPendingEventsAsync` / `GetDeadLetterEventsAsync`, and the lifecycle operations
 (`MarkAsProcessedAsync`, `MarkAsFailedAsync`, `GetAttemptCountAsync`) now take that `Guid id` instead
 of the event payload. `TryFindItem` matches on `i.Id == id`, so value equality no longer participates

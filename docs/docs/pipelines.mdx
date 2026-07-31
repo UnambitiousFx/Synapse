@@ -132,7 +132,7 @@ cfg.RegisterEventPipelineBehavior<
 
 ### `LoggingEnrichmentBehavior<TRequest, TResponse>`
 
-Enriches the `ILogger` scope with `CorrelationId` and all context metadata so every log line emitted during the request automatically includes them:
+Enriches the `ILogger` scope with the context's [flow identity](./context.mdx#flow-identity) and its [baggage](./context.mdx#baggage) so every log line emitted during the request automatically includes them:
 
 ```csharp
 cfg.RegisterRequestPipelineBehavior<
@@ -159,12 +159,10 @@ Or turn it on for the whole assembly by registering the built-in behavior global
 [assembly: SynapseGlobalBehavior(typeof(CqrsBoundaryEnforcementBehavior<,>))]
 ```
 
-:::note
-`[assembly: EnableSynapseCqrsBoundaryEnforcement]` still works as an alias for the two registrations above, but is now `[Obsolete]` — `SynapseGlobalBehavior` is the general mechanism (see [Registering a behavior you don't own](#registering-a-behavior-you-dont-own-eg-from-a-nuget-package)).
-:::
+Both attributes are needed: the one-parameter form covers requests with no response, the two-parameter form those that return one. `SynapseGlobalBehavior` is the general mechanism — see [Registering a behavior you don't own](#registering-a-behavior-you-dont-own-eg-from-a-nuget-package).
 
-:::warning
-The old runtime switch `cfg.EnableCqrsBoundaryEnforcement()` was removed — it is now `[Obsolete(error: true)]` and throws. Use `RegisterCqrsBoundaryEnforcement<...>()` or the assembly attribute instead.
+:::note
+v1's `[assembly: EnableSynapseCqrsBoundaryEnforcement]` and `cfg.EnableCqrsBoundaryEnforcement()` were removed in v2 — see [Migrating to v2](./migration-v2.mdx#7-the-deprecated-cqrs-enforcement-opt-ins-are-removed).
 :::
 
 ## Event pipeline behaviors

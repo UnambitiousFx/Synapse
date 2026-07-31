@@ -6,6 +6,11 @@ namespace UnambitiousFx.Synapse.Generator;
 ///     Helper that emits the <c>RegisterDispatchers</c> method and NativeAOT <c>[DynamicDependency]</c>
 ///     attributes into a <see cref="StringBuilder" /> owned by <see cref="RegisterGroupFactory" />.
 /// </summary>
+/// <remarks>
+///     The type names in <see cref="EventInfo" /> are already fully globalized at the symbol level, so they are
+///     interpolated verbatim. Re-globalizing them here with string surgery mangled tuples and nested generics
+///     (see known issue 030).
+/// </remarks>
 internal static class EventDispatcherRegistrationFactory
 {
     /// <summary>
@@ -33,13 +38,11 @@ internal static class EventDispatcherRegistrationFactory
                 continue;
             }
 
-            var globalizedType = GlobalizeType(eventType);
-
             sb.AppendLine(
-                $"        register(typeof({globalizedType}), new global::{abstractionsNamespace}.DispatchEventDelegate(");
+                $"        register(typeof({eventType}), new global::{abstractionsNamespace}.DispatchEventDelegate(");
             sb.AppendLine("            (@event, dispatcher, ct) =>");
             sb.AppendLine("            {");
-            sb.AppendLine($"                var typedEvent = ({globalizedType})@event;");
+            sb.AppendLine($"                var typedEvent = ({eventType})@event;");
             sb.AppendLine(
                 "                return dispatcher.DispatchAsync(typedEvent, ct);");
             sb.AppendLine("            }));");
@@ -69,9 +72,8 @@ internal static class EventDispatcherRegistrationFactory
                 continue;
             }
 
-            var globalizedType = GlobalizeType(eventType);
             sb.AppendLine(
-                $"    [global::System.Diagnostics.CodeAnalysis.DynamicDependency(global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.All, typeof({globalizedType}))]");
+                $"    [global::System.Diagnostics.CodeAnalysis.DynamicDependency(global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.All, typeof({eventType}))]");
         }
 
         foreach (var handlerType in eventInfo.HandlerTypes)
@@ -81,9 +83,8 @@ internal static class EventDispatcherRegistrationFactory
                 continue;
             }
 
-            var globalizedType = GlobalizeType(handlerType);
             sb.AppendLine(
-                $"    [global::System.Diagnostics.CodeAnalysis.DynamicDependency(global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.All, typeof({globalizedType}))]");
+                $"    [global::System.Diagnostics.CodeAnalysis.DynamicDependency(global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.All, typeof({handlerType}))]");
         }
 
         sb.AppendLine(
@@ -94,23 +95,5 @@ internal static class EventDispatcherRegistrationFactory
         sb.AppendLine("    {");
         sb.AppendLine("        // This method is never called but ensures the trimmer preserves necessary types");
         sb.AppendLine("    }");
-    }
-
-    internal static string GlobalizeType(string input)
-    {
-        if (input.Contains("<"))
-        {
-            var genericType = input.Substring(0, input.IndexOf("<", StringComparison.Ordinal));
-            var underlyingType = input.Substring(input.IndexOf("<", StringComparison.Ordinal) + 1,
-                input.IndexOf(">", StringComparison.Ordinal) - input.IndexOf("<", StringComparison.Ordinal) - 1);
-            return $"global::{genericType}<global::{underlyingType}>";
-        }
-
-        if (input.StartsWith("global::"))
-        {
-            return input;
-        }
-
-        return $"global::{input}";
     }
 }

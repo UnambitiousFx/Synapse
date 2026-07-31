@@ -57,20 +57,20 @@ Inject `IEmitter` and call `EmitAsync`:
 await emitter.EmitAsync(new TaskCreatedEvent(task.Id, task.Title), ct);
 ```
 
-Or publish from within a handler via `IContext`:
+Or from within a handler, by injecting `IEmitter`:
 
 ```csharp
 public class CreateTaskHandler : IRequestHandler<CreateTaskCommand, Guid>
 {
-    private readonly IContext _context;
+    private readonly IEmitter _emitter;
 
-    public CreateTaskHandler(IContext context) => _context = context;
+    public CreateTaskHandler(IEmitter emitter) => _emitter = emitter;
 
     public async ValueTask<Result<Guid>> HandleAsync(CreateTaskCommand cmd, CancellationToken ct = default)
     {
         var id = Guid.NewGuid();
         // ... persist ...
-        await _context.PublishEventAsync(new TaskCreatedEvent(id, cmd.Title), ct);
+        await _emitter.EmitAsync(new TaskCreatedEvent(id, cmd.Title), ct);
         return Result.Success(id);
     }
 }
@@ -83,7 +83,7 @@ public class CreateTaskHandler : IRequestHandler<CreateTaskCommand, Guid>
 | Mode               | Behaviour                                                                                                     |
 | ------------------ | ------------------------------------------------------------------------------------------------------------- |
 | `EmitMode.Now`     | Dispatches immediately. If any handler fails, the failure propagates back to the caller.                      |
-| `EmitMode.Outbox`  | Stores the event in the outbox. Dispatched when `CommitEventsAsync` or `IOutboxCommit.CommitAsync` is called. |
+| `EmitMode.Outbox`  | Stores the event in the outbox. Dispatched when `IOutboxCommit.CommitAsync` is called.                        |
 | `EmitMode.Default` | Resolved to the mode configured via `SetDefaultPublishingMode` (defaults to `Now`).                           |
 
 ```csharp
@@ -157,4 +157,4 @@ Each event is dispatched individually through its own handler chain.
 
 - [Outbox Pattern](./outbox) — defer event dispatch for transactional safety.
 - [Pipeline Behaviors](./pipelines) — add cross-cutting concerns to event handling.
-- [Context](./context) — publish events from inside a handler via `IContext.PublishEventAsync`.
+- [Context](./context) — the flow state an event handler can read, and why publishing is not part of it.

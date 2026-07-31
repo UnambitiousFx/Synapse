@@ -200,10 +200,9 @@ public readonly record struct GlobalBehaviorDiagnostic
 }
 
 /// <summary>
-///     Result of scanning the assembly for <c>[assembly: SynapseGlobalBehavior(typeof(...))]</c> (and the
-///     <c>[assembly: EnableSynapseCqrsBoundaryEnforcement]</c> alias): the analyzed behaviors to emit and any
-///     diagnostics for entries that could not be used. Fully materialized (no Roslyn symbols) so it can flow
-///     through the incremental pipeline.
+///     Result of scanning the assembly for <c>[assembly: SynapseGlobalBehavior(typeof(...))]</c>: the analyzed
+///     behaviors to emit and any diagnostics for entries that could not be used. Fully materialized (no Roslyn
+///     symbols) so it can flow through the incremental pipeline.
 /// </summary>
 public readonly record struct GlobalBehaviorInfo
 {

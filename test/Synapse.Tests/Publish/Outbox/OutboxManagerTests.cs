@@ -1,10 +1,13 @@
+using System.Diagnostics;
 using JetBrains.Annotations;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using UnambitiousFx.Functional;
 using UnambitiousFx.Synapse.Abstractions;
+using UnambitiousFx.Synapse.Contexts;
 using UnambitiousFx.Synapse.Observability;
+using UnambitiousFx.Synapse.Propagation;
 using UnambitiousFx.Synapse.Publish;
 using UnambitiousFx.Synapse.Publish.Outbox;
 using UnambitiousFx.Synapse.Tests.Definitions;
@@ -20,12 +23,16 @@ public sealed class OutboxManagerTests
         ISynapseMetrics metrics,
         ILogger<OutboxManager> logger,
         EventDispatcherOptions? dispatcherOptions = null,
-        OutboxOptions? outboxOptions = null)
+        OutboxOptions? outboxOptions = null,
+        IContextPropagator? propagator = null,
+        IContextAccessor? contextAccessor = null)
     {
         return new OutboxManager(
             outboxStorage,
             eventDispatcher,
             metrics,
+            propagator ?? new W3CContextPropagator(),
+            contextAccessor ?? new StubContextAccessor(null, false),
             Options.Create(dispatcherOptions ?? new EventDispatcherOptions()),
             Options.Create(outboxOptions ?? new OutboxOptions()),
             logger);
@@ -355,7 +362,8 @@ public sealed class OutboxManagerTests
         // Arrange (Given)
         var (outboxStorage, eventDispatcher, metrics, logger) = CreateSubstitutes();
         var @event = new EventExample("store-me");
-        outboxStorage.AddAsync(@event, Arg.Any<CancellationToken>())
+        outboxStorage.AddAsync(@event, Arg.Any<IReadOnlyDictionary<string, string>>(),
+                Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult(Result.Success()));
         var manager = BuildManager(outboxStorage, eventDispatcher, metrics, logger);
 
@@ -364,6 +372,67 @@ public sealed class OutboxManagerTests
 
         // Assert (Then)
         Assert.True(result.IsSuccess);
-        await outboxStorage.Received(1).AddAsync(@event, Arg.Any<CancellationToken>());
+        await outboxStorage.Received(1).AddAsync(@event,
+            Arg.Any<IReadOnlyDictionary<string, string>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task StoreAsync_WhenAContextExists_CapturesItsBaggageAsHeaders()
+    {
+        // Arrange (Given)
+        var (outboxStorage, eventDispatcher, metrics, logger) = CreateSubstitutes();
+        var @event = new EventExample("store-me");
+        IReadOnlyDictionary<string, string>? captured = null;
+        outboxStorage.AddAsync(@event, Arg.Any<IReadOnlyDictionary<string, string>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                captured = call.Arg<IReadOnlyDictionary<string, string>>();
+                return ValueTask.FromResult(Result.Success());
+            });
+
+        var context = new Context(
+            new ContextIdentity(ActivityTraceId.CreateRandom().ToHexString(), null, DateTimeOffset.UtcNow));
+        context.SetBaggage("tenant.id", "contoso");
+
+        var manager = BuildManager(outboxStorage, eventDispatcher, metrics, logger,
+            contextAccessor: new StubContextAccessor(context, true));
+
+        // Act (When)
+        await manager.StoreAsync(@event, TestContext.Current.CancellationToken);
+
+        // Assert (Then) — business values only; identity travels as traceparent when a span is recording
+        Assert.NotNull(captured);
+        var baggage = captured![PropagationKeys.Baggage];
+        Assert.Equal("tenant.id=contoso", baggage);
+        Assert.DoesNotContain("synapse.", baggage, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task StoreAsync_WhenNoContextExists_CapturesNoHeadersAndDoesNotCreateOne()
+    {
+        // Arrange (Given) — reading IContextAccessor.Context is what creates a context, so storing an event
+        // outside any unit of work must check IsInitialized rather than invent a flow for the entry to belong to
+        var (outboxStorage, eventDispatcher, metrics, logger) = CreateSubstitutes();
+        var @event = new EventExample("store-me");
+        IReadOnlyDictionary<string, string>? captured = null;
+        outboxStorage.AddAsync(@event, Arg.Any<IReadOnlyDictionary<string, string>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                captured = call.Arg<IReadOnlyDictionary<string, string>>();
+                return ValueTask.FromResult(Result.Success());
+            });
+
+        var accessor = new StubContextAccessor(null, false);
+        var manager = BuildManager(outboxStorage, eventDispatcher, metrics, logger, contextAccessor: accessor);
+
+        // Act (When)
+        await manager.StoreAsync(@event, TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.NotNull(captured);
+        Assert.Empty(captured!);
+        Assert.False(accessor.ContextWasRead);
     }
 }

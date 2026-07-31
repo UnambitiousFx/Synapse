@@ -2,16 +2,12 @@ using UnambitiousFx.Synapse.Abstractions;
 
 namespace UnambitiousFx.Synapse.Contexts;
 
-internal sealed class DefaultContextFactory(IEmitter emitter, IOutboxCommit outboxCommit) : IContextFactory
+internal sealed class DefaultContextFactory : IContextFactory
 {
-    public IContext Create()
+    public IContext Create(PropagatedContext inbound)
     {
-#if NET9_0_OR_GREATER
-        var correlationId = Guid.CreateVersion7();
-#else
-        var correlationId = Guid.NewGuid();
-#endif
-        var metadata = new Dictionary<string, object> { { "OccuredAt", DateTimeOffset.UtcNow } };
-        return new Context(emitter, outboxCommit, correlationId, metadata: metadata);
+        var context = new Context(ContextIdentity.ForUnitOfWork(inbound));
+        ContextBaggage.Restore(context, inbound.Baggage);
+        return context;
     }
 }

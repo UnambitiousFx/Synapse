@@ -76,6 +76,12 @@ Restoring the runtime registration path was rejected: it would reintroduce
 [001](001-open-generic-pipeline-behavior-aot-value-type.md) (open-generic behavior over value-type
 responses under AOT) and duplicate the generator-emitted closed registrations.
 
+**Update (v2):** `EnableCqrsBoundaryEnforcement(bool)` was deleted outright, along with the
+`[assembly: EnableSynapseCqrsBoundaryEnforcement]` attribute the message above pointed at. Enable
+enforcement globally with `[assembly: SynapseGlobalBehavior(typeof(CqrsBoundaryEnforcementBehavior<>))]`
+and its with-response variant, or per request with `cfg.RegisterCqrsBoundaryEnforcement<…>()`. See the
+"Migrating to v2" doc page.
+
 ## Library version
 
 `feature/typed-pipeline-behaviors` (pre-release)

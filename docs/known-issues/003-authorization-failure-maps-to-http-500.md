@@ -167,18 +167,19 @@ example behave correctly.
 Add a note to the pipeline-behavior documentation explaining that `Result.Failure` maps to 500 by
 default and that callers needing specific status codes should provide a custom `IFailureHttpMapper`.
 
-> **Note:** the `client.assert(response.status >= 400, ...)` assertion in
-> `examples/MinimalApi/Http/pipeline-behaviors.http` passes for both 500 and 403, so the HTTP
-> file demo is not broken — but the status code is semantically misleading for a real-world
-> authorization scenario.
+> **Note:** at the time, the assertion in `examples/MinimalApi/Http/pipeline-behaviors.http` was
+> `client.assert(response.status >= 400, ...)`, which passed for both 500 and 403, so the HTTP file demo
+> was not broken — but the status code was semantically misleading for a real-world authorization
+> scenario. It now asserts `response.status === 401` exactly.
 
 ---
 
 ## Resolution
 
 Fixed in-repo, no cross-repo change required. The `UnambitiousFx.Functional` /
-`UnambitiousFx.Functional.AspNetCore` packages were upgraded from **1.0.6** to **2.0.3**, which now
-ship the typed-failure infrastructure that "Option A" called for:
+`UnambitiousFx.Functional.AspNetCore` packages were upgraded from **1.0.6** to **2.0.3** (since bumped
+further — `Directory.Packages.props` is the source of truth), which ship the typed-failure
+infrastructure that "Option A" called for:
 
 - **Typed failures** in `UnambitiousFx.Functional.Failures` — `UnauthorizedFailure`,
   `UnauthenticatedFailure`, `NotFoundFailure`, `ConflictFailure`, `ValidationFailure`, … — plus

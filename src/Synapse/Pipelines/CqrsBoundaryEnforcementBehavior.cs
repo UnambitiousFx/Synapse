@@ -37,8 +37,8 @@ public sealed class CqrsBoundaryEnforcementBehavior<TRequest> : IRequestPipeline
         CancellationToken cancellationToken = default)
     {
         var requestName = typeof(TRequest).Name;
-        CqrsBoundaryMetadata.Validate(_context, requestName);
-        CqrsBoundaryMetadata.Add(_context, requestName);
+        CqrsBoundaryMarker.Validate(_context, requestName);
+        CqrsBoundaryMarker.Add(_context, requestName);
 
         Result response;
         try
@@ -49,11 +49,11 @@ public sealed class CqrsBoundaryEnforcementBehavior<TRequest> : IRequestPipeline
         {
             // Inner handler/behavior threw: clear the marker so a later send in the same
             // scope sees a clean boundary, but do not mask the original exception.
-            CqrsBoundaryMetadata.RemoveIfPresent(_context);
+            CqrsBoundaryMarker.RemoveIfPresent(_context);
             throw;
         }
 
-        CqrsBoundaryMetadata.Remove(_context);
+        CqrsBoundaryMarker.Remove(_context);
         return response;
     }
 }
@@ -93,8 +93,8 @@ public sealed class CqrsBoundaryEnforcementBehavior<TRequest, TResponse> : IRequ
         CancellationToken cancellationToken = default)
     {
         var requestName = typeof(TRequest).Name;
-        CqrsBoundaryMetadata.Validate(_context, requestName);
-        CqrsBoundaryMetadata.Add(_context, requestName);
+        CqrsBoundaryMarker.Validate(_context, requestName);
+        CqrsBoundaryMarker.Add(_context, requestName);
 
         Result<TResponse> response;
         try
@@ -105,56 +105,73 @@ public sealed class CqrsBoundaryEnforcementBehavior<TRequest, TResponse> : IRequ
         {
             // Inner handler/behavior threw: clear the marker so a later send in the same
             // scope sees a clean boundary, but do not mask the original exception.
-            CqrsBoundaryMetadata.RemoveIfPresent(_context);
+            CqrsBoundaryMarker.RemoveIfPresent(_context);
             throw;
         }
 
-        CqrsBoundaryMetadata.Remove(_context);
+        CqrsBoundaryMarker.Remove(_context);
         return response;
     }
 }
 
 /// <summary>
-///     Shared boundary-enforcement metadata logic for the no-response and with-response CQRS behaviors,
-///     keeping the metadata keys, validation rule, and exception messages in a single place.
+///     Marks that a request boundary has been crossed in the current context, recording which request
+///     crossed it.
 /// </summary>
-internal static class CqrsBoundaryMetadata
+/// <remarks>
+///     A context feature rather than baggage: this marker is meaningful only inside the process that set it
+///     and must never travel to another service.
+/// </remarks>
+internal sealed class CqrsBoundaryFeature : IContextFeature
 {
-    private const string CQRSBoundaryEnforcementKey = "__CQRSBoundaryEnforcement";
-    private const string CQRSBoundaryEnforcementNameKey = "__CQRSBoundaryEnforcement_Name";
+    public CqrsBoundaryFeature(string requestName)
+    {
+        RequestName = requestName;
+    }
 
+    /// <summary>
+    ///     The name of the request that crossed the boundary.
+    /// </summary>
+    public string RequestName { get; }
+
+    public string Name => "CqrsBoundary";
+}
+
+/// <summary>
+///     Shared boundary-enforcement logic for the no-response and with-response CQRS behaviors,
+///     keeping the marker handling, validation rule, and exception messages in a single place.
+/// </summary>
+internal static class CqrsBoundaryMarker
+{
     public static void Remove(IContext context)
     {
-        if (!context.RemoveMetadata(CQRSBoundaryEnforcementKey))
+        if (!context.TryGetFeature<CqrsBoundaryFeature>(out _))
         {
             throw new CqrsBoundaryViolationException(
-                "CQRS boundary enforcement metadata was missing when trying to remove it. This indicates a violation of the CQRS boundary enforcement behavior.");
+                "CQRS boundary enforcement marker was missing when trying to remove it. This indicates a violation of the CQRS boundary enforcement behavior.");
         }
 
-        context.RemoveMetadata(CQRSBoundaryEnforcementNameKey);
+        context.RemoveFeature<CqrsBoundaryFeature>();
     }
 
     public static void RemoveIfPresent(IContext context)
     {
-        context.RemoveMetadata(CQRSBoundaryEnforcementKey);
-        context.RemoveMetadata(CQRSBoundaryEnforcementNameKey);
+        context.RemoveFeature<CqrsBoundaryFeature>();
     }
 
     public static void Add(IContext context, string requestName)
     {
-        context.SetMetadata(CQRSBoundaryEnforcementKey, true);
-        context.SetMetadata(CQRSBoundaryEnforcementNameKey, requestName);
+        context.SetFeature(new CqrsBoundaryFeature(requestName));
     }
 
     public static void Validate(IContext context, string requestName)
     {
-        if (!context.TryGetMetadata<bool>(CQRSBoundaryEnforcementKey, out var isInRequest) || !isInRequest)
+        if (!context.TryGetFeature<CqrsBoundaryFeature>(out var marker))
         {
             return;
         }
 
-        var previousRequestName = context.GetMetadata<string>(CQRSBoundaryEnforcementNameKey);
         throw new CqrsBoundaryViolationException(
-            $"CQRS boundary violation: Cannot send request '{requestName}' within a request handler. Boundary was previously crossed by '{previousRequestName}'.");
+            $"CQRS boundary violation: Cannot send request '{requestName}' within a request handler. Boundary was previously crossed by '{marker!.RequestName}'.");
     }
 }

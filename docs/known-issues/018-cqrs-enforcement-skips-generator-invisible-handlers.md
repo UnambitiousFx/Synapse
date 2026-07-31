@@ -38,7 +38,8 @@ the existing internal `IServiceCollection.RegisterCqrsBoundaryEnforcement<…>` 
 registered via `cfg.RegisterRequestHandler<…>()` (or living in an assembly the generator does not
 scan) gets enforcement only when the composition root also calls
 `cfg.RegisterCqrsBoundaryEnforcement<…>()` for that request. Handlers the generator discovers under
-`[assembly: EnableSynapseCqrsBoundaryEnforcement]` remain wired automatically.
+`[assembly: SynapseGlobalBehavior(typeof(CqrsBoundaryEnforcementBehavior<>))]` (and its with-response
+variant) remain wired automatically.
 
 Covered by `test/Synapse.Tests/CqrsBoundaryEnforcementTests.cs`
 (`Manual_enforcement_enforces_a_runtime_registered_handler_the_generator_cannot_see` and
@@ -84,8 +85,9 @@ nested send is not detected and does not throw.
 
 ## Root cause
 
-`src/Synapse.Generator/RegisterGroupFactory.cs` emits CQRS registrations only for handler types found
-in `behaviorTargets` / `details` (the generator's discovered set). The old open-generic descriptor
+The generator emits CQRS registrations only for handler types found in `behaviorTargets` / `details`
+(the generator's discovered set) — `BuildCqrsBoundaryBehaviors` in
+`src/Synapse.Generator/SynapseGenerator.cs`, whose output `RegisterGroupFactory` writes out. The old open-generic descriptor
 covered all `IRequest` at resolve time; the per-handler emission narrows coverage to the discovered
 handlers.
 

@@ -104,4 +104,4 @@ class's namespace, name, and accessibility directly — see the Source Generator
 `Generate_WithRootNamespaceProperty_UsesRootNamespace` and
 `Generate_WithoutRootNamespaceProperty_FallsBackToAssemblyName` in
 `test/Synapse.Generator.Tests/GeneratorBehaviorTests.cs` (feed `build_property.RootNamespace` through a
-test `AnalyzerConfigOptionsProvider`); full generator suite passes (63 tests).
+test `AnalyzerConfigOptionsProvider`); full generator suite passes.
