@@ -52,6 +52,7 @@ flowchart LR
 | `PropagatedContext` | What `Extract` returns: the trace context and the baggage. |
 | `IInboundContextStore` | Where a boundary adapter puts extracted state until the context is built from it. |
 | `PropagationKeys` | The wire keys — `traceparent`, `tracestate`, `baggage`, `traceresponse`, plus the legacy `Correlation-Context` read as a fallback. All standard names; Synapse defines none of its own. |
+| `SynapseContext.Current` | The unit of work's context on the current execution branch. For transport hooks the container cannot serve; everything else injects `IContextAccessor` or `IContext`. |
 
 The default `IContextPropagator` is registered by `AddSynapse`. One implementation serves every transport; the transport-specific part is only the carrier.
 

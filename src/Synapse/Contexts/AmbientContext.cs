@@ -15,9 +15,13 @@ namespace UnambitiousFx.Synapse.Contexts;
 ///         of the unit of work making the call.
 ///     </para>
 ///     <para>
-///         Nothing else should read this. Anything resolved from the scope doing the work must inject
-///         <see cref="IContextAccessor" /> or <see cref="IContext" /> — an ambient lookup there would work by
-///         accident and break whenever the value is read from a sibling execution branch.
+///         Nothing else in this assembly should read this. Anything resolved from the scope doing the work
+///         must inject <see cref="IContextAccessor" /> or <see cref="IContext" /> — an ambient lookup there
+///         would work by accident and break whenever the value is read from a sibling execution branch.
+///     </para>
+///     <para>
+///         <see cref="SynapseContext" /> exposes the read side publicly, for transport integrations outside
+///         this assembly that face the same problem.
 ///     </para>
 /// </remarks>
 internal static class AmbientContext
