@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using UnambitiousFx.Functional;
@@ -18,17 +19,17 @@ internal sealed class OutboxManager : IOutboxManager
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
     private readonly IContextAccessor _contextAccessor;
-    private readonly IEventDispatcher _eventDispatcher;
     private readonly ILogger<OutboxManager> _logger;
     private readonly ISynapseMetrics _metrics;
     private readonly EventDispatcherOptions _options;
     private readonly OutboxOptions _outboxOptions;
     private readonly IEventOutboxStorage _outboxStorage;
     private readonly IContextPropagator _propagator;
+    private readonly IServiceScopeFactory _scopeFactory;
 
     public OutboxManager(
         IEventOutboxStorage outboxStorage,
-        IEventDispatcher eventDispatcher,
+        IServiceScopeFactory scopeFactory,
         ISynapseMetrics metrics,
         IContextPropagator propagator,
         IContextAccessor contextAccessor,
@@ -37,7 +38,7 @@ internal sealed class OutboxManager : IOutboxManager
         ILogger<OutboxManager> logger)
     {
         _outboxStorage = outboxStorage;
-        _eventDispatcher = eventDispatcher;
+        _scopeFactory = scopeFactory;
         _propagator = propagator;
         _contextAccessor = contextAccessor;
         _options = options.Value;
@@ -179,9 +180,24 @@ internal sealed class OutboxManager : IOutboxManager
                 return Result.Failure($"No dispatcher registered for event type {eventType}");
             }
 
+            // Dispatching an entry is its own unit of work, so it gets its own scope and its own context, built
+            // from what the entry carries. Running it in the caller's scope instead gave the handlers the
+            // caller's context: the restored trace context reached the dispatch span but never the context the
+            // handlers read, the stored baggage was dropped entirely, and — because pending entries are
+            // retrieved across scopes — a request committing the outbox dispatched other requests' entries under
+            // its own identity.
+            await using var scope = _scopeFactory.CreateAsyncScope();
+
+            // Written before anything in the scope resolves IContext, which is what materializes it. Nothing has
+            // yet, the scope being one statement old.
+            scope.ServiceProvider.GetRequiredService<IInboundContextStore>()
+                .Inbound = restored;
+
             // The dispatcher delegate calls EventDispatcher.DispatchFromOutboxAsync<TEvent>
             // with the correct generic type, avoiding reflection
-            var result = await dispatcher(@event, _eventDispatcher, cancellationToken);
+            var result = await dispatcher(@event,
+                scope.ServiceProvider.GetRequiredService<IEventDispatcher>(),
+                cancellationToken);
 
             if (result.IsSuccess)
             {

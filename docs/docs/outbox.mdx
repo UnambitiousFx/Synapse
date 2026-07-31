@@ -74,6 +74,17 @@ transaction wrapper that flushes once the whole unit of work has committed:
 await outboxCommit.CommitAsync(ct);
 ```
 
+:::note[Each entry is dispatched in its own scope]
+`CommitAsync` dispatches every pending entry as a **separate unit of work**: a fresh DI scope, and an
+`IContext` rebuilt from the flow the entry was stored in — its trace id, its causation id and its baggage.
+
+So handlers do not see the committing request's scoped services. A `DbContext` they resolve is a new one, not
+the one that just saved, and they cannot enlist in a transaction that has already committed — which is the
+point of storing the event in the first place. It also means an entry stored by one request is never dispatched
+under another request's identity, which matters because `CommitAsync` drains whatever is pending, not only what
+the calling scope stored. See [Propagation](./propagation.mdx#outbound-the-outbox).
+:::
+
 ## Configure the outbox
 
 Set outbox options in `AddSynapse`:

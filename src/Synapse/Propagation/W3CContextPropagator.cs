@@ -81,7 +81,14 @@ internal sealed class W3CContextPropagator : IContextPropagator
         if (Activity.Current is { IdFormat: ActivityIdFormat.W3C } activity &&
             activity.TraceId != default)
         {
-            DistributedContextPropagator.Current.Inject(activity, carrier, TraceOnlySetter);
+            if (string.Equals(activity.TraceId.ToHexString(), context.TraceId, StringComparison.Ordinal))
+            {
+                DistributedContextPropagator.Current.Inject(activity, carrier, TraceOnlySetter);
+            }
+            else if (RebasedTraceParent(context.TraceId, activity) is { } rebased)
+            {
+                carrier.Set(PropagationKeys.TraceParent, rebased);
+            }
         }
         else if (SyntheticTraceParent(context.TraceId) is { } traceParent)
         {
@@ -131,6 +138,49 @@ internal sealed class W3CContextPropagator : IContextPropagator
     }
 
     /// <summary>
+    ///     Formats a <c>traceparent</c> that names the context's trace and the ambient activity's span, for the
+    ///     case where the two disagree about which trace this is.
+    /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         They disagree when a boundary refused the caller's trace context. The host's own request
+    ///         instrumentation parses <c>traceparent</c> before any middleware runs, so the ambient activity is
+    ///         already parented to the caller, while the context was deliberately given a server-minted trace id
+    ///         (see <see cref="PropagatedContext.SuppressAmbientTrace" />). Letting the platform propagator write
+    ///         the activity's id would put the caller-chosen trace id back on the wire as this flow's identity —
+    ///         forwarding onward exactly the value the boundary rejected, and re-parenting outbox work into a
+    ///         trace a client picked (see known issue 032).
+    ///     </para>
+    ///     <para>
+    ///         The context wins, because it is what this service logs and what it reports in its own response
+    ///         headers. The span id and the sampled flag still come from the activity: they describe the span
+    ///         actually making this call, and only the trace it is filed under is being corrected.
+    ///     </para>
+    ///     <para>
+    ///         <c>tracestate</c> is dropped rather than forwarded. It is vendor state scoped to the caller's
+    ///         trace, and this header names a different one.
+    ///     </para>
+    /// </remarks>
+    /// <returns>The header value, or <c>null</c> when the context's trace id cannot form a valid one.</returns>
+    private static string? RebasedTraceParent(string traceId,
+        Activity activity)
+    {
+        if (!IsUsableTraceId(traceId))
+        {
+            return null;
+        }
+
+        var flags = (activity.ActivityTraceFlags & ActivityTraceFlags.Recorded) != 0
+            ? "01"
+            : "00";
+        var spanId = activity.SpanId != default
+            ? activity.SpanId.ToHexString()
+            : SyntheticSpanId(traceId);
+
+        return $"00-{traceId}-{spanId}-{flags}";
+    }
+
+    /// <summary>
     ///     Formats a <c>traceparent</c> for a flow that has no span to describe.
     /// </summary>
     /// <remarks>
@@ -150,15 +200,41 @@ internal sealed class W3CContextPropagator : IContextPropagator
     /// <returns>The header value, or <c>null</c> when the trace id cannot form a valid one.</returns>
     private static string? SyntheticTraceParent(string traceId)
     {
-        // IContext.TraceId is contractually a 32-character hex trace id, but a custom IContextFactory could return
-        // something else, and an unparseable traceparent is worse than an absent one.
-        if (traceId.Length != TraceIdHexLength ||
-            traceId.IndexOfAnyExcept('0') < 0)
+        if (!IsUsableTraceId(traceId))
         {
             return null;
         }
 
         return $"00-{traceId}-{SyntheticSpanId(traceId)}-00";
+    }
+
+    /// <summary>
+    ///     Whether a trace id can be written into a <c>traceparent</c> a conformant peer will accept.
+    /// </summary>
+    /// <remarks>
+    ///     <see cref="IContext.TraceId" /> is contractually 32 lowercase hex characters, but a custom
+    ///     <see cref="IContextFactory" /> can return anything, and an unparseable <c>traceparent</c> is worse
+    ///     than an absent one: the receiver rejects the whole header and starts a fresh trace, so the flow is
+    ///     lost either way and the malformed value is on the wire as well. All-zeros is refused for the same
+    ///     reason the spec does — it is the "no trace id" sentinel.
+    /// </remarks>
+    private static bool IsUsableTraceId(string traceId)
+    {
+        if (traceId.Length != TraceIdHexLength ||
+            traceId.IndexOfAnyExcept('0') < 0)
+        {
+            return false;
+        }
+
+        foreach (var c in traceId)
+        {
+            if (c is not (>= '0' and <= '9' or >= 'a' and <= 'f'))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static string SyntheticSpanId(string traceId)

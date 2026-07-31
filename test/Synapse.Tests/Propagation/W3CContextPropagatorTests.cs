@@ -155,10 +155,13 @@ public sealed class W3CContextPropagatorTests
     [Theory]
     [InlineData("not-a-trace-id")]
     [InlineData("00000000000000000000000000000000")]
+    // 32 characters, so the length check passes, but not a trace id a conformant receiver can parse
+    [InlineData("0AF7651916CD43DD8448EB211C80319C")]
+    [InlineData("zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz")]
     public void Inject_WithAnUnusableContextTraceId_WritesNoTraceParent(string traceId)
     {
-        // Arrange (Given) — IContext.TraceId is contractually 32 hex characters, but a custom IContextFactory
-        // could return anything, and an unparseable traceparent is worse than an absent one
+        // Arrange (Given) — IContext.TraceId is contractually 32 lowercase hex characters, but a custom
+        // IContextFactory could return anything, and an unparseable traceparent is worse than an absent one
         Assert.Null(Activity.Current);
         var propagator = new W3CContextPropagator();
         var context = Substitute.For<IContext>();
@@ -176,7 +179,8 @@ public sealed class W3CContextPropagatorTests
     [Fact]
     public void Inject_WhenAnActivityIsRecording_WritesTraceParentThatExtractsBack()
     {
-        // Arrange (Given)
+        // Arrange (Given) — the ordinary case: the context took its trace id from the ambient activity, so the
+        // two agree and the platform propagator writes the header
         using var listener = NewRecordingListener(out var sourceName);
         using var source = new ActivitySource(sourceName);
         using var activity = source.StartActivity("outbound");
@@ -186,13 +190,87 @@ public sealed class W3CContextPropagatorTests
         var carrier = new DictionaryPropagationCarrier();
 
         // Act (When)
-        propagator.Inject(NewContext(), carrier);
+        propagator.Inject(NewContextOn(activity!), carrier);
         var extracted = propagator.Extract(carrier);
 
         // Assert (Then)
         Assert.True(carrier.Headers.ContainsKey(PropagationKeys.TraceParent));
         Assert.Equal(activity!.TraceId, extracted.Trace.TraceId);
         Assert.Equal(activity.SpanId, extracted.Trace.SpanId);
+    }
+
+    [Fact]
+    public void Inject_WhenTheContextAndTheActivityDisagree_PropagatesTheContextsTraceId()
+    {
+        // Arrange (Given) — an untrusted boundary refused the caller's traceparent, so the context carries a
+        // server-minted trace id while the host's request instrumentation already parented the ambient activity
+        // to the caller. Injecting the activity's id put the caller-chosen trace id back on the wire as this
+        // flow's identity — the value the boundary rejected, forwarded onward (known issue 032).
+        using var listener = NewRecordingListener(out var sourceName);
+        using var source = new ActivitySource(sourceName);
+        using var activity = source.StartActivity("outbound");
+        Assert.NotNull(activity);
+
+        var propagator = new W3CContextPropagator();
+        var context = NewContext();
+        Assert.NotEqual(activity!.TraceId.ToHexString(), context.TraceId);
+        var carrier = new DictionaryPropagationCarrier();
+
+        // Act (When)
+        propagator.Inject(context, carrier);
+        var extracted = propagator.Extract(carrier);
+
+        // Assert (Then) — the trace is the context's, the span is still the one making the call
+        Assert.Equal(context.TraceId, extracted.Trace.TraceId.ToHexString());
+        Assert.Equal(activity.SpanId, extracted.Trace.SpanId);
+        Assert.DoesNotContain(activity.TraceId.ToHexString(),
+            carrier.Headers[PropagationKeys.TraceParent], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Inject_WhenTheContextAndTheActivityDisagree_DropsTheActivitysTraceState()
+    {
+        // Arrange (Given) — tracestate is vendor state scoped to the caller's trace, and the header being
+        // written names a different one
+        using var listener = NewRecordingListener(out var sourceName);
+        using var source = new ActivitySource(sourceName);
+        using var activity = source.StartActivity("outbound");
+        Assert.NotNull(activity);
+        activity!.TraceStateString = "vendor=opaque";
+
+        var propagator = new W3CContextPropagator();
+        var carrier = new DictionaryPropagationCarrier();
+
+        // Act (When)
+        propagator.Inject(NewContext(), carrier);
+
+        // Assert (Then)
+        Assert.False(carrier.Headers.ContainsKey(PropagationKeys.TraceState));
+        Assert.DoesNotContain("vendor=opaque", string.Join(';', carrier.Headers.Values),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Inject_WhenTheContextsTraceIdIsUnusableAndAnActivityExists_WritesNoTraceParent()
+    {
+        // Arrange (Given) — falling back to the activity's id here would readmit the very value the divergence
+        // exists to refuse, so an absent header is the only safe answer
+        using var listener = NewRecordingListener(out var sourceName);
+        using var source = new ActivitySource(sourceName);
+        using var activity = source.StartActivity("outbound");
+        Assert.NotNull(activity);
+
+        var propagator = new W3CContextPropagator();
+        var context = Substitute.For<IContext>();
+        context.TraceId.Returns("not-a-trace-id");
+        context.Baggage.Returns(new Dictionary<string, string>());
+        var carrier = new DictionaryPropagationCarrier();
+
+        // Act (When)
+        propagator.Inject(context, carrier);
+
+        // Assert (Then)
+        Assert.False(carrier.Headers.ContainsKey(PropagationKeys.TraceParent));
     }
 
     [Fact]
@@ -436,7 +514,7 @@ public sealed class W3CContextPropagatorTests
         Assert.NotNull(sendingActivity);
 
         var propagator = new W3CContextPropagator();
-        var sender = NewContext();
+        var sender = NewContextOn(sendingActivity!);
         sender.SetBaggage("tenant.id", "contoso");
         var carrier = new DictionaryPropagationCarrier();
         propagator.Inject(sender, carrier);
@@ -472,5 +550,14 @@ public sealed class W3CContextPropagatorTests
         var identity = new ContextIdentity(ActivityTraceId.CreateRandom().ToHexString(), null,
             DateTimeOffset.UtcNow);
         return new Context(identity);
+    }
+
+    /// <summary>
+    ///     A context whose trace id is the activity's, which is what <see cref="ContextIdentity.ForUnitOfWork" />
+    ///     produces whenever an activity exists and the boundary did not refuse its trace context.
+    /// </summary>
+    private static Context NewContextOn(Activity activity)
+    {
+        return new Context(new ContextIdentity(activity.TraceId.ToHexString(), null, DateTimeOffset.UtcNow));
     }
 }

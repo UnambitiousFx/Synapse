@@ -29,7 +29,7 @@ public sealed class OutboxManagerTests
     {
         return new OutboxManager(
             outboxStorage,
-            eventDispatcher,
+            DispatchScopes.For(_ => eventDispatcher),
             metrics,
             propagator ?? new W3CContextPropagator(),
             contextAccessor ?? new StubContextAccessor(null, false),

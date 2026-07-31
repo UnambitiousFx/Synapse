@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -25,25 +26,30 @@ public sealed class OutboxFlowIdentityTests
         // Arrange (Given)
         using var probe = new ActivityProbe();
         var storage = new InMemoryEventOutboxStorage();
-        var context = NewContext();
-        context.SetBaggage("tenant.id", "contoso");
 
         // Read through Activity.Current: the dispatch activity is parented on the stored trace context, so this
         // is the mechanism that actually carries the flow across the hop rather than a mirror of it.
         var traceIdDuringDispatch = string.Empty;
 
-        var manager = BuildManager(storage, (_, _, _) =>
-        {
-            traceIdDuringDispatch = Activity.Current?.TraceId.ToHexString() ?? string.Empty;
-            return new ValueTask<Result>(Result.Success());
-        }, new StubContextAccessor(context, true));
-
+        OutboxManager manager;
         ActivityTraceId producingTraceId;
 
         using (var producing = StartActivity("producing-request"))
         {
             Assert.NotNull(producing);
             producingTraceId = producing!.TraceId;
+
+            // Built on the producing activity, which is what the context factory does whenever one exists: the
+            // trace id the request logs is the trace id its span was recorded under.
+            var context = NewContextOn(producing);
+            context.SetBaggage("tenant.id", "contoso");
+
+            manager = BuildManager(storage, (_, _, _) =>
+            {
+                traceIdDuringDispatch = Activity.Current?.TraceId.ToHexString() ?? string.Empty;
+                return new ValueTask<Result>(Result.Success());
+            }, new StubContextAccessor(context, true));
+
             await manager.StoreAsync(new EventExample("mail-me"), TestContext.Current.CancellationToken);
         }
 
@@ -66,9 +72,8 @@ public sealed class OutboxFlowIdentityTests
         // flow shows up as one trace rather than two joined by a link
         using var probe = new ActivityProbe();
         var storage = new InMemoryEventOutboxStorage();
-        var manager = BuildManager(storage, (_, _, _) => new ValueTask<Result>(Result.Success()),
-            new StubContextAccessor(NewContext(), true));
 
+        OutboxManager manager;
         ActivityTraceId producingTraceId;
         ActivitySpanId producingSpanId;
 
@@ -77,6 +82,8 @@ public sealed class OutboxFlowIdentityTests
             Assert.NotNull(producing);
             producingTraceId = producing!.TraceId;
             producingSpanId = producing.SpanId;
+            manager = BuildManager(storage, (_, _, _) => new ValueTask<Result>(Result.Success()),
+                new StubContextAccessor(NewContextOn(producing), true));
             await manager.StoreAsync(new EventExample("mail-me"), TestContext.Current.CancellationToken);
         }
 
@@ -204,6 +211,85 @@ public sealed class OutboxFlowIdentityTests
         Assert.Equal(processorTraceId, Activity.Current!.TraceId);
     }
 
+    [Fact]
+    public async Task Dispatch_BuildsTheHandlersContextFromTheStoredEntry()
+    {
+        // Arrange (Given) — no ActivityListener is registered, so StartActivity returns null and the stored
+        // trace context can only reach the handlers through the context they resolve. Applying it to the dispatch
+        // span alone left them on the committing scope's context: a different trace id, and none of the baggage
+        // the entry was filed with.
+        var storage = new InMemoryEventOutboxStorage();
+        var storing = NewContext();
+        storing.SetBaggage("tenant.id", "contoso");
+
+        await BuildManager(storage, NoOpDispatch, new StubContextAccessor(storing, true))
+            .StoreAsync(new EventExample("mail-me"), TestContext.Current.CancellationToken);
+
+        var committing = NewContext();
+        IContext? dispatchContext = null;
+        var manager = BuildManager(storage,
+            (_, dispatcher, _) =>
+            {
+                dispatchContext = ((ScopeProbeDispatcher)dispatcher).Context;
+                return new ValueTask<Result>(Result.Success());
+            },
+            new StubContextAccessor(committing, true),
+            sp => new ScopeProbeDispatcher(sp.GetRequiredService<IContextAccessor>()));
+
+        // Act (When)
+        await manager.ProcessPendingAsync(TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.NotNull(dispatchContext);
+        Assert.Equal(storing.TraceId, dispatchContext!.TraceId);
+        Assert.NotEqual(committing.TraceId, dispatchContext.TraceId);
+        Assert.Equal("contoso", dispatchContext.Baggage["tenant.id"]);
+    }
+
+    [Fact]
+    public async Task Dispatch_OfAnEntryStoredByAnotherFlow_DoesNotAdoptTheCommittingFlowsIdentity()
+    {
+        // Arrange (Given) — pending entries are retrieved across scopes, so the canonical per-request commit
+        // dispatches whatever any request stored. Each entry must be dispatched under its own flow; running them
+        // in the committing scope gave every one of them that request's trace id and baggage.
+        var storage = new InMemoryEventOutboxStorage();
+        var first = NewContext();
+        first.SetBaggage("tenant.id", "first");
+        var second = NewContext();
+        second.SetBaggage("tenant.id", "second");
+
+        await BuildManager(storage, NoOpDispatch, new StubContextAccessor(first, true))
+            .StoreAsync(new EventExample("for-first"), TestContext.Current.CancellationToken);
+        await BuildManager(storage, NoOpDispatch, new StubContextAccessor(second, true))
+            .StoreAsync(new EventExample("for-second"), TestContext.Current.CancellationToken);
+
+        var seen = new List<(string TraceId, string Tenant)>();
+        var manager = BuildManager(storage,
+            (_, dispatcher, _) =>
+            {
+                var context = ((ScopeProbeDispatcher)dispatcher).Context;
+                seen.Add((context.TraceId, context.Baggage["tenant.id"]));
+                return new ValueTask<Result>(Result.Success());
+            },
+            new StubContextAccessor(NewContext(), true),
+            sp => new ScopeProbeDispatcher(sp.GetRequiredService<IContextAccessor>()));
+
+        // Act (When)
+        await manager.ProcessPendingAsync(TestContext.Current.CancellationToken);
+
+        // Assert (Then) — two dispatches, two flows, neither borrowed from the other or from the committer
+        Assert.Equal(2, seen.Count);
+        Assert.Contains((first.TraceId, "first"), seen);
+        Assert.Contains((second.TraceId, "second"), seen);
+    }
+
+    private static ValueTask<Result> NoOpDispatch(IEvent @event,
+        IEventDispatcher dispatcher,
+        CancellationToken cancellationToken)
+    {
+        return new ValueTask<Result>(Result.Success());
+    }
+
     private static Activity? StartActivity(string name)
     {
         return SynapseActivitySource.Source.StartActivity(name);
@@ -215,22 +301,55 @@ public sealed class OutboxFlowIdentityTests
             new ContextIdentity(ActivityTraceId.CreateRandom().ToHexString(), null, DateTimeOffset.UtcNow));
     }
 
+    /// <summary>
+    ///     A context whose trace id is the activity's, which is what the context factory produces whenever an
+    ///     activity exists.
+    /// </summary>
+    private static Context NewContextOn(Activity activity)
+    {
+        return new Context(new ContextIdentity(activity.TraceId.ToHexString(), null, DateTimeOffset.UtcNow));
+    }
+
     private static OutboxManager BuildManager(IEventOutboxStorage storage,
         DispatchEventDelegate dispatcher,
-        IContextAccessor contextAccessor)
+        IContextAccessor contextAccessor,
+        Func<IServiceProvider, IEventDispatcher>? scopedDispatcher = null)
     {
         var dispatcherOptions = new EventDispatcherOptions();
         dispatcherOptions.Dispatchers[typeof(EventExample)] = dispatcher;
 
         return new OutboxManager(
             storage,
-            Substitute.For<IEventDispatcher>(),
+            DispatchScopes.For(scopedDispatcher),
             Substitute.For<ISynapseMetrics>(),
             new W3CContextPropagator(),
             contextAccessor,
             Options.Create(dispatcherOptions),
             Options.Create(new OutboxOptions()),
             NullLogger<OutboxManager>.Instance);
+    }
+
+    /// <summary>
+    ///     Exposes the context of the scope it was resolved from, so a test can assert which context the code
+    ///     inside the dispatch scope actually sees.
+    /// </summary>
+    private sealed class ScopeProbeDispatcher : IEventDispatcher
+    {
+        private readonly IContextAccessor _accessor;
+
+        public ScopeProbeDispatcher(IContextAccessor accessor)
+        {
+            _accessor = accessor;
+        }
+
+        public IContext Context => _accessor.Context;
+
+        public ValueTask<Result> DispatchAsync<TEvent>(TEvent @event,
+            CancellationToken cancellationToken = default)
+            where TEvent : class, IEvent
+        {
+            return new ValueTask<Result>(Result.Success());
+        }
     }
 
     /// <summary>

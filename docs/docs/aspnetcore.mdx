@@ -225,7 +225,9 @@ Set it to `false` on an **internet-facing** application. A `traceparent` is chos
 
 Discarding the header is not enough on its own, which is worth knowing if you write your own boundary adapter. ASP.NET Core parses `traceparent` and parents the request `Activity` to it **before any middleware runs**, and `IContext` otherwise takes its identity from `Activity.Current` when nothing was propagated — so clearing the inbound trace context alone would let the caller supply identity through the ambient activity instead. The middleware also sets `PropagatedContext.SuppressAmbientTrace`, which disqualifies the ambient activity as a source of identity; a non-HTTP adapter that refuses inbound trace context must set it too.
 
-One consequence: in this mode `IContext.TraceId` deliberately differs from `Activity.Current.TraceId`, because Synapse cannot un-parent an activity the host created before the pipeline started. Your spans still carry the caller's trace id unless you configure your tracing exporter to distrust the header as well; `IContext.TraceId`, the `Trace-Id` response header and the log scope all carry the server-minted one.
+One consequence: in this mode `IContext.TraceId` deliberately differs from `Activity.Current.TraceId`, because Synapse cannot un-parent an activity the host created before the pipeline started. Your spans still carry the caller's trace id unless you configure your tracing exporter to distrust the header as well.
+
+Everything Synapse controls carries the **server-minted** id: `IContext.TraceId`, the `Trace-Id` and `traceresponse` response headers, the log scope, and what leaves the process — the `traceparent` written onto outbound `HttpClient` calls and captured into outbox entries. Propagating the ambient activity's id there instead would forward onward exactly the value this mode exists to refuse, and re-parent later outbox work into a trace a client picked.
 
 :::warning
 The trace id is a label for correlating logs and spans. It is never an authorization input, in either mode. Requiring W3C format changes nothing here — a client-supplied trace id is as forgeable as any other client-supplied value.
