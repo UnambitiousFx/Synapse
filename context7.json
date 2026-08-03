@@ -1,5 +1,7 @@
 {
   "$schema": "https://context7.com/schema/context7.json",
+  "url": "https://context7.com/unambitiousfx/synapse",
+  "public_key": "pk_LImbN454fE8H5CdoRYEni",
   "projectTitle": "UnambitiousFx Synapse",
   "description": "Lightweight, Native-AOT-friendly .NET mediator for message-driven apps: Commands, Queries, Events, Pipelines and an Outbox, with low latency and allocations.",
   "branch": "main",
