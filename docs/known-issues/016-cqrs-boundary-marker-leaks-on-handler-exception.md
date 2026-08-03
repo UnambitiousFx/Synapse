@@ -5,18 +5,24 @@
 **Discovered on:** `feature/typed-pipeline-behaviors`, .NET 10
 **Status:** ✅ **Resolved** — fixed on `feature/typed-pipeline-behaviors`.
 
+> **Note:** the helper was named `CqrsBoundaryMetadata` when this was written and is now
+> `CqrsBoundaryMarker`; the text below uses the current name. The marker itself is no longer a string
+> key in an `IContext` metadata bag — issue
+> [028](028-cqrs-boundary-markers-leak-into-every-log-entry.md) moved it to an internal
+> `CqrsBoundaryFeature` context feature. The `try`/`catch` structure this fix introduced is unchanged.
+
 ---
 
 ## Describe the bug
 
 `CqrsBoundaryEnforcementBehavior<TRequest>` and `CqrsBoundaryEnforcementBehavior<TRequest, TResponse>`
-call `CqrsBoundaryMetadata.Add` before invoking the rest of the pipeline and
-`CqrsBoundaryMetadata.Remove` **after** `await next(...)`. The `Remove` call is not wrapped in a
+call `CqrsBoundaryMarker.Add` before invoking the rest of the pipeline and
+`CqrsBoundaryMarker.Remove` **after** `await next(...)`. The `Remove` call is not wrapped in a
 `finally`, so when `next(...)` throws (any handler or inner-behavior exception, not just a boundary
 violation), the boundary marker is never removed from the `IContext`.
 
 If the same scoped `IContext` is subsequently used to dispatch another request (e.g. a compensation
-or retry send within the same scope after catching the exception), `CqrsBoundaryMetadata.Validate`
+or retry send within the same scope after catching the exception), `CqrsBoundaryMarker.Validate`
 sees the stale marker and throws a **spurious** `CqrsBoundaryViolationException`.
 
 ---
@@ -48,9 +54,9 @@ nesting is actually occurring.
 `src/Synapse/Pipelines/CqrsBoundaryEnforcementBehavior.cs` (≈ lines 44 and 88):
 
 ```csharp
-CqrsBoundaryMetadata.Add(_context, requestName);
+CqrsBoundaryMarker.Add(_context, requestName);
 var response = await next(request, cancellationToken);
-CqrsBoundaryMetadata.Remove(_context); // skipped if next() throws
+CqrsBoundaryMarker.Remove(_context); // skipped if next() throws
 return response;
 ```
 
@@ -58,7 +64,7 @@ return response;
 
 ## Resolution
 
-Both behavior variants now wrap `next(...)` in `try { ... } catch { CqrsBoundaryMetadata.RemoveIfPresent(_context); throw; }`.
+Both behavior variants now wrap `next(...)` in `try { ... } catch { CqrsBoundaryMarker.RemoveIfPresent(_context); throw; }`.
 On the exception path the marker is cleared via a new tolerant `RemoveIfPresent` helper (no throw) and the
 original exception is rethrown unmasked. The success path keeps the strict `Remove` so handler tampering
 with the marker is still surfaced (see the `Should_throw_when_user_manually_removes_boundary_enforcement_key_from_context`

@@ -76,8 +76,13 @@ Response/item types are now globalized from the `ITypeSymbol` with Roslyn's buil
 arrays and nullability correctly. The fragile string-munging in
 `RegisterGroupFactory.GlobalizeType` is no longer applied to those pre-globalized strings — the
 response/item emission sites in `src/Synapse.Generator/RegisterGroupFactory.cs` interpolate them
-verbatim. `GlobalizeType` is retained only for handler / target / request / event / validator-class
-names, which are always named types.
+verbatim. At the time of this fix, `GlobalizeType` was retained for handler / target / request / event /
+validator-class names, which are always named types.
+
+> **Superseded:** issue [017](017-splittoplevelargs-ignores-tuple-parentheses.md) moved those remaining
+> names to the symbol level too and deleted `GlobalizeType` from `RegisterGroupFactory`; issue
+> [030](030-generic-event-declarations-break-dispatcher-emission.md) removed the last copy, in
+> `EventDispatcherRegistrationFactory`. No hand-rolled globalizer remains in the generator.
 
 Output for named types, keywords, generics, nullables and arrays is byte-identical to before, so
 existing registrations are unchanged. Cross-source/cross-assembly dedup is unaffected because every

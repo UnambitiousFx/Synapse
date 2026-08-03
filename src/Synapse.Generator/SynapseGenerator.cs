@@ -37,17 +37,6 @@ public class SynapseGenerator : IIncrementalGenerator
 
     private const string FullRegisterGroupAttributeName = $"{AbstractionsNamespace}.RegisterGroupAttribute";
 
-    // The built-in CQRS boundary enforcement behavior, expressed as a global behavior so the
-    // [assembly: EnableSynapseCqrsBoundaryEnforcement] opt-in is just an alias for registering it globally.
-    // Its shape is fixed and owned by this library, so its BehaviorDetails are synthesized directly rather
-    // than resolved from a symbol — the behavior type lives in the Synapse runtime assembly, which the
-    // generator (and its unit tests) need not reference at generation time.
-    private const string CqrsBoundaryBehaviorClassName = "CqrsBoundaryEnforcementBehavior";
-    private const string CqrsBoundaryBehaviorNamespace = $"{BaseNamespace}.Pipelines";
-
-    private const string CqrsBoundaryBehaviorFullName =
-        $"global::{CqrsBoundaryBehaviorNamespace}.{CqrsBoundaryBehaviorClassName}";
-
     private const string FullRequestStreamHandlerAttributeName =
         $"{AbstractionsNamespace}.{LongRequestStreamHandlerAttributeName}";
 
@@ -190,11 +179,9 @@ public class SynapseGenerator : IIncrementalGenerator
             static (ctx, _) => GetValidatorDetail(ctx))
             .Collect();
 
-        // Collect behaviors requested globally via [assembly: SynapseGlobalBehavior(typeof(...))] — including
-        // the built-in CQRS enforcement behavior aliased by the deprecated [assembly:
-        // EnableSynapseCqrsBoundaryEnforcement]. A runtime fluent call is invisible to the generator, so
-        // global registration is expressed as an assembly attribute the generator can see and turn into
-        // closed (AOT-safe) registrations.
+        // Collect behaviors requested globally via [assembly: SynapseGlobalBehavior(typeof(...))]. A runtime
+        // fluent call is invisible to the generator, so global registration is expressed as an assembly
+        // attribute the generator can see and turn into closed (AOT-safe) registrations.
         var globalBehaviorProvider = compilationProvider
             .Select(static (compilation, _) => ExtractGlobalBehaviors(compilation));
 
@@ -1027,7 +1014,10 @@ public class SynapseGenerator : IIncrementalGenerator
                     }
                 }
 
-                return false;
+                // A type nested in a generic one carries its outer type parameters in its emitted name even
+                // when it declares none of its own: `Outer<T>.Inner` puts `T` at the registration site, where
+                // it is not in scope (see known issue 034).
+                return named.ContainingType is not null && ContainsTypeParameter(named.ContainingType);
             default:
                 return false;
         }
@@ -1145,11 +1135,9 @@ public class SynapseGenerator : IIncrementalGenerator
     }
 
     /// <summary>
-    ///     Collects the behaviors requested globally via <c>[assembly: SynapseGlobalBehavior(typeof(...))]</c>,
-    ///     plus the built-in CQRS boundary enforcement behavior when the (deprecated) opt-in
-    ///     <c>[assembly: EnableSynapseCqrsBoundaryEnforcement]</c> attribute is present — both are funnelled
-    ///     through the same open-generic cross-product as <c>[PipelineBehavior]</c> classes, yielding closed,
-    ///     AOT-safe registrations. Entries that cannot be used (not a type, no pipeline interface, or not
+    ///     Collects the behaviors requested globally via <c>[assembly: SynapseGlobalBehavior(typeof(...))]</c> —
+    ///     funnelled through the same open-generic cross-product as <c>[PipelineBehavior]</c> classes, yielding
+    ///     closed, AOT-safe registrations. Entries that cannot be used (not a type, no pipeline interface, or not
     ///     public) are recorded as diagnostics rather than silently dropped. Rides on the compilation, so it
     ///     re-runs on every edit — matching the existing event-dispatcher / behavior-target tradeoff.
     /// </summary>
@@ -1157,12 +1145,6 @@ public class SynapseGenerator : IIncrementalGenerator
     {
         var behaviors = new List<BehaviorDetail>();
         var diagnostics = new List<GlobalBehaviorDiagnostic>();
-
-        // The CQRS opt-in is an alias for registering the built-in enforcement behavior globally.
-        if (compilation.IsCqrsBoundaryEnforcementEnabled())
-        {
-            behaviors.AddRange(BuildCqrsBoundaryBehaviors());
-        }
 
         foreach (var attr in compilation.Assembly.GetAttributes())
         {
@@ -1203,24 +1185,6 @@ public class SynapseGenerator : IIncrementalGenerator
 
         return new GlobalBehaviorInfo(EquatableArray<BehaviorDetail>.From(behaviors),
             EquatableArray<GlobalBehaviorDiagnostic>.From(diagnostics));
-    }
-
-    /// <summary>
-    ///     Synthesizes the two <see cref="BehaviorDetail" />s for the built-in
-    ///     <c>CqrsBoundaryEnforcementBehavior&lt;TRequest&gt;</c> / <c>&lt;TRequest, TResponse&gt;</c>, matching
-    ///     what <see cref="AnalyzeBehaviorSymbol" /> would produce for them: open-generic, no constraints (so
-    ///     they apply to every request handler, as the previous dedicated CQRS path did), closing the request
-    ///     slot (index 0) and — for the with-response variant — the response slot (index 1).
-    /// </summary>
-    private static IEnumerable<BehaviorDetail> BuildCqrsBoundaryBehaviors()
-    {
-        yield return new BehaviorDetail(CqrsBoundaryBehaviorClassName, CqrsBoundaryBehaviorNamespace,
-            CqrsBoundaryBehaviorFullName, BehaviorKind.Request, true, "TRequest", null, default, default,
-            EquatableArray<int>.From(new[] { 0 }));
-
-        yield return new BehaviorDetail(CqrsBoundaryBehaviorClassName, CqrsBoundaryBehaviorNamespace,
-            CqrsBoundaryBehaviorFullName, BehaviorKind.RequestWithResponse, true, "TRequest", "TResponse", default,
-            default, EquatableArray<int>.From(new[] { 0, 1 }));
     }
 
     /// <summary>
@@ -1358,16 +1322,24 @@ public class SynapseGenerator : IIncrementalGenerator
 
         public override void VisitNamedType(INamedTypeSymbol symbol)
         {
+            // A type whose emitted name carries a type parameter has no closed runtime type to dispatch on, and
+            // the parameter is not in scope where the registration is emitted, so collecting it produced
+            // uncompilable `typeof(Event<T>)` (see known issues 030 and 034). The parameter can come from the
+            // type's own arity or from a generic enclosing type, so the whole containing chain is inspected. Closed
+            // constructions never reach this visitor — it walks declarations — so such events fall back to
+            // runtime dispatch.
+            var carriesTypeParameter = ContainsTypeParameter(symbol);
+
             // Check if this type implements IEvent
-            if (ImplementsIEvent(symbol))
+            if (!carriesTypeParameter && ImplementsIEvent(symbol))
             {
-                _eventTypes.Add(symbol.ToDisplayString());
+                _eventTypes.Add(ToEmitName(symbol));
             }
 
             // Check if this type implements IEventHandler<T>
-            if (_iEventHandlerSymbol != null && ImplementsIEventHandler(symbol))
+            if (!carriesTypeParameter && _iEventHandlerSymbol != null && ImplementsIEventHandler(symbol))
             {
-                _handlerTypes.Add(symbol.ToDisplayString());
+                _handlerTypes.Add(ToEmitName(symbol));
             }
 
             // Visit nested types

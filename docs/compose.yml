@@ -1,0 +1,25 @@
+services:
+  # Production-like: static site built at image-build time, served by nginx.
+  docs:
+    build:
+      context: .
+      target: serve
+    image: unambitiousfx/synapse-docs:local
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+  # Hot-reload dev server. Source is bind-mounted; node_modules stays in the
+  # image so the host's platform-specific installs never leak in.
+  docs-dev:
+    build:
+      context: .
+      target: dev
+    ports:
+      - "3000:3000"
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/.docusaurus
+    profiles:
+      - dev

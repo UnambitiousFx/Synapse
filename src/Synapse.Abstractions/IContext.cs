@@ -1,5 +1,3 @@
-using UnambitiousFx.Functional;
-
 namespace UnambitiousFx.Synapse.Abstractions;
 
 /// <summary>
@@ -8,106 +6,96 @@ namespace UnambitiousFx.Synapse.Abstractions;
 public interface IContext
 {
     /// <summary>
-    ///     Gets the unique identifier that represents a correlation ID for tracing or tracking purposes within the context.
-    ///     This property is immutable and ensures consistent identification of a specific operation or event flow.
+    ///     Gets the 32-character lowercase hex W3C trace id of the flow this context belongs to.
     /// </summary>
-    Guid CorrelationId { get; }
+    /// <remarks>
+    ///     <para>
+    ///         Constant for the whole flow, so every request, message and retry stemming from the same
+    ///         originating action shares it. Never null or empty.
+    ///     </para>
+    ///     <para>
+    ///         This is the trace id, not a separate correlation scheme: the value is byte for byte what a
+    ///         tracing backend displays, so one search string works in both application logs and Jaeger, Tempo
+    ///         or Application Insights. Whenever an <see cref="System.Diagnostics.Activity" /> exists this
+    ///         equals <c>Activity.Current.TraceId.ToHexString()</c>, because that is where it came from; when
+    ///         no tracing is wired one is minted so correlation still works.
+    ///     </para>
+    /// </remarks>
+    string TraceId { get; }
 
     /// <summary>
-    ///     Gets a read-only dictionary containing metadata key-value pairs associated with the context.
+    ///     Gets the 16-character lowercase hex span id of the immediate predecessor, or <c>null</c> at the root
+    ///     of a flow.
     /// </summary>
-    IReadOnlyDictionary<string, object> Metadata { get; }
+    /// <remarks>
+    ///     Where <see cref="TraceId" /> yields a flat group of everything in a flow, this yields the causality
+    ///     tree — which specific caller caused this unit of work. It comes from the inbound
+    ///     <c>traceparent</c>, so it is <c>null</c> when nothing upstream was recording: causation is a
+    ///     diagnostic nicety, whereas <see cref="TraceId" /> is always present.
+    /// </remarks>
+    string? CausationId { get; }
 
     /// <summary>
-    ///     Sets a metadata value for the specified key in the context.
+    ///     Gets the instant this unit of work entered the system.
     /// </summary>
-    /// <param name="key">The metadata key.</param>
-    /// <param name="value">The metadata value to set.</param>
-    void SetMetadata(string key,
-        object value);
+    DateTimeOffset OccurredAt { get; }
 
     /// <summary>
-    ///     Removes a metadata entry for the specified key from the context.
+    ///     Gets the baggage carried by this context.
     /// </summary>
-    /// <param name="key">The metadata key.</param>
-    bool RemoveMetadata(string key);
+    /// <remarks>
+    ///     <para>
+    ///         Baggage is the only free-form state that <b>crosses process boundaries</b>. It is propagated as
+    ///         the W3C <c>baggage</c> header, so it is string-keyed, string-valued, and size-limited by
+    ///         <see cref="BaggageLimits" />.
+    ///     </para>
+    ///     <para>
+    ///         Because it travels to every downstream service, including third parties outside your control,
+    ///         never place confidential values in it. For state that must stay in this process, use a
+    ///         <see cref="IContextFeature" /> instead — features are never serialized.
+    ///     </para>
+    /// </remarks>
+    IReadOnlyDictionary<string, string> Baggage { get; }
 
     /// <summary>
-    ///     Tries to get a metadata value for the specified key.
+    ///     Adds or updates a baggage entry.
     /// </summary>
-    /// <typeparam name="T">The type of the metadata value.</typeparam>
-    /// <param name="key">The metadata key.</param>
-    /// <param name="value">When this method returns, contains the metadata value if found; otherwise, the default value.</param>
-    /// <returns>True if the metadata value was found; otherwise, false.</returns>
-    bool TryGetMetadata<T>(string key,
-        out T? value);
-
-    /// <summary>
-    ///     Gets a metadata value for the specified key.
-    /// </summary>
-    /// <typeparam name="T">The type of the metadata value.</typeparam>
-    /// <param name="key">The metadata key.</param>
-    /// <returns>The metadata value if found; otherwise, the default value for the type.</returns>
-    T? GetMetadata<T>(string key);
-
-    /// <summary>
-    ///     Publishes an event asynchronously.
-    /// </summary>
-    /// <typeparam name="TEvent">The type of the event to be published, which must implement <see cref="IEvent" />.</typeparam>
-    /// <param name="event">The event instance to be published.</param>
-    /// <param name="cancellationToken">
-    ///     A cancellation token to observe while waiting for the task to complete. Defaults to
-    ///     <see cref="CancellationToken.None" /> if not provided.
-    /// </param>
+    /// <param name="key">The baggage key. Must satisfy <see cref="BaggageLimits.IsValidKey" />.</param>
+    /// <param name="value">The baggage value. Must satisfy <see cref="BaggageLimits.IsValidValue" />.</param>
     /// <returns>
-    ///     A <see cref="ValueTask" /> containing a <see cref="Result" /> that indicates the success or failure of the
-    ///     operation.
-    /// </returns>
-    ValueTask<Result> PublishEventAsync<TEvent>(TEvent @event,
-        CancellationToken cancellationToken = default)
-        where TEvent : class, IEvent;
-
-    /// <summary>
-    ///     Publishes an event asynchronously with the specified publish mode and distribution mode.
-    /// </summary>
-    /// <typeparam name="TEvent">
-    ///     The type of the event to be published, which must implement <see cref="IEvent" />.
-    /// </typeparam>
-    /// <param name="event">
-    ///     The event instance to be published.
-    /// </param>
-    /// <param name="mode">
-    ///     The mode in which the event should be published, specified as a <see cref="EmitMode" />.
-    /// </param>
-    /// <param name="cancellationToken">
-    ///     A cancellation token to observe while waiting for the task to complete. Defaults to
-    ///     <see cref="CancellationToken.None" /> if not provided.
-    /// </param>
-    /// <returns>
-    ///     A <see cref="ValueTask" /> containing a <see cref="Result" /> that indicates the success or failure of the
-    ///     operation.
-    /// </returns>
-    ValueTask<Result> PublishEventAsync<TEvent>(TEvent @event,
-        EmitMode mode,
-        CancellationToken cancellationToken = default)
-        where TEvent : class, IEvent;
-
-    /// <summary>
-    ///     Commits all pending events asynchronously within the current scope.
-    /// </summary>
-    /// <param name="cancellationToken">
-    ///     A cancellation token to observe while waiting for the task to complete. Defaults to
-    ///     <see cref="CancellationToken.None" /> if not provided.
-    /// </param>
-    /// <returns>
-    ///     A <see cref="ValueTask" /> containing a <see cref="Result" /> that indicates the success or failure of the
-    ///     operation.
+    ///     <c>true</c> when the entry was stored; <c>false</c> when it was rejected because the key or value is
+    ///     not serializable, or because storing it would exceed <see cref="BaggageLimits.MaxEntryCount" /> or
+    ///     <see cref="BaggageLimits.MaxTotalBytes" />.
     /// </returns>
     /// <remarks>
-    ///     This method processes all events that were published with <see cref="EmitMode.Outbox" />
-    ///     in the current scope. It delegates to <see cref="IOutboxCommit.CommitAsync" />.
+    ///     Rejection is reported rather than thrown so that oversized inbound baggage degrades instead of
+    ///     failing the request. Callers that care should log the dropped entry.
     /// </remarks>
-    ValueTask<Result> CommitEventsAsync(CancellationToken cancellationToken = default);
+    bool SetBaggage(string key,
+        string value);
+
+    /// <summary>
+    ///     Removes a baggage entry.
+    /// </summary>
+    /// <param name="key">The baggage key.</param>
+    /// <returns><c>true</c> when an entry was removed; otherwise <c>false</c>.</returns>
+    bool RemoveBaggage(string key);
+
+    /// <summary>
+    ///     Tries to get a baggage value.
+    /// </summary>
+    /// <param name="key">The baggage key.</param>
+    /// <param name="value">When this method returns, the value if found; otherwise <c>null</c>.</param>
+    /// <returns><c>true</c> when the entry was found; otherwise <c>false</c>.</returns>
+    bool TryGetBaggage(string key,
+        out string? value);
+
+    /// <summary>
+    ///     Gets a baggage value.
+    /// </summary>
+    /// <param name="key">The baggage key.</param>
+    /// <returns>The value if found; otherwise <c>null</c>.</returns>
+    string? GetBaggage(string key);
 
     /// <summary>
     ///     Tries to get a feature of the specified type from the context.
@@ -149,11 +137,4 @@ public interface IContext
     /// <typeparam name="TFeature">The type of the feature to remove.</typeparam>
     void RemoveFeature<TFeature>()
         where TFeature : class, IContextFeature;
-
-    /// <summary>
-    ///     Returns a new context that is identical to this one but with the specified correlation ID.
-    /// </summary>
-    /// <param name="correlationId">The correlation ID for the new context.</param>
-    /// <returns>A new <see cref="IContext" /> with the given correlation ID.</returns>
-    IContext WithCorrelationId(Guid correlationId);
 }

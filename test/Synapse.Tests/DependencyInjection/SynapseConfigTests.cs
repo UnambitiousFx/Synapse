@@ -616,7 +616,9 @@ public sealed class SynapseConfigTests
         public ValueTask<Result> ClearAsync(CancellationToken cancellationToken = default)
             => ValueTask.FromResult(Result.Success());
 
-        public ValueTask<Result> AddAsync<TEvent>(TEvent @event, CancellationToken cancellationToken = default)
+        public ValueTask<Result> AddAsync<TEvent>(TEvent @event,
+            IReadOnlyDictionary<string, string> headers,
+            CancellationToken cancellationToken = default)
             where TEvent : class, IEvent
             => ValueTask.FromResult(Result.Success());
 

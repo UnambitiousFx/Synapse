@@ -3,9 +3,10 @@
 **Severity:** Low
 **Area:** Pipeline / Performance
 **Discovered on:** `feature/typed-pipeline-behaviors`, .NET 10
-**Status:** ✅ **Resolved** — `EventDispatcher` now caches the resolved+sorted behavior array per
-event type (`ConcurrentDictionary<Type, object>` keyed by `TEvent`) for its scoped lifetime, so the
-`OrderBy`/`ToArray` runs once per type per scope instead of on every dispatch. The cache is
+**Status:** ✅ **Resolved** — `EventDispatcher` now caches the composed handler pipeline per event type
+(`ConcurrentDictionary<Type, object>` keyed by `TEvent`, holding the built
+`EventHandlerDelegate<TEvent>` chain) for its scoped lifetime, so the `OrderBy`/`ToArray` runs once per
+type per scope instead of on every dispatch. The cache is
 lifetime-safe because the dispatcher and event behaviors share the same (scoped) lifetime.
 
 ---

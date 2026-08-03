@@ -19,6 +19,11 @@ public interface IEventOutboxStorage
     /// </summary>
     /// <typeparam name="TEvent">The type of the event being added. Must implement the <see cref="IEvent" /> interface.</typeparam>
     /// <param name="event">The event to be added to the outbox storage.</param>
+    /// <param name="headers">
+    ///     Propagation headers captured at store time, surfaced later as <see cref="OutboxEntry.Headers" />. A
+    ///     persistent implementation must store these alongside the payload; without them a dispatched entry cannot
+    ///     be tied back to the action that produced it.
+    /// </param>
     /// <param name="cancellationToken">
     ///     A token to observe while waiting for the task to complete. Defaults to
     ///     <see cref="CancellationToken.None" />.
@@ -28,6 +33,7 @@ public interface IEventOutboxStorage
     ///     whether the event was successfully added.
     /// </returns>
     ValueTask<Result> AddAsync<TEvent>(TEvent @event,
+        IReadOnlyDictionary<string, string> headers,
         CancellationToken cancellationToken = default)
         where TEvent : class, IEvent;
 

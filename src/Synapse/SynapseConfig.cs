@@ -362,31 +362,6 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
         return this;
     }
 
-    [Obsolete(
-        "Runtime CQRS boundary enforcement was removed. Apply " +
-        "[assembly: EnableSynapseCqrsBoundaryEnforcement] so the source generator emits closed " +
-        "(Native-AOT safe) registrations. Calling this method with enable:true now throws.",
-        error: true)]
-    public ISynapseConfig EnableCqrsBoundaryEnforcement(bool enable = true)
-    {
-        if (!enable)
-        {
-            // Already disabled by default; nothing to do.
-            return this;
-        }
-
-        // Fail loudly instead of silently dropping enforcement. The runtime registration path was
-        // removed in favor of generator-emitted closed registrations gated on the assembly attribute;
-        // re-registering here would reintroduce the open-generic value-type AOT failure (known-issue
-        // 001) and duplicate the behavior, making CqrsBoundaryMetadata.Validate() throw on every request.
-        throw new NotSupportedException(
-            "Runtime CQRS boundary enforcement was removed. Apply " +
-            "[assembly: EnableSynapseCqrsBoundaryEnforcement] so the Synapse source generator emits " +
-            "closed (Native-AOT safe) CqrsBoundaryEnforcementBehavior registrations. The runtime " +
-            "registration path was removed because open-generic behaviors cannot close over value-type " +
-            "responses under Native AOT (see known-issue 001).");
-    }
-
     public ISynapseConfig AddValidator<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
     TValidator, TRequest>()

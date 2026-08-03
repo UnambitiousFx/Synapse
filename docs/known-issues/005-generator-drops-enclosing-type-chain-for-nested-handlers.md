@@ -100,8 +100,10 @@ This yields `global::MyApp.Features.Tasks.CreateHandler` for nested closed types
 `HandlerDetail`, `BehaviorDetail`, and `ValidatorDetail` (which had the same latent bug) each gained a
 `FullyQualifiedName` property; `FullHandlerTypeName` / `FullBehaviorTypeName` / `FullValidatorTypeName`
 now return it. `ClassName` / `Namespace` are kept — still used for diagnostics and registration ordering.
-`GlobalizeSimpleType` already no-ops on a leading `global::`, so the value flows through `GlobalizeType`
-unchanged.
+At the time, `GlobalizeSimpleType` no-opped on a leading `global::`, so the value flowed through
+`GlobalizeType` unchanged. (Both helpers were later deleted by issue
+[017](017-splittoplevelargs-ignores-tuple-parentheses.md); the pre-globalized name is now emitted
+verbatim, which is what this fix relied on anyway.)
 
 **Verification.** Covered by `test/Synapse.Generator.Tests/GeneratorBehaviorTests.cs`:
 `NestedRequestHandler_…`, `NestedClosedBehavior_…`,

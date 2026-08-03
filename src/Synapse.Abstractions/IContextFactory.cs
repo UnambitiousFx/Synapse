@@ -6,8 +6,13 @@ namespace UnambitiousFx.Synapse.Abstractions;
 public interface IContextFactory
 {
     /// <summary>
-    ///     Creates a new instance of <see cref="IContext" />.
+    ///     Creates a new <see cref="IContext" />, adopting whatever flow state arrived from an inbound
+    ///     boundary.
     /// </summary>
+    /// <param name="inbound">
+    ///     Flow state extracted at the boundary, or <see cref="PropagatedContext.None" /> when the unit of
+    ///     work starts in this process.
+    /// </param>
     /// <returns>A new instance of <see cref="IContext" />.</returns>
-    IContext Create();
+    IContext Create(PropagatedContext inbound);
 }

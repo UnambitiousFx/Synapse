@@ -55,8 +55,10 @@ corresponding `ISynapseMetrics` members (and their parameters) are dead.
 Removed the three `RecordOutbox*` members from `ISynapseMetrics` and their no-op implementations in
 `SynapseMetrics` — they had zero callers across src/examples/test/benchmarks, and the observable
 gauge path (`ObserveOutbox*` reading from `IEventOutboxStorage`) fully supersedes them. The
-gauge-backing fields (`_lastKnownQueueDepth`, `_lastKnownProcessingLagSeconds`,
-`_lastKnownFailedCount`) are retained since the `Observe*` callbacks use them.
+gauge-backing fields (`_lastKnownQueueDepth`, `_lastKnownProcessingLagSeconds`, and — after issue
+[020](020-outbox-failed-count-counts-retrying-events.md) split the failed count —
+`_lastKnownRetryingCount` / `_lastKnownDeadLetterCount`) are retained since the `Observe*` callbacks
+use them.
 
 ## Library version
 

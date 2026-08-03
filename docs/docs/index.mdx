@@ -41,7 +41,7 @@ graph TD
     Handler --> Result
     Result --> Caller
 
-    Handler -- "PublishEventAsync / EmitAsync" --> IEmitter
+    Handler -- "EmitAsync" --> IEmitter
     IEmitter --> Dispatcher
     Dispatcher --> Orchestrator
     Orchestrator --> EventHandlers
@@ -73,7 +73,7 @@ graph TD
 | ------------------------------------ | -------------------------------------------------------------------- |
 | `UnambitiousFx.Synapse.Abstractions` | All public interfaces, delegates, and attributes. No dependencies.   |
 | `UnambitiousFx.Synapse`              | DI registration, invoker, dispatcher, context, outbox.               |
-| `UnambitiousFx.Synapse.AspNetCore`   | `IHttpInvoker`, `IMvcInvoker`, `UseCorrelationId` middleware.        |
+| `UnambitiousFx.Synapse.AspNetCore`   | `IHttpInvoker`, `IMvcInvoker`, `UseSynapsePropagation` middleware.        |
 | `UnambitiousFx.Synapse.Generator`    | Roslyn source generator that eliminates manual handler registration. |
 
 ## Quick start

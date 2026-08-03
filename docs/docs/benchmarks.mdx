@@ -20,9 +20,9 @@ Benchmarks measure dispatch overhead only — handlers are no-ops (a sum, or `Ta
 ## Environment
 
 ```
-BenchmarkDotNet v0.15.8, macOS Tahoe 26.5.2 [Darwin 25.5.0]
+BenchmarkDotNet v0.15.8, macOS Tahoe 26.6 (25G72) [Darwin 25.6.0]
 Apple M5 Pro, 18 logical / 18 physical cores
-.NET SDK 10.0.301, .NET 10.0.9, Arm64 RyuJIT
+.NET SDK 10.0.302, .NET 10.0.10, Arm64 RyuJIT
 ```
 
 Lifetimes: Synapse and MediatR use their defaults; **Mediator is registered as `Transient`** to mirror MediatR's transient handlers for an apples-to-apples DI cost. Mediator's recommended `Singleton` lifetime would lower its numbers further.
@@ -35,18 +35,18 @@ Lower is better. **Ratio** is relative to Synapse (baseline `1.00`); **Alloc** i
 
 | Library | Mean | Ratio | Allocated |
 |---|---:|---:|---:|
-| Mediator | 17.3 ns | 0.81 | 88 B |
-| **Synapse** | **21.4 ns** | **1.00** | **72 B** |
-| MediatR | 27.7 ns | 1.30 | 200 B |
-| _Synapse (direct handler)_ | _6.8 ns_ | _0.32_ | _72 B_ |
+| Mediator | 18.6 ns | 0.88 | 88 B |
+| **Synapse** | **21.2 ns** | **1.00** | **72 B** |
+| MediatR | 28.4 ns | 1.34 | 200 B |
+| _Synapse (direct handler)_ | _7.1 ns_ | _0.33_ | _72 B_ |
 
 ### Send — request without response (void)
 
 | Library | Mean | Ratio | Allocated |
 |---|---:|---:|---:|
-| **Synapse** | **18.1 ns** | **1.00** | **0 B** |
-| Mediator | 20.2 ns | 1.12 | 88 B |
-| MediatR | 30.6 ns | 1.69 | 128 B |
+| **Synapse** | **17.6 ns** | **1.00** | **0 B** |
+| Mediator | 22.4 ns | 1.27 | 88 B |
+| MediatR | 30.2 ns | 1.71 | 128 B |
 | _Synapse (direct handler)_ | _3.6 ns_ | _0.20_ | _0 B_ |
 
 Synapse allocates **zero bytes** dispatching a void request.
@@ -55,9 +55,9 @@ Synapse allocates **zero bytes** dispatching a void request.
 
 | Library | Mean | Ratio | Allocated |
 |---|---:|---:|---:|
-| Mediator | 79.8 ns | 0.61 | 184 B |
-| **Synapse** | **130.4 ns** | **1.00** | **520 B** |
-| MediatR | 358.6 ns | 2.75 | 2088 B |
+| Mediator | 74.2 ns | 0.57 | 184 B |
+| **Synapse** | **130.6 ns** | **1.00** | **520 B** |
+| MediatR | 357.1 ns | 2.74 | 2088 B |
 
 Mediator's source-generated fan-out leads here; both beat MediatR by a wide margin.
 
@@ -65,17 +65,17 @@ Mediator's source-generated fan-out leads here; both beat MediatR by a wide marg
 
 | Library | Mean | Ratio | Allocated |
 |---|---:|---:|---:|
-| **Synapse** | **22.7 ns** | **1.00** | **72 B** |
-| Mediator | 28.6 ns | 1.26 | 240 B |
-| MediatR | 57.7 ns | 2.54 | 440 B |
+| **Synapse** | **22.0 ns** | **1.00** | **72 B** |
+| Mediator | 29.4 ns | 1.34 | 240 B |
+| MediatR | 58.6 ns | 2.66 | 440 B |
 
 ### Pipeline — request through 3 behaviors
 
 | Library | Mean | Ratio | Allocated |
 |---|---:|---:|---:|
-| **Synapse** | **26.2 ns** | **1.00** | **72 B** |
-| Mediator | 53.4 ns | 2.04 | 496 B |
-| MediatR | 89.7 ns | 3.43 | 728 B |
+| **Synapse** | **26.3 ns** | **1.00** | **72 B** |
+| Mediator | 51.9 ns | 1.97 | 496 B |
+| MediatR | 89.3 ns | 3.40 | 728 B |
 
 Synapse's pipeline allocation stays **flat at 72 B** regardless of behavior count, thanks to its cached, pre-composed delegate chain — competitors grow per added behavior.
 
@@ -83,8 +83,8 @@ Synapse's pipeline allocation stays **flat at 72 B** regardless of behavior coun
 
 - **Pipelines** — Synapse is fastest and flat-allocating; the gap widens as behaviors stack.
 - **Send (response)** — Mediator edges ahead on raw speed; Synapse allocates less.
-- **Send (void)** — Synapse beats Mediator (18.1 vs 20.2 ns) and allocates nothing.
-- **Publish** — Mediator's generated fan-out wins; Synapse is ~2.75× faster than MediatR.
+- **Send (void)** — Synapse beats Mediator (17.6 vs 22.4 ns) and allocates nothing.
+- **Publish** — Mediator's generated fan-out wins; Synapse is ~2.74× faster than MediatR.
 - All three vastly outperform reflection-based MediatR on both time and allocations.
 
 Pick based on your workload: pipeline-heavy / allocation-sensitive favors Synapse; raw publish throughput favors Mediator.

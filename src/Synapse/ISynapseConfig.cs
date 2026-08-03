@@ -67,7 +67,8 @@ public interface ISynapseConfig
     ///     Use this for handlers the source generator cannot see — handlers registered manually at runtime
     ///     (e.g. <see cref="RegisterRequestHandler{THandler,TRequest}" />) or declared in assemblies the
     ///     generator does not scan. Handlers the generator discovers are wired automatically when the assembly
-    ///     carries <c>[assembly: EnableSynapseCqrsBoundaryEnforcement]</c>. The registration is deduplicated and
+    ///     carries <c>[assembly: SynapseGlobalBehavior(typeof(CqrsBoundaryEnforcementBehavior&lt;&gt;))]</c>. The
+    ///     registration is deduplicated and
     ///     runs outermost via <see cref="IOrderedPipelineBehavior.First" />, so calling this for a request that
     ///     the generator also covers is harmless (the behavior is wired at most once). Registration is closed
     ///     (Native-AOT safe).
@@ -82,8 +83,8 @@ public interface ISynapseConfig
     ///     Use this for handlers the source generator cannot see — handlers registered manually at runtime
     ///     (e.g. <see cref="RegisterRequestHandler{THandler,TRequest,TResponse}" />) or declared in assemblies
     ///     the generator does not scan. Handlers the generator discovers are wired automatically when the
-    ///     assembly carries <c>[assembly: EnableSynapseCqrsBoundaryEnforcement]</c>. The registration is
-    ///     deduplicated and runs outermost via <see cref="IOrderedPipelineBehavior.First" />, so calling this for
+    ///     assembly carries <c>[assembly: SynapseGlobalBehavior(typeof(CqrsBoundaryEnforcementBehavior&lt;,&gt;))]</c>.
+    ///     The registration is deduplicated and runs outermost via <see cref="IOrderedPipelineBehavior.First" />, so calling this for
     ///     a request that the generator also covers is harmless (the behavior is wired at most once). Registration
     ///     is closed (Native-AOT safe).
     /// </remarks>
@@ -243,22 +244,6 @@ public interface ISynapseConfig
     ///     Configures options for the outbox retry, dead-letter and batch processing features.
     /// </summary>
     ISynapseConfig ConfigureOutbox(Action<OutboxOptions> configure);
-
-    /// <summary>
-    ///     Enables CQRS boundary enforcement.
-    /// </summary>
-    /// <remarks>
-    ///     Obsolete. Enforcement is now opted-in via the assembly attribute
-    ///     <c>[assembly: EnableSynapseCqrsBoundaryEnforcement]</c>, which lets the source generator emit closed
-    ///     (Native-AOT safe) registrations. The runtime path was removed; calling this with <c>enable:true</c>
-    ///     throws <see cref="NotSupportedException" /> so the loss of enforcement cannot pass silently.
-    /// </remarks>
-    [Obsolete(
-        "Runtime CQRS boundary enforcement was removed. Apply " +
-        "[assembly: EnableSynapseCqrsBoundaryEnforcement] so the source generator emits closed " +
-        "(Native-AOT safe) registrations. Calling this method with enable:true now throws.",
-        error: true)]
-    ISynapseConfig EnableCqrsBoundaryEnforcement(bool enable = true);
 
     /// <summary>
     ///     Adds a request validator.

@@ -9,6 +9,18 @@ public sealed record NotificationEntry
     public required string Product { get; init; }
     public required int Quantity { get; init; }
     public required DateTime ReceivedAt { get; init; }
+
+    /// <summary>
+    ///     The W3C trace id of the originating action — the same value the caller sent as <c>traceparent</c> and
+    ///     got back on the response, and the same one a tracing backend shows for this flow.
+    /// </summary>
+    public required string TraceId { get; init; }
+
+    /// <summary>
+    ///     The span id of whatever caused this notification. <c>GET /notifications</c> exposes it so the causality
+    ///     chain from the HTTP request to this "mail" is visible end to end.
+    /// </summary>
+    public string? CausationId { get; init; }
 }
 
 /// <summary>

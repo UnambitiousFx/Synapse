@@ -85,9 +85,19 @@ matching both `ServiceType` and `ImplementationType`. The two CQRS callers now u
 and the implementation type is the closed behavior. (Validators were already deduplicated via
 `TryAddEnumerable`.)
 
-> Note: the `*First` ordering helpers and all `Insert(0, …)` calls referenced in the original fix were
-> later removed by issue [009](009-behavior-order-not-honored-across-registration-sources.md); ordering
-> is now runtime-driven via `IOrderedPipelineBehavior`. The dedup guard described here is unchanged.
+> **Superseded — the mechanism above no longer exists.** Two later fixes replaced it:
+>
+> - Issue [009](009-behavior-order-not-honored-across-registration-sources.md) removed the `*First`
+>   ordering helpers and every `Insert(0, …)` call; ordering is now runtime-driven via
+>   `IOrderedPipelineBehavior`.
+> - Issue [019](019-behavior-dedup-is-lifetime-and-factory-blind.md) deleted
+>   `BehaviorAlreadyRegistered` / `CqrsBoundaryAlreadyRegistered` entirely: the
+>   `(ServiceType, ImplementationType)` key described here was lifetime-blind and missed factory and
+>   instance registrations. All behavior and CQRS registration now goes through `TryAddEnumerable`
+>   keyed by an `EffectiveImplementationType` helper, and a lifetime conflict throws.
+>
+> The property this issue asserts — one registration, one execution per request — still holds; only the
+> means changed. `test/Synapse.Tests/PipelineBehaviorDeduplicationTests.cs` remains the guard.
 
 **Verification.** Covered by `test/Synapse.Tests/PipelineBehaviorDeduplicationTests.cs`: two identical
 `IRegisterGroup`s register the same closed behavior; tests assert a single service descriptor survives

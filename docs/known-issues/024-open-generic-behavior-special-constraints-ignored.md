@@ -113,4 +113,4 @@ would require live symbols at cross-product time):
 **Verification.** Added generator tests covering `struct`/`class`/`new()`/`unmanaged` and a combined
 named + special constraint case in `test/Synapse.Generator.Tests/GeneratorBehaviorTests.cs`, each
 asserting the correct subset is registered **and** that the generated `RegisterGroup.g.cs` compiles with
-no errors (`AssertGeneratedCompiles`). All generator tests (53) and runtime tests (177) pass.
+no errors (`AssertGeneratedCompiles`). Full generator and runtime suites pass.

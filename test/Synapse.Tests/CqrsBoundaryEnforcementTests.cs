@@ -9,7 +9,8 @@ namespace UnambitiousFx.Synapse.Tests;
 public sealed class CqrsBoundaryEnforcementTests
 {
     // Exercises the public runtime enforcement API. It is the same closed registration the source generator
-    // emits per discovered handler for [assembly: EnableSynapseCqrsBoundaryEnforcement], and the supported way
+    // emits per discovered handler for [assembly: SynapseGlobalBehavior(typeof(CqrsBoundaryEnforcementBehavior<>))],
+    // and the supported way
     // to enforce manually-registered handlers the generator cannot see (known-issue 018). Enforcement only
     // fires when every request type involved (outer + nested) carries the behavior.
     private static void EnableCqrs<TRequest>(ISynapseConfig cfg)
@@ -318,7 +319,7 @@ public sealed class CqrsBoundaryEnforcementTests
     }
 
     [Fact]
-    public async Task EnableCqrsBoundaryEnforcement_should_be_disabled_by_default()
+    public async Task CqrsBoundaryEnforcement_WhenNotRegistered_IsDisabled()
     {
         // Arrange
         var services = new ServiceCollection()
@@ -327,7 +328,7 @@ public sealed class CqrsBoundaryEnforcementTests
         {
             cfg.RegisterRequestHandler<FirstRequestHandlerThatSendsSecondRequest, FirstRequest>();
             cfg.RegisterRequestHandler<ValidSecondRequestHandler, SecondRequest>();
-            // Not calling EnableCqrsBoundaryEnforcement at all - should be disabled by default
+            // Not calling RegisterCqrsBoundaryEnforcement at all - should be disabled by default
         });
         var provider = services.BuildServiceProvider();
         var sender = provider.GetRequiredService<IInvoker>();
@@ -357,7 +358,7 @@ public sealed class CqrsBoundaryEnforcementTests
                 await sender.InvokeAsync(new FirstRequest(), TestContext.Current.CancellationToken)
             );
 
-        Assert.Contains("CQRS boundary enforcement metadata was missing", exception.Message);
+        Assert.Contains("CQRS boundary enforcement marker was missing", exception.Message);
         Assert.Contains("violation of the CQRS boundary enforcement behavior", exception.Message);
     }
 
@@ -382,7 +383,7 @@ public sealed class CqrsBoundaryEnforcementTests
             await sender.InvokeAsync(new FirstRequestWithResponse(), TestContext.Current.CancellationToken)
         );
 
-        Assert.Contains("CQRS boundary enforcement metadata was missing", exception.Message);
+        Assert.Contains("CQRS boundary enforcement marker was missing", exception.Message);
         Assert.Contains("violation of the CQRS boundary enforcement behavior", exception.Message);
     }
 
@@ -538,8 +539,8 @@ public sealed class CqrsBoundaryEnforcementTests
         public ValueTask<Result> HandleAsync(FirstRequest request,
             CancellationToken cancellationToken = default)
         {
-            // Malicious attempt to remove the boundary enforcement key
-            _context.RemoveMetadata("__CQRSBoundaryEnforcement");
+            // Malicious attempt to remove the boundary enforcement marker
+            _context.RemoveFeature<CqrsBoundaryFeature>();
             return new ValueTask<Result>(Result.Success());
         }
     }
@@ -558,8 +559,8 @@ public sealed class CqrsBoundaryEnforcementTests
         public ValueTask<Result<int>> HandleAsync(FirstRequestWithResponse request,
             CancellationToken cancellationToken = default)
         {
-            // Malicious attempt to remove the boundary enforcement key
-            _context.RemoveMetadata("__CQRSBoundaryEnforcement");
+            // Malicious attempt to remove the boundary enforcement marker
+            _context.RemoveFeature<CqrsBoundaryFeature>();
             return new ValueTask<Result<int>>(Result.Success(42));
         }
     }

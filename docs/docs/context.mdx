@@ -1,12 +1,20 @@
 ---
 sidebar_position: 6
 title: Context
-description: Per-DI-scope correlation ID, metadata bag, and extensible feature system that flows through every handler and pipeline behavior.
+description: Per-DI-scope flow identity, propagated baggage, and an extensible feature system that flows through every handler and pipeline behavior.
 ---
 
 # Context
 
-`IContext` is a per-DI-scope object that flows through every step of a request's lifecycle — the handler, all pipeline behaviors, and any events published during that request. It provides a correlation ID, a metadata bag, and an extensible feature system.
+`IContext` is a per-DI-scope object that flows through every step of a request's lifecycle — the handler, all pipeline behaviors, and any events published during that request. It carries three separate surfaces, and which one you reach for is decided by a single question: **does this value need to leave the process?**
+
+| Surface      | Type                       | Crosses process boundaries | Use for                                          |
+| ------------ | -------------------------- | -------------------------- | ------------------------------------------------ |
+| **Identity** | typed properties           | yes, always                | the flow ids and timestamp                       |
+| **Baggage**  | `string` → `string`, capped | yes, always                | small business values (`tenant.id`, `user.id`)   |
+| **Features** | `IContextFeature`          | never                      | process-local typed state                        |
+
+The split is deliberate. A single untyped `string → object` bag cannot answer that question — anything in it might or might not be serializable, might or might not be safe to send to another service — so the three surfaces make the answer a property of *where you put the value* rather than a convention you have to remember.
 
 ## Lifecycle
 
@@ -28,54 +36,107 @@ flowchart LR
 
 The context is created lazily on first access via `IContextFactory`, then cached on `IContextAccessor` for the lifetime of the scope.
 
-## Correlation ID
+## Flow identity
 
-Every context carries a `CorrelationId` (`Guid`). The default factory generates this with `Guid.CreateVersion7()` (.NET 9+) or `Guid.NewGuid()` on earlier runtimes.
+Identity **is** W3C trace context — not a parallel scheme that sits beside it. `TraceId` is the 32-character hex trace id, byte for byte what your tracing backend displays, so one search string works in both your application logs and Jaeger, Tempo or Application Insights.
+
+| Property     | Type              | Lifetime                            | Purpose                                                                     |
+| ------------ | ----------------- | ----------------------------------- | --------------------------------------------------------------------------- |
+| `TraceId`    | `string`          | constant for the whole business flow | groups every request, message and retry stemming from one originating action |
+| `CausationId` | `string?`         | the immediate predecessor's span id  | builds the causality **tree**; `null` at the root of a flow                  |
+| `OccurredAt` | `DateTimeOffset`  | fixed at creation                    | when this unit of work entered the system                                    |
 
 ```csharp
-public class MyHandler : IRequestHandler<MyCommand, Guid>
+public class MyHandler : IRequestHandler<MyCommand, string>
 {
     private readonly IContext _context;
 
     public MyHandler(IContext context) => _context = context;
 
-    public ValueTask<Result<Guid>> HandleAsync(MyCommand cmd, CancellationToken ct = default)
+    public ValueTask<Result<string>> HandleAsync(MyCommand cmd, CancellationToken ct = default)
     {
-        var correlationId = _context.CorrelationId;
-        // use correlationId for logging, tracing, audit ...
-        return ValueTask.FromResult(Result.Success(correlationId));
+        var traceId = _context.TraceId;      // the whole flow — paste this into Jaeger
+        var causedBy = _context.CausationId; // the span that caused this unit of work
+        return ValueTask.FromResult(Result.Success(traceId));
     }
 }
 ```
 
-With the ASP.NET Core integration, `UseCorrelationId()` reads the `X-Correlation-Id` request header and sets it on the context, then echoes it back in the response. See [ASP.NET Core Integration](./aspnetcore#correlation-id-middleware).
+### Where `TraceId` comes from
 
-## Metadata
+Three sources, in order:
 
-The metadata bag is a `string → object` dictionary attached to the context. Use it to propagate ambient values through the request lifecycle without adding them to every method signature.
+1. the inbound `traceparent` header, parsed at the boundary;
+2. `Activity.Current.TraceId`, when an activity exists;
+3. a freshly minted trace id.
+
+Step 3 is why `AddSynapse` works with **no** OpenTelemetry configured. With no registered `ActivityListener`, `ActivitySource.StartActivity` returns `null` and `Activity.Current` stays null, so a purely computed property would leave you with no id at all — no correlation in the log scope and an empty outbox partition key. `TraceId` is therefore never null or empty.
+
+:::note It equals the ambient activity
+Whenever an activity exists, `context.TraceId == Activity.Current.TraceId.ToHexString()` — because that is
+where the value came from. It is captured once at context creation rather than read on each access, so it
+also stays stable if an unrelated root activity starts mid-request, and it avoids re-allocating the hex
+string on every read.
+:::
+
+:::note When is `CausationId` set?
+It is the **sender's span id**, taken from the inbound `traceparent`. Two consequences:
+
+- It is `null` when nothing upstream was recording. Causation is a diagnostic nicety; `TraceId` is
+  always present.
+- One context exists per DI scope, and that context *is* the unit of work. An event published with
+  `EmitMode.Now` is dispatched inside the same scope, so nothing was crossed and `CausationId` does not
+  change. It becomes meaningful when a **boundary** is crossed and a new context is built — an event
+  dispatched from the outbox, a message consumed from a broker, or an inbound HTTP call.
+:::
+
+Identity is recovered at an inbound boundary and stamped onto outbound calls automatically — see [Propagation](./propagation.mdx).
+
+## Baggage
+
+Baggage is the only free-form state that crosses process boundaries. It is propagated as the W3C `baggage` header, so it is string-keyed, string-valued and size-limited.
 
 ```csharp
-// Write
-context.SetMetadata("TenantId", "acme");
+// Returns false if the entry was rejected — see the limits below
+context.SetBaggage("tenant.id", "acme");
 
-// Read with type safety
-if (context.TryGetMetadata<string>("TenantId", out var tenantId))
+if (context.TryGetBaggage("tenant.id", out var tenantId))
     Console.WriteLine(tenantId);
 
-// Read directly (returns null if missing)
-var tenantId = context.GetMetadata<string>("TenantId");
+var tenantId = context.GetBaggage("tenant.id"); // null if missing
 ```
 
-`DefaultContextFactory` automatically stores `OccuredAt` (`DateTimeOffset.UtcNow`) in metadata at context creation time.
+`SetBaggage` returns `bool` rather than throwing. W3C caps baggage at **64 entries and 8192 bytes** (`BaggageLimits`), and an entry that would exceed either cap, or whose key or value cannot be serialized into a header, is refused. Rejection is reported rather than raised so that oversized *inbound* baggage from a peer degrades instead of failing the request. If you care whether an entry made it, check the return value and log it.
+
+The byte budget counts the **percent-encoded** form, because that is what the header carries: a value full of commas or accented characters costs up to three bytes per byte. Keys must be header tokens — no commas, equals signs, whitespace or control characters — while values may contain anything but control characters, since they are escaped on the way out.
+
+:::warning
+Baggage travels to **every** downstream service, including third parties outside your control, and it persists across hops Synapse does not manage. Never put confidential values in it — no tokens, no personal data, no internal identifiers you would not put in a URL.
+:::
+
+For state that must stay in this process, use a [feature](#feature-bag) instead. Features are never serialized.
 
 ## Context factories
 
 Two built-in factories are available. Configure them in `AddSynapse`:
 
-| Factory                 | What it creates                                                                                          |
-| ----------------------- | -------------------------------------------------------------------------------------------------------- |
-| `DefaultContextFactory` | New Guid v7 correlation ID + `OccuredAt` metadata + captures current `Activity` for distributed tracing. |
-| `SlimContextFactory`    | Bare context — just a new `Guid`. No metadata, no tracing.                                               |
+| Factory                 | What it creates                                                        |
+| ----------------------- | ---------------------------------------------------------------------- |
+| `DefaultContextFactory` | Flow identity from trace context, plus any inbound baggage.            |
+| `SlimContextFactory`    | The same identity, but inbound baggage is **discarded**.                 |
+
+Both take the inbound state as a parameter — `IContextFactory.Create(PropagatedContext inbound)` — so identity is decided **when the context is created**, never patched onto it afterwards. See [Propagation](./propagation.mdx#why-extraction-happens-at-creation) for why that matters.
+
+`SlimContextFactory` differs only in dropping baggage: there is no cheaper trace id to generate, so identity is identical. Choose it when the application does not propagate business values and does not want to pay for parsing and holding them. It has to be selected explicitly, so dropping baggage is a stated decision rather than a surprise.
+
+:::note
+The context does not snapshot trace or span ids. Distributed tracing state lives on
+`Activity.Current`, which is ambient (`AsyncLocal`) and always reflects the *current* span — a
+snapshot taken at context creation would go stale as pipeline stages start child activities. Read
+`Activity.Current` directly, or use the `Unambitious.Synapse` `ActivitySource` (see
+[Observability](./observability.mdx)). Trace context still travels across boundaries; it is just not
+stored on the context. See [Propagation](./propagation.mdx#one-identity-w3c-trace-context).
+:::
 
 ```csharp
 services.AddSynapse(cfg =>
@@ -157,29 +218,41 @@ var user = context.MustGetFeature<UserFeature>();
 
 ## Publishing events from handlers
 
-`IContext` exposes `PublishEventAsync` as syntactic sugar over `IEmitter.EmitAsync`. This lets handlers publish events without injecting `IEmitter` separately:
+The context carries flow state; it does not publish. Inject `IEmitter` to publish and `IOutboxCommit` to commit:
 
 ```csharp
-await context.PublishEventAsync(new TaskCreatedEvent(id, cmd.Title), ct);
+public class CreateTaskHandler(IEmitter emitter, IOutboxCommit outboxCommit) { ... }
+
+await emitter.EmitAsync(new TaskCreatedEvent(id, cmd.Title), ct);
 
 // With explicit emit mode
-await context.PublishEventAsync(new TaskCreatedEvent(id, cmd.Title), EmitMode.Outbox, ct);
+await emitter.EmitAsync(new TaskCreatedEvent(id, cmd.Title), EmitMode.Outbox, ct);
+
+// Dispatch what the outbox is holding
+await outboxCommit.CommitAsync(ct);
 ```
+
+`IContext` used to expose `PublishEventAsync` and `CommitEventsAsync` as sugar over these two. They were removed in v2: the sugar made the context depend on the publish stack, which in turn forced the outbox to reach the current flow through ambient `AsyncLocal` state instead of taking the accessor as a dependency. See [Migrating to v2](./migration-v2.mdx#5-icontext-no-longer-publishes-events).
 
 ## Injecting the context
 
-`IContext` and `IContextAccessor` are registered in DI. Inject either one depending on whether you need to set or just read the context:
+`IContext` and `IContextAccessor` are both registered in DI, and both resolve to the same object for the scope:
 
 ```csharp
-// Read-only — inject IContext directly
+// The usual case — inject IContext directly
 public class MyHandler(IContext context) : IRequestHandler<MyQuery, string>  { ... }
 
-// Write — inject IContextAccessor to also be able to set the context
+// Inject IContextAccessor when you need to know whether a context exists yet
 public class MyMiddleware(IContextAccessor contextAccessor) { ... }
 ```
 
+`IContextAccessor` adds one thing over `IContext`: `IsInitialized`. Reading `Context` is what *creates* the context, so a component that only wants to observe a context that already exists — a response-header writer, an outbound HTTP handler — must ask `IsInitialized` first. Reading `Context` to find out would always answer "yes".
+
+The context cannot be replaced once created. Inbound identity is supplied to the factory instead, via `IInboundContextStore` — see [Propagation](./propagation.mdx#why-extraction-happens-at-creation).
+
 ## See also
 
-- [ASP.NET Core Integration](./aspnetcore) — `UseCorrelationId()` middleware.
+- [Propagation](./propagation.mdx) — carrying flow identity across HTTP calls, messages and the outbox.
+- [ASP.NET Core Integration](./aspnetcore) — `UseSynapsePropagation()` middleware.
 - [Pipeline Behaviors](./pipelines) — set context features in behaviors before the handler runs.
-- [Events](./events) — `IContext.PublishEventAsync` and `EmitMode`.
+- [Events](./events) — `IEmitter.EmitAsync` and `EmitMode`.

@@ -5,8 +5,9 @@
 **Discovered on:** `feature/typed-pipeline-behaviors`, .NET 10, `PublishAot=true`  
 **Status:** ✅ **Resolved** on `feature/typed-pipeline-behaviors` — see [Resolution](#resolution).
 
-> **TL;DR.** CQRS boundary enforcement is now opted-in via the assembly attribute
-> `[assembly: EnableSynapseCqrsBoundaryEnforcement]`; the source generator emits **closed**
+> **TL;DR.** CQRS boundary enforcement is now opted-in via
+> `[assembly: SynapseGlobalBehavior(typeof(CqrsBoundaryEnforcementBehavior<>))]` and its with-response
+> variant; the source generator emits **closed**
 > `CqrsBoundaryEnforcementBehavior<TRequest, TResponse>` registrations (one per request handler,
 > inserted at the front of the pipeline). User behaviors should use `[PipelineBehavior]` for the same
 > closed-registration treatment. Value-type responses (`IRequest<Guid>`, `IRequest<int>`) now work
@@ -150,11 +151,8 @@ the existing `[PipelineBehavior]` path for user behaviors, plus Option B (`[Requ
 guard-rail on the remaining runtime open-generic APIs.
 
 **1. CQRS enforcement is now opted-in via an assembly attribute.**
-A runtime fluent call is invisible to the source generator, so enforcement is expressed as
-`[assembly: EnableSynapseCqrsBoundaryEnforcement]`
-(`src/Synapse.Abstractions/EnableSynapseCqrsBoundaryEnforcementAttribute.cs`). The generator detects it
-(`CompilationExtensions.IsCqrsBoundaryEnforcementEnabled`) and, for each discovered request handler, emits
-a **closed** registration:
+A runtime fluent call is invisible to the source generator, so enforcement is expressed as an assembly
+attribute the generator can see. For each discovered request handler it emits a **closed** registration:
 
 ```csharp
 // Generated in RegisterGroup.g.cs — closed over the concrete (value-type) response, AOT-safe:
@@ -168,9 +166,12 @@ front-insertion helper; see issue
 [009](009-behavior-order-not-honored-across-registration-sources.md) for why ordering moved to the
 runtime interface.)
 
-`cfg.EnableCqrsBoundaryEnforcement()` is now `[Obsolete]` and a no-op (registering it alongside the
-generated closed registrations would double-wrap the pipeline and make `CqrsBoundaryMetadata.Validate()`
-throw on every request).
+`cfg.EnableCqrsBoundaryEnforcement()` was deprecated here, because registering it alongside the
+generated closed registrations would double-wrap the pipeline and make the boundary marker's
+`Validate()` throw on every request. It started as a silent no-op; issue
+[015](015-enablecqrsboundaryenforcement-is-a-silent-noop.md) showed that silently dropping enforcement
+was worse than failing, so it became `[Obsolete(error: true)]` and threw `NotSupportedException` when
+called with `enable: true`. It was deleted outright in v2.
 
 **2. User open-generic behaviors use `[PipelineBehavior]` (or `[assembly: SynapseGlobalBehavior]`).**
 The generator already cross-products `[PipelineBehavior]`-attributed open generics into closed
@@ -178,9 +179,11 @@ registrations (honouring generic constraints). `examples/MinimalApi`'s `Authoriz
 carries `[PipelineBehavior]` instead of being registered via `cfg.AddOpenGenericRequestWithResponsePipelineBehavior(...)`.
 For behaviors the consumer does not own (e.g. shipped in a referenced NuGet package, so they cannot be
 decorated at the source), `[assembly: SynapseGlobalBehavior(typeof(MyBehavior<,>))]` opts into the same
-closed cross-product from the composition root. The CQRS opt-in is now itself expressed this way:
-`[assembly: EnableSynapseCqrsBoundaryEnforcement]` is a (deprecated) alias for
-`[assembly: SynapseGlobalBehavior(typeof(CqrsBoundaryEnforcementBehavior<>))]` plus its with-response variant.
+closed cross-product from the composition root. The CQRS opt-in is itself expressed this way — apply
+`[assembly: SynapseGlobalBehavior(typeof(CqrsBoundaryEnforcementBehavior<>))]` and
+`[assembly: SynapseGlobalBehavior(typeof(CqrsBoundaryEnforcementBehavior<,>))]`. (A dedicated
+`[assembly: EnableSynapseCqrsBoundaryEnforcement]` alias existed for these two until v2 removed it —
+see the "Migrating to v2" doc page.)
 
 **3. Runtime open-generic APIs that can close over a value type are annotated.**
 `AddOpenGenericRequestWithResponsePipelineBehavior` and `AddOpenGenericStreamRequestPipelineBehavior` are

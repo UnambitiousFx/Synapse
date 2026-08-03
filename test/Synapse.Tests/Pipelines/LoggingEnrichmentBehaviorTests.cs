@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using JetBrains.Annotations;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
@@ -16,14 +17,17 @@ public sealed class LoggingEnrichmentBehaviorTests
     {
         // Arrange (Given)
         var context = Substitute.For<IContext>();
-        var correlationId = Guid.NewGuid();
-        var metadata = new Dictionary<string, object>
+        var traceId = ActivityTraceId.CreateRandom().ToHexString();
+        var causationId = ActivitySpanId.CreateRandom().ToHexString();
+        var baggage = new Dictionary<string, string>
         {
-            ["Tenant"] = "contoso"
+            ["tenant.id"] = "contoso"
         };
 
-        context.CorrelationId.Returns(correlationId);
-        context.Metadata.Returns(metadata);
+        context.TraceId.Returns(traceId);
+        context.CausationId.Returns(causationId);
+        context.OccurredAt.Returns(DateTimeOffset.UnixEpoch);
+        context.Baggage.Returns(baggage);
 
         var logger = Substitute.For<ILogger<LoggingEnrichmentBehavior<RequestWithResponseExample, int>>>();
         var scope = Substitute.For<IDisposable>();
@@ -50,7 +54,61 @@ public sealed class LoggingEnrichmentBehaviorTests
         Assert.True(disposed);
         logger.Received(1).BeginScope(Arg.Is<Dictionary<string, object>>(state =>
             state != null &&
-            state.ContainsKey("CorrelationId") &&
-            state.ContainsKey("Metadata_Tenant")));
+            state.ContainsKey("TraceId") &&
+            state.ContainsKey("CausationId") &&
+            state.ContainsKey("OccurredAt") &&
+            state.ContainsKey("Baggage_tenant.id")));
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenCausationIdIsNull_OmitsItFromScope()
+    {
+        // Arrange (Given)
+        var context = Substitute.For<IContext>();
+        context.TraceId.Returns(ActivityTraceId.CreateRandom().ToHexString());
+        context.CausationId.Returns((string?)null);
+        context.OccurredAt.Returns(DateTimeOffset.UnixEpoch);
+        context.Baggage.Returns(new Dictionary<string, string>());
+
+        var logger = Substitute.For<ILogger<LoggingEnrichmentBehavior<RequestWithResponseExample, int>>>();
+        logger.BeginScope(Arg.Any<Dictionary<string, object>>()).Returns(Substitute.For<IDisposable>());
+
+        var behavior = new LoggingEnrichmentBehavior<RequestWithResponseExample, int>(context, logger);
+        RequestHandlerDelegate<RequestWithResponseExample, int> next =
+            (_, _) => new ValueTask<Result<int>>(Result.Success(42));
+
+        // Act (When)
+        await behavior.HandleAsync(new RequestWithResponseExample(), next, TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        logger.Received(1).BeginScope(Arg.Is<Dictionary<string, object>>(state =>
+            state != null && !state.ContainsKey("CausationId")));
+    }
+
+    [Fact]
+    public async Task HandleAsync_WithContextFeatures_DoesNotLeakThemIntoScope()
+    {
+        // Arrange (Given) — features are process-local state such as the CQRS boundary marker, which
+        // previously reached the log scope through the untyped metadata dictionary.
+        var context = Substitute.For<IContext>();
+        context.TraceId.Returns(ActivityTraceId.CreateRandom().ToHexString());
+        context.OccurredAt.Returns(DateTimeOffset.UnixEpoch);
+        context.Baggage.Returns(new Dictionary<string, string>());
+
+        var logger = Substitute.For<ILogger<LoggingEnrichmentBehavior<RequestWithResponseExample, int>>>();
+        logger.BeginScope(Arg.Any<Dictionary<string, object>>()).Returns(Substitute.For<IDisposable>());
+
+        var behavior = new LoggingEnrichmentBehavior<RequestWithResponseExample, int>(context, logger);
+        RequestHandlerDelegate<RequestWithResponseExample, int> next =
+            (_, _) => new ValueTask<Result<int>>(Result.Success(42));
+
+        // Act (When)
+        await behavior.HandleAsync(new RequestWithResponseExample(), next, TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        logger.Received(1).BeginScope(Arg.Is<Dictionary<string, object>>(state =>
+            state != null &&
+            !state.Keys.Any(key => key.Contains("CQRS", StringComparison.Ordinal)) &&
+            !state.Keys.Any(key => key.StartsWith("Metadata_", StringComparison.Ordinal))));
     }
 }

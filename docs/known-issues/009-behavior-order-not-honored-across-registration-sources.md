@@ -83,7 +83,9 @@ does not is treated as `Last` (innermost).
 LINQ `OrderBy` is stable, so behaviors that share an `Order` keep their registration order.
 
 **3. No more front-insertion contention.** Both `RegisterCqrsBoundaryEnforcement` overloads switched
-from `services.Insert(0, …)` to `services.Add(…)`; `CqrsBoundaryEnforcementBehavior` implements
+from `services.Insert(0, …)` to a plain append (`services.Add(…)` at the time, `TryAddEnumerable` since
+issue [019](019-behavior-dedup-is-lifetime-and-factory-blind.md) unified all behavior registration);
+`CqrsBoundaryEnforcementBehavior` implements
 `IOrderedPipelineBehavior` with `First` (outermost), and `RequestValidationBehavior` with `Last`
 (innermost). The redundant `RegisterRequestPipelineBehaviorFirst` helpers and all `Insert(0, …)`
 calls were removed.

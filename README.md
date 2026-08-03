@@ -120,18 +120,25 @@ Event behaviors (`IEventPipelineBehavior<TEvent>`) and stream behaviors get the 
 including `where TEvent : …` / `where TRequest : …` constraint filtering, so an open-generic event
 behavior constrained to a marker interface only wraps events that implement it.
 
-**CQRS boundary enforcement** follows the same downward propagation. Apply
-`[assembly: EnableSynapseCqrsBoundaryEnforcement]` once at the composition root and it covers request
-handlers in referenced assemblies too — no need to repeat the attribute in every sub-project. Leaving
-it on a referenced library is harmless: duplicate enforcement registrations are deduplicated at the
-service-collection level (the behavior is not idempotent, so this dedup is what keeps it safe).
+**CQRS boundary enforcement** follows the same downward propagation. Register the built-in behavior
+globally once at the composition root:
+
+```csharp
+[assembly: SynapseGlobalBehavior(typeof(CqrsBoundaryEnforcementBehavior<>))]
+[assembly: SynapseGlobalBehavior(typeof(CqrsBoundaryEnforcementBehavior<,>))]
+```
+
+That covers request handlers in referenced assemblies too — no need to repeat the attributes in every
+sub-project. Leaving them on a referenced library is harmless: duplicate enforcement registrations are
+deduplicated at the service-collection level (the behavior is not idempotent, so this dedup is what
+keeps it safe).
 
 To opt an assembly out and restrict its behaviors (and CQRS enforcement) to same-assembly handlers,
 apply `[assembly: DisableSynapseCrossAssemblyBehaviors]`.
 
 Handlers the generator cannot see — those registered manually at runtime via
 `cfg.RegisterRequestHandler<…>()`, or living in an assembly the generator does not scan — are not
-covered by the attribute. Enforce them explicitly with
+covered by the attributes. Enforce them explicitly with
 `cfg.RegisterCqrsBoundaryEnforcement<TRequest>()` (or the `<TRequest, TResponse>` overload) in the
 composition root. The registration is closed (Native-AOT safe) and deduplicated, so it is safe to
 call even for a request the generator also covers.
