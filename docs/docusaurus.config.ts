@@ -210,6 +210,30 @@ const config: Config = {
       darkTheme: prismThemes.dracula,
       additionalLanguages: ['csharp'],
     },
+    algolia: {
+      // The application ID provided by Algolia
+      appId: '7E7V89X5BP',
+
+      // Public API key: it is safe to commit it
+      apiKey: '74e0673104a4ecb4fe9ffed3d4601873',
+
+      indexName: 'Unambitious - Synapse',
+
+      // Optional: see doc section below
+      contextualSearch: true,
+
+      // Optional: Specify domains where the navigation should occur through window.location instead on history.push. Useful when our Algolia config crawls multiple documentation sites and we want to navigate with window.location.href to them.
+      externalUrlRegex: 'external\\.com|domain\\.com',
+
+      // Optional: Algolia search parameters
+      searchParameters: {},
+
+      // Optional: path for search page that enabled by default (`false` to disable it)
+      searchPagePath: 'search',
+
+      // Optional: whether the insights feature is enabled or not on Docsearch (`false` by default)
+      insights: false,
+    },
   } satisfies Preset.ThemeConfig,
 };
 
