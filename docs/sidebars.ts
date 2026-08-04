@@ -13,7 +13,7 @@ const sidebars: SidebarsConfig = {
       type: 'category',
       label: 'Core Concepts',
       collapsed: false,
-      items: ['commands-and-queries', 'events', 'streaming', 'context'],
+      items: ['commands-and-queries', 'events', 'streaming', 'context', 'propagation'],
     },
     {
       type: 'category',
@@ -33,7 +33,7 @@ const sidebars: SidebarsConfig = {
     {
       type: 'category',
       label: 'Project',
-      items: ['examples', 'changelog', 'using-with-ai'],
+      items: ['examples', 'changelog', 'using-with-ai', 'migration-v2'],
     },
   ],
 };
