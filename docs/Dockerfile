@@ -22,7 +22,7 @@ COPY . .
 RUN pnpm build
 
 # ---- serve: nginx over the static output -----------------------------------
-FROM nginx:1.29-alpine AS serve
+FROM nginx:1.31-alpine AS serve
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/build /usr/share/nginx/html
 EXPOSE 8080
