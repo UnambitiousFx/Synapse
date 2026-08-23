@@ -197,7 +197,8 @@ jobs:
           # A 201 with Location proves declarative success mapping through the generated
           # binder and TypedResults.Created works.
           headers=$(curl -s -D - -o /dev/null -X POST http://localhost:5200/tasks \
-                     -H 'Content-Type: application/json' -d '{"title":"ci"}')
+                     -H 'Content-Type: application/json' -d '{"title":"ci"}') \
+            || fail "POST /tasks got no response — did the server crash?"
           code=$(echo "$headers" | head -1 | tr -d '\r' | awk '{print $2}')
           [ "$code" = "201" ] || fail "POST /tasks returned $code, expected 201"
           echo "$headers" | grep -qi '^location:' || fail "POST /tasks response missing Location header"
@@ -207,10 +208,14 @@ jobs:
           echo "$body" | grep -q '"title"' || fail "GET /tasks body did not look like task JSON: $body"
 
           # A void command proves the 204 path (the IHttpInvoker overload added for void arity).
-          id=$(echo "$body" | grep -o '"id":"[^"]*' | head -1 | cut -d'"' -f4)
-          [ -n "$id" ] || fail "Could not extract a task id from GET /tasks body: $body"
+          id=$(echo "$body" | grep -o '"id":"[^"]*' | head -1 | cut -d'"' -f4) \
+            || fail "Could not extract a task id from GET /tasks body: $body"
+          # Belt-and-braces: the grep above can match "id":"" (empty value) and still exit 0,
+          # which the guard on the assignment above cannot catch.
+          [ -n "$id" ] || fail "Extracted task id was empty from GET /tasks body: $body"
           code=$(curl -s -o /dev/null -w '%{http_code}' -X PUT "http://localhost:5200/tasks/$id" \
-                   -H 'Content-Type: application/json' -d '{"title":"ci-updated"}')
+                   -H 'Content-Type: application/json' -d '{"title":"ci-updated"}') \
+            || fail "PUT /tasks/$id got no response — did the server crash?"
           [ "$code" = "204" ] || fail "PUT /tasks/$id returned $code, expected 204"
 
           # Streaming, both transports negotiated on Accept.
@@ -228,10 +233,17 @@ jobs:
             || fail "OpenAPI document missing or does not contain /tasks"
 
           # A random, non-existent id proves failure mapping through DefaultFailureHttpMapper
-          # and ProblemDetails serialization, another AOT hazard in its own right.
-          code=$(curl -s -o /dev/null -w '%{http_code}' \
-                   "http://localhost:5200/tasks/00000000-0000-0000-0000-000000000000")
+          # and ProblemDetails serialization, another AOT hazard in its own right. Assert the
+          # body actually looks like ProblemDetails, not just the status code, matching the
+          # standard applied to the OpenAPI check above.
+          notfound_response=$(curl -s -w $'\nHTTP_STATUS:%{http_code}' \
+                     "http://localhost:5200/tasks/00000000-0000-0000-0000-000000000000") \
+            || fail "GET /tasks/{unknown-guid} got no response — did the server crash?"
+          code=$(echo "$notfound_response" | grep -o 'HTTP_STATUS:[0-9]*' | cut -d: -f2)
+          notfound_body=$(echo "$notfound_response" | sed '$d')
           [ "$code" = "404" ] || fail "GET /tasks/{unknown-guid} returned $code, expected 404"
+          echo "$notfound_body" | grep -q '"status":404' \
+            || fail "GET /tasks/{unknown-guid} body did not look like ProblemDetails: $notfound_body"
 
           kill "$PID" 2>/dev/null || true
           echo "Native AOT smoke test passed."
