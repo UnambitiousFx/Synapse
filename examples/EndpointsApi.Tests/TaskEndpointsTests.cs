@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
 using UnambitiousFx.Examples.EndpointsApi;
 using UnambitiousFx.Examples.EndpointsApi.Features.Tasks;
@@ -78,8 +79,15 @@ public sealed class TaskEndpointsTests : IClassFixture<WebApplicationFactory<Pro
 
     // Pins: failures still flow through the existing IFailureHttpMapper untouched — the dividend
     // of keeping the endpoint a thin adapter rather than special-casing error mapping per endpoint.
+    // GetTaskQueryHandler returns Result.FailNotFound(...), a typed NotFoundFailure; the default
+    // IFailureHttpMapper (UnambitiousFx.Functional.AspNetCore's DefaultFailureHttpMapper) maps that
+    // to 404 with a problem+json body — verified empirically by curling the running example
+    // (see task-21-report.md). Both halves of the claim — the status *and* the content type — are
+    // pinned here; a version that only checked "not success" would pass identically for the 500 a
+    // bare string Result.Failure(...) used to produce, which is exactly the gap that was found and
+    // fixed in Handlers.cs.
     [Fact]
-    public async Task Get_ForUnknownId_ReturnsAProblemDetailsFailure()
+    public async Task Get_ForUnknownId_Returns404ProblemDetails()
     {
         // Arrange
         var client = _factory.CreateClient();
@@ -88,7 +96,7 @@ public sealed class TaskEndpointsTests : IClassFixture<WebApplicationFactory<Pro
         var response = await client.GetAsync($"/tasks/{Guid.NewGuid()}", TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.False(response.IsSuccessStatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
         Assert.Contains("application/problem+json", response.Content.Headers.ContentType!.ToString());
     }
 
@@ -197,6 +205,15 @@ public sealed class TaskEndpointsTests : IClassFixture<WebApplicationFactory<Pro
     // exists to obtain. The emitted path omits the ":guid" route constraint (ASP.NET strips route
     // constraints from the OpenAPI path key), so it reads "/tasks/{taskId}", matching the source
     // route "/{taskId:guid}" with the constraint removed.
+    //
+    // Parses the document rather than substring-matching, because a bare Contains("\"/tasks\"")
+    // would pass even if minimal-API path registration produced the path with no schema metadata
+    // at all — path registration is driven by the route pattern, not by the (Delegate) cast this
+    // test exists to guard. Proven to discriminate: temporarily gutting the Accepts/WithMetadata
+    // calls in Endpoint<TRequest,TResponse>.CreateDescriptor's ApplyMetadata lambda
+    // (src/Synapse.Endpoints/Endpoint.Generic.cs) turns this test red (no requestBody/no schema)
+    // while a bare substring check on the path keys would have stayed green throughout — see
+    // task-21-report.md for both captured runs.
     [Fact]
     public async Task GetOpenApi_ReturnsADocumentContainingTheTaskPaths()
     {
@@ -205,9 +222,23 @@ public sealed class TaskEndpointsTests : IClassFixture<WebApplicationFactory<Pro
 
         // Act
         var document = await client.GetStringAsync("/openapi/v1.json", TestContext.Current.CancellationToken);
+        using var parsed = JsonDocument.Parse(document);
+        var paths = parsed.RootElement.GetProperty("paths");
 
-        // Assert
-        Assert.Contains("\"/tasks\"", document);
-        Assert.Contains("\"/tasks/{taskId}\"", document);
+        // Assert — "/tasks" exposes both verbs the example registers on it.
+        var tasksPath = paths.GetProperty("/tasks");
+        Assert.True(tasksPath.TryGetProperty("get", out _), "\"/tasks\" has no GET operation.");
+        Assert.True(tasksPath.TryGetProperty("post", out var postOperation), "\"/tasks\" has no POST operation.");
+
+        // Assert — the POST body's request schema landed (Task 2's Accepts<TRequest> call).
+        Assert.True(
+            postOperation.GetProperty("requestBody").GetProperty("content").TryGetProperty("application/json", out var requestMediaType),
+            "POST /tasks has no application/json request body.");
+        Assert.True(requestMediaType.TryGetProperty("schema", out _), "POST /tasks's request body has no schema.");
+
+        // Assert — "/tasks/{taskId}" has a GET with a documented response (Task 2's WithMetadata call).
+        var taskByIdPath = paths.GetProperty("/tasks/{taskId}");
+        var responses = taskByIdPath.GetProperty("get").GetProperty("responses");
+        Assert.True(responses.EnumerateObject().Any(), "GET /tasks/{taskId} has no documented responses.");
     }
 }

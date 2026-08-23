@@ -46,7 +46,7 @@ public sealed class GetTaskQueryHandler : IRequestHandler<GetTaskQuery, TaskDto>
         var task = _repository.GetById(request.TaskId);
         return ValueTask.FromResult(task is not null
             ? Result.Success(task)
-            : Result.Failure<TaskDto>($"Task {request.TaskId} not found"));
+            : Result.FailNotFound<TaskDto>("Task", request.TaskId.ToString()));
     }
 }
 
@@ -118,7 +118,7 @@ public sealed class UpdateTaskCommandHandler : IRequestHandler<UpdateTaskCommand
         var updated = _repository.Update(request.TaskId, request.Title);
         return ValueTask.FromResult(updated
             ? Result.Success()
-            : Result.Failure($"Task {request.TaskId} not found"));
+            : Result.FailNotFound("Task", request.TaskId.ToString()));
     }
 }
 
@@ -142,6 +142,6 @@ public sealed class DeleteTaskCommandHandler : IRequestHandler<DeleteTaskCommand
         var deleted = _repository.Delete(request.TaskId);
         return ValueTask.FromResult(deleted
             ? Result.Success()
-            : Result.Failure($"Task {request.TaskId} not found"));
+            : Result.FailNotFound("Task", request.TaskId.ToString()));
     }
 }
