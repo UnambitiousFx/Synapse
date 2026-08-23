@@ -473,4 +473,227 @@ public sealed class AdvisoryDiagnosticTests
         // Assert
         Assert.DoesNotContain(diagnostics, d => d.Id == "SYNE008");
     }
+
+    [Fact]
+    public void Generate_WhenTwoEndpointsShareOneMissingResponseType_ReportsSyne008Once()
+    {
+        // Arrange — GetThingEndpoint and GetOtherThingEndpoint both return the unregistered
+        // ThingDto. Once-per-type dedup (not once-per-endpoint) is the headline risk for this
+        // diagnostic, so this pins it directly rather than only by inspection.
+        const string source = """
+                              using System.Text.Json.Serialization;
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+
+                              namespace TestNs;
+
+                              public sealed record ThingDto(string Name);
+                              public sealed record GetThingQuery : IRequest<ThingDto>;
+                              public sealed record GetOtherThingQuery : IRequest<ThingDto>;
+
+                              [Get("/things")]
+                              public sealed class GetThingEndpoint : Endpoint<GetThingQuery, ThingDto>;
+
+                              [Get("/things/other")]
+                              public sealed class GetOtherThingEndpoint : Endpoint<GetOtherThingQuery, ThingDto>;
+
+                              [JsonSerializable(typeof(GetThingQuery))]
+                              [JsonSerializable(typeof(GetOtherThingQuery))]
+                              internal sealed partial class AppJsonContext : JsonSerializerContext;
+                              """;
+
+        // Act
+        var diagnostics = GeneratorHarness.GetDiagnostics(source);
+
+        // Assert
+        var diagnostic = Assert.Single(diagnostics, d => d.Id == "SYNE008");
+        Assert.Contains("ThingDto", diagnostic.GetMessage());
+    }
+
+    [Fact]
+    public void Generate_WhenMappedEndpointHttpResponseTypeIsUnregistered_ReportsSyne008()
+    {
+        // Arrange — MappedEndpoint<THttpRequest,TRequest,TResponse,THttpResponse>'s response body is
+        // THttpResponse (TypeArguments[3]), not TResponse; HttpThingRequest is registered so only the
+        // response side is left missing, pinning that index resolution specifically.
+        const string source = """
+                              using System.Text.Json.Serialization;
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+
+                              namespace TestNs;
+
+                              public sealed record HttpThingRequest(int ThingId);
+                              public sealed record CreateThingCommand(int ThingId) : IRequest<int>;
+                              public sealed record HttpThingResponse(int Id);
+
+                              [Post("/things")]
+                              public sealed class CreateThingEndpoint
+                                  : MappedEndpoint<HttpThingRequest, CreateThingCommand, int, HttpThingResponse>
+                              {
+                                  public override CreateThingCommand ToRequest(HttpThingRequest request) =>
+                                      new(request.ThingId);
+
+                                  public override HttpThingResponse ToResponse(int response) => new(response);
+                              }
+
+                              [JsonSerializable(typeof(HttpThingRequest))]
+                              internal sealed partial class AppJsonContext : JsonSerializerContext;
+                              """;
+
+        // Act
+        var diagnostics = GeneratorHarness.GetDiagnostics(source);
+
+        // Assert
+        var diagnostic = Assert.Single(diagnostics, d => d.Id == "SYNE008");
+        Assert.Contains("HttpThingResponse", diagnostic.GetMessage());
+    }
+
+    [Fact]
+    public void Generate_WhenStreamEndpointItemTypeIsUnregistered_ReportsSyne008()
+    {
+        // Arrange — StreamEndpoint<TRequest,TItem>'s streamed body is TItem (TypeArguments[1]), not
+        // TRequest; pins that index resolution for the Stream kind specifically.
+        const string source = """
+                              using System.Text.Json.Serialization;
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+
+                              namespace TestNs;
+
+                              public sealed record TickItemDto(int Value);
+                              public sealed record TickQuery : IStreamRequest<TickItemDto>;
+
+                              [Get("/ticks")]
+                              public sealed class TickEndpoint : StreamEndpoint<TickQuery, TickItemDto>;
+
+                              internal sealed partial class AppJsonContext : JsonSerializerContext;
+                              """;
+
+        // Act
+        var diagnostics = GeneratorHarness.GetDiagnostics(source);
+
+        // Assert
+        var diagnostic = Assert.Single(diagnostics, d => d.Id == "SYNE008");
+        Assert.Contains("TickItemDto", diagnostic.GetMessage());
+    }
+
+    [Fact]
+    public void Generate_WhenResponseTypeIsAFrameworkTypeNotOnAnyHardcodedList_DoesNotReportSyne008()
+    {
+        // Arrange — System.Half and System.Version are exactly the kind of "the framework added
+        // this later" types a hardcoded exclusion list would miss; the structural
+        // "is this type's own assembly a framework assembly" rule must exclude them without
+        // needing to know their names in advance.
+        const string source = """
+                              using System;
+                              using System.Text.Json.Serialization;
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+
+                              namespace TestNs;
+
+                              public sealed record GetVersionQuery : IRequest<Version>;
+
+                              [Get("/version")]
+                              public sealed class GetVersionEndpoint : Endpoint<GetVersionQuery, Version>;
+
+                              internal sealed partial class AppJsonContext : JsonSerializerContext;
+                              """;
+
+        // Act
+        var diagnostics = GeneratorHarness.GetDiagnostics(source);
+
+        // Assert
+        Assert.DoesNotContain(diagnostics, d => d.Id == "SYNE008");
+    }
+
+    [Fact]
+    public void Generate_WhenAFrameworkNamedAssemblyRegistersAConsumerType_DoesNotReportSyne008()
+    {
+        // Arrange — regression for Task 18 review fix round 1, finding 1: a compound false
+        // positive existed when the same framework-assembly filter was applied to both "does a
+        // context exist" and "what is registered". Here the main compilation's own (correctly
+        // named) context opens the gate, and a *separately compiled, deliberately
+        // "Microsoft."-prefixed* assembly is the only one that actually registers ThingDto. If the
+        // registered-set filter were still symmetric with the gate filter, ThingDto's registration
+        // would be dropped and this would wrongly report SYNE008.
+        const string contextSource = """
+                                      using System.Text.Json;
+                                      using System.Text.Json.Serialization;
+                                      using System.Text.Json.Serialization.Metadata;
+
+                                      namespace ContextLib;
+
+                                      public sealed record ThingDto(string Name);
+
+                                      [JsonSerializable(typeof(ThingDto))]
+                                      internal sealed class ContractsJsonContext : JsonSerializerContext
+                                      {
+                                          public ContractsJsonContext() : base(null)
+                                          {
+                                          }
+
+                                          protected override JsonSerializerOptions? GeneratedSerializerOptions => null;
+
+                                          public override JsonTypeInfo? GetTypeInfo(System.Type type) => null;
+                                      }
+                                      """;
+
+        // Deliberately named as if it were a framework assembly, to exercise IsFrameworkAssembly's
+        // exclusion path for the gate while still needing its registration honoured.
+        var contextReference = GeneratorHarness.CompileToReference(contextSource, "Microsoft.CompanyName.Contracts");
+
+        const string source = """
+                              using ContextLib;
+                              using System.Text.Json.Serialization;
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+
+                              namespace TestNs;
+
+                              public sealed record GetThingQuery : IRequest<ThingDto>;
+
+                              [Get("/things")]
+                              public sealed class GetThingEndpoint : Endpoint<GetThingQuery, ThingDto>;
+
+                              // Opens the gate on its own, in the current (never-excluded) compilation,
+                              // independently of the "Microsoft."-named assembly above.
+                              internal sealed partial class AppJsonContext : JsonSerializerContext;
+                              """;
+
+        // Act
+        var diagnostics = GeneratorHarness.GetDiagnostics(source, contextReference);
+
+        // Assert
+        Assert.DoesNotContain(diagnostics, d => d.Id == "SYNE008");
+    }
+
+    [Fact]
+    public void Generate_WhenAnAdvisoryDiagnosticFires_GeneratedCodeStillCompiles()
+    {
+        // Arrange — SYNE003 (Info) and SYNE004/SYNE008 (Warning) must never block emission; the
+        // endpoint should still generate a working binder/registration despite an advisory
+        // diagnostic being reported alongside it. Uses SYNE003 (a POST declaring no explicit
+        // success mapping) since it needs no extra JsonSerializerContext plumbing to exercise.
+        const string source = """
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+
+                              namespace TestNs;
+
+                              public sealed record CreateThingCommand : IRequest<int>;
+
+                              [Post("/things")]
+                              public sealed class CreateThingEndpoint : Endpoint<CreateThingCommand, int>;
+                              """;
+
+        // Act
+        var diagnostics = GeneratorHarness.GetDiagnostics(source);
+
+        // Assert — confirm the advisory diagnostic actually fired, so this test is exercising
+        // what it claims to, then confirm emission survives it regardless.
+        Assert.Contains(diagnostics, d => d.Id == "SYNE003");
+        GeneratorHarness.AssertGeneratedCompiles(source);
+    }
 }

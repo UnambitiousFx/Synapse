@@ -907,23 +907,26 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
 
     /// <summary>
     ///     SYNE008: whether <paramref name="type" /> is a candidate that could plausibly need a
-    ///     <c>[JsonSerializable(typeof(...))]</c> registration at all. Excludes:
-    ///     <list type="bullet">
-    ///         <item>A type parameter (a generic endpoint class is already SYNE010; nothing concrete to check).</item>
-    ///         <item>An error type (unresolved symbol — reporting on it would be noise on top of a real compile error).</item>
-    ///         <item>
-    ///             <c>string</c>, every numeric primitive, <c>bool</c>, <c>char</c>, <c>object</c>,
-    ///             <c>Guid</c>, <c>DateTime</c>, <c>DateTimeOffset</c>, <c>TimeSpan</c> and <c>Uri</c>
-    ///             (checked after unwrapping <c>Nullable&lt;T&gt;</c>) — the source-generated resolver
-    ///             supports these intrinsically, without any <c>[JsonSerializable]</c> entry.
-    ///         </item>
-    ///     </list>
-    ///     Deliberately does not decompose a generic collection into its element type: the exact
-    ///     type checked is whatever is actually declared as the request/response type (for example
-    ///     <c>IReadOnlyList&lt;TaskDto&gt;</c> as a whole), because that is the exact closed type the
-    ///     invoker hands to the JSON serializer, and registering only the element type does not, by
-    ///     itself, make the collection type serializable.
+    ///     <c>[JsonSerializable(typeof(...))]</c> registration at all. Excludes a type parameter (a
+    ///     generic endpoint class is already SYNE010; nothing concrete to check), an error type
+    ///     (unresolved symbol — reporting on it would be noise on top of a real compile error), and
+    ///     anything <see cref="IsFrameworkOwned" /> considers framework-owned once
+    ///     <c>Nullable&lt;T&gt;</c> is unwrapped.
     /// </summary>
+    /// <remarks>
+    ///     Fix round 1 (Task 18 review) replaced a hardcoded list of "known intrinsically-supported"
+    ///     types (<c>string</c>, the numeric primitives, <c>Guid</c>, <c>DateTimeOffset</c>,
+    ///     <c>TimeSpan</c>, <c>Uri</c>, ...) with the structural rule in
+    ///     <see cref="IsFrameworkOwned" />. A hardcoded list is a losing game — every .NET release adds
+    ///     built-in-supported types (<c>Half</c>, <c>Int128</c>/<c>UInt128</c>, ...), <c>Version</c> and
+    ///     <c>byte[]</c> were already missing from it, and each omission is a false positive on
+    ///     correct code. This deliberately means SYNE008 will not flag <c>ProblemDetails</c> or
+    ///     <c>HttpValidationProblemDetails</c> — both framework types, both genuinely needing
+    ///     registration under Native AOT. That gap is intentional, not an oversight: SYNE008's scope is
+    ///     the endpoint's own declared request/response type, not every type reachable from the
+    ///     response pipeline or the OpenAPI document; the <c>ProblemDetails</c>/
+    ///     <c>HttpValidationProblemDetails</c> obligation is covered in Task 24's documentation instead.
+    /// </remarks>
     private static bool IsJsonCheckable(ITypeSymbol type)
     {
         if (type.TypeKind is TypeKind.TypeParameter or TypeKind.Error)
@@ -932,35 +935,63 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
         }
 
         var (underlying, _) = UnwrapNullable(type);
+        return !IsFrameworkOwned(underlying);
+    }
 
-        switch (underlying.SpecialType)
+    /// <summary>
+    ///     SYNE008: whether every piece of <paramref name="type" /> is owned by a framework assembly
+    ///     (see <see cref="IsFrameworkAssembly" />) — the structural replacement for a hardcoded
+    ///     "known intrinsic type" list (see the remarks on <see cref="IsJsonCheckable" />).
+    /// </summary>
+    /// <remarks>
+    ///     An array type recurses into its element type (<c>byte[]</c> is framework-owned because
+    ///     <c>byte</c> is). A named type — this is the case that needs care — is framework-owned only
+    ///     when *both* its own unbound definition's declaring assembly is a framework assembly *and*
+    ///     every one of its type arguments is, recursively, also framework-owned. That second half is
+    ///     load-bearing: <c>IReadOnlyList&lt;T&gt;</c>'s own home is a framework assembly
+    ///     (<c>System.Private.CoreLib</c>), but <c>IReadOnlyList&lt;ThingDto&gt;</c> must still come out
+    ///     as *not* framework-owned when <c>ThingDto</c> is the consumer's own type — checked
+    ///     empirically: a constructed generic type's <c>ContainingAssembly</c> is the unbound
+    ///     definition's assembly regardless of its type arguments, so testing it directly (without
+    ///     also walking the type arguments) would have silently exempted every generic collection of a
+    ///     user type from SYNE008, breaking the exact-closed-type collection check this diagnostic
+    ///     depends on. Any other type kind reached here (pointer, function pointer, dynamic — never
+    ///     realistically an endpoint request/response type) defaults to framework-owned, the same
+    ///     silence-biased default every ambiguous case in this diagnostic takes.
+    /// </remarks>
+    private static bool IsFrameworkOwned(ITypeSymbol type)
+    {
+        if (type is IArrayTypeSymbol arrayType)
         {
-            case SpecialType.System_Boolean:
-            case SpecialType.System_Byte:
-            case SpecialType.System_SByte:
-            case SpecialType.System_Char:
-            case SpecialType.System_Decimal:
-            case SpecialType.System_Double:
-            case SpecialType.System_Single:
-            case SpecialType.System_Int32:
-            case SpecialType.System_UInt32:
-            case SpecialType.System_Int64:
-            case SpecialType.System_UInt64:
-            case SpecialType.System_Int16:
-            case SpecialType.System_UInt16:
-            case SpecialType.System_String:
-            case SpecialType.System_Object:
-            case SpecialType.System_DateTime:
-                return false;
+            return IsFrameworkOwned(arrayType.ElementType);
         }
 
-        return underlying.ToDisplayString() is not
-            ("System.Guid" or "System.DateTimeOffset" or "System.TimeSpan" or "System.Uri");
+        if (type is INamedTypeSymbol namedType)
+        {
+            var declaringAssembly = namedType.OriginalDefinition.ContainingAssembly;
+            if (declaringAssembly is null || !IsFrameworkAssembly(declaringAssembly))
+            {
+                return false;
+            }
+
+            foreach (var typeArgument in namedType.TypeArguments)
+            {
+                if (!IsFrameworkOwned(typeArgument))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        return true;
     }
 
     /// <summary>
     ///     SYNE008: walks every named type reachable from <paramref name="compilation" /> — its own
-    ///     declarations *and* every referenced assembly's — looking for a type deriving from
+    ///     declarations *and* every referenced assembly's, with no exclusion at the enumeration level
+    ///     — looking for a type deriving from
     ///     <c>System.Text.Json.Serialization.JsonSerializerContext</c>, and collects the type
     ///     argument of every <c>[JsonSerializable(typeof(X))]</c> attribute found on one.
     /// </summary>
@@ -978,8 +1009,27 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
     ///     and re-walks every named type in every referenced assembly — including the BCL and
     ///     ASP.NET Core shared framework — each time it reruns. For a one-shot command-line build
     ///     this is a single walk and immaterial; for IDE responsiveness while typing, it is the most
-    ///     expensive step this generator performs, and is called out as such rather than decided
-    ///     silently.
+    ///     expensive step this generator performs. The sibling <c>Synapse.Generator</c>'s
+    ///     <c>ExtractAllBehaviorTargets</c> already re-walks the entire *unfiltered*
+    ///     <c>GlobalNamespace</c> (BCL included) on every edit for a comparable reason, so this is not
+    ///     a new category of cost, and review of this generator confirmed the cost acceptable.
+    /// </remarks>
+    /// <remarks>
+    ///     Fix round 1 (Task 18 review, finding 1) split what had been a single filtered walk into two
+    ///     separate questions with two separate filters, after the single-filter version was shown to
+    ///     have a compound false-positive path: a consumer with one correctly-named context (opening
+    ///     the gate below) plus a second context in a referenced assembly that happens to be named
+    ///     <c>System.*</c>/<c>Microsoft.*</c> and legitimately registers one of the consumer's own
+    ///     types. Filtering the registered set the same way as the gate dropped that second context's
+    ///     registrations while the gate stayed open — reporting a type that actually *is* registered
+    ///     as missing. The fix: <em>the gate</em> ("has this consumer opted into source-generated JSON
+    ///     at all?") still excludes framework assemblies via <see cref="IsFrameworkAssembly" /> — that
+    ///     is the whole reason this filter exists, see the remarks on that method. <em>The registered
+    ///     set</em> ("what is already registered?") excludes nothing: every type argument of every
+    ///     <c>[JsonSerializable]</c> attribute found on any <c>JsonSerializerContext</c> anywhere in
+    ///     the graph counts, framework-named assembly or not, because if any context anywhere
+    ///     registers a type, reporting it as missing is simply wrong regardless of what its context's
+    ///     assembly happens to be named.
     /// </remarks>
     private static JsonContextInfo CollectJsonSerializableRegistrations(Compilation compilation)
     {
@@ -993,14 +1043,22 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
         var hasContext = false;
         var registered = new HashSet<string>(StringComparer.Ordinal);
 
-        foreach (var type in GetAllNamedTypes(compilation))
+        foreach (var (type, declaringAssembly) in GetAllNamedTypesWithDeclaringAssembly(compilation))
         {
             if (!DerivesFrom(type, contextBaseType))
             {
                 continue;
             }
 
-            hasContext = true;
+            // The gate excludes framework assemblies; the registered set (below) does not — see the
+            // second <remarks> block above for why these are deliberately two different filters.
+            // `declaringAssembly` is null for a type declared in the compilation itself (never a
+            // framework assembly, regardless of what this project happens to be named), so the gate
+            // always opens for the consumer's own declarations.
+            if (declaringAssembly is null || !IsFrameworkAssembly(declaringAssembly))
+            {
+                hasContext = true;
+            }
 
             foreach (var attribute in type.GetAttributes())
             {
@@ -1018,7 +1076,12 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
             }
         }
 
-        return new JsonContextInfo(hasContext, new EquatableArray<string>(registered.ToArray()));
+        // Sorted so that a HashSet's unspecified enumeration order can never change the resulting
+        // EquatableArray's element order between two otherwise-identical compilations —
+        // EquatableArray<T>.Equals is a positional SequenceEqual, so an order difference alone would
+        // be a needless incremental-caching miss.
+        var sortedRegistered = registered.OrderBy(static name => name, StringComparer.Ordinal).ToArray();
+        return new JsonContextInfo(hasContext, new EquatableArray<string>(sortedRegistered));
     }
 
     /// <summary>Whether <paramref name="type" /> derives from <paramref name="baseCandidate" /> anywhere in its base chain.</summary>
@@ -1036,9 +1099,13 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
     }
 
     /// <summary>
-    ///     Every named type declared in <paramref name="compilation" />'s own source and in every
-    ///     non-framework assembly it references — the whole reference graph a consumer could
-    ///     plausibly have put a <c>JsonSerializerContext</c> in, not just the source being compiled.
+    ///     Every named type declared in <paramref name="compilation" />'s own source (paired with a
+    ///     null assembly) and in every assembly it references (paired with that assembly, so the
+    ///     caller can apply its own — possibly different — filter per use; see
+    ///     <see cref="CollectJsonSerializableRegistrations" />'s two <c>remarks</c> blocks for why one
+    ///     filter does not fit both of that method's questions). No exclusion happens in this method
+    ///     itself: it is deliberately the unfiltered whole reference graph a consumer could plausibly
+    ///     have put a <c>JsonSerializerContext</c> in, not just the source being compiled.
     /// </summary>
     /// <remarks>
     ///     Deliberately walks <c>compilation.Assembly.GlobalNamespace</c> (scoped to just this
@@ -1046,51 +1113,52 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
     ///     the latter is the namespace <em>merged across the whole reference graph already</em>
     ///     (that is how <c>compilation.GlobalNamespace.GetMembers("System")</c> reaches
     ///     <c>System.Console</c> without any explicit reference walk), so using it here would
-    ///     silently re-include every referenced assembly's types before the filter below ever runs,
-    ///     making that filter a no-op. This was found empirically, not reasoned out in advance: an
-    ///     early version of this method used <c>compilation.GlobalNamespace</c> for both halves and
-    ///     the filter below appeared to have no effect at all.
+    ///     silently re-include every referenced assembly's types, defeating any filter a caller
+    ///     applies based on the assembly paired with each type. This was found empirically, not
+    ///     reasoned out in advance: an early version of this method used
+    ///     <c>compilation.GlobalNamespace</c> for both halves and an assembly-name filter applied
+    ///     around the second half appeared to have no effect at all.
     /// </remarks>
-    /// <remarks>
-    ///     A referenced assembly whose identity name starts with <c>System.</c> or <c>Microsoft.</c>
-    ///     (or is exactly <c>netstandard</c>/<c>mscorlib</c>/<c>WindowsBase</c>) is skipped entirely.
-    ///     This is not an optimization — it was added after discovering, empirically, that
-    ///     <c>Microsoft.AspNetCore.App</c> alone ships eleven internal
-    ///     <c>JsonSerializerContext</c>-derived types of its own (for example
-    ///     <c>Microsoft.AspNetCore.Http.ProblemDetailsJsonContext</c> and
-    ///     <c>Microsoft.AspNetCore.Identity.Data.IdentityEndpointsJsonSerializerContext</c>). Without
-    ///     this filter, <see cref="JsonContextInfo.HasContext" /> is true for essentially every
-    ///     ASP.NET Core application regardless of whether the application itself has opted into
-    ///     source-generated JSON at all, and none of those framework contexts register any of the
-    ///     application's own types — so SYNE008 would fire on almost every endpoint's response type
-    ///     in an application that never asked for this check. The filter is a plain assembly-name
-    ///     prefix match, not a directory/path check (more portable across install layouts and
-    ///     single-file/self-contained deployment, where on-disk paths are less predictable), and
-    ///     accepts the small risk of also skipping a legitimately-named third-party assembly that
-    ///     happens to start with one of those prefixes — a false negative, not a false positive,
-    ///     which is the direction this diagnostic is deliberately biased.
-    /// </remarks>
-    private static IEnumerable<INamedTypeSymbol> GetAllNamedTypes(Compilation compilation)
+    private static IEnumerable<(INamedTypeSymbol Type, IAssemblySymbol? DeclaringAssembly)>
+        GetAllNamedTypesWithDeclaringAssembly(Compilation compilation)
     {
         foreach (var type in GetAllNamedTypes(compilation.Assembly.GlobalNamespace))
         {
-            yield return type;
+            yield return (type, null);
         }
 
         foreach (var reference in compilation.References)
         {
-            if (compilation.GetAssemblyOrModuleSymbol(reference) is IAssemblySymbol assembly &&
-                !IsFrameworkAssembly(assembly))
+            if (compilation.GetAssemblyOrModuleSymbol(reference) is IAssemblySymbol assembly)
             {
                 foreach (var type in GetAllNamedTypes(assembly.GlobalNamespace))
                 {
-                    yield return type;
+                    yield return (type, assembly);
                 }
             }
         }
     }
 
-    /// <summary>See the remarks on <see cref="GetAllNamedTypes(Compilation)" /> for why this filter exists.</summary>
+    /// <summary>
+    ///     Whether <paramref name="assembly" /> is part of the .NET runtime or the ASP.NET Core shared
+    ///     framework, based on a plain assembly-name-prefix match — not a directory/path check (more
+    ///     portable across install layouts and single-file/self-contained deployments, where on-disk
+    ///     paths are less predictable). Used only to gate <see cref="JsonContextInfo.HasContext" /> in
+    ///     <see cref="CollectJsonSerializableRegistrations" /> (see that method's second
+    ///     <c>remarks</c> block for why it is <em>not</em> also applied to the registered-type set).
+    ///     Added after discovering, empirically, that <c>Microsoft.AspNetCore.App</c> alone ships
+    ///     eleven internal <c>JsonSerializerContext</c>-derived types of its own (for example
+    ///     <c>Microsoft.AspNetCore.Http.ProblemDetailsJsonContext</c> and
+    ///     <c>Microsoft.AspNetCore.Identity.Data.IdentityEndpointsJsonSerializerContext</c>) — without
+    ///     this filter, <c>HasContext</c> would be true for essentially every ASP.NET Core application
+    ///     regardless of whether that application itself had opted into source-generated JSON, and
+    ///     none of those framework contexts register any of the application's own types, so SYNE008
+    ///     would fire on almost every endpoint's response type in an application that never asked for
+    ///     this check. Accepts the small, deliberate risk of also excluding a legitimately-named
+    ///     third-party assembly that happens to start with one of these prefixes from opening the
+    ///     gate on its own — a false negative (that assembly's context alone would not open the gate),
+    ///     never a false positive, which is the direction this diagnostic is biased.
+    /// </summary>
     private static bool IsFrameworkAssembly(IAssemblySymbol assembly)
     {
         var name = assembly.Identity.Name;

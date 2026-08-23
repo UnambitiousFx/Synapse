@@ -234,25 +234,47 @@ internal static class EndpointDiagnostics
     ///     generic collection response/request (for example <c>IReadOnlyList&lt;TaskDto&gt;</c>) is
     ///     checked as that exact closed type, not its element type — that is the type the source
     ///     generator must be told about, and registering only the element type does not, by itself,
-    ///     make the collection type serializable. <c>string</c>, numeric primitives, <c>bool</c>,
-    ///     <c>char</c>, <c>object</c>, <c>Guid</c>, <c>DateTime</c>, <c>DateTimeOffset</c>,
-    ///     <c>TimeSpan</c> and <c>Uri</c> (including their nullable forms) are never reported: the
-    ///     source-generated resolver supports them intrinsically. A custom
-    ///     <c>TypeInfoResolverChain</c> entry that is not itself a <c>JsonSerializerContext</c> cannot
-    ///     be seen by this check at all — that gap, not a defect in the check, is why this is a
-    ///     Warning rather than an Error.
+    ///     make the collection type serializable. A custom <c>TypeInfoResolverChain</c> entry that is
+    ///     not itself a <c>JsonSerializerContext</c> cannot be seen by this check at all — that gap,
+    ///     not a defect in the check, is why this is a Warning rather than an Error.
+    /// </remarks>
+    /// <remarks>
+    ///     A type is never reported when it is owned by a framework assembly — this covers
+    ///     <c>string</c>, every numeric primitive, <c>bool</c>, <c>char</c>, <c>object</c>,
+    ///     <c>Guid</c>, <c>DateTime</c>, <c>DateTimeOffset</c>, <c>TimeSpan</c>, <c>Uri</c>,
+    ///     <c>Half</c>, <c>Int128</c>/<c>UInt128</c>, <c>Version</c>, <c>byte[]</c> and any future
+    ///     built-in-supported BCL type, since the source-generated resolver supports these
+    ///     intrinsically without any <c>[JsonSerializable]</c> entry — see
+    ///     <c>EndpointsGenerator.IsFrameworkOwned</c>. This is a structural rule (is the type's own
+    ///     assembly a framework assembly?), not a hardcoded list of "known" types, precisely because a
+    ///     hardcoded list is a losing game against every future .NET release. A generic collection is
+    ///     still reported when framework-owned itself but closed over a non-framework type argument
+    ///     (<c>IReadOnlyList&lt;ThingDto&gt;</c> is reported even though <c>IReadOnlyList&lt;T&gt;</c>
+    ///     itself lives in a framework assembly) — otherwise every generic collection of a consumer's
+    ///     own type would be silently exempt, which would defeat the collection check above entirely.
+    ///     This deliberately means SYNE008 does not, and will not, flag <c>ProblemDetails</c> or
+    ///     <c>HttpValidationProblemDetails</c> — both framework types that genuinely need registering
+    ///     for Native AOT. That is an intentional scope boundary, not an oversight: this diagnostic
+    ///     covers the endpoint's own declared request/response type, not every type reachable from
+    ///     the response pipeline or the OpenAPI document. The <c>ProblemDetails</c>/
+    ///     <c>HttpValidationProblemDetails</c> obligation is documented separately (Task 24).
     /// </remarks>
     /// <remarks>
     ///     A referenced assembly whose name starts with <c>System.</c>/<c>Microsoft.</c> (or is
-    ///     <c>netstandard</c>/<c>mscorlib</c>/<c>WindowsBase</c>) is excluded from the scan for both
-    ///     "does at least one context exist" and "what does it register" — see
-    ///     <c>EndpointsGenerator.GetAllNamedTypes(Compilation)</c>. This was added after finding,
-    ///     empirically, that <c>Microsoft.AspNetCore.App</c> alone ships eleven of its own internal
-    ///     <c>JsonSerializerContext</c>-derived types (<c>Microsoft.AspNetCore.Http.ProblemDetailsJsonContext</c>
-    ///     among them). Without the filter this diagnostic would be reported on almost every
-    ///     endpoint's response type in almost every ASP.NET Core application, whether or not that
-    ///     application had opted into source-generated JSON at all — exactly the false-positive
-    ///     failure mode this diagnostic exists to avoid.
+    ///     <c>netstandard</c>/<c>mscorlib</c>/<c>WindowsBase</c>) never counts toward "does at least
+    ///     one context exist" — see <c>EndpointsGenerator.IsFrameworkAssembly</c>. This was added
+    ///     after finding, empirically, that <c>Microsoft.AspNetCore.App</c> alone ships eleven of its
+    ///     own internal <c>JsonSerializerContext</c>-derived types
+    ///     (<c>Microsoft.AspNetCore.Http.ProblemDetailsJsonContext</c> among them). Without this
+    ///     filter this diagnostic would be reported on almost every endpoint's response type in
+    ///     almost every ASP.NET Core application, whether or not that application had opted into
+    ///     source-generated JSON at all — exactly the false-positive failure mode this diagnostic
+    ///     exists to avoid. This filter is deliberately *not* also applied to "what does any context
+    ///     register" — every <c>[JsonSerializable]</c> registration found anywhere in the graph
+    ///     counts as registered regardless of which assembly hosts the context that declares it,
+    ///     because a type that genuinely is registered somewhere must never be reported as missing
+    ///     (fix round 1, Task 18 review: applying the same filter to both questions created exactly
+    ///     that compound false positive).
     /// </remarks>
     internal static readonly DiagnosticDescriptor MissingJsonSerializableRegistration = new(
         "SYNE008",
@@ -263,12 +285,18 @@ internal static class EndpointDiagnostics
         isEnabledByDefault: true,
         description:
         "Reported only when at least one JsonSerializerContext exists in a non-framework assembly " +
-        "anywhere in the compilation's reference graph (System./Microsoft.-named assemblies are " +
-        "excluded, since the ASP.NET Core shared framework ships several JsonSerializerContexts of " +
-        "its own). Checks the exact request/response type as declared (a generic collection is " +
-        "checked as that closed type, not its element type). A request type is checked only when it " +
-        "is actually deserialized from the body. string, numeric primitives, bool, char, object, " +
-        "Guid, DateTime, DateTimeOffset, TimeSpan and Uri (and their nullable forms) are never " +
-        "reported. A custom TypeInfoResolverChain entry that is not a JsonSerializerContext is " +
-        "invisible to this check, which is why this is a Warning rather than an Error.");
+        "anywhere in the compilation's reference graph (System./Microsoft.-named assemblies never " +
+        "open this gate on their own, since the ASP.NET Core shared framework ships several " +
+        "JsonSerializerContexts of its own) -- though a registration from such an assembly still " +
+        "counts once the gate is open elsewhere. Checks the exact request/response type as declared " +
+        "(a generic collection is checked as that closed type, not its element type). A request type " +
+        "is checked only when it is actually deserialized from the body. A type owned by a framework " +
+        "assembly is never reported -- this covers string, numeric primitives, Guid, DateTimeOffset, " +
+        "Half, Version, byte[] and any future BCL type, via a structural rule rather than a " +
+        "hardcoded list, though a generic collection closed over a non-framework type argument is " +
+        "still reported even when the collection type itself is framework-owned. This deliberately " +
+        "excludes ProblemDetails/HttpValidationProblemDetails from this check's scope -- see Task 24 " +
+        "for that separate obligation. A custom TypeInfoResolverChain entry that is not a " +
+        "JsonSerializerContext is invisible to this check, which is why this is a Warning rather " +
+        "than an Error.");
 }
