@@ -16,4 +16,10 @@
         <ProjectReference Include="..\Synapse.AspNetCore\Synapse.AspNetCore.csproj" />
     </ItemGroup>
 
+    <!-- TEMPORARY: exposes internal Endpoint types to the Native AOT interception probe app.
+         Remove once Task 22 introduces the public API. -->
+    <ItemGroup>
+        <InternalsVisibleTo Include="UnambitiousFx.Examples.EndpointsApi" />
+    </ItemGroup>
+
 </Project>
