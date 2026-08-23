@@ -1,0 +1,94 @@
+using System.Collections.Immutable;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using UnambitiousFx.Synapse.Endpoints;
+using UnambitiousFx.Synapse.Endpoints.Generator;
+
+namespace UnambitiousFx.Synapse.Endpoints.Generator.Tests;
+
+internal static class GeneratorHarness
+{
+    internal static string GetFile(string source, string fileName)
+    {
+        return TryGetFile(source, fileName)
+               ?? throw new InvalidOperationException($"The generator did not emit '{fileName}'.");
+    }
+
+    internal static string? TryGetFile(string source, string fileName)
+    {
+        var (_, trees) = Run(source);
+        var tree = trees.FirstOrDefault(t => t.FilePath.EndsWith(fileName, StringComparison.Ordinal));
+        return tree?.ToString();
+    }
+
+    internal static ImmutableArray<Diagnostic> GetDiagnostics(string source)
+    {
+        var (diagnostics, _) = Run(source);
+        return diagnostics;
+    }
+
+    internal static void AssertGeneratedCompiles(string source)
+    {
+        var compilation = CreateCompilation(source);
+        var driver = CSharpGeneratorDriver.Create(new EndpointsGenerator());
+        driver.RunGeneratorsAndUpdateCompilation(compilation, out var updated, out _);
+
+        var errors = updated.GetDiagnostics()
+            .Where(d => d.Severity == DiagnosticSeverity.Error)
+            .ToArray();
+
+        Assert.True(errors.Length == 0,
+            "Generated code should compile, but got: " + string.Join("; ", errors.Select(e => e.ToString())));
+    }
+
+    private static (ImmutableArray<Diagnostic> Diagnostics, IReadOnlyList<SyntaxTree> Trees) Run(string source)
+    {
+        var driver = CSharpGeneratorDriver.Create(new EndpointsGenerator());
+        var result = driver.RunGenerators(CreateCompilation(source)).GetRunResult();
+        return (result.Diagnostics, result.GeneratedTrees);
+    }
+
+    private static CSharpCompilation CreateCompilation(string source)
+    {
+        return CSharpCompilation.Create(
+            "TestAssembly",
+            [CSharpSyntaxTree.ParseText(source)],
+            GetMetadataReferences(),
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary,
+                nullableContextOptions: NullableContextOptions.Enable));
+    }
+
+    /// <summary>
+    ///     Copied from <c>Synapse.Generator.Tests.GeneratorBehaviorTests.GetMetadataReferences()</c> and
+    ///     extended with the Synapse.Endpoints assembly and the ASP.NET Core reference assemblies:
+    ///     discovered endpoint types derive from the four endpoint base classes (Synapse.Endpoints), and the
+    ///     emitted <c>EndpointGroup.g.cs</c> names <c>Microsoft.AspNetCore.Routing.IEndpointRouteBuilder</c>.
+    ///     The test project's <c>FrameworkReference</c> to <c>Microsoft.AspNetCore.App</c> puts the ASP.NET
+    ///     Core shared-framework assemblies in TRUSTED_PLATFORM_ASSEMBLIES alongside the runtime ones, so no
+    ///     separate reference-assembly lookup is needed here.
+    /// </summary>
+    private static IEnumerable<MetadataReference> GetMetadataReferences()
+    {
+        // Load all trusted platform assemblies (covers System.Runtime, System.Collections, the ASP.NET Core
+        // shared framework, etc. — the latter is present because this test project declares a
+        // FrameworkReference to Microsoft.AspNetCore.App).
+        var trustedPaths = (AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES") as string ?? string.Empty)
+            .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries);
+
+        var refs = trustedPaths
+            .Select(p => MetadataReference.CreateFromFile(p))
+            .Cast<MetadataReference>()
+            .ToList();
+
+        // Add Synapse.Abstractions (IRequest, IStreamRequest, …)
+        refs.Add(MetadataReference.CreateFromFile(typeof(UnambitiousFx.Synapse.Abstractions.IRequest).Assembly.Location));
+
+        // Add UnambitiousFx.Functional (Result<T> used in interface signatures)
+        refs.Add(MetadataReference.CreateFromFile(typeof(UnambitiousFx.Functional.Result).Assembly.Location));
+
+        // Add Synapse.Endpoints (Endpoint<>, MappedEndpoint<>, StreamEndpoint<>, IEndpointGroup, EndpointMetadata, …)
+        refs.Add(MetadataReference.CreateFromFile(typeof(EndpointBase).Assembly.Location));
+
+        return refs;
+    }
+}

@@ -32,6 +32,7 @@
         <Project Path="test/Synapse.Generator.Tests/Synapse.Generator.Tests.csproj" />
         <Project Path="test\Synapse.Tests\Synapse.Tests.csproj" />
         <Project Path="test/Synapse.Endpoints.Tests/Synapse.Endpoints.Tests.csproj" />
+        <Project Path="test/Synapse.Endpoints.Generator.Tests/Synapse.Endpoints.Generator.Tests.csproj" />
     </Folder>
     <Folder Name="/_/">
         <File Path="build.props" />
