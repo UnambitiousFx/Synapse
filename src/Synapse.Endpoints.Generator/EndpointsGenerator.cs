@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using UnambitiousFx.Synapse.Endpoints.Generator.Diagnostics;
 using UnambitiousFx.Synapse.Endpoints.Generator.Emit;
 using UnambitiousFx.Synapse.Endpoints.Generator.Model;
 
@@ -25,12 +26,12 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
     /// <inheritdoc />
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
-        var endpoints = context.SyntaxProvider
+        var analyzed = context.SyntaxProvider
             .CreateSyntaxProvider(
                 static (node, _) => node is ClassDeclarationSyntax { BaseList: not null },
                 static (ctx, _) => Analyze(ctx))
-            .Where(static target => target is not null)
-            .Select(static (target, _) => target!.Value)
+            .Where(static result => result is not null)
+            .Select(static (result, _) => result!.Value)
             .Collect();
 
         var rootNamespace = context.AnalyzerConfigOptionsProvider.Select(static (provider, _) =>
@@ -40,11 +41,11 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
         });
 
         context.RegisterSourceOutput(
-            endpoints.Combine(rootNamespace),
+            analyzed.Combine(rootNamespace),
             static (spc, pair) => Emit(spc, pair.Left, pair.Right));
     }
 
-    private static EndpointTarget? Analyze(GeneratorSyntaxContext context)
+    private static EndpointAnalysisResult? Analyze(GeneratorSyntaxContext context)
     {
         if (context.SemanticModel.GetDeclaredSymbol(context.Node) is not INamedTypeSymbol symbol ||
             symbol.IsAbstract)
@@ -73,6 +74,31 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
 
             var bound = baseType.TypeArguments[0];
             var (method, route) = ReadRouteAttribute(symbol);
+            var (groupFullName, groupType) = ReadGroupAttribute(symbol);
+            var location = LocationInfo.CreateFrom(symbol.Locations.FirstOrDefault());
+            var classDeclaration = (ClassDeclarationSyntax)context.Node;
+
+            var diagnostics = new List<DiagnosticInfo>();
+
+            // SYNE010 first: a shape violation makes every other diagnostic moot — the endpoint
+            // cannot be mapped at all regardless of anything else found below.
+            if (TryDescribeShapeViolation(symbol, out var shapeViolation))
+            {
+                diagnostics.Add(new DiagnosticInfo(
+                    EndpointDiagnostics.InvalidEndpointShape,
+                    location,
+                    new EquatableArray<string>([symbol.ToDisplayString(), shapeViolation])));
+            }
+
+            // SYNE006
+            if (groupType is not null && !DerivesFromEndpointGroup(groupType))
+            {
+                diagnostics.Add(new DiagnosticInfo(
+                    EndpointDiagnostics.InvalidGroupType,
+                    location,
+                    new EquatableArray<string>(
+                        [groupType.ToDisplayString(), symbol.ToDisplayString()])));
+            }
 
             EquatableArray<BindablePropertyModel> boundProperties;
             bool hasParameterlessConstructor;
@@ -83,6 +109,9 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
                 boundProperties = CollectBindableProperties(boundNamedType, method, route);
                 (hasParameterlessConstructor, primaryConstructorParameterNames) =
                     ResolveConstructionStrategy(boundNamedType);
+
+                // SYNE001
+                CheckRouteParameters(boundProperties, boundNamedType.ToDisplayString(), route, location, diagnostics);
             }
             else
             {
@@ -91,20 +120,215 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
                 primaryConstructorParameterNames = new EquatableArray<string>(Array.Empty<string>());
             }
 
-            return new EndpointTarget(
-                symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
-                bound.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
-                kind.Value,
-                method,
-                route,
-                ReadGroupAttribute(symbol),
-                LocationInfo.CreateFrom(symbol.Locations.FirstOrDefault()),
-                boundProperties,
-                hasParameterlessConstructor,
-                primaryConstructorParameterNames);
+            // SYNE005 — only Endpoint<TRequest> / Endpoint<TRequest,TResponse> dispatch a single
+            // response; StreamEndpoint and MappedEndpoint are unaffected (Mapped's bound type is the
+            // HTTP DTO, not the dispatched message, so this check does not apply to it).
+            if (kind is EndpointKind.Void or EndpointKind.Value && ImplementsStreamRequest(bound))
+            {
+                diagnostics.Add(new DiagnosticInfo(
+                    EndpointDiagnostics.StreamMessageOnNonStreamEndpoint,
+                    location,
+                    new EquatableArray<string>([bound.ToDisplayString()])));
+            }
+
+            // SYNE009
+            if (method.Length > 0 && ConfigureCallsVerbMethodDirectly(classDeclaration))
+            {
+                diagnostics.Add(new DiagnosticInfo(
+                    EndpointDiagnostics.RouteDeclaredTwice,
+                    location,
+                    new EquatableArray<string>([symbol.ToDisplayString()])));
+            }
+
+            var diagnosticInfos = new EquatableArray<DiagnosticInfo>(diagnostics.ToArray());
+            var hasError = diagnostics.Exists(static d => d.Descriptor.DefaultSeverity == DiagnosticSeverity.Error);
+
+            EndpointTarget? target = hasError
+                ? null
+                : new EndpointTarget(
+                    symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    bound.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    kind.Value,
+                    method,
+                    route,
+                    groupFullName,
+                    location,
+                    boundProperties,
+                    hasParameterlessConstructor,
+                    primaryConstructorParameterNames);
+
+            return new EndpointAnalysisResult(target, diagnosticInfos);
         }
 
         return null;
+    }
+
+    /// <summary>
+    ///     SYNE010: an endpoint class that <c>MapEndpoint&lt;TEndpoint&gt;()</c> — constrained
+    ///     <c>where TEndpoint : EndpointBase, new()</c> — cannot be instantiated for. All three
+    ///     reasons are checked (rather than stopping at the first) so the message names every shape
+    ///     problem the class actually has.
+    /// </summary>
+    private static bool TryDescribeShapeViolation(INamedTypeSymbol symbol, out string reason)
+    {
+        var reasons = new List<string>();
+
+        if (symbol.TypeParameters.Length > 0)
+        {
+            reasons.Add("is generic");
+        }
+
+        for (var containing = symbol.ContainingType; containing is not null; containing = containing.ContainingType)
+        {
+            if (containing.TypeParameters.Length > 0)
+            {
+                reasons.Add("is nested inside a generic type");
+                break;
+            }
+        }
+
+        if (!HasPublicParameterlessConstructor(symbol))
+        {
+            reasons.Add("has no public parameterless constructor");
+        }
+
+        reason = string.Join(" and ", reasons);
+        return reasons.Count > 0;
+    }
+
+    private static bool HasPublicParameterlessConstructor(INamedTypeSymbol symbol)
+    {
+        foreach (var constructor in symbol.Constructors)
+        {
+            if (!constructor.IsStatic &&
+                constructor.Parameters.Length == 0 &&
+                constructor.DeclaredAccessibility == Accessibility.Public)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>SYNE005: whether <paramref name="type" /> implements <c>IStreamRequest&lt;T&gt;</c> for any <c>T</c>.</summary>
+    private static bool ImplementsStreamRequest(ITypeSymbol type)
+    {
+        foreach (var iface in type.AllInterfaces)
+        {
+            var metadataName =
+                $"{iface.OriginalDefinition.ContainingNamespace}.{iface.OriginalDefinition.MetadataName}";
+            if (metadataName == "UnambitiousFx.Synapse.Abstractions.IStreamRequest`1")
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>SYNE006: whether <paramref name="type" /> derives from <c>EndpointGroup</c>.</summary>
+    private static bool DerivesFromEndpointGroup(INamedTypeSymbol type)
+    {
+        for (var current = type; current is not null; current = current.BaseType)
+        {
+            var metadataName = $"{current.ContainingNamespace}.{current.MetadataName}";
+            if (metadataName == "UnambitiousFx.Synapse.Endpoints.EndpointGroup")
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    ///     SYNE009: whether <paramref name="classDeclaration" /> declares its own <c>Configure</c>
+    ///     method that invokes <c>Get</c>/<c>Post</c>/<c>Put</c>/<c>Patch</c>/<c>Delete</c>/<c>Route</c>
+    ///     directly on its builder parameter. Deliberately limited to this direct case — a call
+    ///     reached through a helper method or a captured local is not detected; see
+    ///     <see cref="EndpointDiagnostics.RouteDeclaredTwice" /> for why.
+    /// </summary>
+    private static bool ConfigureCallsVerbMethodDirectly(ClassDeclarationSyntax classDeclaration)
+    {
+        var configureMethod = classDeclaration.Members
+            .OfType<MethodDeclarationSyntax>()
+            .FirstOrDefault(static m => m.Identifier.Text == "Configure" && m.ParameterList.Parameters.Count == 1);
+
+        if (configureMethod is null)
+        {
+            return false;
+        }
+
+        var parameterName = configureMethod.ParameterList.Parameters[0].Identifier.Text;
+
+        SyntaxNode? body = configureMethod.Body;
+        body ??= configureMethod.ExpressionBody;
+        if (body is null)
+        {
+            return false;
+        }
+
+        foreach (var invocation in body.DescendantNodes().OfType<InvocationExpressionSyntax>())
+        {
+            if (invocation.Expression is MemberAccessExpressionSyntax
+                {
+                    Expression: IdentifierNameSyntax identifier,
+                    Name.Identifier.Text: "Get" or "Post" or "Put" or "Patch" or "Delete" or "Route"
+                } &&
+                identifier.Identifier.Text == parameterName)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    ///     SYNE001: reports every route-template parameter that no resolved <see cref="BindablePropertyModel" />
+    ///     actually binds from the route.
+    /// </summary>
+    /// <remarks>
+    ///     Deliberately checks the already-resolved <paramref name="boundProperties" /> rather than
+    ///     raw property names: a property with <c>[FromRoute(Name = "...")]</c> can bind a route
+    ///     parameter under a completely different property name (see
+    ///     <c>BinderEmissionEdgeCaseTests.Generate_ForMvcBindingAttributes_...</c>), and a property
+    ///     whose name happens to match but that resolution excluded — an explicit
+    ///     <c>[FromQuery]</c> override, or no viable <c>TryParse</c> (Task 17's SYNE012) — is not a
+    ///     "matching bindable property" regardless of the name coincidence.
+    /// </remarks>
+    private static void CheckRouteParameters(EquatableArray<BindablePropertyModel> boundProperties,
+        string boundTypeDisplayName,
+        string route,
+        LocationInfo? location,
+        List<DiagnosticInfo> diagnostics)
+    {
+        var routeParameters = ExtractRouteParameterNames(route);
+        if (routeParameters.Count == 0)
+        {
+            return;
+        }
+
+        var routeSourceKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var property in boundProperties)
+        {
+            if (property.Source == BindingSource.Route)
+            {
+                routeSourceKeys.Add(property.SourceKey);
+            }
+        }
+
+        foreach (var pair in routeParameters)
+        {
+            if (!routeSourceKeys.Contains(pair.Key))
+            {
+                diagnostics.Add(new DiagnosticInfo(
+                    EndpointDiagnostics.RouteParameterHasNoProperty,
+                    location,
+                    new EquatableArray<string>([pair.Value, boundTypeDisplayName])));
+            }
+        }
     }
 
     /// <summary>
@@ -457,7 +681,12 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
         return (string.Empty, string.Empty);
     }
 
-    private static string? ReadGroupAttribute(INamedTypeSymbol symbol)
+    /// <summary>
+    ///     Reads <c>[InGroup&lt;T&gt;]</c>, returning both the fully-qualified display name used by
+    ///     emission and the underlying symbol, which SYNE006 needs to check whether <c>T</c> actually
+    ///     derives from <c>EndpointGroup</c>.
+    /// </summary>
+    private static (string? GroupFullName, INamedTypeSymbol? GroupType) ReadGroupAttribute(INamedTypeSymbol symbol)
     {
         foreach (var attribute in symbol.GetAttributes())
         {
@@ -465,18 +694,37 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
                 $"{generic.ContainingNamespace}.{generic.OriginalDefinition.MetadataName}" ==
                 "UnambitiousFx.Synapse.Endpoints.InGroupAttribute`1")
             {
-                return generic.TypeArguments[0].ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                var groupType = generic.TypeArguments[0] as INamedTypeSymbol;
+                return (generic.TypeArguments[0].ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat), groupType);
             }
         }
 
-        return null;
+        return (null, null);
     }
 
     private static void Emit(SourceProductionContext context,
-        ImmutableArray<EndpointTarget> endpoints,
+        ImmutableArray<EndpointAnalysisResult> results,
         string? rootNamespace)
     {
-        if (endpoints.IsDefaultOrEmpty)
+        if (results.IsDefaultOrEmpty)
+        {
+            return;
+        }
+
+        foreach (var result in results)
+        {
+            foreach (var diagnostic in result.Diagnostics)
+            {
+                context.ReportDiagnostic(diagnostic.ToDiagnostic());
+            }
+        }
+
+        var endpoints = results
+            .Where(static r => r.Target is not null)
+            .Select(static r => r.Target!.Value)
+            .ToImmutableArray();
+
+        if (endpoints.IsEmpty)
         {
             return;
         }

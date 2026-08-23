@@ -14,7 +14,10 @@ public sealed class EndpointGroupEmissionTests
 
                               namespace TestNs;
 
-                              public sealed record GetThingQuery : IRequest<string>;
+                              public sealed record GetThingQuery : IRequest<string>
+                              {
+                                  public string Id { get; init; } = "";
+                              }
 
                               [Get("/things/{id}")]
                               public sealed class GetThingEndpoint : Endpoint<GetThingQuery, string>;
@@ -38,7 +41,10 @@ public sealed class EndpointGroupEmissionTests
 
                               namespace TestNs;
 
-                              public sealed record GetThingQuery : IRequest<string>;
+                              public sealed record GetThingQuery : IRequest<string>
+                              {
+                                  public string Id { get; init; } = "";
+                              }
 
                               [Get("/things/{id}")]
                               public sealed class GetThingEndpoint : Endpoint<GetThingQuery, string>;
@@ -154,7 +160,10 @@ public sealed class EndpointGroupEmissionTests
 
                               namespace TestNs;
 
-                              public sealed record GroupedQuery : IRequest<string>;
+                              public sealed record GroupedQuery : IRequest<string>
+                              {
+                                  public string Id { get; init; } = "";
+                              }
 
                               public sealed class MyGroup : EndpointGroup
                               {
