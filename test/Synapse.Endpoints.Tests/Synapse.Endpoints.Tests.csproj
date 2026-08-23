@@ -1,10 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
     <ItemGroup>
-        <!-- Already shipped by the Microsoft.AspNetCore.App FrameworkReference below; keep the explicit
-             reference for readability in tests that use DI directly, and suppress the pruning warning
-             NuGet raises because the package is transitively available. -->
-        <PackageReference Include="Microsoft.Extensions.DependencyInjection" NoWarn="NU1510" />
         <PackageReference Include="NSubstitute" />
     </ItemGroup>
 

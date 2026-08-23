@@ -1,5 +1,3 @@
-using System.Reflection;
-
 namespace UnambitiousFx.Synapse.Endpoints.Tests;
 
 public sealed class ScaffoldTests
@@ -8,7 +6,7 @@ public sealed class ScaffoldTests
     public void Assembly_WhenLoaded_HasExpectedName()
     {
         // Arrange
-        var type = typeof(Placeholder);
+        var type = typeof(EndpointBase);
 
         // Act
         var name = type.Assembly.GetName().Name;
