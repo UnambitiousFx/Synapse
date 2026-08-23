@@ -23,11 +23,14 @@
         <Project Path="src\Synapse.Abstractions\Synapse.Abstractions.csproj" />
         <Project Path="src\Synapse.Generator\Synapse.Generator.csproj" />
         <Project Path="src\Synapse\Synapse.csproj" />
+        <Project Path="src/Synapse.Endpoints/Synapse.Endpoints.csproj" />
+        <Project Path="src/Synapse.Endpoints.Generator/Synapse.Endpoints.Generator.csproj" />
     </Folder>
     <Folder Name="/test/">
         <Project Path="test/Synapse.AspNetCore.Tests/Synapse.AspNetCore.Tests.csproj" />
         <Project Path="test/Synapse.Generator.Tests/Synapse.Generator.Tests.csproj" />
         <Project Path="test\Synapse.Tests\Synapse.Tests.csproj" />
+        <Project Path="test/Synapse.Endpoints.Tests/Synapse.Endpoints.Tests.csproj" />
     </Folder>
     <Folder Name="/_/">
         <File Path="build.props" />
