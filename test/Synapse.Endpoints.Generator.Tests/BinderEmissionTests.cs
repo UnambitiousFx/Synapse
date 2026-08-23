@@ -32,6 +32,11 @@ public sealed class BinderEmissionTests
         Assert.Contains("global::System.Guid.TryParse(", generated);
         Assert.Contains("ThingId =", generated);
         Assert.DoesNotContain("\"Title\"", generated);
+
+        // This is the design's central illustrative shape (route Guid-parse + record `with` + body
+        // property together) — a substring match alone would not have caught either of the two
+        // wrong-message-text bugs found by manual inspection during self-review, so compile-check it.
+        GeneratorHarness.AssertGeneratedCompiles(source);
     }
 
     [Fact]
@@ -112,6 +117,7 @@ public sealed class BinderEmissionTests
 
         // Assert
         Assert.Contains("TryGetHeader(context, \"If-Match\", out var", generated);
+        GeneratorHarness.AssertGeneratedCompiles(source);
     }
 
     [Fact]

@@ -164,6 +164,148 @@ public sealed class BinderEmissionEdgeCaseTests
     }
 
     [Fact]
+    public void Generate_ForPositionalRecordWithBodylessVerb_ConstructsThroughThePrimaryConstructor()
+    {
+        // Arrange — a positional record has no parameterless constructor, so `new T()` (what a
+        // bodyless verb used to emit unconditionally) is CS7036. This is one of the most natural
+        // shapes in the library — e.g. `PlaceOrderCommand(string Product, int Quantity)` — not a
+        // contrived one, and none of the earlier bodyless-verb fixtures used positional properties,
+        // which is how this got past them.
+        const string source = """
+                              using System;
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+
+                              namespace TestNs;
+
+                              public sealed record GetTaskQuery(Guid TaskId) : IRequest<int>;
+
+                              [Get("/tasks/{taskId:guid}")]
+                              public sealed class GetTaskEndpoint : Endpoint<GetTaskQuery, int>;
+                              """;
+
+        // Act
+        GeneratorHarness.AssertGeneratedCompiles(source);
+        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+
+        // Assert — TaskId is parsed before construction and passed as a constructor argument rather
+        // than through a `with` expression (which would need the object to already exist).
+        Assert.Contains("new global::TestNs.GetTaskQuery(valueTaskId)", generated);
+        Assert.DoesNotContain("with { TaskId", generated);
+    }
+
+    [Fact]
+    public void Generate_ForPositionalRecordWithExtraSettableProperty_BindsBothTheCtorArgAndTheProperty()
+    {
+        // Arrange — a shape with both a positional constructor parameter (Id) and a plain settable
+        // property declared separately in the body (Extra, not part of the constructor at all).
+        // Id must be supplied to the constructor; Extra must still be bound afterwards, normally.
+        const string source = """
+                              using System;
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+
+                              namespace TestNs;
+
+                              public sealed record MixedShapeQuery(Guid Id) : IRequest<int>
+                              {
+                                  public string? Extra { get; set; }
+                              }
+
+                              [Get("/mixedshape/{id}")]
+                              public sealed class MixedShapeEndpoint : Endpoint<MixedShapeQuery, int>;
+                              """;
+
+        // Act
+        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+
+        // Assert
+        Assert.Contains("new global::TestNs.MixedShapeQuery(valueId)", generated);
+        Assert.Contains("if (global::UnambitiousFx.Synapse.Endpoints.Binding.BindingHelpers.TryGetQuery(context, \"Extra\", out var rawExtra))",
+            generated);
+        Assert.Contains("message.Extra = rawExtra;", generated);
+        GeneratorHarness.AssertGeneratedCompiles(source);
+    }
+
+    [Fact]
+    public void Generate_ForPositionalRecordParameterWithNoMatchingProperty_UsesDefault()
+    {
+        // Arrange — a hand-written constructor parameter that does not correspond to any bindable
+        // property at all (not merely one excluded for having no TryParse): nothing can supply it,
+        // so `default` is the honest, still-compiling answer (Task 17's SYNE012 territory if the
+        // property existed but had no parse path; here there is no property to even consider).
+        const string source = """
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+
+                              namespace TestNs;
+
+                              public sealed class HandWrittenQuery : IRequest<int>
+                              {
+                                  public HandWrittenQuery(int computedOnly)
+                                  {
+                                      ComputedOnly = computedOnly;
+                                  }
+
+                                  public int ComputedOnly { get; }
+                              }
+
+                              [Get("/handwritten")]
+                              public sealed class HandWrittenEndpoint : Endpoint<HandWrittenQuery, int>;
+                              """;
+
+        // Act
+        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+
+        // Assert
+        Assert.Contains("new global::TestNs.HandWrittenQuery(default)", generated);
+        GeneratorHarness.AssertGeneratedCompiles(source);
+    }
+
+    [Fact]
+    public void Generate_ForTypeSharedByEndpointsWithDifferentVerbs_KnownLimitationUsesFirstEndpointsResolution()
+    {
+        // Arrange — SharedCommand is bound by two endpoints with different verbs and routes.
+        // EndpointRegistry.RegisterBinder<TRequest> is keyed by request TYPE, so only one binder can
+        // exist for SharedCommand; today it is built from whichever endpoint sorts first ordinally by
+        // fully-qualified name ("AEndpoint" before "BEndpoint"), regardless of which endpoint actually
+        // receives a given request at runtime. This is a known, currently-undetected limitation (see
+        // EndpointTarget.BoundProperties' remarks) that Task 17's planned SYNE013 will report instead
+        // of silently picking a winner. This test pins today's behaviour so a change to it is visible.
+        const string source = """
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+
+                              namespace TestNs;
+
+                              public sealed record SharedCommand : IRequest
+                              {
+                                  public string Value { get; init; } = "";
+                              }
+
+                              [Get("/a/{value}")]
+                              public sealed class AEndpoint : Endpoint<SharedCommand>;
+
+                              [Post("/b")]
+                              public sealed class BEndpoint : Endpoint<SharedCommand>;
+                              """;
+
+        // Act
+        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+
+        // Assert — AEndpoint (GET, route "value") wins: Value binds from the route rather than the
+        // body, and the body is never read at all, as if BEndpoint (POST) did not exist.
+        Assert.Contains("TryGetRoute(context, \"value\", out var", generated);
+        Assert.DoesNotContain("ReadJsonBodyAsync", generated);
+
+        // Only one binder class is emitted for the shared type.
+        var occurrences = generated.Split("IEndpointBinder<global::TestNs.SharedCommand>").Length - 1;
+        Assert.Equal(1, occurrences);
+
+        GeneratorHarness.AssertGeneratedCompiles(source);
+    }
+
+    [Fact]
     public void Generate_ForPropertyTypeWithNoTryParse_OmitsItWithoutBreakingTheOthers()
     {
         // Arrange — "Thing" has no viable parse path (Task 17's SYNE012); "Id" does and must still

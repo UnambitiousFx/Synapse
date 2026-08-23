@@ -73,9 +73,23 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
 
             var bound = baseType.TypeArguments[0];
             var (method, route) = ReadRouteAttribute(symbol);
-            var boundProperties = bound is INamedTypeSymbol boundNamedType
-                ? CollectBindableProperties(boundNamedType, method, route)
-                : new EquatableArray<BindablePropertyModel>(Array.Empty<BindablePropertyModel>());
+
+            EquatableArray<BindablePropertyModel> boundProperties;
+            bool hasParameterlessConstructor;
+            EquatableArray<string> primaryConstructorParameterNames;
+
+            if (bound is INamedTypeSymbol boundNamedType)
+            {
+                boundProperties = CollectBindableProperties(boundNamedType, method, route);
+                (hasParameterlessConstructor, primaryConstructorParameterNames) =
+                    ResolveConstructionStrategy(boundNamedType);
+            }
+            else
+            {
+                boundProperties = new EquatableArray<BindablePropertyModel>(Array.Empty<BindablePropertyModel>());
+                hasParameterlessConstructor = true;
+                primaryConstructorParameterNames = new EquatableArray<string>(Array.Empty<string>());
+            }
 
             return new EndpointTarget(
                 symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
@@ -85,7 +99,9 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
                 route,
                 ReadGroupAttribute(symbol),
                 LocationInfo.CreateFrom(symbol.Locations.FirstOrDefault()),
-                boundProperties);
+                boundProperties,
+                hasParameterlessConstructor,
+                primaryConstructorParameterNames);
         }
 
         return null;
@@ -150,6 +166,46 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
         }
 
         return new EquatableArray<BindablePropertyModel>(models.ToArray());
+    }
+
+    /// <summary>
+    ///     Decides how a bodyless binder should construct <paramref name="boundType" />. Most message
+    ///     shapes (<c>{ get; init; }</c> properties with no positional parameters) have an implicit
+    ///     parameterless constructor, so <c>new T()</c> plus property assignment works. A positional
+    ///     record (or any type whose only accessible constructor takes parameters) has no
+    ///     parameterless constructor at all — <c>new T()</c> for it is <c>CS7036</c> — so the binder
+    ///     must instead call the constructor with the most parameters (the closest analogue to "the
+    ///     primary constructor" for an arbitrary type), matching each parameter to a property by name
+    ///     at emit time.
+    /// </summary>
+    private static (bool HasParameterlessConstructor, EquatableArray<string> PrimaryConstructorParameterNames)
+        ResolveConstructionStrategy(INamedTypeSymbol boundType)
+    {
+        var accessibleConstructors = boundType.Constructors
+            .Where(c => !c.IsStatic && c.DeclaredAccessibility is Accessibility.Public or Accessibility.Internal)
+            .ToArray();
+
+        var none = new EquatableArray<string>(Array.Empty<string>());
+
+        if (accessibleConstructors.Length == 0 ||
+            accessibleConstructors.Any(c => c.Parameters.Length == 0))
+        {
+            // No accessible constructor at all is out of scope here (nothing this emitter does can
+            // construct such a type; that needs its own diagnostic) — the pre-existing `new T()`
+            // fallback is used either way, same as when a parameterless constructor genuinely exists.
+            return (true, none);
+        }
+
+        // Deterministic tie-break: most parameters wins; ties broken by the parameter names
+        // themselves rather than by declaration order, which the compiler does not guarantee is
+        // stable across equivalent-looking source.
+        var primary = accessibleConstructors
+            .OrderByDescending(c => c.Parameters.Length)
+            .ThenBy(c => string.Join(",", c.Parameters.Select(p => p.Name)), StringComparer.Ordinal)
+            .First();
+
+        var parameterNames = primary.Parameters.Select(p => p.Name).ToArray();
+        return (false, new EquatableArray<string>(parameterNames));
     }
 
     private static BindablePropertyModel? ResolveBindableProperty(IPropertySymbol property,
@@ -428,17 +484,23 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
         var ns = rootNamespace ?? "UnambitiousFx.Synapse.Endpoints.Generated";
         var ordered = endpoints.OrderBy(e => e.EndpointFullName, StringComparer.Ordinal).ToArray();
 
-        // Several endpoints can bind the same message type; one binder is emitted per distinct
-        // bound type, so keep only the first occurrence once ordered deterministically by type name.
+        // Several endpoints can bind the same message type, but EndpointRegistry.RegisterBinder is
+        // keyed by the message type, so only one binder is emitted per distinct bound type: the
+        // group's first endpoint by EndpointFullName (see `ordered` above) wins, and that endpoint's
+        // own route/verb resolution is what the shared binder uses — silently, for every other
+        // endpoint bound to the same type. See EndpointTarget.BoundProperties for the known
+        // limitation this creates and the diagnostic planned to report it (SYNE013). The resulting
+        // array is then re-ordered by bound-type name purely for deterministic emission order.
         var boundTypes = ordered
             .GroupBy(e => e.BoundTypeFullName, StringComparer.Ordinal)
             .Select(g =>
             {
                 var first = g.First();
                 var isBodylessVerb = first.HttpMethod is "GET" or "DELETE" or "HEAD";
-                return (first.BoundTypeFullName, first.BoundProperties, isBodylessVerb);
+                return new BoundTypeInfo(first.BoundTypeFullName, first.BoundProperties, isBodylessVerb,
+                    first.HasParameterlessConstructor, first.PrimaryConstructorParameterNames);
             })
-            .OrderBy(t => t.BoundTypeFullName, StringComparer.Ordinal)
+            .OrderBy(t => t.TypeFullName, StringComparer.Ordinal)
             .ToArray();
 
         context.AddSource("EndpointGroup.g.cs", EndpointGroupEmitter.EmitGroup(ns, ordered));

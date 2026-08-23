@@ -81,6 +81,18 @@ public static class BindingHelpers
     {
         ArgumentNullException.ThrowIfNull(context);
 
+        // A genuinely empty body deserializes to nothing — System.Text.Json does not return null
+        // for it, it throws JsonException ("input does not contain any JSON tokens"), which would
+        // otherwise surface as "not valid JSON" rather than the more useful "required" message.
+        // Checking Content-Length catches the common case (most clients send it, including an
+        // explicit 0 for a bodyless request); a chunked request with no Content-Length header and a
+        // truly empty stream still falls through to the JsonException branch below, which still
+        // reports a sensible (if less specific) failure rather than miscategorizing the body as valid.
+        if (context.Request.ContentLength == 0)
+        {
+            return BindResult<T>.Failure("The request body is required but was empty or null.");
+        }
+
         var typeInfo = BodyTypeInfo<T>.Cache.Get(context);
 
         try
