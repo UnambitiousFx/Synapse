@@ -145,12 +145,27 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
 
             var diagnosticInfos = new EquatableArray<DiagnosticInfo>(diagnostics.ToArray());
 
-            // SYNE011 and SYNE012 are Error severity (the build fails on them regardless) but, unlike
-            // every other diagnostic here, do not block this endpoint's own emission: the property
-            // they report is already omitted from boundProperties, and the rest of the endpoint
-            // generates working code around that omission (see ResolveBindableProperty). Gating on
-            // them anyway would only suppress a correctly-generated binder alongside the diagnostic
-            // that explains why one property is missing from it.
+            // Every Error-severity diagnostic blocks this endpoint's own emission (nulls `target`
+            // below) EXCEPT SYNE011 and SYNE012, which are deliberately excluded: the property they
+            // report is already omitted from boundProperties, and the rest of the endpoint generates
+            // working code around that omission (see ResolveBindableProperty). Gating on them anyway
+            // would only suppress a correctly-generated binder alongside the diagnostic that explains
+            // why one property is missing from it. So SYNE001/SYNE002/SYNE005/SYNE006/SYNE009/SYNE010
+            // block; SYNE007/SYNE011/SYNE012/SYNE013 (Warning, or excluded here) do not.
+            //
+            // This check keys off `DefaultSeverity` — the descriptor's built-in severity — not the
+            // *effective* severity a consumer may have reconfigured via .editorconfig
+            // (`dotnet_diagnostic.SYNEnnn.severity`). That has a real, asymmetric consequence: a
+            // consumer who downgrades a *blocking* diagnostic (e.g. SYNE002 to Warning) still gets the
+            // whole `EndpointTarget` nulled here — the endpoint silently fails to register at runtime,
+            // with no compile error to explain it, precisely because they downgraded the diagnostic
+            // that would have told them why. Downgrading SYNE011/SYNE012 instead changes nothing about
+            // gating (they never blocked in the first place) — the consumer still gets a compiling
+            // endpoint with one property skipped, a strictly gentler failure mode. This asymmetry is
+            // accepted as-is (not a bug to fix): SYNE001/SYNE002/etc. represent shapes this generator
+            // has decided are not safe to emit code for at all, and reconfiguring their severity is a
+            // deliberate override of that decision, made with the same responsibility as reconfiguring
+            // any other "treat as blocking" analyzer rule.
             var hasBlockingError = diagnostics.Exists(static d =>
                 d.Descriptor.DefaultSeverity == DiagnosticSeverity.Error &&
                 d.Descriptor.Id is not ("SYNE011" or "SYNE012"));
