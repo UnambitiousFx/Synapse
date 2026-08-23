@@ -361,7 +361,7 @@ public sealed class RouteDiagnosticTests
     [Fact]
     public void Generate_WhenEndpointHasAnyErrorDiagnostic_SkipsEmissionForThatEndpoint()
     {
-        // Arrange — the shape violation (generic) should prevent EndpointGroup.g.cs from emitting a
+        // Arrange — the shape violation (generic) should prevent SynapseEndpointGroup.g.cs from emitting a
         // MapEndpoint<T>() call for this endpoint at all, rather than cascading into a confusing
         // "TEndpoint : EndpointBase, new()" constraint error on the generated call site.
         const string source = """
@@ -380,7 +380,7 @@ public sealed class RouteDiagnosticTests
                               """;
 
         // Act
-        var generated = GeneratorHarness.TryGetFile(source, "EndpointGroup.g.cs");
+        var generated = GeneratorHarness.TryGetFile(source, "SynapseEndpointGroup.g.cs");
 
         // Assert
         Assert.Null(generated);

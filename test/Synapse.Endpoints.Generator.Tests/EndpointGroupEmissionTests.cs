@@ -24,11 +24,44 @@ public sealed class EndpointGroupEmissionTests
                               """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "EndpointGroup.g.cs");
+        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointGroup.g.cs");
 
         // Assert
-        Assert.Contains("public sealed class EndpointGroup : global::UnambitiousFx.Synapse.Endpoints.IEndpointGroup", generated);
+        Assert.Contains("public sealed class SynapseEndpointGroup : global::UnambitiousFx.Synapse.Endpoints.IEndpointGroup", generated);
         Assert.Contains("endpoints.MapEndpoint<global::TestNs.GetThingEndpoint>();", generated);
+    }
+
+    [Fact]
+    public void Generate_WithRootNamespaceDisjointFromSynapseEndpoints_EmittedGroupCompiles()
+    {
+        // Arrange — build_property.RootNamespace set to a namespace that is NOT nested under
+        // UnambitiousFx.Synapse.Endpoints, matching a real consumer rather than the coincidental
+        // fallback ("UnambitiousFx.Synapse.Endpoints.Generated") every other test in this suite
+        // exercises without ever setting the property at all. That fallback happens to be a child
+        // namespace of UnambitiousFx.Synapse.Endpoints, which let an emitted, unqualified
+        // `endpoints.MapEndpoint<T>()` extension-method call resolve by namespace-nesting
+        // coincidence even with no `using` in the generated file — this test's whole point is to
+        // not have that coincidence available.
+        const string source = """
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+
+                              namespace Acme.Api;
+
+                              public sealed record GetThingQuery : IRequest<string>
+                              {
+                                  public string Id { get; init; } = "";
+                              }
+
+                              [Get("/things/{id}")]
+                              public sealed class GetThingEndpoint : Endpoint<GetThingQuery, string>;
+                              """;
+
+        // Act & Assert — compiles the emitted SynapseEndpointGroup.g.cs (and its siblings) with
+        // that disjoint root namespace. Reverting the `using UnambitiousFx.Synapse.Endpoints;` fix
+        // in EndpointGroupEmitter.EmitGroup makes this fail with CS1061 while every other test in
+        // this file keeps passing — that gap is exactly what this test exists to close.
+        GeneratorHarness.AssertGeneratedCompilesWithRootNamespace(source, "Acme.Api");
     }
 
     [Fact]
@@ -68,7 +101,7 @@ public sealed class EndpointGroupEmissionTests
         const string source = "namespace TestNs; public sealed class NotAnEndpoint;";
 
         // Act
-        var generated = GeneratorHarness.TryGetFile(source, "EndpointGroup.g.cs");
+        var generated = GeneratorHarness.TryGetFile(source, "SynapseEndpointGroup.g.cs");
 
         // Assert
         Assert.Null(generated);
@@ -104,7 +137,7 @@ public sealed class EndpointGroupEmissionTests
                               """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "EndpointGroup.g.cs");
+        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointGroup.g.cs");
 
         // Assert — one MapEndpoint call per shape, so a base-type match that silently fails for one
         // shape (e.g. MappedEndpoint`4 or StreamEndpoint`2) can't hide behind the other three still

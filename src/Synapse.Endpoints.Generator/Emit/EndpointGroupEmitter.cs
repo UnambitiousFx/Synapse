@@ -6,7 +6,7 @@ using UnambitiousFx.Synapse.Endpoints.Generator.Model;
 namespace UnambitiousFx.Synapse.Endpoints.Generator.Emit;
 
 /// <summary>
-///     Renders <c>EndpointGroup.g.cs</c> (the <c>IEndpointGroup</c> implementation that maps every
+///     Renders <c>SynapseEndpointGroup.g.cs</c> (the <c>IEndpointGroup</c> implementation that maps every
 ///     discovered endpoint) and <c>SynapseEndpointRegistrations.g.cs</c> (the module initializer that
 ///     registers each endpoint's route metadata).
 /// </summary>
@@ -32,7 +32,7 @@ internal static class EndpointGroupEmitter
         builder.AppendLine($"namespace {rootNamespace};");
         builder.AppendLine();
         builder.AppendLine("/// <summary>Maps every Synapse endpoint declared in this assembly.</summary>");
-        builder.AppendLine("public sealed class EndpointGroup : global::UnambitiousFx.Synapse.Endpoints.IEndpointGroup");
+        builder.AppendLine("public sealed class SynapseEndpointGroup : global::UnambitiousFx.Synapse.Endpoints.IEndpointGroup");
         builder.AppendLine("{");
         builder.AppendLine("    /// <inheritdoc />");
         builder.AppendLine("    public void Map(global::Microsoft.AspNetCore.Routing.IEndpointRouteBuilder endpoints)");

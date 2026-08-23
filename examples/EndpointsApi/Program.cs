@@ -24,8 +24,8 @@ var app = builder.Build();
 app.UseSynapsePropagation();
 app.MapOpenApi();
 
-// One line per assembly. The generated EndpointGroup is a list of MapEndpoint<T>() calls.
-app.MapSynapseEndpoints(new global::UnambitiousFx.Examples.EndpointsApi.EndpointGroup());
+// One line per assembly. The generated SynapseEndpointGroup is a list of MapEndpoint<T>() calls.
+app.MapSynapseEndpoints(new global::UnambitiousFx.Examples.EndpointsApi.SynapseEndpointGroup());
 
 app.Run();
 

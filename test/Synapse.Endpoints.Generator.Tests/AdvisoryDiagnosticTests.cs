@@ -552,8 +552,11 @@ public sealed class AdvisoryDiagnosticTests
     [Fact]
     public void Generate_WhenStreamEndpointItemTypeIsUnregistered_ReportsSyne008()
     {
-        // Arrange — StreamEndpoint<TRequest,TItem>'s streamed body is TItem (TypeArguments[1]), not
-        // TRequest; pins that index resolution for the Stream kind specifically.
+        // Arrange — StreamEndpoint<TRequest,TItem>'s actual wire response type is
+        // IAsyncEnumerable<TItem> (TypeArguments[1] wrapped), not TItem bare and not TRequest;
+        // nothing is registered here, so both the wrapped and unwrapped names are absent — this
+        // pins that Stream resolves to *some* type derived from TypeArguments[1] at all, not the
+        // wrapping specifically (see the two tests immediately below for that).
         const string source = """
                               using System.Text.Json.Serialization;
                               using UnambitiousFx.Synapse.Abstractions;
@@ -576,6 +579,72 @@ public sealed class AdvisoryDiagnosticTests
         // Assert
         var diagnostic = Assert.Single(diagnostics, d => d.Id == "SYNE008");
         Assert.Contains("TickItemDto", diagnostic.GetMessage());
+    }
+
+    [Fact]
+    public void Generate_WhenStreamEndpointRegistersOnlyBareItemType_StillReportsSyne008ForAsyncEnumerable()
+    {
+        // Arrange — regression for the false negative found in Task 20: StreamEndpoint's actual
+        // wire response type is IAsyncEnumerable<TItem>, the type
+        // StreamEndpoint.CreateDescriptor declares via ProducesResponseMetadata and the type
+        // Microsoft.AspNetCore.OpenApi asks the resolver chain for. Registering only the bare item
+        // type (as EndpointsApi's example initially did, and as this generator's own check used to
+        // accept as sufficient) must NOT satisfy SYNE008 — that combination used to leave the
+        // build warning-free while /openapi/v1.json threw at runtime.
+        const string source = """
+                              using System.Text.Json.Serialization;
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+
+                              namespace TestNs;
+
+                              public sealed record TickItemDto(int Value);
+                              public sealed record TickQuery : IStreamRequest<TickItemDto>;
+
+                              [Get("/ticks")]
+                              public sealed class TickEndpoint : StreamEndpoint<TickQuery, TickItemDto>;
+
+                              [JsonSerializable(typeof(TickItemDto))]
+                              internal sealed partial class AppJsonContext : JsonSerializerContext;
+                              """;
+
+        // Act
+        var diagnostics = GeneratorHarness.GetDiagnostics(source);
+
+        // Assert
+        var diagnostic = Assert.Single(diagnostics, d => d.Id == "SYNE008");
+        Assert.Contains("IAsyncEnumerable", diagnostic.GetMessage());
+        Assert.Contains("TickItemDto", diagnostic.GetMessage());
+    }
+
+    [Fact]
+    public void Generate_WhenStreamEndpointRegistersAsyncEnumerableOfItemType_DoesNotReportSyne008()
+    {
+        // Arrange — the fix's silent case: registering IAsyncEnumerable<TItem> itself (not just
+        // TItem) satisfies the check, matching the type StreamEndpoint actually serializes as.
+        const string source = """
+                              using System.Collections.Generic;
+                              using System.Text.Json.Serialization;
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+
+                              namespace TestNs;
+
+                              public sealed record TickItemDto(int Value);
+                              public sealed record TickQuery : IStreamRequest<TickItemDto>;
+
+                              [Get("/ticks")]
+                              public sealed class TickEndpoint : StreamEndpoint<TickQuery, TickItemDto>;
+
+                              [JsonSerializable(typeof(IAsyncEnumerable<TickItemDto>))]
+                              internal sealed partial class AppJsonContext : JsonSerializerContext;
+                              """;
+
+        // Act
+        var diagnostics = GeneratorHarness.GetDiagnostics(source);
+
+        // Assert
+        Assert.DoesNotContain(diagnostics, d => d.Id == "SYNE008");
     }
 
     [Fact]

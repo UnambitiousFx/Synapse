@@ -84,12 +84,17 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
 
             // SYNE008: the type actually written back as the response body, which differs from
             // `bound` for Mapped (THttpResponse, not the internal TRequest/TResponse pair) and does
-            // not exist at all for Void (204 No Content has no body to serialize).
+            // not exist at all for Void (204 No Content has no body to serialize). Stream's wire
+            // type is IAsyncEnumerable<TItem> — the exact type StreamEndpoint.CreateDescriptor
+            // declares via ProducesResponseMetadata and the type Microsoft.AspNetCore.OpenApi asks
+            // the resolver chain for — not bare TItem, which used to let a stream endpoint's
+            // response slip past this check with only its item type registered (a false negative:
+            // build stays warning-free, /openapi/v1.json 500s at runtime for real).
             ITypeSymbol? responseType = kind switch
             {
                 EndpointKind.Value => baseType.TypeArguments[1],
                 EndpointKind.Mapped => baseType.TypeArguments[3],
-                EndpointKind.Stream => baseType.TypeArguments[1],
+                EndpointKind.Stream => WrapInAsyncEnumerable(context.SemanticModel.Compilation, baseType.TypeArguments[1]),
                 _ => null
             };
 
@@ -906,6 +911,31 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
     }
 
     /// <summary>
+    ///     SYNE008: constructs <c>IAsyncEnumerable&lt;<paramref name="itemType" />&gt;</c> from the
+    ///     compilation's own <c>System.Collections.Generic.IAsyncEnumerable`1</c> definition —
+    ///     <c>StreamEndpoint&lt;TRequest, TItem&gt;</c>'s actual wire response type, matching what
+    ///     <c>StreamEndpoint.CreateDescriptor</c> declares via
+    ///     <c>ProducesResponseMetadata(..., typeof(IAsyncEnumerable&lt;TItem&gt;), ...)</c>. Built
+    ///     from the compilation rather than a string-matched metadata name so the result is a real
+    ///     constructed <see cref="INamedTypeSymbol" /> that <see cref="IsFrameworkOwned" /> can walk
+    ///     into (it already recurses into a constructed generic's type arguments — see that method's
+    ///     remarks — so a closed <c>IAsyncEnumerable&lt;ThingDto&gt;</c> comes out not-framework-owned
+    ///     exactly like <c>IReadOnlyList&lt;ThingDto&gt;</c> already does). Returns
+    ///     <paramref name="itemType" /> itself, unwrapped, if <c>IAsyncEnumerable`1</c> cannot be
+    ///     found in the compilation's reference graph — a condition that should not occur for a real
+    ///     ASP.NET Core project (the type is part of the BCL every compilation already references),
+    ///     but this keeps the generator from ever throwing over it.
+    /// </summary>
+    private static ITypeSymbol WrapInAsyncEnumerable(Compilation compilation,
+        ITypeSymbol itemType)
+    {
+        var asyncEnumerableDefinition =
+            compilation.GetTypeByMetadataName("System.Collections.Generic.IAsyncEnumerable`1");
+
+        return asyncEnumerableDefinition?.Construct(itemType) ?? itemType;
+    }
+
+    /// <summary>
     ///     SYNE008: whether <paramref name="type" /> is a candidate that could plausibly need a
     ///     <c>[JsonSerializable(typeof(...))]</c> registration at all. Excludes a type parameter (a
     ///     generic endpoint class is already SYNE010; nothing concrete to check), an error type
@@ -1368,7 +1398,7 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
             .OrderBy(t => t.TypeFullName, StringComparer.Ordinal)
             .ToArray();
 
-        context.AddSource("EndpointGroup.g.cs", EndpointGroupEmitter.EmitGroup(ns, ordered));
+        context.AddSource("SynapseEndpointGroup.g.cs", EndpointGroupEmitter.EmitGroup(ns, ordered));
         context.AddSource("SynapseEndpointRegistrations.g.cs",
             EndpointGroupEmitter.EmitRegistrations(ns, ordered, boundTypes));
         context.AddSource("SynapseEndpointBinders.g.cs", BinderEmitter.Emit(ns, boundTypes));

@@ -1,6 +1,8 @@
 using System.Collections.Immutable;
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.Diagnostics;
 using UnambitiousFx.Synapse.Endpoints;
 using UnambitiousFx.Synapse.Endpoints.Generator;
 
@@ -75,8 +77,33 @@ internal static class GeneratorHarness
 
     internal static void AssertGeneratedCompiles(string source)
     {
+        AssertGeneratedCompiles(source, optionsProvider: null);
+    }
+
+    /// <summary>
+    ///     Same as <see cref="AssertGeneratedCompiles(string)" />, but with
+    ///     <c>build_property.RootNamespace</c> set to <paramref name="rootNamespace" /> rather than
+    ///     left unset. Every other test in this suite leaves it unset, which makes
+    ///     <c>EndpointsGenerator</c> fall back to <c>"UnambitiousFx.Synapse.Endpoints.Generated"</c> —
+    ///     a namespace nested *under* <c>UnambitiousFx.Synapse.Endpoints</c>, which lets an emitter
+    ///     that only resolves by namespace-nesting (an unqualified extension-method call with no
+    ///     <c>using</c>, say) pass by coincidence rather than by actually being correct for a real
+    ///     consumer. Pass a <paramref name="rootNamespace" /> disjoint from
+    ///     <c>UnambitiousFx.Synapse.Endpoints</c> (for example <c>"Acme.Api"</c>) to close that hole.
+    /// </summary>
+    internal static void AssertGeneratedCompilesWithRootNamespace(string source, string rootNamespace)
+    {
+        AssertGeneratedCompiles(source,
+            new TestAnalyzerConfigOptionsProvider(
+                new Dictionary<string, string> { ["build_property.RootNamespace"] = rootNamespace }));
+    }
+
+    private static void AssertGeneratedCompiles(string source, AnalyzerConfigOptionsProvider? optionsProvider)
+    {
         var compilation = CreateCompilation(source);
-        var driver = CSharpGeneratorDriver.Create(new EndpointsGenerator());
+        var driver = optionsProvider is null
+            ? CSharpGeneratorDriver.Create(new EndpointsGenerator())
+            : CSharpGeneratorDriver.Create([new EndpointsGenerator().AsSourceGenerator()], optionsProvider: optionsProvider);
         var updatedDriver = driver.RunGeneratorsAndUpdateCompilation(compilation, out var updated, out var generatorDiagnostics);
 
         // A generator that throws mid-Analyze surfaces as CS8785, which the compiler treats as a
@@ -125,7 +152,7 @@ internal static class GeneratorHarness
     ///     Copied from <c>Synapse.Generator.Tests.GeneratorBehaviorTests.GetMetadataReferences()</c> and
     ///     extended with the Synapse.Endpoints assembly and the ASP.NET Core reference assemblies:
     ///     discovered endpoint types derive from the four endpoint base classes (Synapse.Endpoints), and the
-    ///     emitted <c>EndpointGroup.g.cs</c> names <c>Microsoft.AspNetCore.Routing.IEndpointRouteBuilder</c>.
+    ///     emitted <c>SynapseEndpointGroup.g.cs</c> names <c>Microsoft.AspNetCore.Routing.IEndpointRouteBuilder</c>.
     ///     The test project's <c>FrameworkReference</c> to <c>Microsoft.AspNetCore.App</c> puts the ASP.NET
     ///     Core shared-framework assemblies in TRUSTED_PLATFORM_ASSEMBLIES alongside the runtime ones, so no
     ///     separate reference-assembly lookup is needed here.
@@ -153,5 +180,38 @@ internal static class GeneratorHarness
         refs.Add(MetadataReference.CreateFromFile(typeof(EndpointBase).Assembly.Location));
 
         return refs;
+    }
+
+    /// <summary>
+    ///     Minimal <see cref="AnalyzerConfigOptionsProvider" /> that answers only the global options
+    ///     it was constructed with — enough to drive <c>build_property.RootNamespace</c>, the only
+    ///     MSBuild property <c>EndpointsGenerator</c> reads. Modeled on
+    ///     <c>Synapse.Generator.Tests.GeneratorBehaviorTests.TestAnalyzerConfigOptionsProvider</c>.
+    /// </summary>
+    private sealed class TestAnalyzerConfigOptionsProvider(Dictionary<string, string> globalOptions)
+        : AnalyzerConfigOptionsProvider
+    {
+        private readonly TestAnalyzerConfigOptions _global = new(globalOptions);
+
+        public override AnalyzerConfigOptions GlobalOptions => _global;
+
+        public override AnalyzerConfigOptions GetOptions(SyntaxTree tree) => _global;
+
+        public override AnalyzerConfigOptions GetOptions(AdditionalText textFile) => _global;
+    }
+
+    private sealed class TestAnalyzerConfigOptions(Dictionary<string, string> options) : AnalyzerConfigOptions
+    {
+        public override bool TryGetValue(string key, [NotNullWhen(true)] out string value)
+        {
+            if (options.TryGetValue(key, out var found))
+            {
+                value = found;
+                return true;
+            }
+
+            value = null!;
+            return false;
+        }
     }
 }
