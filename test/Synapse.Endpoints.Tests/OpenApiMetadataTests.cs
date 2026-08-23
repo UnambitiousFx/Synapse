@@ -98,6 +98,12 @@ public sealed class OpenApiMetadataTests
                                                metadata.Type == typeof(CreatedMappedResponse));
         Assert.DoesNotContain(produces, metadata => metadata.StatusCode == StatusCodes.Status200OK &&
                                                      metadata.Type == typeof(CreatedMappedResponse));
+
+        // Proves the non-generic Accepts(Type, ...) overload (used so THttpRequest need not carry a
+        // notnull constraint) declares the same request type the generic overload would have.
+        var accepts = endpoint.Metadata.GetMetadata<IAcceptsMetadata>();
+        Assert.NotNull(accepts);
+        Assert.Equal(typeof(CreatedMappedRequest), accepts!.RequestType);
     }
 
     [Fact]

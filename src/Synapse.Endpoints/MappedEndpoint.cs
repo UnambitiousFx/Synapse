@@ -22,7 +22,6 @@ namespace UnambitiousFx.Synapse.Endpoints;
 ///     differ from the message; this variant costs two mapping methods per endpoint.
 /// </remarks>
 public abstract class MappedEndpoint<THttpRequest, TRequest, TResponse, THttpResponse> : EndpointBase
-    where THttpRequest : notnull
     where TRequest : IRequest<TResponse>
     where TResponse : notnull
     where THttpResponse : notnull
@@ -69,7 +68,7 @@ public abstract class MappedEndpoint<THttpRequest, TRequest, TResponse, THttpRes
                 // Declared explicitly because a RequestDelegate-shaped endpoint infers nothing.
                 if (!HttpMethodHelpers.IsBodylessVerb(configuration.HttpMethods))
                 {
-                    handlerBuilder.Accepts<THttpRequest>("application/json");
+                    handlerBuilder.Accepts(typeof(THttpRequest), "application/json");
                 }
 
                 handlerBuilder.WithMetadata(
