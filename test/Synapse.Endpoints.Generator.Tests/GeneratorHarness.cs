@@ -46,14 +46,20 @@ internal static class GeneratorHarness
     ///     <see cref="MetadataReference" /> to it, so a test can put a type (for example a
     ///     <c>JsonSerializerContext</c>) in a referenced assembly instead of the compilation under
     ///     test — the case <c>EndpointsGenerator</c>'s reference-graph scan for SYNE008 exists to
-    ///     handle.
+    ///     handle. <paramref name="extraReferences" /> lets one compiled-to-reference assembly in
+    ///     turn reference another (for example a "Microsoft."-named assembly whose
+    ///     <c>JsonSerializerContext</c> registers a type actually declared in a third, differently
+    ///     named assembly) — needed to keep "the type under test" and "whatever independently
+    ///     exempts a type from being checked at all" from accidentally living in the same assembly,
+    ///     which would make a fixture pass without ever exercising what it claims to.
     /// </summary>
-    internal static MetadataReference CompileToReference(string source, string assemblyName)
+    internal static MetadataReference CompileToReference(string source, string assemblyName,
+        params MetadataReference[] extraReferences)
     {
         var compilation = CSharpCompilation.Create(
             assemblyName,
             [CSharpSyntaxTree.ParseText(source)],
-            GetMetadataReferences(),
+            GetMetadataReferences().Concat(extraReferences),
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary,
                 nullableContextOptions: NullableContextOptions.Enable));
 

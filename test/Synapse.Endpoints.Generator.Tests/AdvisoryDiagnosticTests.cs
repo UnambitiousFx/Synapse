@@ -613,19 +613,34 @@ public sealed class AdvisoryDiagnosticTests
     {
         // Arrange — regression for Task 18 review fix round 1, finding 1: a compound false
         // positive existed when the same framework-assembly filter was applied to both "does a
-        // context exist" and "what is registered". Here the main compilation's own (correctly
-        // named) context opens the gate, and a *separately compiled, deliberately
-        // "Microsoft."-prefixed* assembly is the only one that actually registers ThingDto. If the
-        // registered-set filter were still symmetric with the gate filter, ThingDto's registration
-        // would be dropped and this would wrongly report SYNE008.
+        // context exist" and "what is registered". This needs THREE assemblies, not two, or the
+        // fixture never actually exercises the registered-set path at all: if ThingDto were
+        // declared inside the "Microsoft."-named assembly itself (as an earlier version of this
+        // test did), IsFrameworkOwned(ThingDto) would already be true from that name coincidence
+        // alone, IsJsonCheckable would return false, and the endpoint would be skipped before the
+        // registered set is ever consulted — passing regardless of whether the asymmetric filter
+        // is even in place. So:
+        //  - ThingDto lives in "ContextLib" (a non-framework name) — it must reach the actual
+        //    registered-set check.
+        //  - The JsonSerializerContext that registers ThingDto lives in a separate assembly
+        //    deliberately named "Microsoft.CompanyName.Contracts" — its registration is the thing
+        //    the asymmetric filter must not drop.
+        //  - The main compilation has its own, separate, never-excluded context that opens the
+        //    gate on its own, independently of the "Microsoft."-named assembly.
+        const string typesSource = """
+                                    namespace ContextLib;
+
+                                    public sealed record ThingDto(string Name);
+                                    """;
+        var typesReference = GeneratorHarness.CompileToReference(typesSource, "ContextLib");
+
         const string contextSource = """
+                                      using ContextLib;
                                       using System.Text.Json;
                                       using System.Text.Json.Serialization;
                                       using System.Text.Json.Serialization.Metadata;
 
-                                      namespace ContextLib;
-
-                                      public sealed record ThingDto(string Name);
+                                      namespace Contracts;
 
                                       [JsonSerializable(typeof(ThingDto))]
                                       internal sealed class ContractsJsonContext : JsonSerializerContext
@@ -642,7 +657,8 @@ public sealed class AdvisoryDiagnosticTests
 
         // Deliberately named as if it were a framework assembly, to exercise IsFrameworkAssembly's
         // exclusion path for the gate while still needing its registration honoured.
-        var contextReference = GeneratorHarness.CompileToReference(contextSource, "Microsoft.CompanyName.Contracts");
+        var contractsReference = GeneratorHarness.CompileToReference(
+            contextSource, "Microsoft.CompanyName.Contracts", typesReference);
 
         const string source = """
                               using ContextLib;
@@ -658,12 +674,12 @@ public sealed class AdvisoryDiagnosticTests
                               public sealed class GetThingEndpoint : Endpoint<GetThingQuery, ThingDto>;
 
                               // Opens the gate on its own, in the current (never-excluded) compilation,
-                              // independently of the "Microsoft."-named assembly above.
+                              // independently of the "Microsoft."-named assembly's registration above.
                               internal sealed partial class AppJsonContext : JsonSerializerContext;
                               """;
 
         // Act
-        var diagnostics = GeneratorHarness.GetDiagnostics(source, contextReference);
+        var diagnostics = GeneratorHarness.GetDiagnostics(source, typesReference, contractsReference);
 
         // Assert
         Assert.DoesNotContain(diagnostics, d => d.Id == "SYNE008");
