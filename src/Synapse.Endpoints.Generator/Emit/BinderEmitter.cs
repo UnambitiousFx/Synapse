@@ -94,7 +94,7 @@ internal static class BinderEmitter
             }
             else
             {
-                EmitPrimaryConstructorCall(builder, typeFullName, properties, boundType.PrimaryConstructorParameterNames,
+                EmitPrimaryConstructorCall(builder, typeFullName, properties, boundType.PrimaryConstructorParameters,
                     consumedByConstructor);
             }
         }
@@ -134,13 +134,19 @@ internal static class BinderEmitter
     ///     matched to a bound property (by name, case-insensitively) is parsed and validated before
     ///     construction rather than after — the object does not exist yet, so a <c>with</c>
     ///     expression is not an option here. A parameter with no matching property (never resolved as
-    ///     bindable at all, or resolved but omitted for having no viable <c>TryParse</c>) is passed
-    ///     <c>default</c>; Task 17's SYNE012 covers the latter case.
+    ///     bindable at all, or resolved but omitted for having no viable <c>TryParse</c>, Task 17's
+    ///     SYNE012) is passed a literal default value: <c>default!</c> for a reference type, so the
+    ///     null-forgiving operator suppresses the nullable-reference warning that bare <c>default</c>
+    ///     would otherwise raise on the generated code (a real defect fixed in Task 17 —
+    ///     <c>AssertGeneratedCompiles</c> only fails on <c>Error</c>-severity diagnostics, so this
+    ///     warning previously went unnoticed by the test suite even though a consumer building with
+    ///     warnings-as-errors would fail); bare <c>default</c> for a value type, where it needs no
+    ///     suppression.
     /// </summary>
     private static void EmitPrimaryConstructorCall(StringBuilder builder,
         string typeFullName,
         EquatableArray<BindablePropertyModel> properties,
-        EquatableArray<string> parameterNames,
+        EquatableArray<ConstructorParameterModel> parameters,
         HashSet<string> consumedByConstructor)
     {
         var propertyByName = new Dictionary<string, BindablePropertyModel>(StringComparer.OrdinalIgnoreCase);
@@ -151,18 +157,18 @@ internal static class BinderEmitter
 
         var argumentExpressions = new List<string>();
 
-        foreach (var parameterName in parameterNames)
+        foreach (var parameter in parameters)
         {
             // A bound type reaches this method only when it is bodyless (see EmitBinder), which
             // guarantees no property here resolved to Body — every match is Route/Query/Header.
-            if (propertyByName.TryGetValue(parameterName, out var property))
+            if (propertyByName.TryGetValue(parameter.Name, out var property))
             {
                 argumentExpressions.Add(EmitConstructorArgumentBinding(builder, typeFullName, property));
                 consumedByConstructor.Add(property.Name);
             }
             else
             {
-                argumentExpressions.Add("default");
+                argumentExpressions.Add(parameter.IsReferenceType ? "default!" : "default");
             }
         }
 

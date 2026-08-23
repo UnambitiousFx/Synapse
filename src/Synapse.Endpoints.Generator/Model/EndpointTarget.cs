@@ -33,7 +33,7 @@ internal readonly record struct EndpointTarget
         LocationInfo? location,
         EquatableArray<BindablePropertyModel> boundProperties,
         bool hasParameterlessConstructor,
-        EquatableArray<string> primaryConstructorParameterNames)
+        EquatableArray<ConstructorParameterModel> primaryConstructorParameters)
     {
         EndpointFullName = endpointFullName;
         BoundTypeFullName = boundTypeFullName;
@@ -44,7 +44,7 @@ internal readonly record struct EndpointTarget
         Location = location;
         BoundProperties = boundProperties;
         HasParameterlessConstructor = hasParameterlessConstructor;
-        PrimaryConstructorParameterNames = primaryConstructorParameterNames;
+        PrimaryConstructorParameters = primaryConstructorParameters;
     }
 
     /// <summary>Fully-qualified name of the endpoint class.</summary>
@@ -82,28 +82,31 @@ internal readonly record struct EndpointTarget
     ///     with different routes or verbs, only one binder is emitted for that type — keyed by the
     ///     type, per <c>EndpointRegistry.RegisterBinder</c>'s design — and it is built from whichever
     ///     endpoint sorts first by <see cref="EndpointFullName" />. The other endpoint silently binds
-    ///     using that resolution instead of its own; this is not currently detected. See
-    ///     <c>BinderEmissionEdgeCaseTests.Generate_ForTypeSharedByEndpointsWithDifferentVerbs_...</c>
-    ///     for a test that pins today's behaviour, and Task 17's planned SYNE013 for the diagnostic
-    ///     that will report the conflict instead of silently picking a winner.
+    ///     using that resolution instead of its own; this is a known, defined limitation (kept as-is
+    ///     rather than fixed — see <c>EndpointsGenerator.ReportConflictingBindingShapes</c>) that
+    ///     SYNE013 (Task 17) reports as a warning whenever it actually changes the resolved bindings.
+    ///     See <c>BinderEmissionEdgeCaseTests.Generate_ForTypeSharedByEndpointsWithDifferentVerbs_...</c>
+    ///     for a test that pins today's behaviour.
     /// </remarks>
     public EquatableArray<BindablePropertyModel> BoundProperties { get; }
 
     /// <summary>
     ///     Whether the bound type has an accessible parameterless constructor. When false (a
     ///     positional record, or a hand-written type with only a parameterized constructor), a
-    ///     bodyless binder must construct through <see cref="PrimaryConstructorParameterNames" />
+    ///     bodyless binder must construct through <see cref="PrimaryConstructorParameters" />
     ///     instead of <c>new T()</c>, which would not compile.
     /// </summary>
     public bool HasParameterlessConstructor { get; }
 
     /// <summary>
-    ///     The parameter names (in order) of the accessible constructor with the most parameters,
-    ///     used to construct the bound type when <see cref="HasParameterlessConstructor" /> is
-    ///     false. Empty when a parameterless constructor exists. Each name is matched
+    ///     The parameters (in order) of the accessible constructor with the most parameters, used to
+    ///     construct the bound type when <see cref="HasParameterlessConstructor" /> is false. Empty
+    ///     when a parameterless constructor exists. Each parameter's name is matched
     ///     case-insensitively against <see cref="BoundProperties" /> at emit time; a parameter with
     ///     no matching property (or whose matching property was itself omitted, e.g. for having no
-    ///     viable <c>TryParse</c>) is passed <c>default</c>.
+    ///     viable <c>TryParse</c>) is passed a literal default value — <c>default!</c> for a
+    ///     reference-typed parameter, so the generated code does not raise a nullable-reference
+    ///     warning, and bare <c>default</c> for a value-typed one.
     /// </summary>
-    public EquatableArray<string> PrimaryConstructorParameterNames { get; }
+    public EquatableArray<ConstructorParameterModel> PrimaryConstructorParameters { get; }
 }

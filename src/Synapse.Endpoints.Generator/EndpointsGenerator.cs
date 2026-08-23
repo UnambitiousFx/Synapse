@@ -102,12 +102,14 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
 
             EquatableArray<BindablePropertyModel> boundProperties;
             bool hasParameterlessConstructor;
-            EquatableArray<string> primaryConstructorParameterNames;
+            EquatableArray<ConstructorParameterModel> primaryConstructorParameters;
 
             if (bound is INamedTypeSymbol boundNamedType)
             {
-                boundProperties = CollectBindableProperties(boundNamedType, method, route);
-                (hasParameterlessConstructor, primaryConstructorParameterNames) =
+                // SYNE002, SYNE007, SYNE011, SYNE012 (Task 17) are found and reported while resolving
+                // properties, alongside SYNE001 below.
+                boundProperties = CollectBindableProperties(boundNamedType, method, route, diagnostics);
+                (hasParameterlessConstructor, primaryConstructorParameters) =
                     ResolveConstructionStrategy(boundNamedType);
 
                 // SYNE001
@@ -117,7 +119,8 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
             {
                 boundProperties = new EquatableArray<BindablePropertyModel>(Array.Empty<BindablePropertyModel>());
                 hasParameterlessConstructor = true;
-                primaryConstructorParameterNames = new EquatableArray<string>(Array.Empty<string>());
+                primaryConstructorParameters =
+                    new EquatableArray<ConstructorParameterModel>(Array.Empty<ConstructorParameterModel>());
             }
 
             // SYNE005 — only Endpoint<TRequest> / Endpoint<TRequest,TResponse> dispatch a single
@@ -141,9 +144,18 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
             }
 
             var diagnosticInfos = new EquatableArray<DiagnosticInfo>(diagnostics.ToArray());
-            var hasError = diagnostics.Exists(static d => d.Descriptor.DefaultSeverity == DiagnosticSeverity.Error);
 
-            EndpointTarget? target = hasError
+            // SYNE011 and SYNE012 are Error severity (the build fails on them regardless) but, unlike
+            // every other diagnostic here, do not block this endpoint's own emission: the property
+            // they report is already omitted from boundProperties, and the rest of the endpoint
+            // generates working code around that omission (see ResolveBindableProperty). Gating on
+            // them anyway would only suppress a correctly-generated binder alongside the diagnostic
+            // that explains why one property is missing from it.
+            var hasBlockingError = diagnostics.Exists(static d =>
+                d.Descriptor.DefaultSeverity == DiagnosticSeverity.Error &&
+                d.Descriptor.Id is not ("SYNE011" or "SYNE012"));
+
+            EndpointTarget? target = hasBlockingError
                 ? null
                 : new EndpointTarget(
                     symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
@@ -155,7 +167,7 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
                     location,
                     boundProperties,
                     hasParameterlessConstructor,
-                    primaryConstructorParameterNames);
+                    primaryConstructorParameters);
 
             return new EndpointAnalysisResult(target, diagnosticInfos);
         }
@@ -347,21 +359,29 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
     ///     A property whose type has no viable parse path (not <see cref="string" />, not an enum,
     ///     and with no two-argument <c>TryParse(string, out T)</c>), or that can be assigned neither
     ///     via a settable property nor via a record <c>with</c> expression, is omitted rather than
-    ///     turned into code that would not compile — Task 17's SYNE012 and SYNE011 report those cases
-    ///     as diagnostics instead.
+    ///     turned into code that would not compile — SYNE012 and SYNE011 report those cases as
+    ///     diagnostics instead (Task 17), scoped to route/query/header-bound properties only; a
+    ///     <c>[FromBody]</c> property is populated by JSON-deserializing the whole message in one
+    ///     shot, so neither check applies to it. SYNE002 (two properties claiming one input) and
+    ///     SYNE007 (an explicit <c>[FromBody]</c> property on a bodyless verb) are also found here,
+    ///     once the full set of resolved properties for this endpoint's own route and verb is known.
     /// </summary>
     private static EquatableArray<BindablePropertyModel> CollectBindableProperties(INamedTypeSymbol boundType,
         string httpMethod,
-        string route)
+        string route,
+        List<DiagnosticInfo> diagnostics)
     {
         // Keyed case-insensitively (route matching ignores case) but valued with the template's own
         // casing, so a matched property reads the route value under the name the route declares it
         // by, not the property's own PascalCase spelling.
         var routeParameters = ExtractRouteParameterNames(route);
         var isBodylessVerb = httpMethod is "GET" or "DELETE" or "HEAD";
+        var boundTypeDisplay = boundType.ToDisplayString();
 
         var models = new List<BindablePropertyModel>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
+        var propertyLocations = new Dictionary<string, LocationInfo?>(StringComparer.Ordinal);
+        var explicitFromBodyProperties = new List<string>();
 
         for (var type = boundType; type is not null; type = type.BaseType)
         {
@@ -381,15 +401,101 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
                     continue;
                 }
 
-                var model = ResolveBindableProperty(property, routeParameters, isBodylessVerb);
-                if (model is not null)
+                var propertyLocation = LocationInfo.CreateFrom(property.Locations.FirstOrDefault());
+
+                var model = ResolveBindableProperty(property, routeParameters, isBodylessVerb, propertyLocation,
+                    diagnostics);
+                if (model is null)
                 {
-                    models.Add(model);
+                    continue;
+                }
+
+                models.Add(model);
+                propertyLocations[model.Name] = propertyLocation;
+
+                if (model.Source == BindingSource.Body)
+                {
+                    // SYNE007: an explicit [FromBody] property on a bodyless verb can never bind — a
+                    // GET/DELETE/HEAD request carries no body at runtime regardless of what the
+                    // generated code attempts to read. Convention alone never produces Body on a
+                    // bodyless verb (see ResolveSource), so reaching Body here while isBodylessVerb is
+                    // true always means an explicit [FromBody] forced it (Rule 1: explicit wins).
+                    if (isBodylessVerb)
+                    {
+                        diagnostics.Add(new DiagnosticInfo(
+                            EndpointDiagnostics.BodyOnlyPropertyOnBodylessVerb,
+                            propertyLocation,
+                            new EquatableArray<string>([property.Name, boundTypeDisplay, httpMethod])));
+                    }
+
+                    if (HasExplicitFromBodyAttribute(property))
+                    {
+                        explicitFromBodyProperties.Add(property.Name);
+                    }
                 }
             }
         }
 
+        // SYNE002 — route/query key collisions: two properties resolved to the same (Source,
+        // SourceKey) pair, keyed case-insensitively the same way route/query matching itself is.
+        foreach (var sourceGroup in models
+                     .Where(static m => m.Source is BindingSource.Route or BindingSource.Query)
+                     .GroupBy(static m => m.Source))
+        {
+            var sourceLabel = sourceGroup.Key == BindingSource.Route ? "route parameter" : "query key";
+
+            foreach (var keyGroup in sourceGroup.GroupBy(static m => m.SourceKey, StringComparer.OrdinalIgnoreCase))
+            {
+                var conflicting = keyGroup.Select(static m => m.Name).ToArray();
+                if (conflicting.Length <= 1)
+                {
+                    continue;
+                }
+
+                ReportInputClaimConflict(conflicting, boundTypeDisplay, $"{sourceLabel} '{keyGroup.Key}'",
+                    propertyLocations[conflicting[0]], diagnostics);
+            }
+        }
+
+        // SYNE002 — more than one explicit [FromBody]: unlike route/query, [FromBody]'s SourceKey is
+        // always the property's own name (see ResolveSource), so this case can never be found by the
+        // (Source, SourceKey) grouping above and needs its own check.
+        if (explicitFromBodyProperties.Count > 1)
+        {
+            ReportInputClaimConflict(explicitFromBodyProperties, boundTypeDisplay,
+                "the request body (more than one [FromBody])", propertyLocations[explicitFromBodyProperties[0]],
+                diagnostics);
+        }
+
         return new EquatableArray<BindablePropertyModel>(models.ToArray());
+    }
+
+    /// <summary>SYNE002: reports that every property in <paramref name="propertyNames" /> claims <paramref name="inputDescription" />.</summary>
+    private static void ReportInputClaimConflict(IEnumerable<string> propertyNames,
+        string boundTypeDisplay,
+        string inputDescription,
+        LocationInfo? location,
+        List<DiagnosticInfo> diagnostics)
+    {
+        var joinedNames = string.Join(", ", propertyNames.Select(static n => $"'{n}'"));
+        diagnostics.Add(new DiagnosticInfo(
+            EndpointDiagnostics.PropertiesClaimSameInput,
+            location,
+            new EquatableArray<string>([joinedNames, boundTypeDisplay, inputDescription])));
+    }
+
+    /// <summary>Whether <paramref name="property" /> carries an explicit MVC <c>[FromBody]</c> attribute.</summary>
+    private static bool HasExplicitFromBodyAttribute(IPropertySymbol property)
+    {
+        foreach (var attribute in property.GetAttributes())
+        {
+            if (attribute.AttributeClass?.ToDisplayString() == "Microsoft.AspNetCore.Mvc.FromBodyAttribute")
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -402,14 +508,14 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
     ///     primary constructor" for an arbitrary type), matching each parameter to a property by name
     ///     at emit time.
     /// </summary>
-    private static (bool HasParameterlessConstructor, EquatableArray<string> PrimaryConstructorParameterNames)
+    private static (bool HasParameterlessConstructor, EquatableArray<ConstructorParameterModel> PrimaryConstructorParameters)
         ResolveConstructionStrategy(INamedTypeSymbol boundType)
     {
         var accessibleConstructors = boundType.Constructors
             .Where(c => !c.IsStatic && c.DeclaredAccessibility is Accessibility.Public or Accessibility.Internal)
             .ToArray();
 
-        var none = new EquatableArray<string>(Array.Empty<string>());
+        var none = new EquatableArray<ConstructorParameterModel>(Array.Empty<ConstructorParameterModel>());
 
         if (accessibleConstructors.Length == 0 ||
             accessibleConstructors.Any(c => c.Parameters.Length == 0))
@@ -428,13 +534,17 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
             .ThenBy(c => string.Join(",", c.Parameters.Select(p => p.Name)), StringComparer.Ordinal)
             .First();
 
-        var parameterNames = primary.Parameters.Select(p => p.Name).ToArray();
-        return (false, new EquatableArray<string>(parameterNames));
+        var parameters = primary.Parameters
+            .Select(p => new ConstructorParameterModel(p.Name, p.Type.IsReferenceType))
+            .ToArray();
+        return (false, new EquatableArray<ConstructorParameterModel>(parameters));
     }
 
     private static BindablePropertyModel? ResolveBindableProperty(IPropertySymbol property,
         Dictionary<string, string> routeParameters,
-        bool isBodylessVerb)
+        bool isBodylessVerb,
+        LocationInfo? location,
+        List<DiagnosticInfo> diagnostics)
     {
         foreach (var attribute in property.GetAttributes())
         {
@@ -452,23 +562,45 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
             return null;
         }
 
-        var (canAssign, isRecordWith) = ResolveAssignmentStrategy(property);
-        if (!canAssign)
-        {
-            // SYNE011 (Task 17): an init-only property on a non-record cannot be assigned after the
-            // body is deserialized. Omit it rather than emit a `with` expression that will not compile.
-            return null;
-        }
-
         var (underlying, isNullable) = UnwrapNullable(property.Type);
         var isString = underlying.SpecialType == SpecialType.System_String;
         var isEnum = underlying.TypeKind == TypeKind.Enum;
 
-        if (!isString && !isEnum && !HasTwoArgumentTryParse(underlying))
+        // SYNE011/SYNE012 (Task 17) apply only to route/query/header-bound properties. A
+        // [FromBody]-sourced property is never assigned or parsed by generated code at all — the
+        // whole message is populated in one shot by JSON-deserializing the request body (see
+        // BinderEmitter) — so neither an accessible setter nor a TryParse method is required for it,
+        // and reporting either diagnostic for one would be a false positive.
+        var isRecordWith = false;
+        if (source.Value != BindingSource.Body)
         {
-            // SYNE012 (Task 17): no viable parse path for this type. Omit rather than emit a
-            // `TryParse` call that will not compile.
-            return null;
+            bool canAssign;
+            (canAssign, isRecordWith) = ResolveAssignmentStrategy(property);
+            if (!canAssign)
+            {
+                // SYNE011: neither a direct assignment (no setter) nor a `with` expression (not a
+                // record) can apply this property's value. Omit it rather than emit code that would
+                // not compile — the diagnostic is what makes the omission visible.
+                diagnostics.Add(new DiagnosticInfo(
+                    EndpointDiagnostics.UnassignableBoundProperty,
+                    location,
+                    new EquatableArray<string>([property.Name, property.ContainingType.ToDisplayString()])));
+                return null;
+            }
+
+            if (!isString && !isEnum && !HasTwoArgumentTryParse(underlying))
+            {
+                // SYNE012: no viable parse path for this type. Omit rather than emit a `TryParse`
+                // call that will not compile. Reported at the exact condition that already decides
+                // the omission, rather than a separately-maintained list of "known good" types, so
+                // the diagnostic can never disagree with what the emitter actually does.
+                diagnostics.Add(new DiagnosticInfo(
+                    EndpointDiagnostics.UnparsableBoundPropertyType,
+                    location,
+                    new EquatableArray<string>(
+                        [property.Name, property.ContainingType.ToDisplayString(), underlying.ToDisplayString()])));
+                return null;
+            }
         }
 
         return new BindablePropertyModel(
@@ -737,16 +869,20 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
         // group's first endpoint by EndpointFullName (see `ordered` above) wins, and that endpoint's
         // own route/verb resolution is what the shared binder uses — silently, for every other
         // endpoint bound to the same type. See EndpointTarget.BoundProperties for the known
-        // limitation this creates and the diagnostic planned to report it (SYNE013). The resulting
-        // array is then re-ordered by bound-type name purely for deterministic emission order.
-        var boundTypes = ordered
-            .GroupBy(e => e.BoundTypeFullName, StringComparer.Ordinal)
+        // limitation this creates; SYNE013 (Task 17), reported just below, is the diagnostic for it.
+        // The resulting array is then re-ordered by bound-type name purely for deterministic emission
+        // order.
+        var typeGroups = ordered.GroupBy(e => e.BoundTypeFullName, StringComparer.Ordinal).ToArray();
+
+        ReportConflictingBindingShapes(context, typeGroups);
+
+        var boundTypes = typeGroups
             .Select(g =>
             {
                 var first = g.First();
                 var isBodylessVerb = first.HttpMethod is "GET" or "DELETE" or "HEAD";
                 return new BoundTypeInfo(first.BoundTypeFullName, first.BoundProperties, isBodylessVerb,
-                    first.HasParameterlessConstructor, first.PrimaryConstructorParameterNames);
+                    first.HasParameterlessConstructor, first.PrimaryConstructorParameters);
             })
             .OrderBy(t => t.TypeFullName, StringComparer.Ordinal)
             .ToArray();
@@ -755,5 +891,36 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
         context.AddSource("SynapseEndpointRegistrations.g.cs",
             EndpointGroupEmitter.EmitRegistrations(ns, ordered, boundTypes));
         context.AddSource("SynapseEndpointBinders.g.cs", BinderEmitter.Emit(ns, boundTypes));
+    }
+
+    /// <summary>
+    ///     SYNE013: reports, once per bound type, when two or more endpoints sharing that type
+    ///     resolved different <see cref="BindablePropertyModel" /> sets for it. Comparing the
+    ///     resolved property sets — not the endpoints' raw routes or verbs — is deliberate: two
+    ///     endpoints with different-looking routes or verbs can still resolve to the exact same
+    ///     bindings (for instance, two bodyless verbs where nothing matches either route template),
+    ///     in which case the shared binder is correct for both and there is nothing to warn about.
+    /// </summary>
+    private static void ReportConflictingBindingShapes(SourceProductionContext context,
+        IEnumerable<IGrouping<string, EndpointTarget>> typeGroups)
+    {
+        foreach (var group in typeGroups)
+        {
+            var endpoints = group.ToArray();
+            var distinctBindings = endpoints.Select(static e => e.BoundProperties).Distinct().ToArray();
+            if (distinctBindings.Length <= 1)
+            {
+                continue;
+            }
+
+            var first = endpoints[0];
+            var endpointNames = string.Join(", ", endpoints.Select(static e => e.EndpointFullName));
+
+            context.ReportDiagnostic(Diagnostic.Create(
+                EndpointDiagnostics.ConflictingBindingShapes,
+                first.Location?.ToLocation() ?? Location.None,
+                first.BoundTypeFullName,
+                endpointNames));
+        }
     }
 }

@@ -263,15 +263,54 @@ public sealed class BinderEmissionEdgeCaseTests
     }
 
     [Fact]
+    public void Generate_ForPositionalConstructorParameterWithNoMatchingProperty_UsesNullForgivingDefaultForReferenceType()
+    {
+        // Arrange — same shape as the value-type case above ("label" has no corresponding property
+        // at all), but with a reference-typed constructor parameter. Emitting bare `default` here
+        // would compile (Task 15's original behaviour) but raises a nullable-reference *warning* on
+        // the generated code — invisible to AssertGeneratedCompiles, which only fails on Error-severity
+        // diagnostics, so a consumer building with warnings-as-errors would fail on code our own test
+        // suite never caught. `default!` suppresses that warning at the source (Task 17).
+        const string source = """
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+
+                              namespace TestNs;
+
+                              public sealed class HandWrittenQuery : IRequest<int>
+                              {
+                                  public HandWrittenQuery(string label)
+                                  {
+                                  }
+
+                                  public int Id { get; init; }
+                              }
+
+                              [Get("/handwritten")]
+                              public sealed class HandWrittenEndpoint : Endpoint<HandWrittenQuery, int>;
+                              """;
+
+        // Act
+        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+
+        // Assert — the emitted text itself is the assertion that matters here: a compile check alone
+        // would not catch a regression back to bare `default`, since that still compiles cleanly.
+        Assert.Contains("new global::TestNs.HandWrittenQuery(default!)", generated);
+        GeneratorHarness.AssertGeneratedCompiles(source);
+    }
+
+    [Fact]
     public void Generate_ForTypeSharedByEndpointsWithDifferentVerbs_KnownLimitationUsesFirstEndpointsResolution()
     {
         // Arrange — SharedCommand is bound by two endpoints with different verbs and routes.
         // EndpointRegistry.RegisterBinder<TRequest> is keyed by request TYPE, so only one binder can
         // exist for SharedCommand; today it is built from whichever endpoint sorts first ordinally by
         // fully-qualified name ("AEndpoint" before "BEndpoint"), regardless of which endpoint actually
-        // receives a given request at runtime. This is a known, currently-undetected limitation (see
-        // EndpointTarget.BoundProperties' remarks) that Task 17's planned SYNE013 will report instead
-        // of silently picking a winner. This test pins today's behaviour so a change to it is visible.
+        // receives a given request at runtime. This is a known, defined limitation (see
+        // EndpointTarget.BoundProperties' remarks) that SYNE013 (Task 17) now reports as a warning
+        // rather than leaving silent — the emitted behaviour itself is unchanged (still whichever
+        // endpoint sorts first), so this test still pins that part, and BindingDiagnosticTests covers
+        // the diagnostic itself in more detail.
         const string source = """
                               using UnambitiousFx.Synapse.Abstractions;
                               using UnambitiousFx.Synapse.Endpoints;
@@ -303,6 +342,13 @@ public sealed class BinderEmissionEdgeCaseTests
         Assert.Equal(1, occurrences);
 
         GeneratorHarness.AssertGeneratedCompiles(source);
+
+        // And the conflict is no longer silent: SYNE013 names both the type and both endpoints.
+        var diagnostics = GeneratorHarness.GetDiagnostics(source);
+        var syne013 = Assert.Single(diagnostics, d => d.Id == "SYNE013").GetMessage();
+        Assert.Contains("SharedCommand", syne013);
+        Assert.Contains("AEndpoint", syne013);
+        Assert.Contains("BEndpoint", syne013);
     }
 
     [Fact]

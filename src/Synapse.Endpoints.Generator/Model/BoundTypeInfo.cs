@@ -13,13 +13,13 @@ internal sealed class BoundTypeInfo
         EquatableArray<BindablePropertyModel> properties,
         bool isBodylessVerb,
         bool hasParameterlessConstructor,
-        EquatableArray<string> primaryConstructorParameterNames)
+        EquatableArray<ConstructorParameterModel> primaryConstructorParameters)
     {
         TypeFullName = typeFullName;
         Properties = properties;
         IsBodylessVerb = isBodylessVerb;
         HasParameterlessConstructor = hasParameterlessConstructor;
-        PrimaryConstructorParameterNames = primaryConstructorParameterNames;
+        PrimaryConstructorParameters = primaryConstructorParameters;
     }
 
     /// <summary>Fully-qualified name of the bound type.</summary>
@@ -35,8 +35,8 @@ internal sealed class BoundTypeInfo
     public bool HasParameterlessConstructor { get; }
 
     /// <summary>
-    ///     The parameter names of the constructor to use when <see cref="HasParameterlessConstructor" />
+    ///     The parameters of the constructor to use when <see cref="HasParameterlessConstructor" />
     ///     is false. Empty when it is true.
     /// </summary>
-    public EquatableArray<string> PrimaryConstructorParameterNames { get; }
+    public EquatableArray<ConstructorParameterModel> PrimaryConstructorParameters { get; }
 }

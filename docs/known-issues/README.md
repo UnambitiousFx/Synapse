@@ -49,6 +49,7 @@ filed as a GitHub issue with minimal editing.
 | [041](041-duplicate-stored-header-keys-abort-the-outbox-batch.md) | Rebuilding an entry's headers with `ToDictionary` threw on keys differing only by case, from outside the `try`, so one badly-shaped row aborted the whole batch with nothing marked processed or failed | ✅ Resolved | Low | Outbox |
 | [042](042-restored-outbox-flow-never-reaches-the-handlers-context.md) | Dispatch used the entry's restored flow only to parent the activity: the stored baggage was dropped and handlers read the committing scope's `IContext`, so entries were dispatched under whichever request called `CommitAsync`; each entry now gets its own scope built from its own state | ✅ Resolved | **High** | Outbox |
 | [043](043-inject-propagates-the-activitys-trace-id-not-the-contexts.md) | `Inject` wrote the ambient activity's trace id rather than `IContext.TraceId`, so an untrusted edge propagated the caller's forged trace id onto outbound calls and into outbox entries; the context now wins when the two diverge | ✅ Resolved | Medium | Observability |
+| [044](044-endpoints-binder-default-for-unmatched-reference-constructor-parameter.md) | Endpoints binder emitted bare `default` for an unmatched reference-typed primary-constructor parameter, raising a nullable-reference warning in generated code that `AssertGeneratedCompiles` (Error-only) never caught; now emits `default!` for reference types | ✅ Resolved | Medium | Generator |
 
 > **Discovery context:** 001–003 were found while building the pipeline-behavior showcase in
 > `examples/MinimalApi` on branch `feature/typed-pipeline-behaviors` against .NET 10 with
@@ -61,7 +62,8 @@ filed as a GitHub issue with minimal editing.
 > directory against the post-v2 source. 032–041 were found in a high-effort code review of the v2
 > trace-context rework (working-tree diff, multiple finder angles, each finding adversarially verified).
 > 042–043 were found in a code review of the committed v2 branch (`git diff main...HEAD`) and resolved on
-> `feat/context-propagation`.
+> `feat/context-propagation`. 044 was found in a code review of the new `Synapse.Endpoints.Generator`
+> project while implementing its binding diagnostics, and resolved on `feat/synapse-endpoints`.
 >
 > Each file is the report as written at discovery. Where a later change replaced the mechanism a report
 > describes — most often the v2 context-propagation refactor, which removed `CorrelationContext`,
