@@ -1,4 +1,6 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Http;
+using UnambitiousFx.Synapse.Endpoints.Internal;
 
 namespace UnambitiousFx.Synapse.Endpoints.Binding;
 
@@ -66,5 +68,37 @@ public static class BindingHelpers
 
         value = null;
         return false;
+    }
+
+    /// <summary>
+    ///     Reads and deserializes the request body using the application's configured JSON options.
+    /// </summary>
+    /// <typeparam name="T">The body type.</typeparam>
+    /// <param name="context">The HTTP context.</param>
+    /// <returns>The deserialized body, or a failure describing what was wrong with it.</returns>
+    /// <remarks>Called by generated binders. The type info is resolved once per type and cached.</remarks>
+    public static async ValueTask<BindResult<T>> ReadJsonBodyAsync<T>(HttpContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        var typeInfo = BodyTypeInfo<T>.Cache.Get(context);
+
+        try
+        {
+            var value = await context.Request.ReadFromJsonAsync(typeInfo, context.RequestAborted);
+
+            return value is null
+                ? BindResult<T>.Failure("The request body is required but was empty or null.")
+                : BindResult<T>.Success(value);
+        }
+        catch (JsonException exception)
+        {
+            return BindResult<T>.Failure($"The request body is not valid JSON: {exception.Message}");
+        }
+    }
+
+    private static class BodyTypeInfo<T>
+    {
+        internal static readonly JsonTypeInfoCache<T> Cache = new();
     }
 }

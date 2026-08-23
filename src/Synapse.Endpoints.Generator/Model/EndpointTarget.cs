@@ -30,7 +30,8 @@ internal readonly record struct EndpointTarget
         string httpMethod,
         string route,
         string? groupFullName,
-        LocationInfo? location)
+        LocationInfo? location,
+        EquatableArray<BindablePropertyModel> boundProperties)
     {
         EndpointFullName = endpointFullName;
         BoundTypeFullName = boundTypeFullName;
@@ -39,6 +40,7 @@ internal readonly record struct EndpointTarget
         Route = route;
         GroupFullName = groupFullName;
         Location = location;
+        BoundProperties = boundProperties;
     }
 
     /// <summary>Fully-qualified name of the endpoint class.</summary>
@@ -65,4 +67,11 @@ internal readonly record struct EndpointTarget
 
     /// <summary>Location of the endpoint class declaration, used to anchor diagnostics.</summary>
     public LocationInfo? Location { get; }
+
+    /// <summary>
+    ///     The bound type's properties that a binder should populate, in the order resolved from
+    ///     the type's declaration. Two endpoints that bind the same type independently resolve this
+    ///     the same way, since it depends only on the type's shape, its own route, and its own verb.
+    /// </summary>
+    public EquatableArray<BindablePropertyModel> BoundProperties { get; }
 }
