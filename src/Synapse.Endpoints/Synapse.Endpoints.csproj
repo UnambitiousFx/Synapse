@@ -21,12 +21,6 @@
                           PrivateAssets="all" />
     </ItemGroup>
 
-    <!-- TEMPORARY: exposes internal Endpoint types to the Native AOT interception probe app.
-         Remove once Task 22 introduces the public API. -->
-    <ItemGroup>
-        <InternalsVisibleTo Include="UnambitiousFx.Examples.EndpointsApi" />
-    </ItemGroup>
-
     <Target Name="PackEndpointsAnalyzer" BeforeTargets="_GetPackageFiles">
         <ItemGroup>
             <None Include="$(MSBuildThisFileDirectory)..\Synapse.Endpoints.Generator\bin\$(Configuration)\netstandard2.0\UnambitiousFx.Synapse.Endpoints.Generator.dll"

@@ -1,33 +1,36 @@
-using System.Text.Json.Serialization;
-using UnambitiousFx.Synapse.Endpoints.Internal;
+using UnambitiousFx.Examples.EndpointsApi;
+using UnambitiousFx.Examples.EndpointsApi.Features.Tasks;
+using UnambitiousFx.Examples.EndpointsApi.Infrastructure;
+using UnambitiousFx.Synapse;
+using UnambitiousFx.Synapse.AspNetCore;
+using UnambitiousFx.Synapse.Endpoints;
 
 var builder = WebApplication.CreateSlimBuilder(args);
 
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
-    options.SerializerOptions.TypeInfoResolverChain.Insert(0, ProbeJsonContext.Default);
+    options.SerializerOptions.TypeInfoResolverChain.Insert(0, AppJsonSerializerContext.Default);
 });
+
+builder.Services.AddSingleton<TaskRepository>();
+builder.Services.AddSynapseAspNetCore();
+builder.Services.AddSynapse(cfg =>
+    cfg.AddRegisterGroup(new global::UnambitiousFx.Examples.EndpointsApi.RegisterGroup()));
+
+builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
-// Probe: a descriptor captured by the lambda, exactly as the real design does it.
-var descriptor = new EndpointDescriptor
-{
-    Route = "/probe/{id:int}",
-    HttpMethods = ["GET"],
-    ApplyMetadata = _ => { },
-    InvokeAsync = async context =>
-    {
-        var id = int.Parse(context.Request.RouteValues["id"]!.ToString()!);
-        await Results.Ok(new ProbeResponse(id, "ok")).ExecuteAsync(context);
-    }
-};
+app.UseSynapsePropagation();
+app.MapOpenApi();
 
-EndpointMapper.Map(app, descriptor);
+// One line per assembly. The generated EndpointGroup is a list of MapEndpoint<T>() calls.
+app.MapSynapseEndpoints(new global::UnambitiousFx.Examples.EndpointsApi.EndpointGroup());
 
 app.Run();
 
-internal sealed record ProbeResponse(int Id, string Status);
-
-[JsonSerializable(typeof(ProbeResponse))]
-internal sealed partial class ProbeJsonContext : JsonSerializerContext;
+namespace UnambitiousFx.Examples.EndpointsApi
+{
+    // Makes Program accessible to WebApplicationFactory<Program> in the integration test project.
+    public class Program;
+}
