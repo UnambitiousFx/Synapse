@@ -68,6 +68,51 @@ public sealed class HttpInvokerTests
     }
 
     [Fact]
+    public async Task InvokeAsync_VoidRequestWithOnSuccess_WhenRequestSucceeds_ReturnsOnSuccessResult()
+    {
+        // Arrange (Given)
+        var invoker = Substitute.For<IInvoker>();
+        var failureMapper = Substitute.For<IFailureHttpMapper>();
+        var sut = new HttpInvoker(invoker, failureMapper);
+        var request = new VoidRequest();
+        var expectedResult = new StaticResult(299);
+
+        invoker.InvokeAsync(request, Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(Result.Success()));
+
+        // Act (When)
+        var result = await sut.InvokeAsync(request, () => expectedResult, TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.Same(expectedResult, result);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_VoidRequestWithOnSuccess_WhenRequestFails_ReturnsMappedFailureResultWithoutInvokingOnSuccess()
+    {
+        // Arrange (Given)
+        var invoker = Substitute.For<IInvoker>();
+        var failureMapper = Substitute.For<IFailureHttpMapper>();
+        var sut = new HttpInvoker(invoker, failureMapper);
+        var request = new VoidRequest();
+        var onSuccessCalled = false;
+
+        invoker.InvokeAsync(request, Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(Result.Failure("boom")));
+
+        // Act (When)
+        var result = await sut.InvokeAsync(request, () =>
+        {
+            onSuccessCalled = true;
+            return new StaticResult(200);
+        }, TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.False(onSuccessCalled);
+        Assert.NotNull(result);
+    }
+
+    [Fact]
     public async Task InvokeStreamAsync_WhenStreamContainsFailures_FiltersFailedItems()
     {
         // Arrange (Given)

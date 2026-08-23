@@ -56,6 +56,20 @@ public interface IHttpInvoker
         where TRequest : IRequest;
 
     /// <summary>
+    ///     Invokes the specified void request and maps a successful dispatch to a custom HTTP result
+    ///     via <paramref name="onSuccess" />. Failures are mapped through the registered failure mapper.
+    /// </summary>
+    /// <typeparam name="TRequest">The type of the request to be invoked. Must implement <see cref="IRequest" />.</typeparam>
+    /// <param name="request">The request instance to be invoked.</param>
+    /// <param name="onSuccess">A factory returning the HTTP result to write when the handler succeeds.</param>
+    /// <param name="cancellationToken">An optional token to cancel the operation.</param>
+    /// <returns>A <see cref="ValueTask{TResult}" /> containing the HTTP result.</returns>
+    ValueTask<IHttpResult> InvokeAsync<TRequest>(TRequest request,
+        Func<IHttpResult> onSuccess,
+        CancellationToken cancellationToken = default)
+        where TRequest : IRequest;
+
+    /// <summary>
     ///     Executes a streaming request and returns an <see cref="IAsyncEnumerable{TItem}" /> of successfully
     ///     unwrapped items. Failed items in the stream are silently skipped.
     ///     The item type is inferred by the compiler from the request's <see cref="IStreamRequest{TResponse}" />
