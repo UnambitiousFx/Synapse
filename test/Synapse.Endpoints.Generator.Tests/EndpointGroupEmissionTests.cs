@@ -1,3 +1,5 @@
+using Microsoft.CodeAnalysis.CSharp;
+
 namespace UnambitiousFx.Synapse.Endpoints.Generator.Tests;
 
 public sealed class EndpointGroupEmissionTests
@@ -95,7 +97,86 @@ public sealed class EndpointGroupEmissionTests
                               }
                               """;
 
-        // Act & Assert
+        // Act
+        var generated = GeneratorHarness.GetFile(source, "EndpointGroup.g.cs");
+
+        // Assert — one MapEndpoint call per shape, so a base-type match that silently fails for one
+        // shape (e.g. MappedEndpoint`4 or StreamEndpoint`2) can't hide behind the other three still
+        // emitting cleanly.
+        Assert.Contains("endpoints.MapEndpoint<global::TestNs.VoidEndpoint>();", generated);
+        Assert.Contains("endpoints.MapEndpoint<global::TestNs.ValueEndpoint>();", generated);
+        Assert.Contains("endpoints.MapEndpoint<global::TestNs.TickEndpoint>();", generated);
+        Assert.Contains("endpoints.MapEndpoint<global::TestNs.MappedThingEndpoint>();", generated);
+
+        GeneratorHarness.AssertGeneratedCompiles(source);
+    }
+
+    [Fact]
+    public void Generate_ForRouteWithQuoteAndBackslash_EscapesLiteral()
+    {
+        // Arrange — a route containing a double quote and a backslash, the two characters that break
+        // a naively-interpolated C# string literal (or, worse, change what the generated code means).
+        const string route = "/a\"b\\c";
+        var routeLiteral = SymbolDisplay.FormatLiteral(route, quote: true);
+        var naiveUnescapedLiteral = "\"" + route + "\"";
+
+        var source = $"""
+                      using UnambitiousFx.Synapse.Abstractions;
+                      using UnambitiousFx.Synapse.Endpoints;
+
+                      namespace TestNs;
+
+                      public sealed record WeirdQuery : IRequest<string>;
+
+                      [Get({routeLiteral})]
+                      public sealed class WeirdRouteEndpoint : Endpoint<WeirdQuery, string>;
+                      """;
+
+        // Act
+        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointRegistrations.g.cs");
+
+        // Assert — the route is rendered through Roslyn's own escaper, not hand-rolled interpolation.
+        Assert.Contains(routeLiteral, generated);
+        Assert.DoesNotContain(naiveUnescapedLiteral, generated);
+
+        // And the escaped literal round-trips as valid, compilable C#.
+        GeneratorHarness.AssertGeneratedCompiles(source);
+    }
+
+    [Fact]
+    public void Generate_ForEndpointInGroup_EmitsGroupFactory()
+    {
+        // Arrange
+        const string source = """
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+                              using UnambitiousFx.Synapse.Endpoints.Builders;
+
+                              namespace TestNs;
+
+                              public sealed record GroupedQuery : IRequest<string>;
+
+                              public sealed class MyGroup : EndpointGroup
+                              {
+                                  public override void Configure(IEndpointGroupBuilder builder)
+                                  {
+                                  }
+                              }
+
+                              [Get("/things/{id}")]
+                              [InGroup<MyGroup>]
+                              public sealed class GroupedEndpoint : Endpoint<GroupedQuery, string>;
+                              """;
+
+        // Act
+        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointRegistrations.g.cs");
+
+        // Assert
+        Assert.Contains("typeof(global::TestNs.MyGroup)", generated);
+        Assert.Contains("static () => new global::TestNs.MyGroup()", generated);
+
+        // And the four-argument EndpointMetadata overload plus the Func<MyGroup> -> Func<EndpointGroup>
+        // covariant conversion actually compile.
         GeneratorHarness.AssertGeneratedCompiles(source);
     }
 }

@@ -31,7 +31,18 @@ internal static class GeneratorHarness
     {
         var compilation = CreateCompilation(source);
         var driver = CSharpGeneratorDriver.Create(new EndpointsGenerator());
-        driver.RunGeneratorsAndUpdateCompilation(compilation, out var updated, out _);
+        var updatedDriver = driver.RunGeneratorsAndUpdateCompilation(compilation, out var updated, out var generatorDiagnostics);
+
+        // A generator that throws mid-Analyze surfaces as CS8785, which the compiler treats as a
+        // Warning by default — so checking only Error-severity diagnostics below would let a
+        // crashing generator through silently. Treat CS8785 as fatal regardless of the severity the
+        // driver assigned it.
+        var generatorFailures = generatorDiagnostics
+            .Where(d => d.Id == "CS8785")
+            .ToArray();
+
+        Assert.True(generatorFailures.Length == 0,
+            "The generator itself threw: " + string.Join("; ", generatorFailures.Select(e => e.ToString())));
 
         var errors = updated.GetDiagnostics()
             .Where(d => d.Severity == DiagnosticSeverity.Error)
@@ -39,6 +50,12 @@ internal static class GeneratorHarness
 
         Assert.True(errors.Length == 0,
             "Generated code should compile, but got: " + string.Join("; ", errors.Select(e => e.ToString())));
+
+        // A generator that silently emits nothing (e.g. because base-type matching failed for a
+        // shape) introduces no diagnostics and would otherwise pass the checks above unnoticed.
+        var driverResult = updatedDriver.GetRunResult();
+        Assert.True(driverResult.GeneratedTrees.Length > 0,
+            "The generator produced no source at all.");
     }
 
     private static (ImmutableArray<Diagnostic> Diagnostics, IReadOnlyList<SyntaxTree> Trees) Run(string source)

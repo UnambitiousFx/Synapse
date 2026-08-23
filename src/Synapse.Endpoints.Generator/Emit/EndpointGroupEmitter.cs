@@ -1,4 +1,5 @@
 using System.Text;
+using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Text;
 using UnambitiousFx.Synapse.Endpoints.Generator.Model;
 
@@ -55,9 +56,15 @@ internal static class EndpointGroupEmitter
 
         foreach (var endpoint in endpoints)
         {
+            // The HTTP method and route come from attribute text the analyzer does not control, so
+            // they are rendered through Roslyn's own literal escaper rather than interpolated
+            // straight into a C# string literal — a route containing a quote or backslash would
+            // otherwise produce invalid (or, worse, structurally different) generated code.
             var methods = endpoint.HttpMethod.Length == 0
                 ? "global::System.Array.Empty<string>()"
-                : $"new[] {{ \"{endpoint.HttpMethod}\" }}";
+                : $"new[] {{ {SymbolDisplay.FormatLiteral(endpoint.HttpMethod, quote: true)} }}";
+
+            var route = SymbolDisplay.FormatLiteral(endpoint.Route, quote: true);
 
             var group = endpoint.GroupFullName is null
                 ? string.Empty
@@ -66,7 +73,7 @@ internal static class EndpointGroupEmitter
             builder.AppendLine(
                 $"        global::UnambitiousFx.Synapse.Endpoints.Binding.EndpointRegistry.RegisterMetadata<{endpoint.EndpointFullName}>(");
             builder.AppendLine(
-                $"            new global::UnambitiousFx.Synapse.Endpoints.EndpointMetadata({methods}, \"{endpoint.Route}\"{group}));");
+                $"            new global::UnambitiousFx.Synapse.Endpoints.EndpointMetadata({methods}, {route}{group}));");
         }
 
         builder.AppendLine("    }");
