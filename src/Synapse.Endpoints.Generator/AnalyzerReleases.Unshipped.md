@@ -12,3 +12,6 @@ SYNE007 | Synapse.Endpoints | Warning | Body-bound property on a bodyless verb
 SYNE011 | Synapse.Endpoints | Error | Bound property cannot be assigned
 SYNE012 | Synapse.Endpoints | Error | Bound property type cannot be parsed from a string
 SYNE013 | Synapse.Endpoints | Warning | Message type bound by endpoints with conflicting binding shapes
+SYNE003 | Synapse.Endpoints | Info | POST/PUT endpoint declares no explicit success mapping
+SYNE004 | Synapse.Endpoints | Warning | OnSuccess override conflicts with a declarative success method
+SYNE008 | Synapse.Endpoints | Warning | Type used by an endpoint is missing from every JsonSerializerContext

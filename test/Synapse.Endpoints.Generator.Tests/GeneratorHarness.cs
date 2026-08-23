@@ -27,6 +27,46 @@ internal static class GeneratorHarness
         return diagnostics;
     }
 
+    /// <summary>
+    ///     Same as <see cref="GetDiagnostics(string)" />, but with additional metadata references —
+    ///     used to exercise SYNE008's reference-graph scan, where the <c>JsonSerializerContext</c>
+    ///     under test lives in a separately compiled assembly rather than <paramref name="source" />
+    ///     itself. See <see cref="CompileToReference" />.
+    /// </summary>
+    internal static ImmutableArray<Diagnostic> GetDiagnostics(string source, params MetadataReference[] extraReferences)
+    {
+        var driver = CSharpGeneratorDriver.Create(new EndpointsGenerator());
+        var compilation = CreateCompilation(source).AddReferences(extraReferences);
+        var result = driver.RunGenerators(compilation).GetRunResult();
+        return result.Diagnostics;
+    }
+
+    /// <summary>
+    ///     Compiles <paramref name="source" /> into an in-memory assembly and returns a
+    ///     <see cref="MetadataReference" /> to it, so a test can put a type (for example a
+    ///     <c>JsonSerializerContext</c>) in a referenced assembly instead of the compilation under
+    ///     test — the case <c>EndpointsGenerator</c>'s reference-graph scan for SYNE008 exists to
+    ///     handle.
+    /// </summary>
+    internal static MetadataReference CompileToReference(string source, string assemblyName)
+    {
+        var compilation = CSharpCompilation.Create(
+            assemblyName,
+            [CSharpSyntaxTree.ParseText(source)],
+            GetMetadataReferences(),
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary,
+                nullableContextOptions: NullableContextOptions.Enable));
+
+        using var stream = new MemoryStream();
+        var emitResult = compilation.Emit(stream);
+        Assert.True(emitResult.Success,
+            "Failed to compile the reference assembly '" + assemblyName + "': " +
+            string.Join("; ", emitResult.Diagnostics.Select(static d => d.ToString())));
+
+        stream.Position = 0;
+        return MetadataReference.CreateFromStream(stream);
+    }
+
     internal static void AssertGeneratedCompiles(string source)
     {
         var compilation = CreateCompilation(source);

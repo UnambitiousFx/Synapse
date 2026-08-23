@@ -154,4 +154,121 @@ internal static class EndpointDiagnostics
         Category,
         DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
+
+    /// <summary>
+    ///     SYNE003: a <c>POST</c> or <c>PUT</c> endpoint that returns a value (<c>Endpoint&lt;TRequest,TResponse&gt;</c>)
+    ///     neither overrides <c>OnSuccess</c> nor calls a declarative success method
+    ///     (<c>Ok</c>/<c>Created</c>/<c>Accepted</c>/<c>NoContent</c>/<c>StatusCode</c>) in <c>Configure</c>,
+    ///     so the response always falls through to the default <c>200 OK</c> — plausible for <c>PUT</c>,
+    ///     almost certainly not what was intended for a <c>POST</c> that created something.
+    /// </summary>
+    /// <remarks>
+    ///     Detection is limited to the direct case, matching SYNE009 (Task 16): a declarative call is
+    ///     recognized only when made directly on <c>Configure</c>'s own builder parameter, and only the
+    ///     endpoint's own member list is checked for an <c>OnSuccess</c> override — a call reached
+    ///     through a helper method, or a base class several levels up that itself supplies the
+    ///     override, is not detected. This can produce a false negative (silently missing a real
+    ///     explicit mapping) but never reports one that is not there. Info, not Warning: defaulting to
+    ///     200 OK is valid, working behavior, not a defect — this is a style nudge, not a warning about
+    ///     something wrong.
+    /// </remarks>
+    internal static readonly DiagnosticDescriptor NoExplicitSuccessMapping = new(
+        "SYNE003",
+        "POST/PUT endpoint declares no explicit success mapping",
+        "'{0}' handles {1} and returns a value, but declares no explicit success mapping — no Ok/Created/Accepted/NoContent/StatusCode call in Configure and no OnSuccess override — so it always responds 200 OK. Call one of the declarative methods on the builder in Configure (Created is typical for POST), or override OnSuccess, to make the response status explicit.",
+        Category,
+        DiagnosticSeverity.Info,
+        isEnabledByDefault: true,
+        description:
+        "Detection covers only a declarative call made directly on Configure's own builder parameter, " +
+        "and an OnSuccess override declared directly on the endpoint's own member list. A call reached " +
+        "through a helper method, or an override supplied by an intermediate base class, is not " +
+        "detected, so this diagnostic can miss a real explicit mapping but will never report one that " +
+        "is not there.");
+
+    /// <summary>
+    ///     SYNE004: the endpoint overrides <c>OnSuccess</c> and <c>Configure</c> also calls a
+    ///     declarative success method (<c>Ok</c>/<c>Created</c>/<c>Accepted</c>/<c>NoContent</c>/<c>StatusCode</c>).
+    ///     <c>EndpointConfiguration.SuccessMapper</c>, set by the declarative call, is checked before
+    ///     <c>OnSuccess</c> at dispatch time (see <c>Endpoint&lt;TRequest,TResponse&gt;.CreateDescriptor</c>),
+    ///     so the override is silently dead code.
+    /// </summary>
+    /// <remarks>
+    ///     Detection is limited to the direct case, matching SYNE009 (Task 16): the declarative call is
+    ///     recognized only when made directly on <c>Configure</c>'s own builder parameter, and the
+    ///     <c>OnSuccess</c> override is found only on the endpoint's own member list. A call reached
+    ///     through a helper method is not detected, so this diagnostic can miss a real conflict but
+    ///     will never report one that is not there.
+    /// </remarks>
+    internal static readonly DiagnosticDescriptor ConflictingSuccessMapping = new(
+        "SYNE004",
+        "OnSuccess override conflicts with a declarative success method",
+        "'{0}' overrides OnSuccess and also calls a declarative success method (Ok/Created/Accepted/NoContent/StatusCode) on the builder in Configure. The declarative mapping always wins — OnSuccess is never called. Remove the declarative call, or remove the OnSuccess override, so only one declares the success response.",
+        Category,
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description:
+        "Detection covers only a declarative call made directly on Configure's own builder parameter, " +
+        "and an OnSuccess override declared directly on the endpoint's own member list. A call reached " +
+        "through a helper method is not detected, so this diagnostic can miss a real conflict but will " +
+        "never report one that is not there.");
+
+    /// <summary>
+    ///     SYNE008: a type used by an endpoint as its request or response — the exact type as
+    ///     declared, not decomposed into a generic collection's element type — is not registered by
+    ///     any <c>[JsonSerializable(typeof(...))]</c> attribute on any <c>JsonSerializerContext</c>
+    ///     found anywhere in the compilation's reference graph. Without it, the endpoint compiles and
+    ///     runs under a JIT-based host, but throws
+    ///     <c>NotSupportedException: JsonTypeInfo metadata for type 'X' was not provided by
+    ///     TypeInfoResolverChain</c> on first request under Native AOT — a production 500 this
+    ///     diagnostic turns into a build-time warning instead.
+    /// </summary>
+    /// <remarks>
+    ///     Reported only when the compilation contains at least one <c>JsonSerializerContext</c>
+    ///     anywhere in its reference graph (this assembly's own declarations, or a
+    ///     <em>non-framework</em> referenced assembly's — see below) — an app that has not opted
+    ///     into source-generated JSON at all is not the target of this advice. The request type is
+    ///     checked only when it is actually deserialized from the request body (a non-bodyless verb,
+    ///     or an explicit <c>[FromBody]</c> property); query/route/header-only requests never reach
+    ///     the JSON deserializer, so requiring their registration would be a false positive. A
+    ///     generic collection response/request (for example <c>IReadOnlyList&lt;TaskDto&gt;</c>) is
+    ///     checked as that exact closed type, not its element type — that is the type the source
+    ///     generator must be told about, and registering only the element type does not, by itself,
+    ///     make the collection type serializable. <c>string</c>, numeric primitives, <c>bool</c>,
+    ///     <c>char</c>, <c>object</c>, <c>Guid</c>, <c>DateTime</c>, <c>DateTimeOffset</c>,
+    ///     <c>TimeSpan</c> and <c>Uri</c> (including their nullable forms) are never reported: the
+    ///     source-generated resolver supports them intrinsically. A custom
+    ///     <c>TypeInfoResolverChain</c> entry that is not itself a <c>JsonSerializerContext</c> cannot
+    ///     be seen by this check at all — that gap, not a defect in the check, is why this is a
+    ///     Warning rather than an Error.
+    /// </remarks>
+    /// <remarks>
+    ///     A referenced assembly whose name starts with <c>System.</c>/<c>Microsoft.</c> (or is
+    ///     <c>netstandard</c>/<c>mscorlib</c>/<c>WindowsBase</c>) is excluded from the scan for both
+    ///     "does at least one context exist" and "what does it register" — see
+    ///     <c>EndpointsGenerator.GetAllNamedTypes(Compilation)</c>. This was added after finding,
+    ///     empirically, that <c>Microsoft.AspNetCore.App</c> alone ships eleven of its own internal
+    ///     <c>JsonSerializerContext</c>-derived types (<c>Microsoft.AspNetCore.Http.ProblemDetailsJsonContext</c>
+    ///     among them). Without the filter this diagnostic would be reported on almost every
+    ///     endpoint's response type in almost every ASP.NET Core application, whether or not that
+    ///     application had opted into source-generated JSON at all — exactly the false-positive
+    ///     failure mode this diagnostic exists to avoid.
+    /// </remarks>
+    internal static readonly DiagnosticDescriptor MissingJsonSerializableRegistration = new(
+        "SYNE008",
+        "Type used by an endpoint is missing from every JsonSerializerContext",
+        "'{0}' is used as a request or response type by an endpoint, but is not registered by [JsonSerializable(typeof({0}))] on any JsonSerializerContext in the compilation. Add it, or Native AOT publishing will throw 'JsonTypeInfo metadata for type '{0}' was not provided by TypeInfoResolverChain' at runtime on first request.",
+        Category,
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description:
+        "Reported only when at least one JsonSerializerContext exists in a non-framework assembly " +
+        "anywhere in the compilation's reference graph (System./Microsoft.-named assemblies are " +
+        "excluded, since the ASP.NET Core shared framework ships several JsonSerializerContexts of " +
+        "its own). Checks the exact request/response type as declared (a generic collection is " +
+        "checked as that closed type, not its element type). A request type is checked only when it " +
+        "is actually deserialized from the body. string, numeric primitives, bool, char, object, " +
+        "Guid, DateTime, DateTimeOffset, TimeSpan and Uri (and their nullable forms) are never " +
+        "reported. A custom TypeInfoResolverChain entry that is not a JsonSerializerContext is " +
+        "invisible to this check, which is why this is a Warning rather than an Error.");
 }

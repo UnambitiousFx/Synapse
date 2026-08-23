@@ -33,7 +33,9 @@ internal readonly record struct EndpointTarget
         LocationInfo? location,
         EquatableArray<BindablePropertyModel> boundProperties,
         bool hasParameterlessConstructor,
-        EquatableArray<ConstructorParameterModel> primaryConstructorParameters)
+        EquatableArray<ConstructorParameterModel> primaryConstructorParameters,
+        string? jsonRequestTypeName,
+        string? jsonResponseTypeName)
     {
         EndpointFullName = endpointFullName;
         BoundTypeFullName = boundTypeFullName;
@@ -45,6 +47,8 @@ internal readonly record struct EndpointTarget
         BoundProperties = boundProperties;
         HasParameterlessConstructor = hasParameterlessConstructor;
         PrimaryConstructorParameters = primaryConstructorParameters;
+        JsonRequestTypeName = jsonRequestTypeName;
+        JsonResponseTypeName = jsonResponseTypeName;
     }
 
     /// <summary>Fully-qualified name of the endpoint class.</summary>
@@ -109,4 +113,23 @@ internal readonly record struct EndpointTarget
     ///     warning, and bare <c>default</c> for a value-typed one.
     /// </summary>
     public EquatableArray<ConstructorParameterModel> PrimaryConstructorParameters { get; }
+
+    /// <summary>
+    ///     SYNE008: the display name of the request/bound type, when it is actually deserialized
+    ///     from the JSON request body (a non-bodyless verb, or a property explicitly bound via
+    ///     <c>[FromBody]</c>) — otherwise null, since a type never reaching the JSON deserializer has
+    ///     nothing to register. Excludes primitives and well-known framework scalar types (see
+    ///     <see cref="Diagnostics.EndpointDiagnostics.MissingJsonSerializableRegistration" />), which
+    ///     are also represented as null here.
+    /// </summary>
+    public string? JsonRequestTypeName { get; }
+
+    /// <summary>
+    ///     SYNE008: the display name of the type written back as the response body — <c>TResponse</c>
+    ///     for <see cref="EndpointKind.Value" />, <c>THttpResponse</c> for
+    ///     <see cref="EndpointKind.Mapped" />, <c>TItem</c> for <see cref="EndpointKind.Stream" /> —
+    ///     or null for <see cref="EndpointKind.Void" /> (no response body at all) and for a
+    ///     primitive/framework scalar type, which needs no registration.
+    /// </summary>
+    public string? JsonResponseTypeName { get; }
 }

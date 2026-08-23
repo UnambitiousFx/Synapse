@@ -40,9 +40,17 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
             return value;
         });
 
+        // SYNE008 needs every [JsonSerializable(typeof(X))] registration in the compilation, which
+        // is a compilation-wide fact, not a per-candidate one — a single CompilationProvider step
+        // computes it once rather than re-walking the whole reference graph from inside Analyze for
+        // every candidate class. See CollectJsonSerializableRegistrations for the reference-graph
+        // trade-off this makes (the same one Task 14 accepted for CreateSyntaxProvider).
+        var jsonContext = context.CompilationProvider
+            .Select(static (compilation, _) => CollectJsonSerializableRegistrations(compilation));
+
         context.RegisterSourceOutput(
-            analyzed.Combine(rootNamespace),
-            static (spc, pair) => Emit(spc, pair.Left, pair.Right));
+            analyzed.Combine(rootNamespace).Combine(jsonContext),
+            static (spc, pair) => Emit(spc, pair.Left.Left, pair.Left.Right, pair.Right));
     }
 
     private static EndpointAnalysisResult? Analyze(GeneratorSyntaxContext context)
@@ -73,6 +81,18 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
             }
 
             var bound = baseType.TypeArguments[0];
+
+            // SYNE008: the type actually written back as the response body, which differs from
+            // `bound` for Mapped (THttpResponse, not the internal TRequest/TResponse pair) and does
+            // not exist at all for Void (204 No Content has no body to serialize).
+            ITypeSymbol? responseType = kind switch
+            {
+                EndpointKind.Value => baseType.TypeArguments[1],
+                EndpointKind.Mapped => baseType.TypeArguments[3],
+                EndpointKind.Stream => baseType.TypeArguments[1],
+                _ => null
+            };
+
             var (method, route) = ReadRouteAttribute(symbol);
             var (groupFullName, groupType) = ReadGroupAttribute(symbol);
             var location = LocationInfo.CreateFrom(symbol.Locations.FirstOrDefault());
@@ -143,6 +163,38 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
                     new EquatableArray<string>([symbol.ToDisplayString()])));
             }
 
+            var overridesOnSuccess = DeclaresOnSuccessOverride(symbol);
+            var callsDeclarativeSuccessMethod = ConfigureCallsSuccessMethodDirectly(classDeclaration);
+
+            // SYNE003 — only Endpoint<TRequest,TResponse> actually returns a value; Mapped maps
+            // through its own ToResponse/OnSuccess pair and is out of scope for this nudge.
+            if (kind == EndpointKind.Value &&
+                method is "POST" or "PUT" &&
+                !overridesOnSuccess &&
+                !callsDeclarativeSuccessMethod)
+            {
+                diagnostics.Add(new DiagnosticInfo(
+                    EndpointDiagnostics.NoExplicitSuccessMapping,
+                    location,
+                    new EquatableArray<string>([symbol.ToDisplayString(), method])));
+            }
+
+            // SYNE004 — the declarative call silently wins over the override at dispatch time
+            // (EndpointConfiguration.SuccessMapper is checked before OnSuccess), regardless of kind.
+            if (overridesOnSuccess && callsDeclarativeSuccessMethod)
+            {
+                diagnostics.Add(new DiagnosticInfo(
+                    EndpointDiagnostics.ConflictingSuccessMapping,
+                    location,
+                    new EquatableArray<string>([symbol.ToDisplayString()])));
+            }
+
+            // SYNE008: which of this endpoint's request/response types are actually JSON-relevant,
+            // resolved here (once per endpoint) and reported later, once per distinct missing type,
+            // from Emit — see ReportMissingJsonRegistrations.
+            var jsonRequestTypeName = ResolveJsonRequestTypeName(bound, method, boundProperties);
+            var jsonResponseTypeName = ResolveJsonResponseTypeName(responseType);
+
             var diagnosticInfos = new EquatableArray<DiagnosticInfo>(diagnostics.ToArray());
 
             // Every Error-severity diagnostic blocks this endpoint's own emission (nulls `target`
@@ -182,7 +234,9 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
                     location,
                     boundProperties,
                     hasParameterlessConstructor,
-                    primaryConstructorParameters);
+                    primaryConstructorParameters,
+                    jsonRequestTypeName,
+                    jsonResponseTypeName);
 
             return new EndpointAnalysisResult(target, diagnosticInfos);
         }
@@ -278,6 +332,41 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
     /// </summary>
     private static bool ConfigureCallsVerbMethodDirectly(ClassDeclarationSyntax classDeclaration)
     {
+        return ConfigureCallsMethodDirectly(classDeclaration, VerbMethodNames);
+    }
+
+    private static readonly string[] VerbMethodNames = ["Get", "Post", "Put", "Patch", "Delete", "Route"];
+
+    /// <summary>
+    ///     SYNE003/SYNE004: the declarative success methods on <c>IEndpointBuilder</c>/
+    ///     <c>IEndpointBuilder&lt;TResponse&gt;</c> — each sets <c>EndpointConfiguration.SuccessMapper</c>,
+    ///     which is checked before <c>OnSuccess</c> at dispatch time.
+    /// </summary>
+    private static readonly string[] DeclarativeSuccessMethodNames = ["Ok", "Created", "Accepted", "NoContent", "StatusCode"];
+
+    /// <summary>
+    ///     SYNE003/SYNE004: whether <paramref name="classDeclaration" /> declares its own
+    ///     <c>Configure</c> method that invokes one of <see cref="DeclarativeSuccessMethodNames" />
+    ///     directly on its builder parameter. Same direct-case-only limitation as
+    ///     <see cref="ConfigureCallsVerbMethodDirectly" /> — see
+    ///     <see cref="EndpointDiagnostics.NoExplicitSuccessMapping" /> and
+    ///     <see cref="EndpointDiagnostics.ConflictingSuccessMapping" /> for why.
+    /// </summary>
+    private static bool ConfigureCallsSuccessMethodDirectly(ClassDeclarationSyntax classDeclaration)
+    {
+        return ConfigureCallsMethodDirectly(classDeclaration, DeclarativeSuccessMethodNames);
+    }
+
+    /// <summary>
+    ///     Whether <paramref name="classDeclaration" /> declares its own <c>Configure</c> method
+    ///     that invokes one of <paramref name="methodNames" /> directly on its builder parameter —
+    ///     that is, <c>builder.Name(...)</c>, not <c>builder.Other(...).Name(...)</c>. Shared by
+    ///     SYNE009 (verb methods) and SYNE003/SYNE004 (declarative success methods): all three
+    ///     diagnostics accept the same direct-case-only limitation.
+    /// </summary>
+    private static bool ConfigureCallsMethodDirectly(ClassDeclarationSyntax classDeclaration,
+        IReadOnlyCollection<string> methodNames)
+    {
         var configureMethod = classDeclaration.Members
             .OfType<MethodDeclarationSyntax>()
             .FirstOrDefault(static m => m.Identifier.Text == "Configure" && m.ParameterList.Parameters.Count == 1);
@@ -300,10 +389,32 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
         {
             if (invocation.Expression is MemberAccessExpressionSyntax
                 {
-                    Expression: IdentifierNameSyntax identifier,
-                    Name.Identifier.Text: "Get" or "Post" or "Put" or "Patch" or "Delete" or "Route"
-                } &&
-                identifier.Identifier.Text == parameterName)
+                    Expression: IdentifierNameSyntax identifier
+                } memberAccess &&
+                identifier.Identifier.Text == parameterName &&
+                methodNames.Contains(memberAccess.Name.Identifier.Text))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    ///     SYNE004: whether <paramref name="symbol" /> declares its own <c>OnSuccess</c> override —
+    ///     checked against the symbol's own member list rather than syntax, which is robust to the
+    ///     method being expression-bodied, block-bodied, or spread across partial declarations.
+    ///     Applies to both the <c>OnSuccess(TResponse, HttpContext)</c> and
+    ///     <c>OnSuccess(HttpContext)</c> overloads (<c>Endpoint&lt;TRequest,TResponse&gt;</c> and
+    ///     <c>Endpoint&lt;TRequest&gt;</c> respectively) — the name alone is enough, since only an
+    ///     endpoint base class declares a virtual member by this name for a derived class to override.
+    /// </summary>
+    private static bool DeclaresOnSuccessOverride(INamedTypeSymbol symbol)
+    {
+        foreach (var member in symbol.GetMembers("OnSuccess"))
+        {
+            if (member is IMethodSymbol { IsOverride: true })
             {
                 return true;
             }
@@ -740,6 +851,287 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
     }
 
     /// <summary>
+    ///     SYNE008: the display name of <paramref name="bound" /> (the request/message type), or
+    ///     null when it is not actually deserialized from the JSON request body — a bodyless verb
+    ///     (GET/DELETE/HEAD) with no property explicitly bound via <c>[FromBody]</c> never reaches
+    ///     the JSON deserializer at all (see <c>BinderEmitter</c>'s <c>isBodyless</c>), so requiring
+    ///     its registration would be a false positive. Also null for a primitive/framework scalar
+    ///     type or a type parameter — see <see cref="IsJsonCheckable" />.
+    /// </summary>
+    private static string? ResolveJsonRequestTypeName(ITypeSymbol bound,
+        string httpMethod,
+        EquatableArray<BindablePropertyModel> boundProperties)
+    {
+        if (!IsJsonCheckable(bound))
+        {
+            return null;
+        }
+
+        var isBodylessVerb = httpMethod is "GET" or "DELETE" or "HEAD";
+        if (isBodylessVerb)
+        {
+            var hasBodyProperty = false;
+            foreach (var property in boundProperties)
+            {
+                if (property.Source == BindingSource.Body)
+                {
+                    hasBodyProperty = true;
+                    break;
+                }
+            }
+
+            if (!hasBodyProperty)
+            {
+                return null;
+            }
+        }
+
+        return bound.ToDisplayString();
+    }
+
+    /// <summary>
+    ///     SYNE008: the display name of <paramref name="responseType" />, or null when there is no
+    ///     response body to serialize (<see cref="EndpointKind.Void" />, where
+    ///     <paramref name="responseType" /> is itself null) or it is a primitive/framework scalar
+    ///     type or a type parameter — see <see cref="IsJsonCheckable" />.
+    /// </summary>
+    private static string? ResolveJsonResponseTypeName(ITypeSymbol? responseType)
+    {
+        if (responseType is null || !IsJsonCheckable(responseType))
+        {
+            return null;
+        }
+
+        return responseType.ToDisplayString();
+    }
+
+    /// <summary>
+    ///     SYNE008: whether <paramref name="type" /> is a candidate that could plausibly need a
+    ///     <c>[JsonSerializable(typeof(...))]</c> registration at all. Excludes:
+    ///     <list type="bullet">
+    ///         <item>A type parameter (a generic endpoint class is already SYNE010; nothing concrete to check).</item>
+    ///         <item>An error type (unresolved symbol — reporting on it would be noise on top of a real compile error).</item>
+    ///         <item>
+    ///             <c>string</c>, every numeric primitive, <c>bool</c>, <c>char</c>, <c>object</c>,
+    ///             <c>Guid</c>, <c>DateTime</c>, <c>DateTimeOffset</c>, <c>TimeSpan</c> and <c>Uri</c>
+    ///             (checked after unwrapping <c>Nullable&lt;T&gt;</c>) — the source-generated resolver
+    ///             supports these intrinsically, without any <c>[JsonSerializable]</c> entry.
+    ///         </item>
+    ///     </list>
+    ///     Deliberately does not decompose a generic collection into its element type: the exact
+    ///     type checked is whatever is actually declared as the request/response type (for example
+    ///     <c>IReadOnlyList&lt;TaskDto&gt;</c> as a whole), because that is the exact closed type the
+    ///     invoker hands to the JSON serializer, and registering only the element type does not, by
+    ///     itself, make the collection type serializable.
+    /// </summary>
+    private static bool IsJsonCheckable(ITypeSymbol type)
+    {
+        if (type.TypeKind is TypeKind.TypeParameter or TypeKind.Error)
+        {
+            return false;
+        }
+
+        var (underlying, _) = UnwrapNullable(type);
+
+        switch (underlying.SpecialType)
+        {
+            case SpecialType.System_Boolean:
+            case SpecialType.System_Byte:
+            case SpecialType.System_SByte:
+            case SpecialType.System_Char:
+            case SpecialType.System_Decimal:
+            case SpecialType.System_Double:
+            case SpecialType.System_Single:
+            case SpecialType.System_Int32:
+            case SpecialType.System_UInt32:
+            case SpecialType.System_Int64:
+            case SpecialType.System_UInt64:
+            case SpecialType.System_Int16:
+            case SpecialType.System_UInt16:
+            case SpecialType.System_String:
+            case SpecialType.System_Object:
+            case SpecialType.System_DateTime:
+                return false;
+        }
+
+        return underlying.ToDisplayString() is not
+            ("System.Guid" or "System.DateTimeOffset" or "System.TimeSpan" or "System.Uri");
+    }
+
+    /// <summary>
+    ///     SYNE008: walks every named type reachable from <paramref name="compilation" /> — its own
+    ///     declarations *and* every referenced assembly's — looking for a type deriving from
+    ///     <c>System.Text.Json.Serialization.JsonSerializerContext</c>, and collects the type
+    ///     argument of every <c>[JsonSerializable(typeof(X))]</c> attribute found on one.
+    /// </summary>
+    /// <remarks>
+    ///     Scanning the whole reference graph, not just this compilation's own syntax trees, is
+    ///     deliberate: a consumer commonly defines shared JSON contracts and the
+    ///     <c>JsonSerializerContext</c> for them in one project, referenced from several endpoint
+    ///     projects, and scanning only the current compilation would false-positive on every one of
+    ///     those referencing projects. The cost is the same one <c>EndpointsGenerator</c> already
+    ///     accepted for endpoint discovery (<c>CreateSyntaxProvider</c> over attribute-based
+    ///     discovery, see the type-level remarks): correctness over the tightest possible
+    ///     incremental-caching behaviour. Concretely, this step depends on
+    ///     <see cref="IncrementalGeneratorInitializationContext.CompilationProvider" />, which changes
+    ///     identity on effectively every keystroke in the IDE (unlike a syntax-tree-scoped provider),
+    ///     and re-walks every named type in every referenced assembly — including the BCL and
+    ///     ASP.NET Core shared framework — each time it reruns. For a one-shot command-line build
+    ///     this is a single walk and immaterial; for IDE responsiveness while typing, it is the most
+    ///     expensive step this generator performs, and is called out as such rather than decided
+    ///     silently.
+    /// </remarks>
+    private static JsonContextInfo CollectJsonSerializableRegistrations(Compilation compilation)
+    {
+        var contextBaseType =
+            compilation.GetTypeByMetadataName("System.Text.Json.Serialization.JsonSerializerContext");
+        if (contextBaseType is null)
+        {
+            return new JsonContextInfo(false, new EquatableArray<string>(Array.Empty<string>()));
+        }
+
+        var hasContext = false;
+        var registered = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var type in GetAllNamedTypes(compilation))
+        {
+            if (!DerivesFrom(type, contextBaseType))
+            {
+                continue;
+            }
+
+            hasContext = true;
+
+            foreach (var attribute in type.GetAttributes())
+            {
+                if (attribute.AttributeClass?.ToDisplayString() !=
+                    "System.Text.Json.Serialization.JsonSerializableAttribute")
+                {
+                    continue;
+                }
+
+                if (attribute.ConstructorArguments.Length > 0 &&
+                    attribute.ConstructorArguments[0].Value is ITypeSymbol registeredType)
+                {
+                    registered.Add(registeredType.ToDisplayString());
+                }
+            }
+        }
+
+        return new JsonContextInfo(hasContext, new EquatableArray<string>(registered.ToArray()));
+    }
+
+    /// <summary>Whether <paramref name="type" /> derives from <paramref name="baseCandidate" /> anywhere in its base chain.</summary>
+    private static bool DerivesFrom(INamedTypeSymbol type, INamedTypeSymbol baseCandidate)
+    {
+        for (var current = type.BaseType; current is not null; current = current.BaseType)
+        {
+            if (SymbolEqualityComparer.Default.Equals(current, baseCandidate))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    ///     Every named type declared in <paramref name="compilation" />'s own source and in every
+    ///     non-framework assembly it references — the whole reference graph a consumer could
+    ///     plausibly have put a <c>JsonSerializerContext</c> in, not just the source being compiled.
+    /// </summary>
+    /// <remarks>
+    ///     Deliberately walks <c>compilation.Assembly.GlobalNamespace</c> (scoped to just this
+    ///     compilation's own source) for the first half, not <c>compilation.GlobalNamespace</c> —
+    ///     the latter is the namespace <em>merged across the whole reference graph already</em>
+    ///     (that is how <c>compilation.GlobalNamespace.GetMembers("System")</c> reaches
+    ///     <c>System.Console</c> without any explicit reference walk), so using it here would
+    ///     silently re-include every referenced assembly's types before the filter below ever runs,
+    ///     making that filter a no-op. This was found empirically, not reasoned out in advance: an
+    ///     early version of this method used <c>compilation.GlobalNamespace</c> for both halves and
+    ///     the filter below appeared to have no effect at all.
+    /// </remarks>
+    /// <remarks>
+    ///     A referenced assembly whose identity name starts with <c>System.</c> or <c>Microsoft.</c>
+    ///     (or is exactly <c>netstandard</c>/<c>mscorlib</c>/<c>WindowsBase</c>) is skipped entirely.
+    ///     This is not an optimization — it was added after discovering, empirically, that
+    ///     <c>Microsoft.AspNetCore.App</c> alone ships eleven internal
+    ///     <c>JsonSerializerContext</c>-derived types of its own (for example
+    ///     <c>Microsoft.AspNetCore.Http.ProblemDetailsJsonContext</c> and
+    ///     <c>Microsoft.AspNetCore.Identity.Data.IdentityEndpointsJsonSerializerContext</c>). Without
+    ///     this filter, <see cref="JsonContextInfo.HasContext" /> is true for essentially every
+    ///     ASP.NET Core application regardless of whether the application itself has opted into
+    ///     source-generated JSON at all, and none of those framework contexts register any of the
+    ///     application's own types — so SYNE008 would fire on almost every endpoint's response type
+    ///     in an application that never asked for this check. The filter is a plain assembly-name
+    ///     prefix match, not a directory/path check (more portable across install layouts and
+    ///     single-file/self-contained deployment, where on-disk paths are less predictable), and
+    ///     accepts the small risk of also skipping a legitimately-named third-party assembly that
+    ///     happens to start with one of those prefixes — a false negative, not a false positive,
+    ///     which is the direction this diagnostic is deliberately biased.
+    /// </remarks>
+    private static IEnumerable<INamedTypeSymbol> GetAllNamedTypes(Compilation compilation)
+    {
+        foreach (var type in GetAllNamedTypes(compilation.Assembly.GlobalNamespace))
+        {
+            yield return type;
+        }
+
+        foreach (var reference in compilation.References)
+        {
+            if (compilation.GetAssemblyOrModuleSymbol(reference) is IAssemblySymbol assembly &&
+                !IsFrameworkAssembly(assembly))
+            {
+                foreach (var type in GetAllNamedTypes(assembly.GlobalNamespace))
+                {
+                    yield return type;
+                }
+            }
+        }
+    }
+
+    /// <summary>See the remarks on <see cref="GetAllNamedTypes(Compilation)" /> for why this filter exists.</summary>
+    private static bool IsFrameworkAssembly(IAssemblySymbol assembly)
+    {
+        var name = assembly.Identity.Name;
+        return name.StartsWith("System.", StringComparison.Ordinal) ||
+               name.StartsWith("Microsoft.", StringComparison.Ordinal) ||
+               name is "netstandard" or "mscorlib" or "WindowsBase";
+    }
+
+    private static IEnumerable<INamedTypeSymbol> GetAllNamedTypes(INamespaceSymbol ns)
+    {
+        foreach (var type in ns.GetTypeMembers())
+        {
+            foreach (var nested in GetAllNamedTypesIncludingNested(type))
+            {
+                yield return nested;
+            }
+        }
+
+        foreach (var nestedNamespace in ns.GetNamespaceMembers())
+        {
+            foreach (var type in GetAllNamedTypes(nestedNamespace))
+            {
+                yield return type;
+            }
+        }
+    }
+
+    private static IEnumerable<INamedTypeSymbol> GetAllNamedTypesIncludingNested(INamedTypeSymbol type)
+    {
+        yield return type;
+
+        foreach (var nested in type.GetTypeMembers())
+        {
+            foreach (var t in GetAllNamedTypesIncludingNested(nested))
+            {
+                yield return t;
+            }
+        }
+    }
+
+    /// <summary>
     ///     Extracts route-parameter names from a template such as <c>/things/{thingId:guid}</c>,
     ///     stripping constraints, default values, the optional marker, and any catch-all prefix.
     /// </summary>
@@ -851,7 +1243,8 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
 
     private static void Emit(SourceProductionContext context,
         ImmutableArray<EndpointAnalysisResult> results,
-        string? rootNamespace)
+        string? rootNamespace,
+        JsonContextInfo jsonContext)
     {
         if (results.IsDefaultOrEmpty)
         {
@@ -878,6 +1271,11 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
 
         var ns = rootNamespace ?? "UnambitiousFx.Synapse.Endpoints.Generated";
         var ordered = endpoints.OrderBy(e => e.EndpointFullName, StringComparer.Ordinal).ToArray();
+
+        // SYNE008 — reported once per distinct missing type, not once per endpoint, anchored at
+        // whichever endpoint (in the same deterministic order used everywhere else in this method)
+        // uses it first.
+        ReportMissingJsonRegistrations(context, ordered, jsonContext);
 
         // Several endpoints can bind the same message type, but EndpointRegistry.RegisterBinder is
         // keyed by the message type, so only one binder is emitted per distinct bound type: the
@@ -936,6 +1334,43 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
                 first.Location?.ToLocation() ?? Location.None,
                 first.BoundTypeFullName,
                 endpointNames));
+        }
+    }
+
+    /// <summary>
+    ///     SYNE008: reports, once per distinct type absent from <paramref name="jsonContext" />'s
+    ///     registrations, every <see cref="EndpointTarget.JsonRequestTypeName" /> and
+    ///     <see cref="EndpointTarget.JsonResponseTypeName" /> across <paramref name="orderedEndpoints" />
+    ///     that is missing. Nothing is reported at all when <see cref="JsonContextInfo.HasContext" />
+    ///     is false — an app with no <c>JsonSerializerContext</c> anywhere in its reference graph has
+    ///     not opted into source-generated JSON, so this advice does not apply to it.
+    /// </summary>
+    private static void ReportMissingJsonRegistrations(SourceProductionContext context,
+        EndpointTarget[] orderedEndpoints,
+        JsonContextInfo jsonContext)
+    {
+        if (!jsonContext.HasContext)
+        {
+            return;
+        }
+
+        var registered = new HashSet<string>(jsonContext.RegisteredTypeNames, StringComparer.Ordinal);
+        var alreadyReported = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var endpoint in orderedEndpoints)
+        {
+            foreach (var candidate in new[] { endpoint.JsonRequestTypeName, endpoint.JsonResponseTypeName })
+            {
+                if (candidate is null || registered.Contains(candidate) || !alreadyReported.Add(candidate))
+                {
+                    continue;
+                }
+
+                context.ReportDiagnostic(Diagnostic.Create(
+                    EndpointDiagnostics.MissingJsonSerializableRegistration,
+                    endpoint.Location?.ToLocation() ?? Location.None,
+                    candidate));
+            }
         }
     }
 }
