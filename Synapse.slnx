@@ -13,6 +13,7 @@
         <Project Path="examples/MinimalApi.Modules.Notifications/MinimalApi.Modules.Notifications.csproj" />
         <Project Path="examples/MinimalApi.Tests/MinimalApi.Tests.csproj" />
         <Project Path="examples/EndpointsApi/EndpointsApi.csproj" />
+        <Project Path="examples/EndpointsApi.Tests/EndpointsApi.Tests.csproj" />
     </Folder>
     <Folder Name="/examples/_/">
         <File Path="examples\compose.yml" />
