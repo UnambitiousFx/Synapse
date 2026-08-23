@@ -13,10 +13,19 @@
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
         </PackageReference>
+        <PackageReference Include="Microsoft.AspNetCore.TestHost" />
     </ItemGroup>
 
     <ItemGroup>
         <ProjectReference Include="..\..\src\Synapse\Synapse.csproj" />
+        <ProjectReference Include="..\..\src\Synapse.AspNetCore\Synapse.AspNetCore.csproj" />
+        <ProjectReference Include="..\..\src\Synapse.Endpoints\Synapse.Endpoints.csproj" />
+        <!-- PrivateAssets="all" on the analyzer reference inside Synapse.Endpoints.csproj means the
+             generator does not flow through this ProjectReference (the same constraint Task 20 hit).
+             Without this explicit reference, EndpointRegistry.GetBinder<T>()/GetMetadata<T>() throw at
+             startup because no binder/metadata was ever generated for GetThingEndpoint. -->
+        <ProjectReference Include="..\..\src\Synapse.Endpoints.Generator\Synapse.Endpoints.Generator.csproj"
+                          OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     </ItemGroup>
 
 </Project>
