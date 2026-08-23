@@ -9,6 +9,7 @@ public static class EndpointRegistry
     /// <summary>Registers the binder for a message type.</summary>
     /// <typeparam name="TRequest">The message type.</typeparam>
     /// <param name="binder">The generated binder.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="binder" /> is <see langword="null" />.</exception>
     public static void RegisterBinder<TRequest>(IEndpointBinder<TRequest> binder)
     {
         ArgumentNullException.ThrowIfNull(binder);
@@ -18,6 +19,7 @@ public static class EndpointRegistry
     /// <summary>Registers the route metadata for an endpoint type.</summary>
     /// <typeparam name="TEndpoint">The endpoint type.</typeparam>
     /// <param name="metadata">The metadata read from the endpoint's attributes.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="metadata" /> is <see langword="null" />.</exception>
     public static void RegisterMetadata<TEndpoint>(EndpointMetadata metadata)
         where TEndpoint : EndpointBase
     {
