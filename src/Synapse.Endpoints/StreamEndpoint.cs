@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using UnambitiousFx.Synapse.Abstractions;
@@ -42,7 +43,18 @@ public abstract class StreamEndpoint<TRequest, TItem> : EndpointBase
         {
             Route = configuration.Route,
             HttpMethods = configuration.HttpMethods,
-            ApplyMetadata = configuration.ApplyMetadata,
+            ApplyMetadata = handlerBuilder =>
+            {
+                // Declared explicitly because a RequestDelegate-shaped endpoint infers nothing. The
+                // response format is negotiated at request time (see WantsServerSentEvents), so both
+                // content types are declared for the same 200 response.
+                handlerBuilder.WithMetadata(new ProducesResponseMetadata(
+                    StatusCodes.Status200OK,
+                    typeof(IAsyncEnumerable<TItem>),
+                    ["application/json", "text/event-stream"]));
+                handlerBuilder.ProducesProblem(StatusCodes.Status400BadRequest);
+                configuration.ApplyMetadata(handlerBuilder);
+            },
             InvokeAsync = async context =>
             {
                 var bound = await binder.BindAsync(context);

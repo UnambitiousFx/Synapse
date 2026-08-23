@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using UnambitiousFx.Synapse.Abstractions;
@@ -21,6 +22,7 @@ namespace UnambitiousFx.Synapse.Endpoints;
 ///     differ from the message; this variant costs two mapping methods per endpoint.
 /// </remarks>
 public abstract class MappedEndpoint<THttpRequest, TRequest, TResponse, THttpResponse> : EndpointBase
+    where THttpRequest : notnull
     where TRequest : IRequest<TResponse>
     where TResponse : notnull
     where THttpResponse : notnull
@@ -62,7 +64,19 @@ public abstract class MappedEndpoint<THttpRequest, TRequest, TResponse, THttpRes
         {
             Route = configuration.Route,
             HttpMethods = configuration.HttpMethods,
-            ApplyMetadata = configuration.ApplyMetadata,
+            ApplyMetadata = handlerBuilder =>
+            {
+                // Declared explicitly because a RequestDelegate-shaped endpoint infers nothing.
+                if (!HttpMethodHelpers.IsBodylessVerb(configuration.HttpMethods))
+                {
+                    handlerBuilder.Accepts<THttpRequest>("application/json");
+                }
+
+                handlerBuilder.WithMetadata(
+                    new ProducesResponseMetadata(SuccessStatusCode(configuration), typeof(THttpResponse)));
+                handlerBuilder.ProducesProblem(StatusCodes.Status400BadRequest);
+                configuration.ApplyMetadata(handlerBuilder);
+            },
             InvokeAsync = async context =>
             {
                 var bound = await binder.BindAsync(context);
@@ -88,5 +102,10 @@ public abstract class MappedEndpoint<THttpRequest, TRequest, TResponse, THttpRes
                 await result.ExecuteAsync(context);
             }
         };
+    }
+
+    private static int SuccessStatusCode(EndpointConfiguration<THttpResponse> configuration)
+    {
+        return configuration.DeclaredSuccessStatusCode ?? StatusCodes.Status200OK;
     }
 }

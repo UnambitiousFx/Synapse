@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using UnambitiousFx.Synapse.Abstractions;
@@ -56,7 +57,19 @@ public abstract class Endpoint<TRequest, TResponse> : EndpointBase
         {
             Route = configuration.Route,
             HttpMethods = configuration.HttpMethods,
-            ApplyMetadata = configuration.ApplyMetadata,
+            ApplyMetadata = handlerBuilder =>
+            {
+                // Declared explicitly because a RequestDelegate-shaped endpoint infers nothing.
+                if (!HttpMethodHelpers.IsBodylessVerb(configuration.HttpMethods))
+                {
+                    handlerBuilder.Accepts<TRequest>("application/json");
+                }
+
+                handlerBuilder.WithMetadata(
+                    new ProducesResponseMetadata(SuccessStatusCode(configuration), typeof(TResponse)));
+                handlerBuilder.ProducesProblem(StatusCodes.Status400BadRequest);
+                configuration.ApplyMetadata(handlerBuilder);
+            },
             InvokeAsync = async context =>
             {
                 var bound = await binder.BindAsync(context);
@@ -80,5 +93,10 @@ public abstract class Endpoint<TRequest, TResponse> : EndpointBase
                 await result.ExecuteAsync(context);
             }
         };
+    }
+
+    private static int SuccessStatusCode(EndpointConfiguration<TResponse> configuration)
+    {
+        return configuration.DeclaredSuccessStatusCode ?? StatusCodes.Status200OK;
     }
 }

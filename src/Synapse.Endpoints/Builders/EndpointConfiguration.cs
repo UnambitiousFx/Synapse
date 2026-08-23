@@ -16,6 +16,14 @@ internal sealed class EndpointConfiguration<TResponse>
     /// <summary>Gets the declarative success mapper, or null to fall through to <c>OnSuccess</c>.</summary>
     public Func<TResponse, IResult>? SuccessMapper { get; init; }
 
+    /// <summary>
+    ///     Gets the HTTP status code declared by the success-setting method the endpoint configured
+    ///     (for example <c>Created</c> declares <c>201</c>), or <see langword="null" /> when none was
+    ///     configured. Read by the endpoint base to declare accurate OpenAPI metadata instead of
+    ///     always assuming <c>200 OK</c>.
+    /// </summary>
+    public int? DeclaredSuccessStatusCode { get; init; }
+
     /// <summary>Gets the callback that applies accumulated metadata to the route handler builder.</summary>
     public required Action<RouteHandlerBuilder> ApplyMetadata { get; init; }
 }

@@ -12,6 +12,7 @@ internal sealed class EndpointBuilder<TResponse> : IEndpointBuilder<TResponse>
     private string? _route;
     private string[]? _httpMethods;
     private Func<TResponse, IResult>? _successMapper;
+    private int? _declaredSuccessStatusCode;
 
     internal EndpointBuilder(EndpointMetadata declared)
     {
@@ -115,6 +116,7 @@ internal sealed class EndpointBuilder<TResponse> : IEndpointBuilder<TResponse>
     public IEndpointBuilder<TResponse> NoContent()
     {
         _successMapper = _ => TypedResults.NoContent();
+        _declaredSuccessStatusCode = StatusCodes.Status204NoContent;
         return this;
     }
 
@@ -122,6 +124,7 @@ internal sealed class EndpointBuilder<TResponse> : IEndpointBuilder<TResponse>
     public IEndpointBuilder<TResponse> StatusCode(int statusCode)
     {
         _successMapper = _ => TypedResults.StatusCode(statusCode);
+        _declaredSuccessStatusCode = statusCode;
         return this;
     }
 
@@ -137,6 +140,7 @@ internal sealed class EndpointBuilder<TResponse> : IEndpointBuilder<TResponse>
     public IEndpointBuilder<TResponse> Ok()
     {
         _successMapper = value => TypedResults.Ok(value);
+        _declaredSuccessStatusCode = StatusCodes.Status200OK;
         return this;
     }
 
@@ -147,6 +151,7 @@ internal sealed class EndpointBuilder<TResponse> : IEndpointBuilder<TResponse>
 
         // TypedResults.Created, deliberately not CreatedAtRoute, which is RequiresUnreferencedCode.
         _successMapper = value => TypedResults.Created(location(value), value);
+        _declaredSuccessStatusCode = StatusCodes.Status201Created;
         return this;
     }
 
@@ -156,6 +161,7 @@ internal sealed class EndpointBuilder<TResponse> : IEndpointBuilder<TResponse>
         _successMapper = value => location is null
             ? TypedResults.Accepted((string?)null, value)
             : TypedResults.Accepted(location(value), value);
+        _declaredSuccessStatusCode = StatusCodes.Status202Accepted;
         return this;
     }
 
@@ -253,6 +259,7 @@ internal sealed class EndpointBuilder<TResponse> : IEndpointBuilder<TResponse>
             Route = route,
             HttpMethods = methods,
             SuccessMapper = _successMapper,
+            DeclaredSuccessStatusCode = _declaredSuccessStatusCode,
             ApplyMetadata = builder =>
             {
                 foreach (var action in metadata)
