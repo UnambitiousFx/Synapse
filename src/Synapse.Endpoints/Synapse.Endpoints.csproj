@@ -14,6 +14,11 @@
 
     <ItemGroup>
         <ProjectReference Include="..\Synapse.AspNetCore\Synapse.AspNetCore.csproj" />
+        <!-- The generator runs against this project's consumers, and ships inside this package. -->
+        <ProjectReference Include="..\Synapse.Endpoints.Generator\Synapse.Endpoints.Generator.csproj"
+                          OutputItemType="Analyzer"
+                          ReferenceOutputAssembly="false"
+                          PrivateAssets="all" />
     </ItemGroup>
 
     <!-- TEMPORARY: exposes internal Endpoint types to the Native AOT interception probe app.
@@ -21,5 +26,14 @@
     <ItemGroup>
         <InternalsVisibleTo Include="UnambitiousFx.Examples.EndpointsApi" />
     </ItemGroup>
+
+    <Target Name="PackEndpointsAnalyzer" BeforeTargets="_GetPackageFiles">
+        <ItemGroup>
+            <None Include="$(MSBuildThisFileDirectory)..\Synapse.Endpoints.Generator\bin\$(Configuration)\netstandard2.0\UnambitiousFx.Synapse.Endpoints.Generator.dll"
+                  Pack="true"
+                  PackagePath="analyzers/dotnet/cs"
+                  Visible="false" />
+        </ItemGroup>
+    </Target>
 
 </Project>
