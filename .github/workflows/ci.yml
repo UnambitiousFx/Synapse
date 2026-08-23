@@ -133,6 +133,109 @@ jobs:
             exit 1
           fi
 
+  endpoints-native-aot:
+    name: Endpoints Native AOT publish and smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Install the native toolchain
+        run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
+
+      - name: Publish native, failing on any trimming or RDG warning
+        run: |
+          set -o pipefail
+          # PublishAot is already set in examples/EndpointsApi/EndpointsApi.csproj. Do NOT also
+          # pass /p:PublishAot=true here: as a command-line global property it propagates down
+          # into the ProjectReferences on Synapse.Generator/Synapse.Endpoints.Generator (analyzer
+          # projects targeting netstandard2.0, referenced with ReferenceOutputAssembly=false) and
+          # fails the build with NETSDK1207 ("Ahead-of-time compilation is not supported for the
+          # target framework"), even though those projects are never published. Confirmed locally.
+          dotnet publish examples/EndpointsApi/EndpointsApi.csproj \
+            -r linux-x64 -c Release 2>&1 | tee publish.log
+          if grep -Eq 'IL[0-9]{4}|RDG[0-9]{3}' publish.log; then
+            echo "::error::Native AOT publish produced trimming or Request Delegate Generator warnings."
+            grep -E 'IL[0-9]{4}|RDG[0-9]{3}' publish.log
+            exit 1
+          fi
+
+      - name: Smoke test the native binary
+        run: |
+          set -o pipefail
+          BIN=examples/EndpointsApi/bin/Release/net10.0/linux-x64/publish/UnambitiousFx.Examples.EndpointsApi
+          if [ ! -f "$BIN" ]; then
+            echo "::error::Published binary not found at $BIN"
+            ls -lah examples/EndpointsApi/bin/Release/net10.0/linux-x64/publish || true
+            exit 1
+          fi
+
+          "$BIN" --urls http://localhost:5200 &
+          PID=$!
+
+          fail() {
+            echo "::error::$1"
+            kill "$PID" 2>/dev/null || true
+            exit 1
+          }
+
+          ready=false
+          for _ in $(seq 1 30); do
+            if curl -sf http://localhost:5200/tasks >/dev/null; then
+              ready=true
+              break
+            fi
+            sleep 1
+          done
+          [ "$ready" = true ] || fail "Server never became ready on :5200"
+
+          # A 201 with Location proves declarative success mapping through the generated
+          # binder and TypedResults.Created works.
+          headers=$(curl -s -D - -o /dev/null -X POST http://localhost:5200/tasks \
+                     -H 'Content-Type: application/json' -d '{"title":"ci"}')
+          code=$(echo "$headers" | head -1 | tr -d '\r' | awk '{print $2}')
+          [ "$code" = "201" ] || fail "POST /tasks returned $code, expected 201"
+          echo "$headers" | grep -qi '^location:' || fail "POST /tasks response missing Location header"
+
+          # A value response proves body serialization through the JsonSerializerContext.
+          body=$(curl -sf http://localhost:5200/tasks) || fail "GET /tasks failed"
+          echo "$body" | grep -q '"title"' || fail "GET /tasks body did not look like task JSON: $body"
+
+          # A void command proves the 204 path (the IHttpInvoker overload added for void arity).
+          id=$(echo "$body" | grep -o '"id":"[^"]*' | head -1 | cut -d'"' -f4)
+          [ -n "$id" ] || fail "Could not extract a task id from GET /tasks body: $body"
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X PUT "http://localhost:5200/tasks/$id" \
+                   -H 'Content-Type: application/json' -d '{"title":"ci-updated"}')
+          [ "$code" = "204" ] || fail "PUT /tasks/$id returned $code, expected 204"
+
+          # Streaming, both transports negotiated on Accept.
+          curl -sf http://localhost:5200/tasks/stream | grep -q '^\[' \
+            || fail "JSON-array streaming failed (expected body starting with '[')"
+          curl -sf http://localhost:5200/tasks/stream -H 'Accept: text/event-stream' \
+            | grep -q '^data: ' || fail "SSE streaming failed (expected a 'data: ' frame)"
+
+          # The OpenAPI document is the sharpest check: a type missing from the
+          # JsonSerializerContext lets the build stay green while this 500s. Assert the
+          # document actually describes /tasks, not merely that the request returned 200.
+          openapi=$(curl -sf http://localhost:5200/openapi/v1.json) \
+            || fail "GET /openapi/v1.json failed to return a successful response"
+          echo "$openapi" | grep -q '"/tasks"' \
+            || fail "OpenAPI document missing or does not contain /tasks"
+
+          # A random, non-existent id proves failure mapping through DefaultFailureHttpMapper
+          # and ProblemDetails serialization, another AOT hazard in its own right.
+          code=$(curl -s -o /dev/null -w '%{http_code}' \
+                   "http://localhost:5200/tasks/00000000-0000-0000-0000-000000000000")
+          [ "$code" = "404" ] || fail "GET /tasks/{unknown-guid} returned $code, expected 404"
+
+          kill "$PID" 2>/dev/null || true
+          echo "Native AOT smoke test passed."
+
   http-smoke:
     name: HTTP Smoke Tests
     runs-on: ubuntu-latest
