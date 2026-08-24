@@ -137,6 +137,18 @@ body by five rules, applied in order — the first one that applies wins:
 | 4 | On a bodyless verb (`GET` / `DELETE` / `HEAD` / `OPTIONS` / `TRACE`), an unmatched property binds from the query string. An endpoint that declares its route in `Configure` has no verb the generator can see, so it is assumed bodyless too — see [Escape hatches](#escape-hatches) |
 | 5 | Otherwise, the property binds from the request body |
 
+Whichever source a property lands on, whether a *missing* value is tolerated is decided by one thing
+only — the property's nullability:
+
+| Property type | Missing value |
+|---|---|
+| Nullable (`int?`, `string?`, a nullable reference type) | Optional — the property is left alone and binding succeeds |
+| Anything else | Mandatory — binding fails with `400` and a message naming the source and key |
+
+A property initialiser does **not** make a property optional: `public int Page { get; init; } = 20;`
+is non-nullable, so it is *required*, and the `20` is overwritten or never reached. Write
+`public int? Page { get; init; }` and apply the default in the handler.
+
 **Headers are never bound by convention** — rule 3 only matches route parameters, and rule 5
 falls through to the body, never to a header. `[FromHeader]` is the only way to read one:
 
@@ -364,7 +376,7 @@ public sealed record ComputedCommand : IRequest<string>
 | `SYNE007` | Warning | An explicit `[FromBody]` property is declared on a bodyless verb (`GET`/`DELETE`/`HEAD`/`OPTIONS`/`TRACE`), so it can never bind | Remove `[FromBody]`, change the verb, or accept the property will always be missing |
 | `SYNE008` | Warning | A request/response type is not registered in any `JsonSerializerContext` found in the compilation | Add `[JsonSerializable(typeof(...))]` for it — see [Native AOT](#native-aot); only reported once your app has at least one `JsonSerializerContext` at all |
 | `SYNE009` | Error | A route is declared both by attribute and by a verb call in `Configure` | Remove one — only one may declare the route |
-| `SYNE010` | Error | The endpoint class is generic, nested inside a generic type, or has no public parameterless constructor | Make it a top-level, non-generic class with a public parameterless constructor — `MapEndpoint<TEndpoint>()` requires `TEndpoint : EndpointBase, new()` |
+| `SYNE010` | Error | The endpoint class is generic, nested inside a generic type, or has no public parameterless constructor | Make it a top-level, non-generic class with a public parameterless constructor — `MapEndpoint<TEndpoint>()` requires `TEndpoint : EndpointBase, new()`. An `abstract` endpoint class never fires this: discovery skips abstract classes outright, so an abstract intermediate base shared by several endpoints is a supported pattern |
 | `SYNE011` | Error | A route/query/header-bound property has no accessible setter and its type is not a record | Add a setter, or make the type a record so the value can be applied through `with` |
 | `SYNE012` | Error | A non-string, non-enum route/query/header-bound property's type has no public static `TryParse(string, out T)` | Add a `TryParse` method to the type, or change the property's type |
 | `SYNE013` | Warning | A message type is bound by two or more endpoints whose *resolved* bindings differ (different route/verb produced different bindable properties) | Give each endpoint its own message type — only one endpoint's binding resolution is baked into the single shared binder; **this diagnostic warns, it does not fix anything** — every other endpoint sharing the type keeps binding incorrectly at runtime |
