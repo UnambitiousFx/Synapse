@@ -34,11 +34,32 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
             .Select(static (result, _) => result!.Value)
             .Collect();
 
-        var rootNamespace = context.AnalyzerConfigOptionsProvider.Select(static (provider, _) =>
-        {
-            provider.GlobalOptions.TryGetValue("build_property.RootNamespace", out var value);
-            return value;
-        });
+        // The MSBuild RootNamespace is the source of truth for the namespace to emit into, and can
+        // differ from the assembly name. It must be checked with IsNullOrWhiteSpace, not `??`: a
+        // project declaring <RootNamespace></RootNamespace> surfaces the property as *present but
+        // empty*, which a null check never catches and which emitted a literal `namespace ;` into all
+        // three generated files (CS1001, plus a cascading CS0234). Falls back to the assembly's own
+        // name, matching Synapse.Generator — a namespace a consumer would plausibly have typed,
+        // unlike a hardcoded one.
+        var rootNamespace = context.AnalyzerConfigOptionsProvider
+            .Combine(context.CompilationProvider)
+            .Select(static (pair, _) =>
+            {
+                var (provider, compilation) = pair;
+                if (provider.GlobalOptions.TryGetValue("build_property.RootNamespace", out var value) &&
+                    !string.IsNullOrWhiteSpace(value))
+                {
+                    return value;
+                }
+
+                var fromAssembly = compilation.GetRootNamespaceFromAssemblyAttributes();
+
+                // Last resort: an unnamed compilation would otherwise put us right back at
+                // `namespace ;`. Unreachable from a real project build, kept so it stays unreachable.
+                return string.IsNullOrWhiteSpace(fromAssembly)
+                    ? "UnambitiousFx.Synapse.Endpoints.Generated"
+                    : fromAssembly;
+            });
 
         // SYNE008 needs every [JsonSerializable(typeof(X))] registration in the compilation, which
         // is a compilation-wide fact, not a per-candidate one — a single CompilationProvider step
@@ -1430,7 +1451,7 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
 
     private static void Emit(SourceProductionContext context,
         ImmutableArray<EndpointAnalysisResult> results,
-        string? rootNamespace,
+        string rootNamespace,
         JsonContextInfo jsonContext)
     {
         if (results.IsDefaultOrEmpty)
@@ -1456,7 +1477,7 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
             return;
         }
 
-        var ns = rootNamespace ?? "UnambitiousFx.Synapse.Endpoints.Generated";
+        var ns = rootNamespace;
         var ordered = endpoints.OrderBy(e => e.EndpointFullName, StringComparer.Ordinal).ToArray();
 
         // SYNE008 — reported once per distinct missing type, not once per endpoint, anchored at

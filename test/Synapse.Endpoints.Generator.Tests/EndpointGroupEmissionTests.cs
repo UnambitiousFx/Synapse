@@ -36,7 +36,7 @@ public sealed class EndpointGroupEmissionTests
     {
         // Arrange — build_property.RootNamespace set to a namespace that is NOT nested under
         // UnambitiousFx.Synapse.Endpoints, matching a real consumer rather than the coincidental
-        // fallback ("UnambitiousFx.Synapse.Endpoints.Generated") every other test in this suite
+        // fallback (the assembly name, "TestAssembly") every other test in this suite
         // exercises without ever setting the property at all. That fallback happens to be a child
         // namespace of UnambitiousFx.Synapse.Endpoints, which let an emitted, unqualified
         // `endpoints.MapEndpoint<T>()` extension-method call resolve by namespace-nesting
@@ -220,5 +220,64 @@ public sealed class EndpointGroupEmissionTests
         // And the four-argument EndpointMetadata overload plus the Func<MyGroup> -> Func<EndpointGroup>
         // covariant conversion actually compile.
         GeneratorHarness.AssertGeneratedCompiles(source);
+    }
+
+    // A project declaring <RootNamespace></RootNamespace> surfaces build_property.RootNamespace as
+    // *present but empty*, so the old `rootNamespace ?? "..."` fallback never fired and all three
+    // generated files opened with a literal `namespace ;` (CS1001, plus a cascading CS0234).
+    // Verified against the real example app with `dotnet build -p:RootNamespace=`. Now guarded with
+    // IsNullOrWhiteSpace and resolved to the assembly name, matching Synapse.Generator.
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Generate_WhenRootNamespaceIsPresentButBlank_FallsBackToTheAssemblyName(string rootNamespace)
+    {
+        // Arrange
+        const string source = """
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+
+                              namespace Acme.Api;
+
+                              public sealed record PingQuery : IRequest<int>;
+
+                              [Get("/ping")]
+                              public sealed class PingEndpoint : Endpoint<PingQuery, int>;
+                              """;
+
+        // Act
+        var generated = GeneratorHarness.GetFileWithRootNamespace(source, "SynapseEndpointGroup.g.cs",
+            rootNamespace);
+
+        // Assert — the compilation's assembly name, and above all not "namespace ;".
+        Assert.Contains("namespace TestAssembly;", generated);
+        Assert.DoesNotContain("namespace ;", generated);
+    }
+
+    // The other half: a RootNamespace that is actually set still wins over the assembly name, so the
+    // blank-guard above cannot be mistaken for "the property is ignored".
+    [Fact]
+    public void Generate_WhenRootNamespaceIsSet_EmitsIntoItRatherThanTheAssemblyName()
+    {
+        // Arrange
+        const string source = """
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+
+                              namespace Acme.Api;
+
+                              public sealed record PingQuery : IRequest<int>;
+
+                              [Get("/ping")]
+                              public sealed class PingEndpoint : Endpoint<PingQuery, int>;
+                              """;
+
+        // Act
+        var generated = GeneratorHarness.GetFileWithRootNamespace(source, "SynapseEndpointGroup.g.cs",
+            "Acme.Api");
+
+        // Assert
+        Assert.Contains("namespace Acme.Api;", generated);
+        Assert.DoesNotContain("namespace TestAssembly;", generated);
     }
 }

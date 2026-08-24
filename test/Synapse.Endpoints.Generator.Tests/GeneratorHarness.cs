@@ -18,14 +18,34 @@ internal static class GeneratorHarness
 
     internal static string? TryGetFile(string source, string fileName)
     {
-        var (_, trees) = Run(source);
+        var (_, trees) = Run(source, optionsProvider: null);
         var tree = trees.FirstOrDefault(t => t.FilePath.EndsWith(fileName, StringComparison.Ordinal));
         return tree?.ToString();
     }
 
+    /// <summary>
+    ///     Same as <see cref="GetFile" />, but with <c>build_property.RootNamespace</c> set to
+    ///     <paramref name="rootNamespace" /> — including to the empty string, which is what a project
+    ///     declaring <c>&lt;RootNamespace&gt;&lt;/RootNamespace&gt;</c> actually surfaces to a
+    ///     generator, and which a plain null check never catches. Pass <see langword="null" /> to
+    ///     leave the property unset instead.
+    /// </summary>
+    internal static string GetFileWithRootNamespace(string source, string fileName, string? rootNamespace)
+    {
+        var provider = rootNamespace is null
+            ? null
+            : new TestAnalyzerConfigOptionsProvider(
+                new Dictionary<string, string> { ["build_property.RootNamespace"] = rootNamespace });
+
+        var (_, trees) = Run(source, provider);
+        var tree = trees.FirstOrDefault(t => t.FilePath.EndsWith(fileName, StringComparison.Ordinal));
+        return tree?.ToString()
+               ?? throw new InvalidOperationException($"The generator did not emit '{fileName}'.");
+    }
+
     internal static ImmutableArray<Diagnostic> GetDiagnostics(string source)
     {
-        var (diagnostics, _) = Run(source);
+        var (diagnostics, _) = Run(source, optionsProvider: null);
         return diagnostics;
     }
 
@@ -84,12 +104,13 @@ internal static class GeneratorHarness
     ///     Same as <see cref="AssertGeneratedCompiles(string)" />, but with
     ///     <c>build_property.RootNamespace</c> set to <paramref name="rootNamespace" /> rather than
     ///     left unset. Every other test in this suite leaves it unset, which makes
-    ///     <c>EndpointsGenerator</c> fall back to <c>"UnambitiousFx.Synapse.Endpoints.Generated"</c> —
-    ///     a namespace nested *under* <c>UnambitiousFx.Synapse.Endpoints</c>, which lets an emitter
-    ///     that only resolves by namespace-nesting (an unqualified extension-method call with no
-    ///     <c>using</c>, say) pass by coincidence rather than by actually being correct for a real
-    ///     consumer. Pass a <paramref name="rootNamespace" /> disjoint from
-    ///     <c>UnambitiousFx.Synapse.Endpoints</c> (for example <c>"Acme.Api"</c>) to close that hole.
+    ///     <c>EndpointsGenerator</c> fall back to the compilation's assembly name
+    ///     (<c>"TestAssembly"</c>). Passing an explicit <paramref name="rootNamespace" /> pins that the
+    ///     property is honoured when present, and one disjoint from
+    ///     <c>UnambitiousFx.Synapse.Endpoints</c> (for example <c>"Acme.Api"</c>) additionally closes
+    ///     the hole where an emitter that only resolves by namespace-nesting (an unqualified
+    ///     extension-method call with no <c>using</c>, say) would pass by coincidence rather than by
+    ///     being correct for a real consumer.
     /// </summary>
     internal static void AssertGeneratedCompilesWithRootNamespace(string source, string rootNamespace)
     {
@@ -131,9 +152,13 @@ internal static class GeneratorHarness
             "The generator produced no source at all.");
     }
 
-    private static (ImmutableArray<Diagnostic> Diagnostics, IReadOnlyList<SyntaxTree> Trees) Run(string source)
+    private static (ImmutableArray<Diagnostic> Diagnostics, IReadOnlyList<SyntaxTree> Trees) Run(string source,
+        AnalyzerConfigOptionsProvider? optionsProvider)
     {
-        var driver = CSharpGeneratorDriver.Create(new EndpointsGenerator());
+        var driver = optionsProvider is null
+            ? CSharpGeneratorDriver.Create(new EndpointsGenerator())
+            : CSharpGeneratorDriver.Create([new EndpointsGenerator().AsSourceGenerator()],
+                optionsProvider: optionsProvider);
         var result = driver.RunGenerators(CreateCompilation(source)).GetRunResult();
         return (result.Diagnostics, result.GeneratedTrees);
     }
