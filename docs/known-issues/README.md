@@ -50,6 +50,11 @@ filed as a GitHub issue with minimal editing.
 | [042](042-restored-outbox-flow-never-reaches-the-handlers-context.md) | Dispatch used the entry's restored flow only to parent the activity: the stored baggage was dropped and handlers read the committing scope's `IContext`, so entries were dispatched under whichever request called `CommitAsync`; each entry now gets its own scope built from its own state | ✅ Resolved | **High** | Outbox |
 | [043](043-inject-propagates-the-activitys-trace-id-not-the-contexts.md) | `Inject` wrote the ambient activity's trace id rather than `IContext.TraceId`, so an untrusted edge propagated the caller's forged trace id onto outbound calls and into outbox entries; the context now wins when the two diverge | ✅ Resolved | Medium | Observability |
 | [044](044-endpoints-binder-default-for-unmatched-reference-constructor-parameter.md) | Endpoints binder emitted bare `default` for an unmatched reference-typed primary-constructor parameter, raising a nullable-reference warning in generated code that `AssertGeneratedCompiles` (Error-only) never caught; now emits `default!` for reference types | ✅ Resolved | Medium | Generator |
+| [045](045-route-declared-in-configure-emits-a-request-body-read.md) | An endpoint declaring its route in `Configure` gave the generator an empty verb string, which matched no bodyless verb, so the emitted binder read a JSON request body for what is a `GET` at runtime and every request failed (500 with no `Content-Type`, 400 with `Content-Length: 0`); an empty verb is now bodyless and the new SYNE014 warns when a property's source rested on that assumption | ✅ Resolved | **High** | Generator |
+| [046](046-request-body-with-no-content-type-returns-500.md) | `ReadJsonBodyAsync` caught only `JsonException`, but `ReadFromJsonAsync` throws `InvalidOperationException` for a non-JSON content type, so a body sent with no `Content-Type` header escaped as a 500 with an unhandled-exception log line; the content type is now checked with `HasJsonContentType()` first | ✅ Resolved | Medium | AspNetCore mapping |
+| [047](047-empty-rootnamespace-emits-namespace-semicolon.md) | `build_property.RootNamespace` is present but empty when a project declares `<RootNamespace></RootNamespace>`, so the `??` fallback never fired and all three generated files opened with a literal `namespace ;` (CS1001); it is now guarded with `IsNullOrWhiteSpace` and falls back to the assembly name, matching the sibling generator | ✅ Resolved | Medium | Generator |
+| [048](048-body-jsontypeinfo-cache-is-process-static.md) | The request-body `JsonTypeInfo` was held in a static generic holder — one entry per closed type per *process* — so two applications in one process with different `ConfigureHttpJsonOptions` silently shared whichever resolved first; the cache is now keyed on the request's `JsonSerializerOptions` instance | ✅ Resolved | Medium | AspNetCore mapping |
+| [049](049-duplicate-route-check-inspects-the-whole-route-table.md) | The startup duplicate-route check walked every `RouteEndpoint` with no filter and then threw "More than one **Synapse** endpoint claims…", blaming Synapse for hand-written duplicates and rejecting templates legitimately disambiguated by a matcher policy; it now honours an internal marker attached at map time | ✅ Resolved | Medium | AspNetCore mapping |
 
 > **Discovery context:** 001–003 were found while building the pipeline-behavior showcase in
 > `examples/MinimalApi` on branch `feature/typed-pipeline-behaviors` against .NET 10 with
@@ -64,6 +69,9 @@ filed as a GitHub issue with minimal editing.
 > 042–043 were found in a code review of the committed v2 branch (`git diff main...HEAD`) and resolved on
 > `feat/context-propagation`. 044 was found in a code review of the new `Synapse.Endpoints.Generator`
 > project while implementing its binding diagnostics, and resolved on `feat/synapse-endpoints`.
+> 045–049 were found in the final whole-branch review of `feat/synapse-endpoints` (committed diff,
+> multiple finder angles, each finding reproduced against the running example application) and resolved
+> on the same branch.
 >
 > Each file is the report as written at discovery. Where a later change replaced the mechanism a report
 > describes — most often the v2 context-propagation refactor, which removed `CorrelationContext`,
