@@ -23,7 +23,7 @@ const sidebars: SidebarsConfig = {
     {
       type: 'category',
       label: 'Advanced & Integration',
-      items: ['outbox', 'aspnetcore', 'source-generator', 'observability'],
+      items: ['outbox', 'aspnetcore', 'endpoints', 'source-generator', 'observability'],
     },
     {
       type: 'category',

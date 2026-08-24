@@ -28,6 +28,7 @@ A lightweight, **high-performance** mediator implementation for .NET with first-
 - **Outbox support** — Interfaces and helpers to implement the outbox pattern and reliable event publishing.
 - **Observability hooks** — Metrics and tracing integration points to capture latency and publish metrics.
 - **Source generator** — Optional code-generation to reduce allocations and simplify registration.
+- **Endpoints** (`UnambitiousFx.Synapse.Endpoints`) — Optional endpoint-per-class HTTP layer that maps routes to commands/queries with generated binding and full Native AOT support. See the [Endpoints docs](https://unambitiousfx.com/lib-synapse/endpoints).
 - **Examples & benchmarks** — Real-world examples and performance benchmarks included.
 
 ## 📦 Installation

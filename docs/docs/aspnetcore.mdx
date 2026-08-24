@@ -11,6 +11,13 @@ import TabItem from '@theme/TabItem';
 
 `UnambitiousFx.Synapse.AspNetCore` provides two invoker wrappers that translate `Result<T>` to HTTP responses automatically, so endpoint handlers stay free of mapping boilerplate.
 
+:::tip Recommended default for new HTTP surfaces
+For a new route, prefer [Endpoints](./endpoints) — an endpoint-per-class layer built on top of
+`IHttpInvoker` that turns the common case into one attribute and one class declaration, with
+generated binding and full Native AOT support. Reach for the hand-written `IHttpInvoker`/
+`IMvcInvoker` patterns below when an endpoint's shape genuinely does not fit that model.
+:::
+
 ## Install
 
 <Tabs>
@@ -268,6 +275,7 @@ Also use the [Source Generator](./source-generator) — the generated `RegisterG
 
 ## See also
 
+- [Endpoints](./endpoints) — the recommended default for a new HTTP surface: endpoint-per-class, generated binding, full Native AOT support.
 - [Getting Started](./getting-started) — full end-to-end example with Minimal API.
 - [Streaming](./streaming) — `IHttpInvoker.InvokeStreamAsync` details.
 - [Source Generator](./source-generator) — NativeAOT-safe handler registration.

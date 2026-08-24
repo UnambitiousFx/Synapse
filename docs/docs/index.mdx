@@ -56,6 +56,7 @@ graph TD
     dotnet add package UnambitiousFx.Synapse
     dotnet add package UnambitiousFx.Synapse.AspNetCore   # optional — web API integration
     dotnet add package UnambitiousFx.Synapse.Generator    # optional — source generator
+    dotnet add package UnambitiousFx.Synapse.Endpoints    # optional — endpoint-per-class HTTP layer
     ```
   </TabItem>
   <TabItem value="packageref" label="PackageReference">
@@ -65,6 +66,7 @@ graph TD
     <!-- optional -->
     <PackageReference Include="UnambitiousFx.Synapse.AspNetCore" Version="*" />
     <PackageReference Include="UnambitiousFx.Synapse.Generator" Version="*" />
+    <PackageReference Include="UnambitiousFx.Synapse.Endpoints" Version="*" />
     ```
   </TabItem>
 </Tabs>
@@ -75,6 +77,7 @@ graph TD
 | `UnambitiousFx.Synapse`              | DI registration, invoker, dispatcher, context, outbox.               |
 | `UnambitiousFx.Synapse.AspNetCore`   | `IHttpInvoker`, `IMvcInvoker`, `UseSynapsePropagation` middleware.        |
 | `UnambitiousFx.Synapse.Generator`    | Roslyn source generator that eliminates manual handler registration. |
+| `UnambitiousFx.Synapse.Endpoints`    | Endpoint-per-class HTTP layer with generated binding; bundles its own analyzer. See [Endpoints](./endpoints). |
 
 ## Quick start
 
