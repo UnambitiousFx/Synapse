@@ -40,6 +40,11 @@ internal static class EndpointMapper
             descriptor.HttpMethods,
             (Delegate)(async (HttpContext context) => await descriptor.InvokeAsync(context)));
 
+        // Marks this endpoint as one of ours, so the startup duplicate-route check can restrict
+        // itself to Synapse endpoints instead of blaming Synapse for two hand-written MapGet calls
+        // on the same route (see EndpointRouteBuilderExtensions.ThrowOnDuplicateRoutes).
+        builder.WithMetadata(SynapseEndpointMarker.Instance);
+
         descriptor.ApplyMetadata(builder);
         return builder;
     }

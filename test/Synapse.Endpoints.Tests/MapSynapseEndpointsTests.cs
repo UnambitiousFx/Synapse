@@ -89,6 +89,113 @@ public sealed class MapSynapseEndpointsTests
         Assert.Contains("GET /shared/dup", exception.Message);
     }
 
+    // The check used to walk every RouteEndpoint in the table with no filter, so two hand-written
+    // MapGet calls on the same route were reported as "More than one Synapse endpoint claims…" —
+    // blaming Synapse for routes it never mapped, and (worse) throwing at startup for templates
+    // legitimately duplicated and disambiguated by a matcher policy such as API versioning. It is now
+    // restricted to endpoints carrying Synapse's own marker metadata.
+    [Fact]
+    public void MapSynapseEndpoints_WhenTwoHandWrittenRoutesCollide_DoesNotBlameSynapse()
+    {
+        // Arrange — the duplicate is entirely outside Synapse: two plain MapGet calls on one route,
+        // plus one unrelated Synapse endpoint so the check actually has something of ours to inspect.
+        EndpointRegistry.RegisterBinder(new ForeignDupBinder());
+        EndpointRegistry.RegisterMetadata<ForeignDupEndpoint>(new EndpointMetadata(["GET"], "/mine"));
+
+        var app = WebApplication.CreateSlimBuilder().Build();
+
+        // Mapped through a helper called twice, rather than two literal MapGet calls in this method:
+        // ASP0022 flags the latter at compile time, which is exactly the sort of duplicate ASP.NET
+        // itself is responsible for reporting — and exactly what this check must stop claiming as its
+        // own.
+        MapHealth(app);
+        MapHealth(app);
+
+        // Act
+        var exception = Record.Exception(() => app.MapSynapseEndpoints(new ForeignDupGroup()));
+
+        // Assert
+        Assert.Null(exception);
+    }
+
+    // The other half: a real Synapse duplicate must still throw even when non-Synapse routes are
+    // present, so the filter cannot be mistaken for having disabled the check.
+    [Fact]
+    public void MapSynapseEndpoints_WhenSynapseEndpointsCollideAlongsideHandWrittenRoutes_StillThrows()
+    {
+        // Arrange
+        EndpointRegistry.RegisterBinder(new MixedDupFirstBinder());
+        EndpointRegistry.RegisterBinder(new MixedDupSecondBinder());
+        EndpointRegistry.RegisterMetadata<MixedDupFirstEndpoint>(new EndpointMetadata(["GET"], "/mixed-dup"));
+        EndpointRegistry.RegisterMetadata<MixedDupSecondEndpoint>(new EndpointMetadata(["GET"], "/mixed-dup"));
+
+        var app = WebApplication.CreateSlimBuilder().Build();
+        MapHealth(app);
+
+        // Act & Assert
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => app.MapSynapseEndpoints(new MixedDupGroup()));
+        Assert.Contains("GET /mixed-dup", exception.Message);
+    }
+
+    private static void MapHealth(IEndpointRouteBuilder endpoints)
+    {
+        endpoints.MapGet("/health", () => "ok");
+    }
+
+    private sealed class ForeignDupGroup : IEndpointGroup
+    {
+        public void Map(IEndpointRouteBuilder endpoints)
+        {
+            endpoints.MapEndpoint<ForeignDupEndpoint>();
+        }
+    }
+
+    private sealed record ForeignDupQuery : IRequest<string>;
+
+    private sealed class ForeignDupEndpoint : Endpoint<ForeignDupQuery, string>;
+
+    private sealed class ForeignDupBinder : IEndpointBinder<ForeignDupQuery>
+    {
+        public ValueTask<BindResult<ForeignDupQuery>> BindAsync(HttpContext context)
+        {
+            return ValueTask.FromResult(BindResult<ForeignDupQuery>.Success(new ForeignDupQuery()));
+        }
+    }
+
+    private sealed class MixedDupGroup : IEndpointGroup
+    {
+        public void Map(IEndpointRouteBuilder endpoints)
+        {
+            endpoints.MapEndpoint<MixedDupFirstEndpoint>();
+            endpoints.MapEndpoint<MixedDupSecondEndpoint>();
+        }
+    }
+
+    private sealed record MixedDupFirstQuery : IRequest<string>;
+
+    private sealed class MixedDupFirstEndpoint : Endpoint<MixedDupFirstQuery, string>;
+
+    private sealed class MixedDupFirstBinder : IEndpointBinder<MixedDupFirstQuery>
+    {
+        public ValueTask<BindResult<MixedDupFirstQuery>> BindAsync(HttpContext context)
+        {
+            return ValueTask.FromResult(BindResult<MixedDupFirstQuery>.Success(new MixedDupFirstQuery()));
+        }
+    }
+
+    private sealed record MixedDupSecondQuery : IRequest<string>;
+
+    private sealed class MixedDupSecondEndpoint : Endpoint<MixedDupSecondQuery, string>;
+
+    private sealed class MixedDupSecondBinder : IEndpointBinder<MixedDupSecondQuery>
+    {
+        public ValueTask<BindResult<MixedDupSecondQuery>> BindAsync(HttpContext context)
+        {
+            return ValueTask.FromResult(BindResult<MixedDupSecondQuery>.Success(new MixedDupSecondQuery()));
+        }
+    }
+
     private sealed class DupGroup : IEndpointGroup
     {
         public void Map(IEndpointRouteBuilder endpoints)

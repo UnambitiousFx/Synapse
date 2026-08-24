@@ -77,11 +77,29 @@ public static class EndpointRouteBuilderExtensions
     }
 
     /// <summary>
-    ///     Walks every mapped endpoint's route pattern and throws when two of them claim the same
-    ///     HTTP method and route.
+    ///     Walks every Synapse-mapped endpoint's route pattern and throws when two of them claim the
+    ///     same HTTP method and route.
     /// </summary>
     /// <param name="endpoints">The route builder whose data sources are inspected.</param>
-    /// <exception cref="InvalidOperationException">Two endpoints claim the same method and route.</exception>
+    /// <exception cref="InvalidOperationException">Two Synapse endpoints claim the same method and route.</exception>
+    /// <remarks>
+    ///     <para>
+    ///         Restricted to endpoints carrying <see cref="SynapseEndpointMarker" />, which
+    ///         <see cref="EndpointMapper.Map" /> attaches. Scanning the whole route table instead was
+    ///         wrong twice over: two hand-written <c>app.MapGet("/health", …)</c> calls were reported as
+    ///         "more than one Synapse endpoint claims…", and — worse — a template legitimately
+    ///         duplicated but disambiguated by a matcher policy (API versioning, which the design points
+    ///         at <c>Raw</c> to enable) threw at startup instead of working. Two Synapse endpoints
+    ///         disambiguated that way are still reported: this check cannot see a matcher policy, so it
+    ///         stays conservative about the endpoints it is actually responsible for.
+    ///     </para>
+    ///     <para>
+    ///         Reading <c>dataSource.Endpoints</c> materialises endpoints early and re-runs the
+    ///         conventions accumulated so far. That is harmless for everything this library adds, all of
+    ///         which is idempotent metadata — but a side-effecting convention added later would run
+    ///         twice, so nobody should add one without knowing this happens.
+    ///     </para>
+    /// </remarks>
     private static void ThrowOnDuplicateRoutes(IEndpointRouteBuilder endpoints)
     {
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -91,7 +109,8 @@ public static class EndpointRouteBuilderExtensions
         {
             foreach (var endpoint in dataSource.Endpoints)
             {
-                if (endpoint is not RouteEndpoint route)
+                if (endpoint is not RouteEndpoint route ||
+                    route.Metadata.GetMetadata<SynapseEndpointMarker>() is null)
                 {
                     continue;
                 }
