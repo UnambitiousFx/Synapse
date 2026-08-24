@@ -200,6 +200,27 @@ public sealed class TaskEndpointsTests : IClassFixture<WebApplicationFactory<Pro
         Assert.Equal(["first", "second", "third"], tasks.Select(t => t.Title).OrderBy(t => t));
     }
 
+    // Pins the second half of what the same review found: a request that carries a body but no
+    // Content-Type header. text/plain is rejected with 415 by the Accepts-driven consumes matcher
+    // policy and malformed JSON comes back 400, but an *absent* content type matches any endpoint,
+    // reached the binder, and ReadFromJsonAsync threw InvalidOperationException — not the
+    // JsonException the helper caught — so it surfaced as a 500 with an unhandled-exception log line
+    // for every such request. A malformed request from a client must be a 400.
+    [Fact]
+    public async Task Post_WithABodyButNoContentType_Returns400NotAnUnhandledException()
+    {
+        // Arrange
+        var client = _factory.CreateClient();
+        using var content = new StringContent("{\"title\":\"no content type\"}");
+        content.Headers.ContentType = null;
+
+        // Act
+        var response = await client.PostAsync("/tasks", content, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
     // Pins the shape a whole-branch review found broken: an endpoint that declares its route in
     // Configure instead of through a route attribute (SearchTasksEndpoint). The generator sees an
     // empty verb string for such an endpoint, and used to conclude "not a bodyless verb" and emit a

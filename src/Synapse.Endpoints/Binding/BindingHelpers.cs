@@ -76,7 +76,11 @@ public static class BindingHelpers
     /// <typeparam name="T">The body type.</typeparam>
     /// <param name="context">The HTTP context.</param>
     /// <returns>The deserialized body, or a failure describing what was wrong with it.</returns>
-    /// <remarks>Called by generated binders. The type info is resolved once per type and cached.</remarks>
+    /// <remarks>
+    ///     Called by generated binders. Every way the body can be unusable — absent, not JSON, or
+    ///     malformed JSON — returns a failure the endpoint turns into a 400, never an exception: an
+    ///     unhandled exception here would be a 500 for what is a client mistake.
+    /// </remarks>
     public static async ValueTask<BindResult<T>> ReadJsonBodyAsync<T>(HttpContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -91,6 +95,20 @@ public static class BindingHelpers
         if (context.Request.ContentLength == 0)
         {
             return BindResult<T>.Failure("The request body is required but was empty or null.");
+        }
+
+        // ReadFromJsonAsync throws InvalidOperationException — not JsonException — when the content
+        // type is not a JSON one, and the catch below only covers JsonException, so a body sent with
+        // no Content-Type header at all used to escape as a 500 plus an "An unhandled exception was
+        // thrown" log line per request. A wrong-but-present content type (text/plain) never gets
+        // this far: the Accepts-driven consumes matcher policy rejects it with 415 during routing.
+        // An *absent* content type matches any endpoint regardless of what it declares it accepts,
+        // which is exactly why this is the one shape that reaches here.
+        if (!context.Request.HasJsonContentType())
+        {
+            return BindResult<T>.Failure(
+                "The request body is required to be JSON, but the request declared content type " +
+                $"'{context.Request.ContentType ?? string.Empty}'. Send the body as application/json.");
         }
 
         var typeInfo = BodyTypeInfo<T>.Cache.Get(context);

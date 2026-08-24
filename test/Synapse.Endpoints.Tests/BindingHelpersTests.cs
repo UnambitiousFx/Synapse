@@ -120,8 +120,60 @@ public sealed class BindingHelpersTests
         Assert.NotNull(result.Error);
     }
 
+    [Fact]
+    public async Task ReadJsonBodyAsync_WhenBodyHasNoContentType_ReturnsAFailureRatherThanThrowing()
+    {
+        // Arrange — a body with no Content-Type header at all. This is the one malformed-request shape
+        // the Accepts-driven consumes matcher policy lets through (an absent content type matches any
+        // endpoint), and ReadFromJsonAsync throws InvalidOperationException for it rather than
+        // JsonException — so before the content-type guard it escaped the catch, producing a 500 and
+        // an "An unhandled exception was thrown" log line per request instead of a 400.
+        var context = CreateContext("""{"name":"x"}""", contentType: null);
+
+        // Act
+        var result = await BindingHelpers.ReadJsonBodyAsync<BindingHelpersTestPayload>(context);
+
+        // Assert
+        Assert.False(result.IsSuccess);
+        Assert.Contains("JSON", result.Error);
+    }
+
+    [Fact]
+    public async Task ReadJsonBodyAsync_WhenContentTypeIsNotJson_ReturnsAFailureNamingIt()
+    {
+        // Arrange — normally rejected with 415 during routing, but the helper must not depend on that:
+        // an endpoint that does not declare Accepts (or a direct call) still reaches here.
+        var context = CreateContext("""{"name":"x"}""", contentType: "text/plain");
+
+        // Act
+        var result = await BindingHelpers.ReadJsonBodyAsync<BindingHelpersTestPayload>(context);
+
+        // Assert
+        Assert.False(result.IsSuccess);
+        Assert.Contains("text/plain", result.Error);
+    }
+
+    [Theory]
+    [InlineData("application/json")]
+    [InlineData("application/json; charset=utf-8")]
+    [InlineData("application/problem+json")]
+    public async Task ReadJsonBodyAsync_ForAJsonContentType_StillReadsTheBody(string contentType)
+    {
+        // Arrange — the guard must not reject the JSON content types that legitimately arrive: a
+        // charset parameter and the "+json" structured suffix both count as JSON.
+        var context = CreateContext("""{"name":"kept"}""", contentType: contentType);
+
+        // Act
+        var result = await BindingHelpers.ReadJsonBodyAsync<BindingHelpersTestPayload>(context);
+
+        // Assert
+        Assert.True(result.IsSuccess, result.Error);
+        Assert.Equal("kept", result.Value!.Name);
+    }
+
     private static DefaultHttpContext CreateContext(string body,
-        bool omitContentLength = false)
+        bool omitContentLength = false,
+        string? contentType = "application/json")
     {
         var services = new ServiceCollection();
         services.ConfigureHttpJsonOptions(o =>
@@ -135,7 +187,7 @@ public sealed class BindingHelpersTests
             {
                 Body = new MemoryStream(bytes),
                 ContentLength = omitContentLength ? null : bytes.Length,
-                ContentType = "application/json"
+                ContentType = contentType
             }
         };
     }
