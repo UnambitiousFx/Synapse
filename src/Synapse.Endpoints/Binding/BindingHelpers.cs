@@ -111,7 +111,13 @@ public static class BindingHelpers
                 $"'{context.Request.ContentType ?? string.Empty}'. Send the body as application/json.");
         }
 
-        var typeInfo = BodyTypeInfo<T>.Cache.Get(context);
+        // Keyed on this application's JsonSerializerOptions instance, not held in a static generic
+        // holder. A static holder was one cache per closed T per *process*, not per application: two
+        // hosts in the same process with different ConfigureHttpJsonOptions silently shared whichever
+        // one resolved first, and ReadFromJsonAsync serializes with the type info's own options, so
+        // the second host's configuration was ignored outright. See HttpJsonTypeInfo for why the
+        // cache is kept rather than calling options.GetTypeInfo per request.
+        var typeInfo = HttpJsonTypeInfo.Resolve<T>(context);
 
         try
         {
@@ -125,10 +131,5 @@ public static class BindingHelpers
         {
             return BindResult<T>.Failure($"The request body is not valid JSON: {exception.Message}");
         }
-    }
-
-    private static class BodyTypeInfo<T>
-    {
-        internal static readonly JsonTypeInfoCache<T> Cache = new();
     }
 }

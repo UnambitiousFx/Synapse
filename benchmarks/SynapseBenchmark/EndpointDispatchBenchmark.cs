@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json.Serialization;
 using BenchmarkDotNet.Attributes;
 using Microsoft.AspNetCore.Builder;
@@ -38,6 +39,7 @@ public class EndpointDispatchBenchmark
 {
     private static readonly Guid ThingId = Guid.Parse("11111111-1111-1111-1111-111111111111");
     private static readonly string RequestPath = $"/things/{ThingId}";
+    private const string RequestBody = """{"name":"Widget"}""";
 
     private IHost _handWrittenHost = null!;
     private IHost _endpointHost = null!;
@@ -51,17 +53,28 @@ public class EndpointDispatchBenchmark
         {
             app.UseRouting();
             app.UseEndpoints(endpoints =>
+            {
                 endpoints.MapGet("/things/{id:guid}",
                     (Guid id, IHttpInvoker invoker, CancellationToken ct) =>
                         invoker.InvokeAsync(new GetThingQuery { Id = id },
                             response => TypedResults.Ok(response),
-                            ct)));
+                            ct));
+                endpoints.MapPost("/things",
+                    (CreateThingCommand command, IHttpInvoker invoker, CancellationToken ct) =>
+                        invoker.InvokeAsync(command,
+                            response => TypedResults.Ok(response),
+                            ct));
+            });
         });
 
         _endpointHost = BuildHost(app =>
         {
             app.UseRouting();
-            app.UseEndpoints(endpoints => endpoints.MapEndpoint<GetThingEndpoint>());
+            app.UseEndpoints(endpoints =>
+            {
+                endpoints.MapEndpoint<GetThingEndpoint>();
+                endpoints.MapEndpoint<CreateThingEndpoint>();
+            });
         });
 
         _handWritten = _handWrittenHost.GetTestServer().CreateClient();
@@ -90,6 +103,34 @@ public class EndpointDispatchBenchmark
     }
 
     /// <summary>
+    ///     The body-reading counterpart of <see cref="HandWrittenLambda" />. The GET pair above never
+    ///     touches <c>BindingHelpers.ReadJsonBodyAsync</c> — a bodyless verb binds entirely from the
+    ///     route — so it cannot measure anything about how the body's <c>JsonTypeInfo</c> is resolved.
+    ///     These two arms are what make that path visible.
+    /// </summary>
+    [Benchmark]
+    public Task<HttpResponseMessage> HandWrittenLambdaWithJsonBody()
+    {
+        return _handWritten.PostAsync("/things", NewBody());
+    }
+
+    /// <summary>Reads a JSON request body through the generated binder's <c>ReadJsonBodyAsync</c> call.</summary>
+    [Benchmark]
+    public Task<HttpResponseMessage> SynapseEndpointWithJsonBody()
+    {
+        return _endpoint.PostAsync("/things", NewBody());
+    }
+
+    /// <summary>
+    ///     A fresh content instance per iteration: <see cref="HttpContent" /> is single-use, so a
+    ///     shared one would fail on the second request rather than measure it.
+    /// </summary>
+    private static StringContent NewBody()
+    {
+        return new StringContent(RequestBody, Encoding.UTF8, "application/json");
+    }
+
+    /// <summary>
     ///     Builds and starts one in-memory host. Both benchmarked hosts call this same method, so the
     ///     DI wiring — JSON options, <c>AddSynapseAspNetCore</c>, <c>AddSynapse</c>, the registered
     ///     handler — is not just equivalent between them, it is the identical code path. Only the
@@ -109,7 +150,10 @@ public class EndpointDispatchBenchmark
                             BenchmarkJsonSerializerContext.Default));
                     services.AddSynapseAspNetCore();
                     services.AddSynapse(cfg =>
-                        cfg.RegisterRequestHandler<GetThingQueryHandler, GetThingQuery, ThingDto>());
+                    {
+                        cfg.RegisterRequestHandler<GetThingQueryHandler, GetThingQuery, ThingDto>();
+                        cfg.RegisterRequestHandler<CreateThingCommandHandler, CreateThingCommand, ThingDto>();
+                    });
                 })
                 .Configure(configureApp))
             .Start();
@@ -156,9 +200,32 @@ public sealed class GetThingQueryHandler : IRequestHandler<GetThingQuery, ThingD
 [Get("/things/{id:guid}")]
 public sealed class GetThingEndpoint : Endpoint<GetThingQuery, ThingDto>;
 
+/// <summary>Creates a thing from a JSON request body — the body-reading half of the comparison.</summary>
+public sealed record CreateThingCommand : IRequest<ThingDto>
+{
+    /// <summary>The thing's name, bound from the request body.</summary>
+    public string Name { get; init; } = "";
+}
+
+/// <summary>Handles <see cref="CreateThingCommand" />. Shared, unmodified, by both benchmarked hosts.</summary>
+public sealed class CreateThingCommandHandler : IRequestHandler<CreateThingCommand, ThingDto>
+{
+    /// <inheritdoc />
+    public ValueTask<Result<ThingDto>> HandleAsync(CreateThingCommand request,
+        CancellationToken cancellationToken = default)
+    {
+        return ValueTask.FromResult(Result.Success(new ThingDto { Id = Guid.Empty, Name = request.Name }));
+    }
+}
+
+/// <summary>The Synapse endpoint whose generated binder reads the JSON request body.</summary>
+[Post("/things")]
+public sealed class CreateThingEndpoint : Endpoint<CreateThingCommand, ThingDto>;
+
 /// <summary>
 ///     Source-generated JSON metadata so neither host pays for reflection-based serialization —
 ///     shared by both hosts via the common <see cref="EndpointDispatchBenchmark" /> setup.
 /// </summary>
 [JsonSerializable(typeof(ThingDto))]
+[JsonSerializable(typeof(CreateThingCommand))]
 internal sealed partial class BenchmarkJsonSerializerContext : JsonSerializerContext;
