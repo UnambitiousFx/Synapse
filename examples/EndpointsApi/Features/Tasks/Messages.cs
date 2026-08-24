@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Mvc;
 using UnambitiousFx.Synapse.Abstractions;
 
 namespace UnambitiousFx.Examples.EndpointsApi.Features.Tasks;
@@ -70,4 +71,19 @@ public sealed record TaskDto
 
     /// <summary>The task's title.</summary>
     public required string Title { get; init; }
+}
+
+/// <summary>Searches tasks whose title contains <see cref="Title" />.</summary>
+/// <remarks>
+///     <see cref="Title" /> carries an explicit <c>[FromQuery]</c> rather than relying on convention.
+///     <see cref="SearchTasksEndpoint" /> declares its route in <c>Configure</c>, so the generator has
+///     no verb string to resolve binding sources from and assumes a bodyless verb; annotating the
+///     property explicitly is what keeps SYNE014 silent, and is the advice SYNE014 itself gives.
+///     It is nullable, so an absent <c>?title=</c> is optional rather than a bind failure.
+/// </remarks>
+public sealed record SearchTasksQuery : IRequest<IReadOnlyList<TaskDto>>
+{
+    /// <summary>The title fragment to match, bound from the query string.</summary>
+    [FromQuery]
+    public string? Title { get; init; }
 }

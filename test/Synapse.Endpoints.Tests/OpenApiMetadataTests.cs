@@ -52,6 +52,57 @@ public sealed class OpenApiMetadataTests
         Assert.Null(endpoint.Metadata.GetMetadata<IAcceptsMetadata>());
     }
 
+    // Pins the wider bodyless set. docs/docs/endpoints.mdx points at [HttpEndpoint("OPTIONS", …)] as
+    // the way to declare the verbs with no dedicated attribute, and neither OPTIONS nor TRACE carries
+    // a request body — but both used to be treated as body-carrying, declaring Accepts for a body no
+    // such request can send (and, on the generator side, emitting a read for it).
+    [Theory]
+    [InlineData("OPTIONS")]
+    [InlineData("TRACE")]
+    public void CreateDescriptor_ForOptionsOrTraceVerb_DeclaresNoAcceptsMetadata(string verb)
+    {
+        // Arrange
+        EndpointRegistry.RegisterBinder(new BodylessMetaBinder());
+        EndpointRegistry.RegisterMetadata<BodylessMetaEndpoint>(new EndpointMetadata([verb], "/meta-bodyless"));
+        var app = WebApplication.CreateSlimBuilder().Build();
+
+        // Act
+        app.MapEndpoint<BodylessMetaEndpoint>();
+
+        // Assert
+        var endpoint = ((IEndpointRouteBuilder)app).DataSources
+            .SelectMany(source => source.Endpoints)
+            .Single();
+        Assert.Null(endpoint.Metadata.GetMetadata<IAcceptsMetadata>());
+    }
+
+    // Settles the multi-verb question the bodyless check leaves open, deliberately and while it is
+    // still free to settle: the rule is "all declared verbs are bodyless", not "any of them is". An
+    // endpoint serving both GET and POST really does accept a JSON body on one of them, so Accepts is
+    // the accurate declaration; under "any" it would have been silently omitted. Nothing in the
+    // public API can currently produce more than one verb (a route attribute carries a single method,
+    // and EndpointBuilder.Route assigns a single-element array), so this test reaches past the
+    // builder and constructs the metadata directly — it pins the decision for whoever adds multi-verb
+    // support, and would otherwise be untestable.
+    [Fact]
+    public void CreateDescriptor_ForMultiVerbEndpointMixingBodylessAndBodyCarrying_DeclaresAcceptsMetadata()
+    {
+        // Arrange
+        EndpointRegistry.RegisterBinder(new MultiVerbMetaBinder());
+        EndpointRegistry.RegisterMetadata<MultiVerbMetaEndpoint>(
+            new EndpointMetadata(["GET", "POST"], "/meta-multi"));
+        var app = WebApplication.CreateSlimBuilder().Build();
+
+        // Act
+        app.MapEndpoint<MultiVerbMetaEndpoint>();
+
+        // Assert
+        var endpoint = ((IEndpointRouteBuilder)app).DataSources
+            .SelectMany(source => source.Endpoints)
+            .Single();
+        Assert.NotNull(endpoint.Metadata.GetMetadata<IAcceptsMetadata>());
+    }
+
     [Fact]
     public void CreateDescriptor_ForEndpointConfiguredCreated_Declares201NotDefault200()
     {
@@ -174,6 +225,18 @@ public sealed class OpenApiMetadataTests
         public ValueTask<BindResult<BodylessMetaQuery>> BindAsync(HttpContext context)
         {
             return ValueTask.FromResult(BindResult<BodylessMetaQuery>.Success(new BodylessMetaQuery()));
+        }
+    }
+
+    private sealed record MultiVerbMetaQuery : IRequest<string>;
+
+    private sealed class MultiVerbMetaEndpoint : Endpoint<MultiVerbMetaQuery, string>;
+
+    private sealed class MultiVerbMetaBinder : IEndpointBinder<MultiVerbMetaQuery>
+    {
+        public ValueTask<BindResult<MultiVerbMetaQuery>> BindAsync(HttpContext context)
+        {
+            return ValueTask.FromResult(BindResult<MultiVerbMetaQuery>.Success(new MultiVerbMetaQuery()));
         }
     }
 

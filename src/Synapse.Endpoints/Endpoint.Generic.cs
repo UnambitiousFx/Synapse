@@ -60,7 +60,7 @@ public abstract class Endpoint<TRequest, TResponse> : EndpointBase
             ApplyMetadata = handlerBuilder =>
             {
                 // Declared explicitly because a RequestDelegate-shaped endpoint infers nothing.
-                if (!HttpMethodHelpers.IsBodylessVerb(configuration.HttpMethods))
+                if (!HttpMethodHelpers.AllVerbsAreBodyless(configuration.HttpMethods))
                 {
                     handlerBuilder.Accepts<TRequest>("application/json");
                 }

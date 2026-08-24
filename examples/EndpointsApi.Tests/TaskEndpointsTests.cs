@@ -200,6 +200,34 @@ public sealed class TaskEndpointsTests : IClassFixture<WebApplicationFactory<Pro
         Assert.Equal(["first", "second", "third"], tasks.Select(t => t.Title).OrderBy(t => t));
     }
 
+    // Pins the shape a whole-branch review found broken: an endpoint that declares its route in
+    // Configure instead of through a route attribute (SearchTasksEndpoint). The generator sees an
+    // empty verb string for such an endpoint, and used to conclude "not a bodyless verb" and emit a
+    // ReadJsonBodyAsync<T> call into the binder — so every request to it failed before the handler
+    // ran: 500 (InvalidOperationException: content type '' is not a known JSON content type) with no
+    // Content-Type, or 400 "request body is required" with Content-Length: 0. Captured against the
+    // real app before the fix. An empty verb is now treated as bodyless, so no body is read and the
+    // query value binds. Asserts on the *bound* value, not just the status: a version that only
+    // checked for 200 would pass even if Title never reached the handler and every task came back.
+    [Fact]
+    public async Task Get_ForRouteDeclaredInConfigure_BindsTheQueryValueAndReturns200()
+    {
+        // Arrange
+        using var factory = new WebApplicationFactory<Program>();
+        using var client = factory.CreateClient();
+        await client.PostAsJsonAsync("/tasks", new { title = "findable" }, TestContext.Current.CancellationToken);
+        await client.PostAsJsonAsync("/tasks", new { title = "other" }, TestContext.Current.CancellationToken);
+
+        // Act
+        var response = await client.GetAsync("/tasks/search?title=findable", TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var tasks = await response.Content.ReadFromJsonAsync<List<TaskDto>>(TestContext.Current.CancellationToken);
+        Assert.NotNull(tasks);
+        Assert.Equal(["findable"], tasks.Select(t => t.Title));
+    }
+
     // Pins: the explicit metadata from Task 13 lands in the OpenAPI document, and the endpoints
     // are visible there at all — which depends on the MethodInfo the (Delegate) cast in Task 2
     // exists to obtain. The emitted path omits the ":guid" route constraint (ASP.NET strips route

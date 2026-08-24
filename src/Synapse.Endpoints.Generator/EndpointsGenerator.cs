@@ -133,12 +133,27 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
             {
                 // SYNE002, SYNE007, SYNE011, SYNE012 (Task 17) are found and reported while resolving
                 // properties, alongside SYNE001 below.
-                boundProperties = CollectBindableProperties(boundNamedType, method, route, diagnostics);
+                boundProperties = CollectBindableProperties(boundNamedType, method, route, diagnostics,
+                    out var hasConventionBoundProperty);
                 (hasParameterlessConstructor, primaryConstructorParameters) =
                     ResolveConstructionStrategy(boundNamedType);
 
                 // SYNE001
                 CheckRouteParameters(boundProperties, boundNamedType.ToDisplayString(), route, location, diagnostics);
+
+                // SYNE014 — the endpoint declares its route (and therefore its verb) in Configure, so
+                // IsBodylessVerb had to assume a bodyless verb to resolve binding sources at all, and
+                // at least one property's source actually came from that assumption. Scoped to
+                // convention-bound properties on purpose: an endpoint whose every property carries an
+                // explicit [FromRoute]/[FromQuery]/[FromHeader]/[FromBody] has no ambiguity left to
+                // warn about, so it stays silent.
+                if (method.Length == 0 && hasConventionBoundProperty)
+                {
+                    diagnostics.Add(new DiagnosticInfo(
+                        EndpointDiagnostics.RouteInConfigureWithConventionBinding,
+                        location,
+                        new EquatableArray<string>([symbol.ToDisplayString(), boundNamedType.ToDisplayString()])));
+                }
             }
             else
             {
@@ -484,7 +499,11 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
     ///             source, with the key taken from the attribute's name or else the property name.
     ///         </item>
     ///         <item>A name matching a route parameter (case-insensitively) binds from the route.</item>
-    ///         <item>A bodyless verb (<c>GET</c>/<c>DELETE</c>/<c>HEAD</c>) binds from the query.</item>
+    ///         <item>
+    ///             A bodyless verb (<c>GET</c>/<c>DELETE</c>/<c>HEAD</c>/<c>OPTIONS</c>/<c>TRACE</c>,
+    ///             or an endpoint declaring its route in <c>Configure</c> and so carrying no verb at
+    ///             all — see <see cref="IsBodylessVerb" />) binds from the query.
+    ///         </item>
     ///         <item>Otherwise the property binds from the body.</item>
     ///     </list>
     ///     A property whose type has no viable parse path (not <see cref="string" />, not an enum,
@@ -500,14 +519,17 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
     private static EquatableArray<BindablePropertyModel> CollectBindableProperties(INamedTypeSymbol boundType,
         string httpMethod,
         string route,
-        List<DiagnosticInfo> diagnostics)
+        List<DiagnosticInfo> diagnostics,
+        out bool hasConventionBoundProperty)
     {
         // Keyed case-insensitively (route matching ignores case) but valued with the template's own
         // casing, so a matched property reads the route value under the name the route declares it
         // by, not the property's own PascalCase spelling.
         var routeParameters = ExtractRouteParameterNames(route);
-        var isBodylessVerb = httpMethod is "GET" or "DELETE" or "HEAD";
+        var isBodylessVerb = IsBodylessVerb(httpMethod);
         var boundTypeDisplay = boundType.ToDisplayString();
+
+        hasConventionBoundProperty = false;
 
         var models = new List<BindablePropertyModel>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
@@ -535,7 +557,7 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
                 var propertyLocation = LocationInfo.CreateFrom(property.Locations.FirstOrDefault());
 
                 var model = ResolveBindableProperty(property, routeParameters, isBodylessVerb, propertyLocation,
-                    diagnostics);
+                    diagnostics, out var isConventionBound);
                 if (model is null)
                 {
                     continue;
@@ -543,6 +565,7 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
 
                 models.Add(model);
                 propertyLocations[model.Name] = propertyLocation;
+                hasConventionBoundProperty |= isConventionBound;
 
                 if (model.Source == BindingSource.Body)
                 {
@@ -551,7 +574,11 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
                     // generated code attempts to read. Convention alone never produces Body on a
                     // bodyless verb (see ResolveSource), so reaching Body here while isBodylessVerb is
                     // true always means an explicit [FromBody] forced it (Rule 1: explicit wins).
-                    if (isBodylessVerb)
+                    // Gated on the *declared* verb, not the assumed one: an endpoint that declares its
+                    // route in Configure has no verb here at all, and reporting "'' requests never
+                    // carry a body" against a verb nobody wrote would be both meaningless to read and
+                    // wrong for a computed POST. SYNE014 covers that endpoint shape instead.
+                    if (IsDeclaredBodylessVerb(httpMethod))
                     {
                         diagnostics.Add(new DiagnosticInfo(
                             EndpointDiagnostics.BodyOnlyPropertyOnBodylessVerb,
@@ -671,12 +698,61 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
         return (false, new EquatableArray<ConstructorParameterModel>(parameters));
     }
 
+    /// <summary>
+    ///     Whether <paramref name="httpMethod" /> is a verb the endpoint's binder should treat as
+    ///     carrying no request body, so unannotated properties resolve to the query string (rule 4)
+    ///     rather than the body (rule 5) and no <c>ReadJsonBodyAsync</c> call is emitted.
+    /// </summary>
+    /// <remarks>
+    ///     An <em>empty</em> method — an endpoint that declares its route in <c>Configure</c> and so
+    ///     carries no route attribute for the generator to read a verb from — counts as bodyless.
+    ///     That is a deliberate assumption, not a certainty: the verb is a runtime value the
+    ///     generator cannot see. It is the right default because a computed route is overwhelmingly a
+    ///     <c>GET</c>, and because getting it wrong the other way is catastrophic rather than
+    ///     cosmetic — before this, such an endpoint emitted a body read and <em>every</em> request to
+    ///     it failed (500 with no <c>Content-Type</c>, 400 with <c>Content-Length: 0</c>). A computed
+    ///     <c>POST</c> route is the case the assumption is wrong for, and SYNE014 exists to say so
+    ///     out loud whenever any property's source actually came from this assumption rather than
+    ///     from an explicit <c>[From*]</c> attribute — see
+    ///     <see cref="EndpointDiagnostics.RouteInConfigureWithConventionBinding" />.
+    /// </remarks>
+    private static bool IsBodylessVerb(string httpMethod)
+    {
+        return httpMethod.Length == 0 || IsDeclaredBodylessVerb(httpMethod);
+    }
+
+    /// <summary>
+    ///     Whether <paramref name="httpMethod" /> is an explicitly declared verb that conventionally
+    ///     carries no request body. Unlike <see cref="IsBodylessVerb" /> an empty method is
+    ///     <see langword="false" /> here: "no verb was declared" is not the same claim as "a verb
+    ///     that never carries a body was declared", and diagnostics that name the verb in their
+    ///     message (SYNE007) must not fire off the assumption.
+    /// </summary>
+    /// <remarks>
+    ///     <c>OPTIONS</c> and <c>TRACE</c> join <c>GET</c>/<c>DELETE</c>/<c>HEAD</c>: neither carries
+    ///     a request body per RFC 9110 (TRACE is forbidden one outright), and the docs actively point
+    ///     at <c>[HttpEndpoint("OPTIONS", …)]</c> as the way to declare such an endpoint, which until
+    ///     now emitted a body read for it. <c>POST</c>/<c>PUT</c>/<c>PATCH</c> stay body-carrying.
+    ///     Kept structurally identical to the runtime's
+    ///     <c>UnambitiousFx.Synapse.Endpoints.Internal.HttpMethodHelpers</c>, which makes the same
+    ///     GET/DELETE/HEAD/OPTIONS/TRACE call for OpenAPI <c>Accepts</c> metadata; the two cannot
+    ///     share code (this project targets netstandard2.0 and does not reference the runtime
+    ///     assembly), so they are kept in sync by hand and each points at the other.
+    /// </remarks>
+    private static bool IsDeclaredBodylessVerb(string httpMethod)
+    {
+        return httpMethod is "GET" or "DELETE" or "HEAD" or "OPTIONS" or "TRACE";
+    }
+
     private static BindablePropertyModel? ResolveBindableProperty(IPropertySymbol property,
         Dictionary<string, string> routeParameters,
         bool isBodylessVerb,
         LocationInfo? location,
-        List<DiagnosticInfo> diagnostics)
+        List<DiagnosticInfo> diagnostics,
+        out bool isConventionBound)
     {
+        isConventionBound = false;
+
         foreach (var attribute in property.GetAttributes())
         {
             var attributeName = attribute.AttributeClass?.ToDisplayString();
@@ -687,7 +763,7 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
             }
         }
 
-        var (source, sourceKey) = ResolveSource(property, routeParameters, isBodylessVerb);
+        var (source, sourceKey, fromConvention) = ResolveSource(property, routeParameters, isBodylessVerb);
         if (source is null)
         {
             return null;
@@ -734,6 +810,8 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
             }
         }
 
+        isConventionBound = fromConvention;
+
         return new BindablePropertyModel(
             property.Name,
             underlying.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
@@ -745,7 +823,19 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
             isRecordWith);
     }
 
-    private static (BindingSource? Source, string? SourceKey) ResolveSource(IPropertySymbol property,
+    /// <summary>
+    ///     Applies the binding-source rules (spec section 4) to one property.
+    /// </summary>
+    /// <returns>
+    ///     The resolved source and key, plus whether the source came from the verb-dependent
+    ///     convention (rules 4 and 5) rather than from an explicit <c>[From*]</c> attribute or a
+    ///     route-parameter name match. Only the verb-dependent fallback is reported as
+    ///     "convention" — a route-name match (rule 3) does not depend on the verb, so a route
+    ///     declared in <c>Configure</c> cannot resolve it wrongly; that is what keeps SYNE014
+    ///     scoped to properties whose source really did hinge on the assumed verb.
+    /// </returns>
+    private static (BindingSource? Source, string? SourceKey, bool FromConvention) ResolveSource(
+        IPropertySymbol property,
         Dictionary<string, string> routeParameters,
         bool isBodylessVerb)
     {
@@ -756,24 +846,24 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
             switch (attributeName)
             {
                 case "Microsoft.AspNetCore.Mvc.FromRouteAttribute":
-                    return (BindingSource.Route, ReadAttributeName(attribute) ?? property.Name);
+                    return (BindingSource.Route, ReadAttributeName(attribute) ?? property.Name, false);
                 case "Microsoft.AspNetCore.Mvc.FromQueryAttribute":
-                    return (BindingSource.Query, ReadAttributeName(attribute) ?? property.Name);
+                    return (BindingSource.Query, ReadAttributeName(attribute) ?? property.Name, false);
                 case "UnambitiousFx.Synapse.Endpoints.FromHeaderAttribute":
-                    return (BindingSource.Header, ReadHeaderName(attribute) ?? property.Name);
+                    return (BindingSource.Header, ReadHeaderName(attribute) ?? property.Name, false);
                 case "Microsoft.AspNetCore.Mvc.FromBodyAttribute":
-                    return (BindingSource.Body, property.Name);
+                    return (BindingSource.Body, property.Name, false);
             }
         }
 
         if (routeParameters.TryGetValue(property.Name, out var routeName))
         {
-            return (BindingSource.Route, routeName);
+            return (BindingSource.Route, routeName, false);
         }
 
         return isBodylessVerb
-            ? (BindingSource.Query, property.Name)
-            : (BindingSource.Body, property.Name);
+            ? (BindingSource.Query, property.Name, true)
+            : (BindingSource.Body, property.Name, true);
     }
 
     private static string? ReadAttributeName(AttributeData attribute)
@@ -872,8 +962,7 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
             return null;
         }
 
-        var isBodylessVerb = httpMethod is "GET" or "DELETE" or "HEAD";
-        if (isBodylessVerb)
+        if (IsBodylessVerb(httpMethod))
         {
             var hasBodyProperty = false;
             foreach (var property in boundProperties)
@@ -1391,7 +1480,7 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
             .Select(g =>
             {
                 var first = g.First();
-                var isBodylessVerb = first.HttpMethod is "GET" or "DELETE" or "HEAD";
+                var isBodylessVerb = IsBodylessVerb(first.HttpMethod);
                 return new BoundTypeInfo(first.BoundTypeFullName, first.BoundProperties, isBodylessVerb,
                     first.HasParameterlessConstructor, first.PrimaryConstructorParameters);
             })

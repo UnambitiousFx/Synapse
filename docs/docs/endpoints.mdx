@@ -134,7 +134,7 @@ body by five rules, applied in order — the first one that applies wins:
 | 1 | `[NotBound]` excludes the property entirely, regardless of anything else |
 | 2 | `[FromRoute]` / `[FromQuery]` / `[FromHeader]` / `[FromBody]` pins the source explicitly, with the key taken from the attribute's name or else the property name |
 | 3 | A name matching a route template parameter (case-insensitively) binds from the route |
-| 4 | On a bodyless verb (`GET` / `DELETE` / `HEAD`), an unmatched property binds from the query string |
+| 4 | On a bodyless verb (`GET` / `DELETE` / `HEAD` / `OPTIONS` / `TRACE`), an unmatched property binds from the query string. An endpoint that declares its route in `Configure` has no verb the generator can see, so it is assumed bodyless too — see [Escape hatches](#escape-hatches) |
 | 5 | Otherwise, the property binds from the request body |
 
 **Headers are never bound by convention** — rule 3 only matches route parameters, and rule 5
@@ -334,6 +334,23 @@ public sealed class ComputedEndpoint : Endpoint<ComputedQuery, string>
 Declaring the route both ways — a route attribute **and** a verb call on `Configure`'s builder —
 is reported as `SYNE009`; only one may declare it.
 
+There is one thing to know about this shape. The route's verb is a runtime value, so the generator
+cannot see it — and it needs a verb to decide whether an unannotated property binds from the query
+string (rule 4) or from the request body (rule 5). It **assumes a bodyless verb**, which is right for
+the computed `GET` this escape hatch is nearly always used for, and wrong for a computed `POST`,
+where the properties would bind from the query string instead of the body. `SYNE014` warns whenever
+any property's source actually came from that assumption, so a computed `POST` is told rather than
+silently mis-bound. Pin those properties with `[FromBody]` (or the other `[From*]` attributes) and
+the warning goes away along with the ambiguity:
+
+```csharp
+public sealed record ComputedCommand : IRequest<string>
+{
+    // Explicit, so the assumed verb cannot get it wrong — and SYNE014 stays silent.
+    [FromBody] public required string Payload { get; init; }
+}
+```
+
 ## Diagnostics reference
 
 | ID | Severity | Fires when | Fix |
@@ -344,13 +361,14 @@ is reported as `SYNE009`; only one may declare it.
 | `SYNE004` | Warning | `OnSuccess` is overridden *and* `Configure` calls a declarative success method | Remove one — the declarative call always wins, so the override is dead code |
 | `SYNE005` | Error | The bound message implements `IStreamRequest<T>` but the endpoint derives from `Endpoint<...>` | Derive from `StreamEndpoint<...>` instead |
 | `SYNE006` | Error | `[InGroup<T>]`'s `T` does not derive from `EndpointGroup` | Make `T` a subclass of `EndpointGroup` — in practice the compiler's `CS0311` reports this first, since `InGroupAttribute<TGroup>` is itself constrained to `where TGroup : EndpointGroup, new()`; do not expect to actually see `SYNE006` fire |
-| `SYNE007` | Warning | An explicit `[FromBody]` property is declared on a bodyless verb (`GET`/`DELETE`/`HEAD`), so it can never bind | Remove `[FromBody]`, change the verb, or accept the property will always be missing |
+| `SYNE007` | Warning | An explicit `[FromBody]` property is declared on a bodyless verb (`GET`/`DELETE`/`HEAD`/`OPTIONS`/`TRACE`), so it can never bind | Remove `[FromBody]`, change the verb, or accept the property will always be missing |
 | `SYNE008` | Warning | A request/response type is not registered in any `JsonSerializerContext` found in the compilation | Add `[JsonSerializable(typeof(...))]` for it — see [Native AOT](#native-aot); only reported once your app has at least one `JsonSerializerContext` at all |
 | `SYNE009` | Error | A route is declared both by attribute and by a verb call in `Configure` | Remove one — only one may declare the route |
 | `SYNE010` | Error | The endpoint class is generic, nested inside a generic type, or has no public parameterless constructor | Make it a top-level, non-generic class with a public parameterless constructor — `MapEndpoint<TEndpoint>()` requires `TEndpoint : EndpointBase, new()` |
 | `SYNE011` | Error | A route/query/header-bound property has no accessible setter and its type is not a record | Add a setter, or make the type a record so the value can be applied through `with` |
 | `SYNE012` | Error | A non-string, non-enum route/query/header-bound property's type has no public static `TryParse(string, out T)` | Add a `TryParse` method to the type, or change the property's type |
 | `SYNE013` | Warning | A message type is bound by two or more endpoints whose *resolved* bindings differ (different route/verb produced different bindable properties) | Give each endpoint its own message type — only one endpoint's binding resolution is baked into the single shared binder; **this diagnostic warns, it does not fix anything** — every other endpoint sharing the type keeps binding incorrectly at runtime |
+| `SYNE014` | Warning | An endpoint declares its route in `Configure` (so no verb is visible at compile time) and at least one property's binding source came from convention rather than an explicit `[From*]` attribute | Annotate those properties with `[FromRoute]`/`[FromQuery]`/`[FromHeader]`/`[FromBody]`, or declare the route with a route attribute — see [Escape hatches](#escape-hatches). Harmless for a computed `GET`; a real bug for a computed `POST` |
 
 `SYNE013` is a real, standing limitation of the current design: `EndpointRegistry.RegisterBinder`
 is keyed by message type, so exactly one binder is ever generated per type — built from whichever

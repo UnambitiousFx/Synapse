@@ -66,7 +66,7 @@ public abstract class MappedEndpoint<THttpRequest, TRequest, TResponse, THttpRes
             ApplyMetadata = handlerBuilder =>
             {
                 // Declared explicitly because a RequestDelegate-shaped endpoint infers nothing.
-                if (!HttpMethodHelpers.IsBodylessVerb(configuration.HttpMethods))
+                if (!HttpMethodHelpers.AllVerbsAreBodyless(configuration.HttpMethods))
                 {
                     handlerBuilder.Accepts(typeof(THttpRequest), "application/json");
                 }

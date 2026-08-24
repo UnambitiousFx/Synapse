@@ -4,9 +4,10 @@ namespace UnambitiousFx.Synapse.Endpoints.Generator.Tests;
 ///     Covers the five route/endpoint-shape diagnostics reported by <c>EndpointsGenerator</c>:
 ///     SYNE001 (route parameter has no matching property), SYNE005 (stream message on a non-stream
 ///     endpoint), SYNE006 (<c>[InGroup&lt;T&gt;]</c> where <c>T</c> is not an <c>EndpointGroup</c>),
-///     SYNE009 (route declared both by attribute and in <c>Configure</c>) and SYNE010 (an endpoint
-///     shape <c>MapEndpoint&lt;TEndpoint&gt;()</c> cannot be instantiated for). Each diagnostic gets a
-///     test that it fires and a test that it stays silent on the equivalent correct shape.
+///     SYNE009 (route declared both by attribute and in <c>Configure</c>), SYNE010 (an endpoint
+///     shape <c>MapEndpoint&lt;TEndpoint&gt;()</c> cannot be instantiated for) and SYNE014 (a route
+///     declared in <c>Configure</c> on a message with convention-bound properties). Each diagnostic
+///     gets a test that it fires and a test that it stays silent on the equivalent correct shape.
 /// </summary>
 public sealed class RouteDiagnosticTests
 {
@@ -457,5 +458,141 @@ public sealed class RouteDiagnosticTests
 
         // Assert
         Assert.Empty(diagnostics);
+    }
+
+    // SYNE014: with the route (and verb) declared in Configure the generator has no verb to resolve
+    // binding sources from, so it assumes a bodyless one — right for the computed GET this escape
+    // hatch is nearly always used for, wrong for a computed POST, where "Filter" would bind from the
+    // query string instead of the body. The warning is the only thing that makes that assumption
+    // visible.
+    [Fact]
+    public void Generate_WhenRouteInConfigureAndAPropertyIsConventionBound_ReportsSyne014()
+    {
+        // Arrange — no route attribute, and "Filter" carries no [From*] attribute, so its source came
+        // entirely from the assumed verb.
+        const string source = """
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+                              using UnambitiousFx.Synapse.Endpoints.Builders;
+
+                              namespace TestNs;
+
+                              public sealed record ComputedQuery : IRequest<int>
+                              {
+                                  public string? Filter { get; init; }
+                              }
+
+                              public sealed class ComputedEndpoint : Endpoint<ComputedQuery, int>
+                              {
+                                  public override void Configure(IEndpointBuilder<int> builder)
+                                  {
+                                      builder.Get("/computed/" + System.Environment.MachineName);
+                                  }
+                              }
+                              """;
+
+        // Act
+        var diagnostics = GeneratorHarness.GetDiagnostics(source);
+
+        // Assert
+        Assert.Contains(diagnostics, d => d.Id == "SYNE014");
+    }
+
+    // The silent half: every property pinned with an explicit [From*] attribute leaves nothing for
+    // the assumed verb to get wrong, so there is no ambiguity to report. This is exactly the fix the
+    // diagnostic's own message recommends, so it must actually silence it.
+    [Fact]
+    public void Generate_WhenRouteInConfigureAndEveryPropertyIsAnnotated_ReportsNoSyne014()
+    {
+        // Arrange
+        const string source = """
+                              using Microsoft.AspNetCore.Mvc;
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+                              using UnambitiousFx.Synapse.Endpoints.Builders;
+
+                              namespace TestNs;
+
+                              public sealed record ComputedQuery : IRequest<int>
+                              {
+                                  [FromQuery] public string? Filter { get; init; }
+                                  [FromHeader("X-Tenant")] public string? Tenant { get; init; }
+                                  [NotBound] public int Ignored { get; init; }
+                              }
+
+                              public sealed class ComputedEndpoint : Endpoint<ComputedQuery, int>
+                              {
+                                  public override void Configure(IEndpointBuilder<int> builder)
+                                  {
+                                      builder.Get("/computed/" + System.Environment.MachineName);
+                                  }
+                              }
+                              """;
+
+        // Act
+        var diagnostics = GeneratorHarness.GetDiagnostics(source);
+
+        // Assert
+        Assert.DoesNotContain(diagnostics, d => d.Id == "SYNE014");
+    }
+
+    // A message with no bindable properties at all has nothing whose source could have hinged on the
+    // assumed verb, so the escape hatch stays warning-free in its simplest form.
+    [Fact]
+    public void Generate_WhenRouteInConfigureAndTheMessageHasNoProperties_ReportsNoSyne014()
+    {
+        // Arrange
+        const string source = """
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+                              using UnambitiousFx.Synapse.Endpoints.Builders;
+
+                              namespace TestNs;
+
+                              public sealed record PingQuery : IRequest<int>;
+
+                              public sealed class PingEndpoint : Endpoint<PingQuery, int>
+                              {
+                                  public override void Configure(IEndpointBuilder<int> builder)
+                                  {
+                                      builder.Get("/ping/" + System.Environment.MachineName);
+                                  }
+                              }
+                              """;
+
+        // Act
+        var diagnostics = GeneratorHarness.GetDiagnostics(source);
+
+        // Assert
+        Assert.DoesNotContain(diagnostics, d => d.Id == "SYNE014");
+    }
+
+    // The control: convention binding is not itself what SYNE014 reports. An endpoint that declares
+    // its route by attribute has a real verb, so convention-bound properties are resolved from fact
+    // rather than assumption and must stay silent.
+    [Fact]
+    public void Generate_WhenRouteIsDeclaredByAttribute_ReportsNoSyne014()
+    {
+        // Arrange
+        const string source = """
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+
+                              namespace TestNs;
+
+                              public sealed record ListThingsQuery : IRequest<int>
+                              {
+                                  public string? Filter { get; init; }
+                              }
+
+                              [Get("/things")]
+                              public sealed class ListThingsEndpoint : Endpoint<ListThingsQuery, int>;
+                              """;
+
+        // Act
+        var diagnostics = GeneratorHarness.GetDiagnostics(source);
+
+        // Assert
+        Assert.DoesNotContain(diagnostics, d => d.Id == "SYNE014");
     }
 }

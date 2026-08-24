@@ -6,6 +6,9 @@ namespace UnambitiousFx.Synapse.Endpoints.Generator.Tests;
 ///     (non-record) assignment form, a nullable value that is missing rather than invalid, enum
 ///     parsing, and the two "omit rather than emit code that won't compile" cases (an unassignable
 ///     init-only property on a non-record, and a property type with no viable <c>TryParse</c>).
+///     Also covers which verbs count as bodyless — including the "no verb at all" case of an endpoint
+///     that declares its route in <c>Configure</c>, which used to emit a body read and fail every
+///     request.
 /// </summary>
 public sealed class BinderEmissionEdgeCaseTests
 {
@@ -383,5 +386,154 @@ public sealed class BinderEmissionEdgeCaseTests
         Assert.DoesNotContain("Thing", generated);
         Assert.Contains("int.TryParse(rawId, out var valueId)", generated);
         GeneratorHarness.AssertGeneratedCompiles(source);
+    }
+
+    // A whole-branch review found this shape broken end to end: with no route attribute the
+    // generator has no verb string, concluded "not bodyless", and emitted a ReadJsonBodyAsync call
+    // into the binder — so a GET declared in Configure 500'd on every request with
+    // "content type '' is not a known JSON content type". No generator test covered a
+    // no-attribute endpoint at all, which is what let it ship. An empty verb is now bodyless.
+    [Fact]
+    public void Generate_ForRouteDeclaredInConfigure_EmitsNoBodyReadAndBindsFromQuery()
+    {
+        // Arrange — the documented "computed route" escape hatch: no route attribute at all, the
+        // route (and therefore the verb) declared inside Configure.
+        const string source = """
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+                              using UnambitiousFx.Synapse.Endpoints.Builders;
+
+                              namespace TestNs;
+
+                              public sealed record ComputedQuery : IRequest<int>
+                              {
+                                  public string? Filter { get; init; }
+                              }
+
+                              public sealed class ComputedEndpoint : Endpoint<ComputedQuery, int>
+                              {
+                                  public override void Configure(IEndpointBuilder<int> builder)
+                                  {
+                                      builder.Get("/computed/" + System.Environment.MachineName);
+                                  }
+                              }
+                              """;
+
+        // Act
+        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+
+        // Assert — no body read, and the unannotated property resolved to the query string.
+        Assert.DoesNotContain("ReadJsonBodyAsync", generated);
+        Assert.Contains("TryGetQuery(context, \"Filter\", out var", generated);
+        GeneratorHarness.AssertGeneratedCompiles(source);
+    }
+
+    // SYNE008 is the generator saying out loud which types it believes reach the JSON deserializer.
+    // Before the fix it demanded the *request* type of a Configure-declared GET be JSON-registered,
+    // which is how the review independently confirmed the generator thought that GET read a body.
+    [Fact]
+    public void Generate_ForRouteDeclaredInConfigure_DoesNotRequireTheRequestTypeToBeJsonRegistered()
+    {
+        // Arrange — a JsonSerializerContext exists (so SYNE008's gate is open) and registers the
+        // response type but not the request type.
+        const string source = """
+                              using System.Text.Json.Serialization;
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+                              using UnambitiousFx.Synapse.Endpoints.Builders;
+
+                              namespace TestNs;
+
+                              public sealed record ComputedQuery : IRequest<ThingDto>
+                              {
+                                  public string? Filter { get; init; }
+                              }
+
+                              public sealed record ThingDto(int Id);
+
+                              public sealed class ComputedEndpoint : Endpoint<ComputedQuery, ThingDto>
+                              {
+                                  public override void Configure(IEndpointBuilder<ThingDto> builder)
+                                  {
+                                      builder.Get("/computed/" + System.Environment.MachineName);
+                                  }
+                              }
+
+                              [JsonSerializable(typeof(ThingDto))]
+                              internal sealed partial class AppJsonContext : JsonSerializerContext;
+                              """;
+
+        // Act
+        var diagnostics = GeneratorHarness.GetDiagnostics(source);
+
+        // Assert
+        Assert.DoesNotContain(diagnostics, d => d.Id == "SYNE008");
+    }
+
+    // docs/docs/endpoints.mdx points at [HttpEndpoint("OPTIONS", ...)] as the way to declare the
+    // verbs with no dedicated attribute, and neither OPTIONS nor TRACE carries a request body per
+    // RFC 9110 — but both used to fall into the "reads a body" branch. HEAD is included as the
+    // control: it was already in the bodyless set, so a regression there would show up here too.
+    [Theory]
+    [InlineData("GET")]
+    [InlineData("DELETE")]
+    [InlineData("HEAD")]
+    [InlineData("OPTIONS")]
+    [InlineData("TRACE")]
+    public void Generate_ForABodylessVerb_EmitsNoBodyRead(string verb)
+    {
+        // Arrange
+        var source = $$"""
+                       using UnambitiousFx.Synapse.Abstractions;
+                       using UnambitiousFx.Synapse.Endpoints;
+
+                       namespace TestNs;
+
+                       public sealed record ProbeQuery : IRequest<int>
+                       {
+                           public string? Filter { get; init; }
+                       }
+
+                       [HttpEndpoint("{{verb}}", "/probe")]
+                       public sealed class ProbeEndpoint : Endpoint<ProbeQuery, int>;
+                       """;
+
+        // Act
+        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+
+        // Assert
+        Assert.DoesNotContain("ReadJsonBodyAsync", generated);
+        Assert.Contains("TryGetQuery(context, \"Filter\", out var", generated);
+    }
+
+    // The other half of the same claim: the verbs that do carry a body must keep reading one, so
+    // widening the bodyless set cannot be mistaken for "nothing reads a body any more".
+    [Theory]
+    [InlineData("POST")]
+    [InlineData("PUT")]
+    [InlineData("PATCH")]
+    public void Generate_ForABodyCarryingVerb_StillEmitsABodyRead(string verb)
+    {
+        // Arrange
+        var source = $$"""
+                       using UnambitiousFx.Synapse.Abstractions;
+                       using UnambitiousFx.Synapse.Endpoints;
+
+                       namespace TestNs;
+
+                       public sealed record SubmitCommand : IRequest<int>
+                       {
+                           public string? Filter { get; init; }
+                       }
+
+                       [HttpEndpoint("{{verb}}", "/submit")]
+                       public sealed class SubmitEndpoint : Endpoint<SubmitCommand, int>;
+                       """;
+
+        // Act
+        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+
+        // Assert
+        Assert.Contains("ReadJsonBodyAsync<global::TestNs.SubmitCommand>(context)", generated);
     }
 }

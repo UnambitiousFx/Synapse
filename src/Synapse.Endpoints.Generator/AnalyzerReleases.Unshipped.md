@@ -15,3 +15,4 @@ SYNE013 | Synapse.Endpoints | Warning | Message type bound by endpoints with con
 SYNE003 | Synapse.Endpoints | Info | POST/PUT endpoint declares no explicit success mapping
 SYNE004 | Synapse.Endpoints | Warning | OnSuccess override conflicts with a declarative success method
 SYNE008 | Synapse.Endpoints | Warning | Type used by an endpoint is missing from every JsonSerializerContext
+SYNE014 | Synapse.Endpoints | Warning | Route declared in Configure on a message with convention-bound properties

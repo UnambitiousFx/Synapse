@@ -145,3 +145,29 @@ public sealed class DeleteTaskCommandHandler : IRequestHandler<DeleteTaskCommand
             : Result.FailNotFound("Task", request.TaskId.ToString()));
     }
 }
+
+/// <summary>Handles <see cref="SearchTasksQuery" /> by filtering tasks on their title.</summary>
+[RequestHandler<SearchTasksQuery, IReadOnlyList<TaskDto>>]
+public sealed class SearchTasksQueryHandler : IRequestHandler<SearchTasksQuery, IReadOnlyList<TaskDto>>
+{
+    private readonly TaskRepository _repository;
+
+    /// <summary>Initializes a new instance of the <see cref="SearchTasksQueryHandler" /> class.</summary>
+    public SearchTasksQueryHandler(TaskRepository repository)
+    {
+        _repository = repository;
+    }
+
+    /// <inheritdoc />
+    public ValueTask<Result<IReadOnlyList<TaskDto>>> HandleAsync(
+        SearchTasksQuery request,
+        CancellationToken cancellationToken = default)
+    {
+        var matches = _repository.GetAll()
+            .Where(task => request.Title is null ||
+                           task.Title.Contains(request.Title, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+
+        return ValueTask.FromResult(Result.Success<IReadOnlyList<TaskDto>>(matches));
+    }
+}

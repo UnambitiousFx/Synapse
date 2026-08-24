@@ -92,8 +92,11 @@ internal static class EndpointDiagnostics
 
     /// <summary>
     ///     SYNE007: an explicit <c>[FromBody]</c> property on a verb that never carries a request
-    ///     body (<c>GET</c>/<c>DELETE</c>/<c>HEAD</c>), so it can never actually bind at runtime even
-    ///     though the generated code compiles and attempts to read it.
+    ///     body (<c>GET</c>/<c>DELETE</c>/<c>HEAD</c>/<c>OPTIONS</c>/<c>TRACE</c> — see
+    ///     <c>EndpointsGenerator.IsDeclaredBodylessVerb</c>), so it can never actually bind at
+    ///     runtime even though the generated code compiles and attempts to read it. Reported only for
+    ///     an explicitly <em>declared</em> verb: an endpoint that declares its route in
+    ///     <c>Configure</c> has no verb here to name, and SYNE014 covers that shape instead.
     /// </summary>
     internal static readonly DiagnosticDescriptor BodyOnlyPropertyOnBodylessVerb = new(
         "SYNE007",
@@ -212,6 +215,41 @@ internal static class EndpointDiagnostics
         "and an OnSuccess override declared directly on the endpoint's own member list. A call reached " +
         "through a helper method is not detected, so this diagnostic can miss a real conflict but will " +
         "never report one that is not there.");
+
+    /// <summary>
+    ///     SYNE014: the endpoint declares its route — and therefore its HTTP verb — inside
+    ///     <c>Configure</c>, so the generator has no verb to resolve binding sources from and assumes
+    ///     a bodyless one (see <c>EndpointsGenerator.IsBodylessVerb</c>); at least one of the bound
+    ///     type's properties actually took its source from that assumption rather than from an
+    ///     explicit <c>[From*]</c> attribute.
+    /// </summary>
+    /// <remarks>
+    ///     The assumption is right for a computed <c>GET</c>, which is what the escape hatch is
+    ///     almost always used for, and is what makes that documented shape work at all — resolving
+    ///     an empty verb as body-carrying instead emitted a request-body read into the binder and
+    ///     failed <em>every</em> request to such an endpoint. It is wrong for a computed <c>POST</c>
+    ///     (or <c>PUT</c>/<c>PATCH</c>), where the properties this warning names would bind from the
+    ///     query string instead of the body. Warning, not Error: the shape is documented and
+    ///     supported, and the two fixes are both cheap — annotate the properties explicitly, or move
+    ///     the route to an attribute. Reported only when a property's source really did hinge on the
+    ///     assumed verb: rule 3's route-parameter matching does not depend on the verb, and an
+    ///     explicitly annotated property does not either, so an endpoint whose every property is
+    ///     pinned stays silent.
+    /// </remarks>
+    internal static readonly DiagnosticDescriptor RouteInConfigureWithConventionBinding = new(
+        "SYNE014",
+        "Route declared in Configure on a message with convention-bound properties",
+        "'{0}' declares its route in Configure, so no HTTP verb is visible at compile time and the binding sources for '{1}' were resolved assuming a bodyless verb (unannotated properties bind from the query string). Annotate the properties with [FromRoute]/[FromQuery]/[FromHeader]/[FromBody] explicitly, or declare the route with a route attribute, so the resolution does not depend on that assumption.",
+        Category,
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description:
+        "The assumed verb is right for a computed GET -- overwhelmingly what a route declared in " +
+        "Configure is used for -- and wrong for a computed POST/PUT/PATCH, where the properties this " +
+        "warning names would bind from the query string instead of the request body. Reported only " +
+        "when at least one property's binding source came from the verb-dependent convention rather " +
+        "than from an explicit [From*] attribute or a route-parameter name match, so an endpoint " +
+        "whose properties are all pinned explicitly stays silent.");
 
     /// <summary>
     ///     SYNE008: a type used by an endpoint as its request or response — the exact type as
