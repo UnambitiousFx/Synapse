@@ -224,6 +224,42 @@ jobs:
           curl -sf http://localhost:5200/tasks/stream -H 'Accept: text/event-stream' \
             | grep -q '^data: ' || fail "SSE streaming failed (expected a 'data: ' frame)"
 
+          # A route declared in Configure rather than by attribute (SearchTasksEndpoint), with a
+          # query-bound property. This shape used to 500 on every request: with no route attribute
+          # the generator saw an empty verb string, concluded "not bodyless" and emitted a
+          # request-body read into the binder. Asserts the bound value took effect, not just the
+          # status — a check for 200 alone would pass with Title never reaching the handler.
+          curl -s -X POST http://localhost:5200/tasks \
+            -H 'Content-Type: application/json' -d '{"title":"aot-findable"}' >/dev/null \
+            || fail "POST /tasks (search fixture) got no response"
+          search_response=$(curl -s -w $'\nHTTP_STATUS:%{http_code}' \
+                     'http://localhost:5200/tasks/search?title=aot-findable') \
+            || fail "GET /tasks/search got no response — did the server crash?"
+          code=$(echo "$search_response" | grep -o 'HTTP_STATUS:[0-9]*' | cut -d: -f2)
+          search_body=$(echo "$search_response" | sed '$d')
+          [ "$code" = "200" ] || fail "GET /tasks/search returned $code, expected 200: $search_body"
+          echo "$search_body" | grep -q 'aot-findable' \
+            || fail "GET /tasks/search did not return the matching task: $search_body"
+          if echo "$search_body" | grep -q 'ci-updated'; then
+            fail "GET /tasks/search did not filter on the bound title: $search_body"
+          fi
+
+          # A request body with no Content-Type header at all. text/plain is rejected with 415 by
+          # the Accepts-driven consumes matcher policy, but an absent content type matches any
+          # endpoint and reached the binder, where ReadFromJsonAsync threw InvalidOperationException
+          # (not the JsonException that was caught) — a 500 for a malformed client request.
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost:5200/tasks \
+                   -H 'Content-Type:' -d '{"title":"no-content-type"}') \
+            || fail "POST /tasks with no Content-Type got no response — did the server crash?"
+          [ "$code" = "400" ] || fail "POST /tasks with no Content-Type returned $code, expected 400"
+
+          # The 415 half of the same claim, so the guard above cannot be mistaken for having
+          # replaced content-type rejection with a blanket 400.
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost:5200/tasks \
+                   -H 'Content-Type: text/plain' -d 'not json') \
+            || fail "POST /tasks with text/plain got no response — did the server crash?"
+          [ "$code" = "415" ] || fail "POST /tasks with text/plain returned $code, expected 415"
+
           # The OpenAPI document is the sharpest check: a type missing from the
           # JsonSerializerContext lets the build stay green while this 500s. Assert the
           # document actually describes /tasks, not merely that the request returned 200.
