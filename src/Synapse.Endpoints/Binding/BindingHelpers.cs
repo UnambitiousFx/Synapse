@@ -10,6 +10,13 @@ namespace UnambitiousFx.Synapse.Endpoints.Binding;
 /// </summary>
 public static class BindingHelpers
 {
+    /// <summary>
+    ///     The key body failures are reported under. A body that cannot be read is reported alone
+    ///     rather than alongside route or query failures: without a deserialized message there is
+    ///     nothing left to bind the remaining values onto.
+    /// </summary>
+    public const string BodyField = "body";
+
     /// <summary>Reads a route value.</summary>
     /// <param name="context">The HTTP context.</param>
     /// <param name="name">The route parameter name.</param>
@@ -75,13 +82,18 @@ public static class BindingHelpers
     /// </summary>
     /// <typeparam name="T">The body type.</typeparam>
     /// <param name="context">The HTTP context.</param>
+    /// <param name="cancellationToken">
+    ///     An additional token to cancel the read by, linked with
+    ///     <see cref="HttpContext.RequestAborted" />. Generated binders pass none.
+    /// </param>
     /// <returns>The deserialized body, or a failure describing what was wrong with it.</returns>
     /// <remarks>
     ///     Called by generated binders. Every way the body can be unusable — absent, not JSON, or
     ///     malformed JSON — returns a failure the endpoint turns into a 400, never an exception: an
     ///     unhandled exception here would be a 500 for what is a client mistake.
     /// </remarks>
-    public static async ValueTask<BindResult<T>> ReadJsonBodyAsync<T>(HttpContext context)
+    public static async ValueTask<BindResult<T>> ReadJsonBodyAsync<T>(HttpContext context,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(context);
 
@@ -94,7 +106,7 @@ public static class BindingHelpers
         // reports a sensible (if less specific) failure rather than miscategorizing the body as valid.
         if (context.Request.ContentLength == 0)
         {
-            return BindResult<T>.Failure("The request body is required but was empty or null.");
+            return BindResult<T>.Failure(BodyField, "The request body is required but was empty or null.");
         }
 
         // ReadFromJsonAsync throws InvalidOperationException — not JsonException — when the content
@@ -107,6 +119,7 @@ public static class BindingHelpers
         if (!context.Request.HasJsonContentType())
         {
             return BindResult<T>.Failure(
+                BodyField,
                 "The request body is required to be JSON, but the request declared content type " +
                 $"'{context.Request.ContentType ?? string.Empty}'. Send the body as application/json.");
         }
@@ -119,17 +132,33 @@ public static class BindingHelpers
         // cache is kept rather than calling options.GetTypeInfo per request.
         var typeInfo = HttpJsonTypeInfo.Resolve<T>(context);
 
+        // The read is always bound to the request's own lifetime, and to the caller's token as well
+        // when they supplied a distinct one — a linked source is allocated only in that case, so the
+        // generated binders, which pass no token, still allocate nothing here.
+        CancellationTokenSource? linked = null;
+        var effective = context.RequestAborted;
+
+        if (cancellationToken.CanBeCanceled && cancellationToken != context.RequestAborted)
+        {
+            linked = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted, cancellationToken);
+            effective = linked.Token;
+        }
+
         try
         {
-            var value = await context.Request.ReadFromJsonAsync(typeInfo, context.RequestAborted);
+            var value = await context.Request.ReadFromJsonAsync(typeInfo, effective);
 
             return value is null
-                ? BindResult<T>.Failure("The request body is required but was empty or null.")
+                ? BindResult<T>.Failure(BodyField, "The request body is required but was empty or null.")
                 : BindResult<T>.Success(value);
         }
         catch (JsonException exception)
         {
-            return BindResult<T>.Failure($"The request body is not valid JSON: {exception.Message}");
+            return BindResult<T>.Failure(BodyField, $"The request body is not valid JSON: {exception.Message}");
+        }
+        finally
+        {
+            linked?.Dispose();
         }
     }
 }

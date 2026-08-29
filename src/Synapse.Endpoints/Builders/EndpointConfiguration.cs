@@ -24,6 +24,19 @@ internal sealed class EndpointConfiguration<TResponse>
     /// </summary>
     public int? DeclaredSuccessStatusCode { get; init; }
 
+    /// <summary>
+    ///     Gets a value indicating whether the declared success response carries a body.
+    /// </summary>
+    /// <remarks>
+    ///     <see langword="false" /> when the endpoint configured a success mapper that writes no body
+    ///     — <c>NoContent()</c> or <c>StatusCode(int)</c>. The status code alone does not say this:
+    ///     <c>DeclaredSuccessStatusCode</c> is set by every declarative mapper, including the ones that
+    ///     do write a body. Without this flag the endpoint base declared <c>typeof(TResponse)</c> for a
+    ///     <c>204</c>, so the OpenAPI document promised a JSON body that never arrives — see
+    ///     docs/known-issues/054.
+    /// </remarks>
+    public bool SuccessResponseHasBody { get; init; } = true;
+
     /// <summary>Gets the callback that applies accumulated metadata to the route handler builder.</summary>
     public required Action<RouteHandlerBuilder> ApplyMetadata { get; init; }
 }

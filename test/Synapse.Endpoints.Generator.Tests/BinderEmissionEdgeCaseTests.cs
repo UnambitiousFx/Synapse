@@ -38,7 +38,10 @@ public sealed class BinderEmissionEdgeCaseTests
 
         // Assert — direct assignment, not a `with` expression, and a bodyless GET with a body-less
         // property set skips ReadJsonBodyAsync entirely.
-        Assert.Contains("message.Name = rawName!;", generated);
+        // The raw string lands in a local first: every value is read and its problems collected
+        // before anything is assigned, so one request reports all of its bad values at once.
+        Assert.Contains("valueName = rawName!;", generated);
+        Assert.Contains("message.Name = valueName;", generated);
         Assert.DoesNotContain("with { Name", generated);
         Assert.DoesNotContain("ReadJsonBodyAsync", generated);
         GeneratorHarness.AssertGeneratedCompiles(source);
@@ -97,7 +100,9 @@ public sealed class BinderEmissionEdgeCaseTests
         var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
 
         // Assert
-        Assert.Contains("global::System.Enum.TryParse<global::System.DayOfWeek>(rawDay, out var valueDay)", generated);
+        // Assigned into a pre-declared local rather than `out var`, so the value survives the
+        // accumulation branches; enums are not culture-sensitive, so no format provider is passed.
+        Assert.Contains("global::System.Enum.TryParse<global::System.DayOfWeek>(rawDay, out valueDay)", generated);
         Assert.Contains("is not a valid System.DayOfWeek", generated);
         GeneratorHarness.AssertGeneratedCompiles(source);
     }
@@ -226,7 +231,7 @@ public sealed class BinderEmissionEdgeCaseTests
         Assert.Contains("new global::TestNs.MixedShapeQuery(valueId)", generated);
         Assert.Contains("if (global::UnambitiousFx.Synapse.Endpoints.Binding.BindingHelpers.TryGetQuery(context, \"Extra\", out var rawExtra))",
             generated);
-        Assert.Contains("message.Extra = rawExtra;", generated);
+        Assert.Contains("message.Extra = valueExtra;", generated);
         GeneratorHarness.AssertGeneratedCompiles(source);
     }
 
@@ -384,7 +389,9 @@ public sealed class BinderEmissionEdgeCaseTests
 
         // Assert
         Assert.DoesNotContain("Thing", generated);
-        Assert.Contains("int.TryParse(rawId, out var valueId)", generated);
+        Assert.Contains(
+            "int.TryParse(rawId, global::System.Globalization.CultureInfo.InvariantCulture, out valueId)",
+            generated);
         GeneratorHarness.AssertGeneratedCompiles(source);
     }
 
@@ -470,7 +477,7 @@ public sealed class BinderEmissionEdgeCaseTests
         Assert.DoesNotContain(diagnostics, d => d.Id == "SYNE008");
     }
 
-    // docs/docs/endpoints.mdx points at [HttpEndpoint("OPTIONS", ...)] as the way to declare the
+    // docs/docs/endpoints/reference/base-classes.mdx points at [HttpEndpoint("OPTIONS", ...)] as the way to declare the
     // verbs with no dedicated attribute, and neither OPTIONS nor TRACE carries a request body per
     // RFC 9110 — but both used to fall into the "reads a body" branch. HEAD is included as the
     // control: it was already in the bodyless set, so a regression there would show up here too.
@@ -535,5 +542,276 @@ public sealed class BinderEmissionEdgeCaseTests
 
         // Assert
         Assert.Contains("ReadJsonBodyAsync<global::TestNs.SubmitCommand>(context)", generated);
+    }
+}
+
+/// <summary>
+///     Covers the message shapes a review found the binder mishandled: a type implementing
+///     <c>IParsable&lt;T&gt;</c> the canonical way, a <c>required</c> member no constructor parameter
+///     covers, a constructor parameter whose type differs from the property that shares its name, a
+///     constructor parameter with a default, and an <c>internal</c> constructor in a referenced
+///     assembly. See docs/known-issues/057 through 061.
+/// </summary>
+public sealed class BinderConstructionShapeTests
+{
+    // A strongly-typed id written the modern way implements IParsable<T>, which mandates only
+    // TryParse(string?, IFormatProvider?, out T). The emitter has emitted that overload since the
+    // invariant-culture fix, but the bindability gate still demanded the two-argument form, so the
+    // property was omitted (SYNE012), the route parameter then matched nothing (SYNE001), and the
+    // blocking error suppressed the endpoint entirely. See docs/known-issues/057.
+    private const string ParsableOnlySource = """
+                                              using System;
+                                              using System.Diagnostics.CodeAnalysis;
+                                              using UnambitiousFx.Synapse.Abstractions;
+                                              using UnambitiousFx.Synapse.Endpoints;
+
+                                              namespace TestNs;
+
+                                              public readonly record struct TaskId(Guid Value) : IParsable<TaskId>
+                                              {
+                                                  public static TaskId Parse(string s, IFormatProvider? provider) => new(Guid.Parse(s));
+
+                                                  public static bool TryParse([NotNullWhen(true)] string? s, IFormatProvider? provider, out TaskId result)
+                                                  {
+                                                      if (Guid.TryParse(s, out var value)) { result = new TaskId(value); return true; }
+                                                      result = default;
+                                                      return false;
+                                                  }
+                                              }
+
+                                              public sealed record GetTask(TaskId TaskId) : IRequest;
+
+                                              [Get("/tasks/{taskId}")]
+                                              public sealed class GetTaskEndpoint : Endpoint<GetTask>;
+                                              """;
+
+    [Fact]
+    public void Generate_ForATypeImplementingOnlyIParsable_BindsItThroughTheInvariantCultureOverload()
+    {
+        // Act
+        var generated = GeneratorHarness.GetFile(ParsableOnlySource, "SynapseEndpointBinders.g.cs");
+
+        // Assert
+        Assert.Contains(
+            "global::TestNs.TaskId.TryParse(rawTaskId, global::System.Globalization.CultureInfo.InvariantCulture, out valueTaskId)",
+            generated);
+        GeneratorHarness.AssertGeneratedCompiles(ParsableOnlySource);
+    }
+
+    // The cascade is the damage: one omitted property took the whole endpoint with it, so the route
+    // was never mapped at all.
+    [Fact]
+    public void Generate_ForATypeImplementingOnlyIParsable_ReportsNothing()
+    {
+        // Act
+        var diagnostics = GeneratorHarness.GetDiagnostics(ParsableOnlySource);
+
+        // Assert
+        Assert.DoesNotContain(diagnostics, d => d.Id is "SYNE012" or "SYNE001");
+    }
+
+    // required is enforced at the creation site, so `new T(id)` followed by an assignment is CS9035
+    // however the value is applied afterwards. It has to be set in the object initializer.
+    [Fact]
+    public void Generate_ForARequiredPropertyNoConstructorParameterCovers_SetsItInTheObjectInitializer()
+    {
+        // Arrange
+        const string source = """
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+
+                              namespace TestNs;
+
+                              public sealed record GetThing(int Id) : IRequest
+                              {
+                                  public required string Tenant { get; init; }
+                              }
+
+                              [Get("/things/{id}")]
+                              public sealed class GetThingEndpoint : Endpoint<GetThing>;
+                              """;
+
+        // Act
+        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+
+        // Assert — set at construction, and not also assigned afterwards.
+        Assert.Contains("new global::TestNs.GetThing(valueId) { Tenant = valueTenant };", generated);
+        Assert.DoesNotContain("message with { Tenant", generated);
+        GeneratorHarness.AssertGeneratedCompiles(source);
+    }
+
+    // The same fix retires a documented limitation: `required` on a message with a parameterless
+    // constructor used to be impossible, because `new T()` followed by a `with` expression cannot
+    // satisfy a required member. An object initializer can.
+    [Fact]
+    public void Generate_ForARequiredPropertyOnAParameterlessConstructor_SetsItInTheObjectInitializer()
+    {
+        // Arrange
+        const string source = """
+                              using System;
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+
+                              namespace TestNs;
+
+                              public sealed record GetTaskQuery : IRequest
+                              {
+                                  public required Guid TaskId { get; init; }
+                              }
+
+                              [Get("/tasks/{taskId}")]
+                              public sealed class GetTaskEndpoint : Endpoint<GetTaskQuery>;
+                              """;
+
+        // Act
+        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+
+        // Assert
+        Assert.Contains("new global::TestNs.GetTaskQuery() { TaskId = valueTaskId };", generated);
+        GeneratorHarness.AssertGeneratedCompiles(source);
+    }
+
+    // A name match is not enough to pass a value to a parameter. int? does not convert to int
+    // (CS1503), and string? into a non-nullable string parameter warns (CS8604), which fails a
+    // TreatWarningsAsErrors build on code the consumer cannot edit.
+    [Theory]
+    [InlineData("int? Page { get; set; }", "int page", "Page")]
+    [InlineData("string? Name { get; set; }", "string name", "Name")]
+    public void Generate_ForAConstructorParameterOfADifferentType_DoesNotPassThePropertyToIt(
+        string property,
+        string parameter,
+        string propertyName)
+    {
+        // Arrange
+        var source = $$"""
+                       using UnambitiousFx.Synapse.Abstractions;
+                       using UnambitiousFx.Synapse.Endpoints;
+
+                       namespace TestNs;
+
+                       public sealed class Query : IRequest
+                       {
+                           public Query({{parameter}}) { {{propertyName}} = {{propertyName.ToLowerInvariant()}}; }
+                           public {{property}}
+                       }
+
+                       [Get("/queries")]
+                       public sealed class QueryEndpoint : Endpoint<Query>;
+                       """;
+
+        // Act
+        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+
+        // Assert — the parameter falls back to a default and the value is applied afterwards instead.
+        Assert.DoesNotContain($"new global::TestNs.Query(value{propertyName})", generated);
+        Assert.Contains($"message.{propertyName} = value{propertyName};", generated);
+        GeneratorHarness.AssertGeneratedCompiles(source);
+    }
+
+    // A constructor default says what the type wants when nothing is sent. Overwriting it with
+    // default(T) — or rejecting the request as if the value were mandatory — discards that.
+    [Fact]
+    public void Generate_ForConstructorParametersWithDefaults_FallsBackToThemInsteadOfRequiringAValue()
+    {
+        // Arrange
+        const string source = """
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+
+                              namespace TestNs;
+
+                              public sealed record ListUsers(int Page = 1, string? Sort = "name") : IRequest;
+
+                              [Get("/users")]
+                              public sealed class ListUsersEndpoint : Endpoint<ListUsers>;
+                              """;
+
+        // Act
+        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+
+        // Assert — each local starts at the declared default, and an absent value is not an error.
+        Assert.Contains("int valuePage = (int)(1);", generated);
+        Assert.Contains("string? valueSort = (string)(\"name\");", generated);
+        Assert.DoesNotContain("The query value is required.", generated);
+        GeneratorHarness.AssertGeneratedCompiles(source);
+    }
+
+    // Microsoft.AspNetCore.Mvc's FromHeader must bind a header, not fall through to the convention.
+    // A message file typically imports MVC (for [FromQuery]/[FromRoute]) and not
+    // UnambitiousFx.Synapse.Endpoints — the endpoint class lives elsewhere — so [FromHeader] resolves
+    // to MVC's with no ambiguity, and being ignored meant reading the query string under the property
+    // name instead. See docs/known-issues/062.
+    [Fact]
+    public void Generate_ForTheMvcFromHeaderAttribute_ReadsTheHeaderAndNotTheQueryString()
+    {
+        // Arrange — exactly the using set of a message file that does not declare its own endpoint.
+        const string source = """
+                              namespace TestNs
+                              {
+                                  using Microsoft.AspNetCore.Mvc;
+                                  using UnambitiousFx.Synapse.Abstractions;
+
+                                  public sealed record Q : IRequest
+                                  {
+                                      [FromHeader(Name = "If-Match")] public string? IfMatch { get; init; }
+                                  }
+                              }
+
+                              namespace TestNs2
+                              {
+                                  using UnambitiousFx.Synapse.Endpoints;
+
+                                  [Get("/q")]
+                                  public sealed class QEndpoint : Endpoint<TestNs.Q>;
+                              }
+                              """;
+
+        // Act
+        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+
+        // Assert — the declared header name, through the header reader.
+        Assert.Contains("TryGetHeader(context, \"If-Match\"", generated);
+        Assert.DoesNotContain("TryGetQuery(context, \"IfMatch\"", generated);
+        GeneratorHarness.AssertGeneratedCompiles(source);
+    }
+
+    // internal is internal to the assembly that declares it. A message type from a referenced
+    // contracts assembly whose only parameterless constructor is internal cannot be constructed by
+    // the generated binder, and calling it anyway is CS1729.
+    [Fact]
+    public void Generate_ForAnInternalConstructorInAReferencedAssembly_DoesNotCallIt()
+    {
+        // Arrange
+        var contracts = GeneratorHarness.CompileToReference(
+            """
+            using UnambitiousFx.Synapse.Abstractions;
+
+            namespace Contracts;
+
+            public sealed class ExternalQuery : IRequest
+            {
+                internal ExternalQuery() { }
+                public ExternalQuery(string name) { Name = name; }
+                public string? Name { get; set; }
+            }
+            """,
+            "Contracts");
+
+        const string source = """
+                              using Contracts;
+                              using UnambitiousFx.Synapse.Endpoints;
+
+                              namespace TestNs;
+
+                              [Get("/externals")]
+                              public sealed class ExternalEndpoint : Endpoint<ExternalQuery>;
+                              """;
+
+        // Act
+        var generated = GeneratorHarness.GetFileWithReferences(source, "SynapseEndpointBinders.g.cs", contracts);
+
+        // Assert — the accessible (public) constructor is used instead of the internal one.
+        Assert.DoesNotContain("new global::Contracts.ExternalQuery()", generated);
+        GeneratorHarness.AssertGeneratedCompilesWithReferences(source, contracts);
     }
 }

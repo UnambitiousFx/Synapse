@@ -76,6 +76,14 @@ internal static class BinderEmitter
         // (an explicit [FromBody] can still force a body read even on a bodyless verb).
         var isBodyless = boundType.IsBodylessVerb && !hasBodyProperty;
 
+        // Which properties the constructor will consume, decided before anything is emitted so that a
+        // consumed property does not also get a presence flag it would never read. The value is the
+        // parameter's default expression, if it declares one, which becomes the local's initial value
+        // so an absent optional value falls back to the declared default instead of overwriting it.
+        var consumedByConstructor = isBodyless && !boundType.HasParameterlessConstructor
+            ? ResolveConstructorConsumption(boundType.PrimaryConstructorParameters)
+            : new Dictionary<string, string?>(StringComparer.Ordinal);
+
         builder.AppendLine(
             $"internal sealed class {className} : {BindingNamespace}.IEndpointBinder<{typeFullName}>");
         builder.AppendLine("{");
@@ -84,42 +92,107 @@ internal static class BinderEmitter
         builder.AppendLine("        global::Microsoft.AspNetCore.Http.HttpContext context)");
         builder.AppendLine("    {");
 
-        var consumedByConstructor = new HashSet<string>(StringComparer.Ordinal);
-
-        if (isBodyless)
-        {
-            if (boundType.HasParameterlessConstructor)
-            {
-                builder.AppendLine($"        var message = new {typeFullName}();");
-            }
-            else
-            {
-                EmitPrimaryConstructorCall(builder, typeFullName, properties, boundType.PrimaryConstructorParameters,
-                    consumedByConstructor);
-            }
-        }
-        else
+        if (!isBodyless)
         {
             builder.AppendLine(
                 $"        var body = await {BindingNamespace}.BindingHelpers.ReadJsonBodyAsync<{typeFullName}>(context);");
             builder.AppendLine("        if (!body.IsSuccess)");
             builder.AppendLine("        {");
-            builder.AppendLine(
-                $"            return {BindingNamespace}.BindResult<{typeFullName}>.Failure(body.Error!);");
+            builder.AppendLine("            // A body that cannot be read at all is reported on its own: with no");
+            builder.AppendLine("            // deserialized message there is nothing left to bind the other values onto.");
+            builder.AppendLine("            return body;");
             builder.AppendLine("        }");
             builder.AppendLine();
+        }
+
+        // Every route, query and header value is read first and its problems collected, so a request
+        // with several bad values answers with all of them at once instead of only the first. The
+        // collector is declared only when there is something to collect, or it would be an unused
+        // local in the generated code.
+        var bindable = new List<BindablePropertyModel>();
+        foreach (var property in properties)
+        {
+            if (property.Source != BindingSource.Body)
+            {
+                bindable.Add(property);
+            }
+        }
+
+        if (bindable.Count > 0)
+        {
+            builder.AppendLine($"        var validation = new {BindingNamespace}.BindingValidator(context);");
+            builder.AppendLine();
+        }
+
+        // A `required` property the constructor does not cover has to be set in the object initializer
+        // of the `new` expression: C# enforces `required` at the creation site, and neither a later
+        // assignment nor a `with` expression satisfies it (CS9035). Only relevant where this binder
+        // constructs the message — a body-bound message was constructed by the deserializer, which
+        // satisfied its required members already.
+        var initializerProperties = new List<BindablePropertyModel>();
+        if (isBodyless)
+        {
+            foreach (var property in bindable)
+            {
+                if (property.IsRequired && !consumedByConstructor.ContainsKey(property.Name))
+                {
+                    initializerProperties.Add(property);
+                }
+            }
+        }
+
+        var initializerNames = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var property in initializerProperties)
+        {
+            initializerNames.Add(property.Name);
+        }
+
+        var reads = new List<ValueRead>();
+        foreach (var property in bindable)
+        {
+            var consumed = consumedByConstructor.TryGetValue(property.Name, out var constructorDefault);
+            reads.Add(EmitValueRead(builder, property, consumed, initializerNames.Contains(property.Name),
+                consumed ? constructorDefault : null));
+            builder.AppendLine();
+        }
+
+        if (reads.Count > 0)
+        {
+            builder.AppendLine("        if (!validation.IsValid)");
+            builder.AppendLine("        {");
+            builder.AppendLine(
+                $"            return {BindingNamespace}.BindResult<{typeFullName}>.Failure(validation);");
+            builder.AppendLine("        }");
+            builder.AppendLine();
+        }
+
+        if (isBodyless)
+        {
+            var initializer = FormatObjectInitializer(initializerProperties);
+
+            if (boundType.HasParameterlessConstructor)
+            {
+                builder.AppendLine($"        var message = new {typeFullName}(){initializer};");
+            }
+            else
+            {
+                EmitPrimaryConstructorCall(builder, typeFullName,
+                    boundType.PrimaryConstructorParameters, initializer);
+            }
+        }
+        else
+        {
             builder.AppendLine("        var message = body.Value!;");
         }
 
-        foreach (var property in properties)
+        foreach (var read in reads)
         {
-            if (property.Source == BindingSource.Body || consumedByConstructor.Contains(property.Name))
+            if (read.ConsumedByConstructor || read.SetInInitializer)
             {
                 continue;
             }
 
-            builder.AppendLine();
-            EmitPropertyBinding(builder, typeFullName, property);
+            EmitAssignment(builder, read);
         }
 
         builder.AppendLine();
@@ -129,185 +202,271 @@ internal static class BinderEmitter
     }
 
     /// <summary>
-    ///     Emits the argument-computing statements for every parameter of the type's primary
-    ///     constructor, followed by the <c>var message = new T(...)</c> call itself. A parameter
-    ///     matched to a bound property (by name, case-insensitively) is parsed and validated before
-    ///     construction rather than after — the object does not exist yet, so a <c>with</c>
-    ///     expression is not an option here. A parameter with no matching property (never resolved as
-    ///     bindable at all, or resolved but omitted for having no viable <c>TryParse</c>, Task 17's
-    ///     SYNE012) is passed a literal default value: <c>default!</c> for a reference type, so the
-    ///     null-forgiving operator suppresses the nullable-reference warning that bare <c>default</c>
-    ///     would otherwise raise on the generated code (a real defect fixed in Task 17 —
-    ///     <c>AssertGeneratedCompiles</c> only fails on <c>Error</c>-severity diagnostics, so this
-    ///     warning previously went unnoticed by the test suite even though a consumer building with
-    ///     warnings-as-errors would fail); bare <c>default</c> for a value type, where it needs no
-    ///     suppression.
+    ///     Which properties the constructor consumes, mapped to the default expression of the
+    ///     parameter that consumes each one (null when that parameter has no default).
+    /// </summary>
+    /// <remarks>
+    ///     The match itself is resolved during analysis, where the types are still symbols, and merely
+    ///     read here — matching by name in the emitter could only compare strings, and a name match is
+    ///     not enough to know the value can be passed to the parameter. Computed up front so that
+    ///     <see cref="EmitValueRead" /> knows not to emit a presence flag for a property whose value
+    ///     goes into the constructor, where it is passed whether it was present or not — an unread
+    ///     flag would be a warning in the generated code.
+    /// </remarks>
+    private static Dictionary<string, string?> ResolveConstructorConsumption(
+        EquatableArray<ConstructorParameterModel> parameters)
+    {
+        var consumed = new Dictionary<string, string?>(StringComparer.Ordinal);
+        foreach (var parameter in parameters)
+        {
+            if (parameter.MatchedPropertyName is not null)
+            {
+                consumed[parameter.MatchedPropertyName] = parameter.DefaultValueExpression;
+            }
+        }
+
+        return consumed;
+    }
+
+    /// <summary>
+    ///     The object-initializer clause setting the <c>required</c> properties construction has to
+    ///     cover, or an empty string when there are none.
+    /// </summary>
+    private static string FormatObjectInitializer(List<BindablePropertyModel> properties)
+    {
+        if (properties.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        var assignments = new List<string>();
+        foreach (var property in properties)
+        {
+            assignments.Add($"{EscapeIdentifier(property.Name)} = {ValueLocal(property)}");
+        }
+
+        return " { " + string.Join(", ", assignments) + " }";
+    }
+
+    /// <summary>
+    ///     Emits the argument list for the type's primary constructor and the <c>new T(...)</c> call.
+    ///     Every argument is already sitting in a local computed by <see cref="EmitValueRead" />, and
+    ///     the validity check has already returned if anything failed, so construction here always
+    ///     runs on values that actually parsed. A parameter with no matching property (never resolved
+    ///     as bindable, or resolved but omitted for having no viable <c>TryParse</c> — SYNE012) is
+    ///     passed a literal default: <c>default!</c> for a reference type, so the null-forgiving
+    ///     operator suppresses the nullable-reference warning bare <c>default</c> would raise on the
+    ///     generated code, and bare <c>default</c> for a value type, which needs no suppression.
     /// </summary>
     private static void EmitPrimaryConstructorCall(StringBuilder builder,
         string typeFullName,
-        EquatableArray<BindablePropertyModel> properties,
         EquatableArray<ConstructorParameterModel> parameters,
-        HashSet<string> consumedByConstructor)
+        string initializer)
     {
-        var propertyByName = new Dictionary<string, BindablePropertyModel>(StringComparer.OrdinalIgnoreCase);
-        foreach (var property in properties)
-        {
-            propertyByName[property.Name] = property;
-        }
-
         var argumentExpressions = new List<string>();
 
         foreach (var parameter in parameters)
         {
-            // A bound type reaches this method only when it is bodyless (see EmitBinder), which
-            // guarantees no property here resolved to Body — every match is Route/Query/Header.
-            if (propertyByName.TryGetValue(parameter.Name, out var property))
+            if (parameter.MatchedPropertyName is not null)
             {
-                argumentExpressions.Add(EmitConstructorArgumentBinding(builder, typeFullName, property));
-                consumedByConstructor.Add(property.Name);
+                argumentExpressions.Add("value" + parameter.MatchedPropertyName);
+                continue;
             }
-            else
-            {
-                argumentExpressions.Add(parameter.IsReferenceType ? "default!" : "default");
-            }
+
+            // Its own default beats a synthesized one: an unmatched parameter that declares a default
+            // means it, and passing `default` over the top of it discards the type's own intent.
+            argumentExpressions.Add(parameter.DefaultValueExpression
+                                    ?? (parameter.IsReferenceType ? "default!" : "default"));
         }
 
-        builder.AppendLine($"        var message = new {typeFullName}({string.Join(", ", argumentExpressions)});");
+        builder.AppendLine(
+            $"        var message = new {typeFullName}({string.Join(", ", argumentExpressions)}){initializer};");
     }
 
     /// <summary>
-    ///     Emits the statements needed to compute one constructor argument and returns the expression
-    ///     to pass for it. A non-nullable value is validated the same way as a post-construction
-    ///     assignment (missing or unparsable is a bind failure); a nullable value cannot simply be
-    ///     "skipped" the way a post-construction assignment can, because the constructor call still
-    ///     needs *some* argument, so it is pre-declared with a default and conditionally overwritten.
+    ///     Emits the read, parse and error collection for one property, into a local that the
+    ///     construction or assignment step later reads.
     /// </summary>
-    private static string EmitConstructorArgumentBinding(StringBuilder builder,
-        string typeFullName,
-        BindablePropertyModel property)
+    private static ValueRead EmitValueRead(StringBuilder builder,
+        BindablePropertyModel property,
+        bool consumedByConstructor,
+        bool setInInitializer,
+        string? constructorDefault)
     {
         var tryGetMethod = GetTryGetMethod(property.Source);
         var sourceKeyLiteral = SymbolDisplay.FormatLiteral(property.SourceKey, quote: true);
-        var rawVariable = "raw" + property.Name;
+        var fieldLiteral = SymbolDisplay.FormatLiteral(property.SourceKey, quote: true);
+        var rawLocal = "raw" + property.Name;
+        var valueLocal = ValueLocal(property);
+        var sourceLabel = DescribeSource(property.Source);
+
+        var requiredMessage = SymbolDisplay.FormatLiteral($"The {sourceLabel} is required.", quote: true);
+        var notValidMessage = SymbolDisplay.FormatLiteral(
+            $"The {sourceLabel} is not a valid {DisplayTypeName(property)}.", quote: true);
 
         if (!property.IsNullable)
         {
-            var missingMessage = SymbolDisplay.FormatLiteral(
-                $"{DescribeSource(property.Source)} value '{property.SourceKey}' is missing.", quote: true);
+            // A constructor parameter's default makes the value optional: the type said what it wants
+            // when nothing is sent, so an absent value is not an error and the default stands. Without
+            // this, `record ListUsers(int Page = 1)` answered 400 for a request that omitted `page`,
+            // and a nullable parameter's default was overwritten with null. See
+            // docs/known-issues/060.
+            if (constructorDefault is not null)
+            {
+                builder.AppendLine($"        {property.TypeFullName} {valueLocal} = {constructorDefault};");
+                builder.AppendLine(
+                    $"        if ({BindingNamespace}.BindingHelpers.{tryGetMethod}(context, {sourceKeyLiteral}, out var {rawLocal}))");
+                builder.AppendLine("        {");
 
+                if (property.IsString)
+                {
+                    builder.AppendLine($"            {valueLocal} = {rawLocal}!;");
+                }
+                else
+                {
+                    builder.AppendLine($"            if (!{TryParseExpression(property, rawLocal, valueLocal)})");
+                    builder.AppendLine("            {");
+                    builder.AppendLine($"                validation.AddError({fieldLiteral}, {notValidMessage});");
+                    builder.AppendLine("            }");
+                }
+
+                builder.AppendLine("        }");
+
+                return new ValueRead(property, valueLocal, null, consumedByConstructor, setInInitializer);
+            }
+
+            var initializer = property.IsReferenceType ? "default!" : "default";
+            builder.AppendLine($"        {property.TypeFullName} {valueLocal} = {initializer};");
             builder.AppendLine(
-                $"        if (!{BindingNamespace}.BindingHelpers.{tryGetMethod}(context, {sourceKeyLiteral}, out var {rawVariable}))");
+                $"        if (!{BindingNamespace}.BindingHelpers.{tryGetMethod}(context, {sourceKeyLiteral}, out var {rawLocal}))");
             builder.AppendLine("        {");
-            builder.AppendLine(
-                $"            return {BindingNamespace}.BindResult<{typeFullName}>.Failure({missingMessage});");
+            builder.AppendLine($"            validation.AddError({fieldLiteral}, {requiredMessage});");
             builder.AppendLine("        }");
 
-            return EmitParseCheckOnly(builder, "        ", typeFullName, property, rawVariable,
-                "value" + property.Name);
+            if (property.IsString)
+            {
+                builder.AppendLine("        else");
+                builder.AppendLine("        {");
+                builder.AppendLine($"            {valueLocal} = {rawLocal}!;");
+                builder.AppendLine("        }");
+            }
+            else
+            {
+                builder.AppendLine(
+                    $"        else if (!{TryParseExpression(property, rawLocal, valueLocal)})");
+                builder.AppendLine("        {");
+                builder.AppendLine($"            validation.AddError({fieldLiteral}, {notValidMessage});");
+                builder.AppendLine("        }");
+            }
+
+            return new ValueRead(property, valueLocal, null, consumedByConstructor, setInInitializer);
         }
 
-        var declaredType = property.TypeFullName + "?";
-        var outerVariable = "value" + property.Name;
+        // A nullable property is optional: an absent value is not an error. The presence flag keeps an
+        // absent value from overwriting a property initializer with null, which a bare assignment
+        // would do.
+        // No presence flag where construction applies the value unconditionally — as a constructor
+        // argument, or in the object initializer a `required` property needs — since nothing would
+        // ever read it and an unread local is a warning in the generated code.
+        var presenceLocal = consumedByConstructor || setInInitializer ? null : "has" + property.Name;
+        if (presenceLocal is not null)
+        {
+            builder.AppendLine($"        var {presenceLocal} = false;");
+        }
 
-        builder.AppendLine($"        {declaredType} {outerVariable} = default;");
         builder.AppendLine(
-            $"        if ({BindingNamespace}.BindingHelpers.{tryGetMethod}(context, {sourceKeyLiteral}, out var {rawVariable}))");
+            $"        {property.TypeFullName}? {valueLocal} = {constructorDefault ?? "default"};");
+        builder.AppendLine(
+            $"        if ({BindingNamespace}.BindingHelpers.{tryGetMethod}(context, {sourceKeyLiteral}, out var {rawLocal}))");
         builder.AppendLine("        {");
 
-        var parsedExpression = EmitParseCheckOnly(builder, "            ", typeFullName, property, rawVariable,
-            "parsed" + property.Name);
-        builder.AppendLine($"            {outerVariable} = {parsedExpression};");
-        builder.AppendLine("        }");
-
-        return outerVariable;
-    }
-
-    private static void EmitPropertyBinding(StringBuilder builder,
-        string typeFullName,
-        BindablePropertyModel property)
-    {
-        var tryGetMethod = GetTryGetMethod(property.Source);
-        var sourceLabel = DescribeSource(property.Source);
-
-        var sourceKeyLiteral = SymbolDisplay.FormatLiteral(property.SourceKey, quote: true);
-        var rawVariable = "raw" + property.Name;
-        var missingMessage =
-            SymbolDisplay.FormatLiteral($"{sourceLabel} value '{property.SourceKey}' is missing.", quote: true);
-
-        if (property.IsNullable)
+        if (property.IsString)
         {
-            builder.AppendLine(
-                $"        if ({BindingNamespace}.BindingHelpers.{tryGetMethod}(context, {sourceKeyLiteral}, out var {rawVariable}))");
-            builder.AppendLine("        {");
-            EmitParseAndAssign(builder, "            ", typeFullName, property, rawVariable);
-            builder.AppendLine("        }");
+            builder.AppendLine($"            {valueLocal} = {rawLocal};");
+            if (presenceLocal is not null)
+            {
+                builder.AppendLine($"            {presenceLocal} = true;");
+            }
         }
         else
         {
+            var parsedLocal = "parsed" + property.Name;
             builder.AppendLine(
-                $"        if (!{BindingNamespace}.BindingHelpers.{tryGetMethod}(context, {sourceKeyLiteral}, out var {rawVariable}))");
-            builder.AppendLine("        {");
-            builder.AppendLine(
-                $"            return {BindingNamespace}.BindResult<{typeFullName}>.Failure({missingMessage});");
-            builder.AppendLine("        }");
-            builder.AppendLine();
-            EmitParseAndAssign(builder, "        ", typeFullName, property, rawVariable);
+                $"            if (!{TryParseExpression(property, rawLocal, "var " + parsedLocal)})");
+            builder.AppendLine("            {");
+            builder.AppendLine($"                validation.AddError({fieldLiteral}, {notValidMessage});");
+            builder.AppendLine("            }");
+            builder.AppendLine("            else");
+            builder.AppendLine("            {");
+            builder.AppendLine($"                {valueLocal} = {parsedLocal};");
+            if (presenceLocal is not null)
+            {
+                builder.AppendLine($"                {presenceLocal} = true;");
+            }
+
+            builder.AppendLine("            }");
         }
+
+        builder.AppendLine("        }");
+
+        return new ValueRead(property, valueLocal, presenceLocal, consumedByConstructor, setInInitializer);
     }
 
-    private static void EmitParseAndAssign(StringBuilder builder,
-        string indent,
-        string typeFullName,
-        BindablePropertyModel property,
-        string rawVariable)
+    private static void EmitAssignment(StringBuilder builder,
+        ValueRead read)
     {
-        var valueExpression =
-            EmitParseCheckOnly(builder, indent, typeFullName, property, rawVariable, "value" + property.Name);
+        var propertyName = EscapeIdentifier(read.Property.Name);
+        var indent = read.PresenceLocal is null ? "        " : "            ";
 
-        var propertyName = EscapeIdentifier(property.Name);
-        builder.AppendLine(property.IsRecordWith
-            ? $"{indent}message = message with {{ {propertyName} = {valueExpression} }};"
-            : $"{indent}message.{propertyName} = {valueExpression};");
+        if (read.PresenceLocal is not null)
+        {
+            builder.AppendLine($"        if ({read.PresenceLocal})");
+            builder.AppendLine("        {");
+        }
+
+        builder.AppendLine(read.Property.IsRecordWith
+            ? $"{indent}message = message with {{ {propertyName} = {read.ValueLocal} }};"
+            : $"{indent}message.{propertyName} = {read.ValueLocal};");
+
+        if (read.PresenceLocal is not null)
+        {
+            builder.AppendLine("        }");
+        }
     }
 
     /// <summary>
-    ///     Emits the <c>TryParse</c> check (and its early-return on failure) for a non-string
-    ///     property, or nothing for a string one, and returns the expression holding the final value
-    ///     — the raw string itself, or the freshly parsed value. Shared between assigning the value
-    ///     onto an already-constructed message and computing a constructor argument before the
-    ///     message exists.
+    ///     The <c>TryParse</c> call for a non-string property. The culture-aware overload is used
+    ///     wherever the type has it, pinning <see cref="System.Globalization.CultureInfo.InvariantCulture" />:
+    ///     a route or query value is a wire format, and reading <c>1.5</c> or an ISO date through the
+    ///     server's current culture makes the same request mean different things on differently
+    ///     configured hosts. ASP.NET Core's own parameter binding pins the invariant culture for the
+    ///     same reason. Enums are not culture-sensitive, and a type offering only the two-argument
+    ///     overload (all SYNE012 requires) keeps using it.
     /// </summary>
-    private static string EmitParseCheckOnly(StringBuilder builder,
-        string indent,
-        string typeFullName,
-        BindablePropertyModel property,
-        string rawVariable,
-        string resultVariableName)
+    private static string TryParseExpression(BindablePropertyModel property,
+        string rawLocal,
+        string outTarget)
     {
-        if (property.IsString)
+        if (property.IsEnum)
         {
-            return property.IsNullable ? rawVariable : rawVariable + "!";
+            return $"global::System.Enum.TryParse<{property.TypeFullName}>({rawLocal}, out {outTarget})";
         }
 
-        var propertyDisplayTypeName = property.TypeFullName.StartsWith("global::", StringComparison.Ordinal)
+        return property.ParsesWithFormatProvider
+            ? $"{property.TypeFullName}.TryParse({rawLocal}, global::System.Globalization.CultureInfo.InvariantCulture, out {outTarget})"
+            : $"{property.TypeFullName}.TryParse({rawLocal}, out {outTarget})";
+    }
+
+    private static string ValueLocal(BindablePropertyModel property)
+    {
+        return "value" + property.Name;
+    }
+
+    private static string DisplayTypeName(BindablePropertyModel property)
+    {
+        return property.TypeFullName.StartsWith("global::", StringComparison.Ordinal)
             ? property.TypeFullName.Substring("global::".Length)
             : property.TypeFullName;
-        var notAValidMessage = SymbolDisplay.FormatLiteral(
-            $"{DescribeSource(property.Source)} value '{property.SourceKey}' is not a valid {propertyDisplayTypeName}.",
-            quote: true);
-
-        var tryParseExpression = property.IsEnum
-            ? $"global::System.Enum.TryParse<{property.TypeFullName}>({rawVariable}, out var {resultVariableName})"
-            : $"{property.TypeFullName}.TryParse({rawVariable}, out var {resultVariableName})";
-
-        builder.AppendLine($"{indent}if (!{tryParseExpression})");
-        builder.AppendLine($"{indent}{{");
-        builder.AppendLine(
-            $"{indent}    return {BindingNamespace}.BindResult<{typeFullName}>.Failure({notAValidMessage});");
-        builder.AppendLine($"{indent}}}");
-        builder.AppendLine();
-
-        return resultVariableName;
     }
 
     /// <summary>
@@ -338,10 +497,39 @@ internal static class BinderEmitter
     {
         return source switch
         {
-            BindingSource.Route => "Route",
-            BindingSource.Query => "Query",
-            BindingSource.Header => "Header",
+            BindingSource.Route => "route value",
+            BindingSource.Query => "query value",
+            BindingSource.Header => "header",
             _ => throw new InvalidOperationException($"Unexpected binding source '{source}'.")
         };
+    }
+
+    /// <summary>One property's read, as the construction and assignment steps need to see it.</summary>
+    private readonly struct ValueRead
+    {
+        internal ValueRead(BindablePropertyModel property,
+            string valueLocal,
+            string? presenceLocal,
+            bool consumedByConstructor,
+            bool setInInitializer)
+        {
+            Property = property;
+            ValueLocal = valueLocal;
+            PresenceLocal = presenceLocal;
+            ConsumedByConstructor = consumedByConstructor;
+            SetInInitializer = setInInitializer;
+        }
+
+        internal BindablePropertyModel Property { get; }
+
+        internal string ValueLocal { get; }
+
+        /// <summary>The local recording whether an optional value was present, or null when there is none.</summary>
+        internal string? PresenceLocal { get; }
+
+        internal bool ConsumedByConstructor { get; }
+
+        /// <summary>Whether the value is applied in the object initializer of the <c>new</c> expression.</summary>
+        internal bool SetInInitializer { get; }
     }
 }

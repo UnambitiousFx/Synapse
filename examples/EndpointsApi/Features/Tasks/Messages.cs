@@ -8,16 +8,16 @@ public sealed record ListTasksQuery : IRequest<IReadOnlyList<TaskDto>>;
 
 /// <summary>Gets one task by its id.</summary>
 /// <remarks>
-///     <see cref="TaskId" /> is deliberately not <c>required</c>: the generated binder for a
-///     route-only message constructs it with a bare <c>new GetTaskQuery()</c> and then applies the
-///     bound value via a <c>with</c> expression — a call site that cannot satisfy a <c>required</c>
-///     member, so marking a purely route/query/header-bound property <c>required</c> fails to
-///     compile against the current generator output.
+///     <see cref="TaskId" /> is <c>required</c>, which a route-bound property could not be until the
+///     binder started setting such properties in the object initializer of its <c>new</c> expression:
+///     it used to construct the message and assign afterwards, and no assignment satisfies
+///     <c>required</c>. Left as a live example of the shape, since a route parameter is always
+///     present by the time the binder runs.
 /// </remarks>
 public sealed record GetTaskQuery : IRequest<TaskDto>
 {
     /// <summary>The task's id, bound from the route.</summary>
-    public Guid TaskId { get; init; }
+    public required Guid TaskId { get; init; }
 }
 
 /// <summary>Streams every task, one at a time.</summary>
@@ -39,12 +39,12 @@ public sealed record TaskCreated
 
 /// <summary>Updates a task's title.</summary>
 /// <remarks>
-///     <see cref="TaskId" /> is bound from the route, not the request body, so it is deliberately
-///     not <c>required</c>: the generated binder deserializes the JSON body into this type first
-///     (populating <see cref="Title" />) and applies <see cref="TaskId" /> afterwards via a
-///     <c>with</c> expression. A <c>required</c> route-bound property would additionally require
-///     the client's JSON body to include it, since the source-generated deserializer enforces
-///     <c>required</c> members against the payload actually received.
+///     <see cref="TaskId" /> is bound from the route, not the request body, and is deliberately not
+///     <c>required</c> — unlike <see cref="GetTaskQuery.TaskId" />, which is. The difference is the
+///     body: this message is deserialized from JSON first (populating <see cref="Title" />) and the
+///     route value applied to the result afterwards, so marking it <c>required</c> would make the
+///     source-generated deserializer demand it in the payload the client sends, which is the one
+///     place it is not.
 /// </remarks>
 public sealed record UpdateTaskCommand : IRequest
 {
@@ -56,11 +56,14 @@ public sealed record UpdateTaskCommand : IRequest
 }
 
 /// <summary>Deletes a task.</summary>
-/// <remarks>See <see cref="GetTaskQuery" /> for why <see cref="TaskId" /> is not <c>required</c>.</remarks>
+/// <remarks>
+///     A bodyless verb binding only from the route, so <see cref="TaskId" /> can be <c>required</c>
+///     for the same reason <see cref="GetTaskQuery.TaskId" /> is.
+/// </remarks>
 public sealed record DeleteTaskCommand : IRequest
 {
     /// <summary>The task's id, bound from the route.</summary>
-    public Guid TaskId { get; init; }
+    public required Guid TaskId { get; init; }
 }
 
 /// <summary>A task, as returned to clients.</summary>

@@ -15,34 +15,79 @@ namespace UnambitiousFx.Synapse.Endpoints;
 /// <typeparam name="TRequest">The streaming request, which doubles as the HTTP request contract.</typeparam>
 /// <typeparam name="TItem">The streamed item type.</typeparam>
 /// <remarks>
-///     The response format is negotiated on the <c>Accept</c> header: a value containing
-///     <c>text/event-stream</c> yields server-sent events, and anything else (including a missing
-///     header) yields a JSON array written incrementally as items arrive. Failed items are skipped,
-///     matching <see cref="IHttpInvoker.InvokeStreamAsync{TItem}" />.
+///     <para>
+///         The response format is negotiated on the <c>Accept</c> header: a value containing
+///         <c>text/event-stream</c> yields server-sent events, and anything else (including a missing
+///         header) yields a JSON array written incrementally as items arrive. Failed items are skipped,
+///         matching <see cref="IHttpInvoker.InvokeStreamAsync{TItem}" />.
+///     </para>
+///     <para>
+///         Derives from <see cref="RawEndpoint" /> rather than
+///         <see cref="RawEndpoint{TRequest,TResponse}" /> because it dispatches an
+///         <see cref="IStreamRequest{TResponse}" /> and writes the body itself rather than returning a
+///         single value to serialize.
+///     </para>
 /// </remarks>
-public abstract class StreamEndpoint<TRequest, TItem> : EndpointBase
+public abstract class StreamEndpoint<TRequest, TItem> : RawEndpoint
     where TRequest : IStreamRequest<TItem>
     where TItem : notnull
 {
     private readonly JsonTypeInfoCache<TItem> _itemJson = new();
+    private IEndpointBinder<TRequest>? _binder;
 
     /// <summary>Configures the endpoint. Called once at startup.</summary>
     /// <param name="builder">The endpoint builder.</param>
-    public virtual void Configure(IEndpointBuilder builder)
+    /// <remarks>
+    ///     Takes <see cref="IStreamEndpointBuilder" /> rather than <see cref="IEndpointBuilder" />
+    ///     because the latter carries <c>NoContent</c> and <c>StatusCode</c>, which set a success
+    ///     mapper this class never consults: a stream's status is committed before the first item is
+    ///     produced and its body is the negotiated sequence. Those two calls used to compile here and
+    ///     do nothing at all — see docs/known-issues/064.
+    /// </remarks>
+    public virtual void Configure(IStreamEndpointBuilder builder)
     {
     }
 
-    internal override EndpointDescriptor CreateDescriptor(EndpointMetadata metadata)
+    /// <summary>Not used at this level; configure through the typed overload instead.</summary>
+    /// <param name="builder">Unused.</param>
+    public sealed override void Configure(IRawEndpointBuilder builder)
     {
-        var builder = new EndpointBuilder<Unit>(metadata);
-        Configure(builder);
-        var configuration = builder.Build();
-        var binder = EndpointRegistry.GetBinder<TRequest>();
+    }
 
-        return new EndpointDescriptor
+    /// <inheritdoc />
+    /// <remarks>
+    ///     The negotiated writer runs inside the returned result rather than here, so the body is
+    ///     written at the same point in the pipeline as any other endpoint's result.
+    /// </remarks>
+    public sealed override async ValueTask<IResult> HandleAsync(HttpContext context,
+        CancellationToken cancellationToken)
+    {
+        var bound = await Mapped(_binder).BindAsync(context);
+        if (!bound.IsSuccess)
         {
-            Route = configuration.Route,
-            HttpMethods = configuration.HttpMethods,
+            return bound.Problem();
+        }
+
+        var invoker = context.RequestServices.GetRequiredService<IHttpInvoker>();
+        var items = invoker.InvokeStreamAsync(bound.Value!, cancellationToken);
+        var typeInfo = _itemJson.Get(context);
+
+        return WantsServerSentEvents(context)
+            ? new ServerSentEventsStreamResult<TItem>(items, typeInfo)
+            : new JsonArrayStreamResult<TItem>(items, typeInfo);
+    }
+
+    internal sealed override RawEndpointPlan CreatePlan(EndpointMetadata metadata)
+    {
+        var builder = new StreamEndpointBuilder(metadata);
+        Configure(builder);
+        var plan = builder.Build();
+        _binder = EndpointRegistry.GetBinder<TRequest>();
+
+        return new RawEndpointPlan
+        {
+            Route = plan.Route,
+            HttpMethods = plan.HttpMethods,
             ApplyMetadata = handlerBuilder =>
             {
                 // Declared explicitly because a RequestDelegate-shaped endpoint infers nothing. The
@@ -52,30 +97,8 @@ public abstract class StreamEndpoint<TRequest, TItem> : EndpointBase
                     StatusCodes.Status200OK,
                     typeof(IAsyncEnumerable<TItem>),
                     ["application/json", "text/event-stream"]));
-                handlerBuilder.ProducesProblem(StatusCodes.Status400BadRequest);
-                configuration.ApplyMetadata(handlerBuilder);
-            },
-            InvokeAsync = async context =>
-            {
-                var bound = await binder.BindAsync(context);
-                if (!bound.IsSuccess)
-                {
-                    await TypedResults.Problem(bound.Error, statusCode: StatusCodes.Status400BadRequest)
-                        .ExecuteAsync(context);
-                    return;
-                }
-
-                var invoker = context.RequestServices.GetRequiredService<IHttpInvoker>();
-                var items = invoker.InvokeStreamAsync(bound.Value!, context.RequestAborted);
-                var typeInfo = _itemJson.Get(context);
-
-                if (WantsServerSentEvents(context))
-                {
-                    await StreamResponseWriter.WriteServerSentEventsAsync(context, items, typeInfo);
-                    return;
-                }
-
-                await StreamResponseWriter.WriteJsonArrayAsync(context, items, typeInfo);
+                handlerBuilder.ProducesValidationProblem();
+                plan.ApplyMetadata(handlerBuilder);
             }
         };
     }

@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using UnambitiousFx.Synapse.Endpoints.Generator.Diagnostics;
 using UnambitiousFx.Synapse.Endpoints.Generator.Emit;
@@ -22,6 +23,9 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
     private const string EndpointValue = "UnambitiousFx.Synapse.Endpoints.Endpoint`2";
     private const string EndpointMapped = "UnambitiousFx.Synapse.Endpoints.MappedEndpoint`4";
     private const string EndpointStream = "UnambitiousFx.Synapse.Endpoints.StreamEndpoint`2";
+    private const string RawEndpointFree = "UnambitiousFx.Synapse.Endpoints.RawEndpoint";
+    private const string RawEndpointVoid = "UnambitiousFx.Synapse.Endpoints.RawEndpoint`1";
+    private const string RawEndpointValue = "UnambitiousFx.Synapse.Endpoints.RawEndpoint`2";
 
     /// <inheritdoc />
     public void Initialize(IncrementalGeneratorInitializationContext context)
@@ -93,6 +97,9 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
                 EndpointValue => EndpointKind.Value,
                 EndpointMapped => EndpointKind.Mapped,
                 EndpointStream => EndpointKind.Stream,
+                RawEndpointFree => EndpointKind.Raw,
+                RawEndpointVoid => EndpointKind.RawVoid,
+                RawEndpointValue => EndpointKind.RawValue,
                 _ => (EndpointKind?)null
             };
 
@@ -101,7 +108,11 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
                 continue;
             }
 
-            var bound = baseType.TypeArguments[0];
+            // The free-form low level is not generic: it binds nothing, so there is no bound type to
+            // resolve, no binder to generate and no binding diagnostic that could apply to it.
+            var bound = baseType.TypeArguments.Length > 0
+                ? baseType.TypeArguments[0]
+                : null;
 
             // SYNE008: the type actually written back as the response body, which differs from
             // `bound` for Mapped (THttpResponse, not the internal TRequest/TResponse pair) and does
@@ -113,7 +124,7 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
             // build stays warning-free, /openapi/v1.json 500s at runtime for real).
             ITypeSymbol? responseType = kind switch
             {
-                EndpointKind.Value => baseType.TypeArguments[1],
+                EndpointKind.Value or EndpointKind.RawValue => baseType.TypeArguments[1],
                 EndpointKind.Mapped => baseType.TypeArguments[3],
                 EndpointKind.Stream => WrapInAsyncEnumerable(context.SemanticModel.Compilation, baseType.TypeArguments[1]),
                 _ => null
@@ -150,14 +161,15 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
             bool hasParameterlessConstructor;
             EquatableArray<ConstructorParameterModel> primaryConstructorParameters;
 
-            if (bound is INamedTypeSymbol boundNamedType)
+            if (kind.Value.HasGeneratedBinder() && bound is INamedTypeSymbol boundNamedType)
             {
                 // SYNE002, SYNE007, SYNE011, SYNE012 (Task 17) are found and reported while resolving
                 // properties, alongside SYNE001 below.
                 boundProperties = CollectBindableProperties(boundNamedType, method, route, diagnostics,
                     out var hasConventionBoundProperty);
                 (hasParameterlessConstructor, primaryConstructorParameters) =
-                    ResolveConstructionStrategy(boundNamedType);
+                    ResolveConstructionStrategy(boundNamedType, context.SemanticModel.Compilation,
+                        boundProperties);
 
                 // SYNE001
                 CheckRouteParameters(boundProperties, boundNamedType.ToDisplayString(), route, location, diagnostics);
@@ -187,7 +199,7 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
             // SYNE005 — only Endpoint<TRequest> / Endpoint<TRequest,TResponse> dispatch a single
             // response; StreamEndpoint and MappedEndpoint are unaffected (Mapped's bound type is the
             // HTTP DTO, not the dispatched message, so this check does not apply to it).
-            if (kind is EndpointKind.Void or EndpointKind.Value && ImplementsStreamRequest(bound))
+            if (kind.Value.DispatchesKnownMessage() && bound is not null && ImplementsStreamRequest(bound))
             {
                 diagnostics.Add(new DiagnosticInfo(
                     EndpointDiagnostics.StreamMessageOnNonStreamEndpoint,
@@ -209,7 +221,7 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
 
             // SYNE003 — only Endpoint<TRequest,TResponse> actually returns a value; Mapped maps
             // through its own ToResponse/OnSuccess pair and is out of scope for this nudge.
-            if (kind == EndpointKind.Value &&
+            if (kind.Value.ReturnsValue() &&
                 method is "POST" or "PUT" &&
                 !overridesOnSuccess &&
                 !callsDeclarativeSuccessMethod)
@@ -233,8 +245,19 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
             // SYNE008: which of this endpoint's request/response types are actually JSON-relevant,
             // resolved here (once per endpoint) and reported later, once per distinct missing type,
             // from Emit — see ReportMissingJsonRegistrations.
-            var jsonRequestTypeName = ResolveJsonRequestTypeName(bound, method, boundProperties);
+            // Only a generated binder deserializes the request body from a type the generator can
+            // see. A hand-written BindAsync may read any type it likes, or none — those call sites are
+            // checked separately, by scanning the endpoint's own body-reading calls.
+            var jsonRequestTypeName = kind.Value.HasGeneratedBinder() && bound is not null
+                ? ResolveJsonRequestTypeName(bound, method, boundProperties)
+                : null;
             var jsonResponseTypeName = ResolveJsonResponseTypeName(responseType);
+
+            // SYNE008 for the low level: its JSON-relevant types are not on a base class, so they are
+            // read off the endpoint's own call sites instead.
+            var jsonCallSites = kind.Value.HasGeneratedBinder()
+                ? new EquatableArray<JsonCallSite>(Array.Empty<JsonCallSite>())
+                : CollectJsonCallSites(classDeclaration, context.SemanticModel);
 
             var diagnosticInfos = new EquatableArray<DiagnosticInfo>(diagnostics.ToArray());
 
@@ -267,7 +290,7 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
                 ? null
                 : new EndpointTarget(
                     symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
-                    bound.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    bound?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) ?? string.Empty,
                     kind.Value,
                     method,
                     route,
@@ -277,7 +300,8 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
                     hasParameterlessConstructor,
                     primaryConstructorParameters,
                     jsonRequestTypeName,
-                    jsonResponseTypeName);
+                    jsonResponseTypeName,
+                    jsonCallSites);
 
             return new EndpointAnalysisResult(target, diagnosticInfos);
         }
@@ -688,10 +712,21 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
     ///     at emit time.
     /// </summary>
     private static (bool HasParameterlessConstructor, EquatableArray<ConstructorParameterModel> PrimaryConstructorParameters)
-        ResolveConstructionStrategy(INamedTypeSymbol boundType)
+        ResolveConstructionStrategy(INamedTypeSymbol boundType,
+            Compilation compilation,
+            EquatableArray<BindablePropertyModel> boundProperties)
     {
+        var compilationAssembly = compilation.Assembly;
+
+        // Internal counts as accessible only within the assembly being compiled: an internal
+        // constructor on a message type from a referenced assembly is not callable from the generated
+        // binder, and treating it as callable emitted `new T()` for CS1729. See
+        // docs/known-issues/058.
         var accessibleConstructors = boundType.Constructors
-            .Where(c => !c.IsStatic && c.DeclaredAccessibility is Accessibility.Public or Accessibility.Internal)
+            .Where(c => !c.IsStatic &&
+                        (c.DeclaredAccessibility == Accessibility.Public ||
+                         (c.DeclaredAccessibility == Accessibility.Internal &&
+                          SymbolEqualityComparer.Default.Equals(c.ContainingAssembly, compilationAssembly))))
             .ToArray();
 
         var none = new EquatableArray<ConstructorParameterModel>(Array.Empty<ConstructorParameterModel>());
@@ -714,9 +749,113 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
             .First();
 
         var parameters = primary.Parameters
-            .Select(p => new ConstructorParameterModel(p.Name, p.Type.IsReferenceType))
+            .Select(p => new ConstructorParameterModel(
+                p.Name,
+                p.Type.IsReferenceType,
+                MatchProperty(boundType, boundProperties, compilation, p),
+                FormatDefaultValue(p)))
             .ToArray();
         return (false, new EquatableArray<ConstructorParameterModel>(parameters));
+    }
+
+    /// <summary>
+    ///     Resolves which bindable property, if any, supplies a constructor parameter's argument.
+    /// </summary>
+    /// <remarks>
+    ///     Names are matched case-insensitively, as a positional record's parameter and its property
+    ///     differ only in case. The type check is the point: a name match alone is not enough, because
+    ///     the argument is passed from a local whose type is the property's, and passing it has to
+    ///     compile. A parameter left unmatched here falls back to its default (or <c>default</c>) and
+    ///     the property is applied after construction instead, which is always available — every
+    ///     bindable property is either settable or on a record, as SYNE011 guarantees.
+    /// </remarks>
+    private static string? MatchProperty(INamedTypeSymbol boundType,
+        EquatableArray<BindablePropertyModel> boundProperties,
+        Compilation compilation,
+        IParameterSymbol parameter)
+    {
+        string? bindableName = null;
+        foreach (var property in boundProperties)
+        {
+            if (string.Equals(property.Name, parameter.Name, StringComparison.OrdinalIgnoreCase))
+            {
+                bindableName = property.Name;
+                break;
+            }
+        }
+
+        if (bindableName is null)
+        {
+            return null;
+        }
+
+        // The local the emitter passes has the property's own type, annotation included, so that is
+        // what has to be convertible — not the underlying type the model carries as a string.
+        foreach (var member in boundType.GetMembers(bindableName))
+        {
+            if (member is not IPropertySymbol property)
+            {
+                continue;
+            }
+
+            var conversion = compilation.ClassifyCommonConversion(property.Type, parameter.Type);
+            if (!conversion.IsIdentity && !conversion.IsImplicit)
+            {
+                // int? -> int, for instance: CS1503 if emitted.
+                return null;
+            }
+
+            // A nullable reference into a non-nullable parameter compiles but warns (CS8604), which
+            // fails a TreatWarningsAsErrors build on generated code the consumer cannot edit.
+            if (property.Type.IsReferenceType &&
+                property.Type.NullableAnnotation == NullableAnnotation.Annotated &&
+                parameter.Type.NullableAnnotation == NullableAnnotation.NotAnnotated)
+            {
+                return null;
+            }
+
+            return bindableName;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    ///     Renders a constructor parameter's default value as a C# expression, or
+    ///     <see langword="null" /> when it has no default.
+    /// </summary>
+    /// <remarks>
+    ///     Cast to the parameter's own type rather than emitted bare, because a primitive literal does
+    ///     not always assign to the type that declared it: <c>float f = 1.5f</c> round-trips through
+    ///     <see cref="SymbolDisplay.FormatPrimitive" /> as <c>1.5</c>, which is a <c>double</c> and
+    ///     CS0664 on assignment, and an enum default arrives as its underlying integer. A default the
+    ///     compiler cannot express as a constant — <c>Guid g = default</c> — has no
+    ///     <see cref="IParameterSymbol.ExplicitDefaultValue" />, so it becomes the <c>default</c>
+    ///     keyword, which is correct for every type.
+    /// </remarks>
+    private static string? FormatDefaultValue(IParameterSymbol parameter)
+    {
+        if (!parameter.HasExplicitDefaultValue)
+        {
+            return null;
+        }
+
+        var value = parameter.ExplicitDefaultValue;
+        if (value is null)
+        {
+            return parameter.Type.IsReferenceType ||
+                   parameter.Type.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T
+                ? "null"
+                : "default";
+        }
+
+        var literal = SymbolDisplay.FormatPrimitive(value, quoteStrings: true, useHexadecimalNumbers: false);
+        var target = parameter.Type.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T &&
+                     parameter.Type is INamedTypeSymbol { TypeArguments.Length: 1 } nullable
+            ? nullable.TypeArguments[0]
+            : parameter.Type;
+
+        return $"({target.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)})({literal})";
     }
 
     /// <summary>
@@ -816,12 +955,20 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
                 return null;
             }
 
-            if (!isString && !isEnum && !HasTwoArgumentTryParse(underlying))
+            if (!isString && !isEnum &&
+                !HasTwoArgumentTryParse(underlying) &&
+                !HasFormatProviderTryParse(underlying))
             {
                 // SYNE012: no viable parse path for this type. Omit rather than emit a `TryParse`
                 // call that will not compile. Reported at the exact condition that already decides
                 // the omission, rather than a separately-maintained list of "known good" types, so
                 // the diagnostic can never disagree with what the emitter actually does.
+                //
+                // Both TryParse shapes are accepted because the emitter emits both: a type that
+                // implements IParsable<T> — the canonical way to write a strongly-typed id, and what
+                // ASP.NET Core's own binder looks for — supplies only the three-argument overload.
+                // Gating on the two-argument form alone rejected such a type, which cascaded into
+                // SYNE001 and suppressed the whole endpoint. See docs/known-issues/057.
                 diagnostics.Add(new DiagnosticInfo(
                     EndpointDiagnostics.UnparsableBoundPropertyType,
                     location,
@@ -841,7 +988,10 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
             isNullable,
             isString,
             isEnum,
-            isRecordWith);
+            isRecordWith,
+            HasFormatProviderTryParse(underlying),
+            underlying.IsReferenceType,
+            property.IsRequired);
     }
 
     /// <summary>
@@ -872,6 +1022,15 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
                     return (BindingSource.Query, ReadAttributeName(attribute) ?? property.Name, false);
                 case "UnambitiousFx.Synapse.Endpoints.FromHeaderAttribute":
                     return (BindingSource.Header, ReadHeaderName(attribute) ?? property.Name, false);
+
+                // Microsoft's own FromHeader is honoured too, for the same reason FromRoute, FromQuery
+                // and FromBody are: it is the attribute a reader already has in scope. Recognising
+                // three of the four and silently ignoring the fourth meant a property marked
+                // [FromHeader(Name = "If-Match")] from Microsoft.AspNetCore.Mvc fell through to the
+                // binding convention and read the *query string* under its property name — no header,
+                // no diagnostic. See docs/known-issues/062.
+                case "Microsoft.AspNetCore.Mvc.FromHeaderAttribute":
+                    return (BindingSource.Header, ReadAttributeName(attribute) ?? property.Name, false);
                 case "Microsoft.AspNetCore.Mvc.FromBodyAttribute":
                     return (BindingSource.Body, property.Name, false);
             }
@@ -936,6 +1095,50 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
         }
 
         return (type, type.NullableAnnotation == NullableAnnotation.Annotated);
+    }
+
+    /// <summary>
+    ///     Whether <paramref name="type" /> exposes the culture-aware
+    ///     <c>TryParse(string, IFormatProvider, out T)</c> — the shape <c>IParsable&lt;T&gt;</c>
+    ///     requires, and the one ASP.NET Core's own parameter binding uses so that a wire value never
+    ///     depends on the server's locale. Types offering only the two-argument overload (all SYNE012
+    ///     insists on) are still bound, through that overload.
+    /// </summary>
+    private static bool HasFormatProviderTryParse(ITypeSymbol type)
+    {
+        foreach (var member in type.GetMembers("TryParse"))
+        {
+            if (member is not IMethodSymbol { IsStatic: true, DeclaredAccessibility: Accessibility.Public } method)
+            {
+                continue;
+            }
+
+            if (method.Parameters.Length != 3)
+            {
+                continue;
+            }
+
+            var first = method.Parameters[0];
+            var second = method.Parameters[1];
+            var third = method.Parameters[2];
+
+            // Compared by name rather than by display string: the parameter is declared
+            // `IFormatProvider?`, so ToDisplayString() carries the nullable annotation and never
+            // matches "System.IFormatProvider".
+            if (first.Type.SpecialType == SpecialType.System_String &&
+                second.Type is INamedTypeSymbol
+                {
+                    Name: "IFormatProvider",
+                    ContainingNamespace: { Name: "System", ContainingNamespace.IsGlobalNamespace: true }
+                } &&
+                third.RefKind == RefKind.Out &&
+                SymbolEqualityComparer.Default.Equals(third.Type, type))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static bool HasTwoArgumentTryParse(ITypeSymbol type)
@@ -1493,7 +1696,13 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
         // limitation this creates; SYNE013 (Task 17), reported just below, is the diagnostic for it.
         // The resulting array is then re-ordered by bound-type name purely for deterministic emission
         // order.
-        var typeGroups = ordered.GroupBy(e => e.BoundTypeFullName, StringComparer.Ordinal).ToArray();
+        // Raw endpoints are registered and mapped like any other, but they have no generated binder,
+        // so they must not reach the grouping — an empty BoundTypeFullName would otherwise become a
+        // group of its own and emit a binder for nothing.
+        var typeGroups = ordered
+            .Where(e => e.Kind.HasGeneratedBinder())
+            .GroupBy(e => e.BoundTypeFullName, StringComparer.Ordinal)
+            .ToArray();
 
         ReportConflictingBindingShapes(context, typeGroups);
 
@@ -1546,6 +1755,67 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
     }
 
     /// <summary>
+    ///     SYNE008: the JSON-relevant types a low-level endpoint names in its own body — the type
+    ///     argument of a <c>BodyAsync&lt;T&gt;</c> read and of each
+    ///     <c>Accepts&lt;T&gt;</c>/<c>Produces&lt;T&gt;</c> declaration.
+    /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         Scans only invocations written lexically inside the endpoint class. A body read behind a
+    ///         helper method on another type is invisible here, and stays a runtime failure under Native
+    ///         AOT rather than a build warning — a deliberate limit, not an oversight: following calls
+    ///         across types would mean a whole-program walk on every keystroke, and the check exists to
+    ///         catch the ordinary case cheaply.
+    ///     </para>
+    ///     <para>
+    ///         Matched on the containing type's full name and the method name rather than on symbol
+    ///         identity, so it keeps working for the extension-method call syntax
+    ///         (<c>context.BodyAsync&lt;T&gt;()</c>) and the static form alike.
+    ///     </para>
+    /// </remarks>
+    private static EquatableArray<JsonCallSite> CollectJsonCallSites(ClassDeclarationSyntax classDeclaration,
+        SemanticModel semanticModel)
+    {
+        List<JsonCallSite>? callSites = null;
+
+        foreach (var invocation in classDeclaration.DescendantNodes().OfType<InvocationExpressionSyntax>())
+        {
+            if (semanticModel.GetSymbolInfo(invocation).Symbol is not IMethodSymbol method ||
+                method.TypeArguments.Length != 1)
+            {
+                continue;
+            }
+
+            var owner = method.ContainingType?.ToDisplayString();
+            var isTracked = (owner, method.Name) switch
+            {
+                ("UnambitiousFx.Synapse.Endpoints.Binding.HttpContextBindingExtensions", "BodyAsync") => true,
+                ("UnambitiousFx.Synapse.Endpoints.Builders.IRawEndpointBuilder", "Accepts") => true,
+                ("UnambitiousFx.Synapse.Endpoints.Builders.IRawEndpointBuilder", "Produces") => true,
+                _ => false
+            };
+
+            if (!isTracked)
+            {
+                continue;
+            }
+
+            var argument = method.TypeArguments[0];
+            if (!IsJsonCheckable(argument))
+            {
+                continue;
+            }
+
+            callSites ??= [];
+            callSites.Add(new JsonCallSite(
+                argument.ToDisplayString(),
+                LocationInfo.CreateFrom(invocation.GetLocation())));
+        }
+
+        return new EquatableArray<JsonCallSite>(callSites?.ToArray() ?? Array.Empty<JsonCallSite>());
+    }
+
+    /// <summary>
     ///     SYNE008: reports, once per distinct type absent from <paramref name="jsonContext" />'s
     ///     registrations, every <see cref="EndpointTarget.JsonRequestTypeName" /> and
     ///     <see cref="EndpointTarget.JsonResponseTypeName" /> across <paramref name="orderedEndpoints" />
@@ -1578,6 +1848,21 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
                     EndpointDiagnostics.MissingJsonSerializableRegistration,
                     endpoint.Location?.ToLocation() ?? Location.None,
                     candidate));
+            }
+
+            // A low-level endpoint's types come from its own call sites, so the diagnostic is anchored
+            // at the call rather than at the class declaration.
+            foreach (var callSite in endpoint.JsonCallSites)
+            {
+                if (registered.Contains(callSite.TypeName) || !alreadyReported.Add(callSite.TypeName))
+                {
+                    continue;
+                }
+
+                context.ReportDiagnostic(Diagnostic.Create(
+                    EndpointDiagnostics.MissingJsonSerializableRegistration,
+                    callSite.Location?.ToLocation() ?? endpoint.Location?.ToLocation() ?? Location.None,
+                    callSite.TypeName));
             }
         }
     }

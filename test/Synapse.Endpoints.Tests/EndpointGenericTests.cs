@@ -81,7 +81,7 @@ public sealed class EndpointGenericTests
     {
         public ValueTask<BindResult<FailingQuery>> BindAsync(HttpContext context)
         {
-            return ValueTask.FromResult(BindResult<FailingQuery>.Failure("'id' is not a valid Guid."));
+            return ValueTask.FromResult(BindResult<FailingQuery>.Failure("id", "is not a valid Guid."));
         }
     }
 }

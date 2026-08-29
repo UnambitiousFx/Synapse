@@ -5,6 +5,7 @@ using NSubstitute;
 using UnambitiousFx.Synapse.Abstractions;
 using UnambitiousFx.Synapse.AspNetCore.Http;
 using UnambitiousFx.Synapse.Endpoints.Binding;
+using UnambitiousFx.Synapse.Endpoints.Builders;
 
 namespace UnambitiousFx.Synapse.Endpoints.Tests;
 
@@ -133,6 +134,74 @@ public sealed class StreamEndpointTests
             yield return 1;
             await Task.Yield();
             yield return 2;
+        }
+    }
+
+    // The stream tier configures through IStreamEndpointBuilder, which is IEndpointBuilder minus the
+    // success-mapping methods. Those set a mapper this class never consults — a stream's status is
+    // committed before the first item — so they used to compile here and silently do nothing. Asserted
+    // by reflection so re-introducing one is a failing test rather than a returning trap. See
+    // docs/known-issues/064.
+    [Theory]
+    [InlineData("NoContent")]
+    [InlineData("StatusCode")]
+    [InlineData("Ok")]
+    [InlineData("Created")]
+    [InlineData("Accepted")]
+    public void StreamEndpointBuilder_OffersNoSuccessMapping(string member)
+    {
+        // Act
+        var members = typeof(IStreamEndpointBuilder).GetMembers().Select(m => m.Name).ToArray();
+
+        // Assert
+        Assert.DoesNotContain(member, members);
+    }
+
+    // What it does still offer, so the narrowing did not take anything useful with it.
+    [Theory]
+    [InlineData("Get")]
+    [InlineData("Post")]
+    [InlineData("Route")]
+    [InlineData("Tag")]
+    [InlineData("Summary")]
+    [InlineData("Description")]
+    [InlineData("Name")]
+    [InlineData("RequireAuthorization")]
+    [InlineData("AllowAnonymous")]
+    [InlineData("Raw")]
+    public void StreamEndpointBuilder_KeepsRoutingAndMetadata(string member)
+    {
+        // Act
+        var members = typeof(IStreamEndpointBuilder).GetMembers().Select(m => m.Name).ToArray();
+
+        // Assert
+        Assert.Contains(member, members);
+    }
+
+    // The new builder owns route resolution for this tier, so the "route declared in Configure" path
+    // has to keep working through it.
+    [Fact]
+    public void CreateDescriptor_ForAStreamEndpointDeclaringItsRouteInConfigure_ResolvesIt()
+    {
+        // Arrange
+        EndpointRegistry.RegisterBinder(new TickBinder());
+        EndpointRegistry.RegisterMetadata<ConfiguredStreamEndpoint>(
+            new EndpointMetadata([], string.Empty));
+
+        // Act
+        var descriptor = ((EndpointBase)new ConfiguredStreamEndpoint())
+            .CreateDescriptor(EndpointRegistry.GetMetadata<ConfiguredStreamEndpoint>());
+
+        // Assert
+        Assert.Equal("/computed-ticks", descriptor.Route);
+        Assert.Equal(["GET"], descriptor.HttpMethods);
+    }
+
+    private sealed class ConfiguredStreamEndpoint : StreamEndpoint<TickQuery, int>
+    {
+        public override void Configure(IStreamEndpointBuilder builder)
+        {
+            builder.Get("/computed-ticks").Tag("Ticks");
         }
     }
 

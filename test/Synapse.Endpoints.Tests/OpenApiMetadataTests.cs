@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Routing;
 using UnambitiousFx.Synapse.Abstractions;
 using UnambitiousFx.Synapse.Endpoints.Binding;
 using UnambitiousFx.Synapse.Endpoints.Builders;
+using UnambitiousFx.Synapse.Endpoints.Internal;
 
 namespace UnambitiousFx.Synapse.Endpoints.Tests;
 
@@ -52,7 +53,7 @@ public sealed class OpenApiMetadataTests
         Assert.Null(endpoint.Metadata.GetMetadata<IAcceptsMetadata>());
     }
 
-    // Pins the wider bodyless set. docs/docs/endpoints.mdx points at [HttpEndpoint("OPTIONS", …)] as
+    // Pins the wider bodyless set. docs/docs/endpoints/reference/base-classes.mdx points at [HttpEndpoint("OPTIONS", …)] as
     // the way to declare the verbs with no dedicated attribute, and neither OPTIONS nor TRACE carries
     // a request body — but both used to be treated as body-carrying, declaring Accepts for a body no
     // such request can send (and, on the generator side, emitting a read for it).
@@ -172,14 +173,22 @@ public sealed class OpenApiMetadataTests
         var endpoint = ((IEndpointRouteBuilder)app).DataSources
             .SelectMany(source => source.Endpoints)
             .Single();
-        var produces = endpoint.Metadata.OfType<IProducesResponseTypeMetadata>().ToArray();
-        Assert.Contains(produces, metadata => metadata.StatusCode == StatusCodes.Status204NoContent &&
-                                               metadata.Type is null);
+        // Asserted on the library's own metadata type rather than on every
+        // IProducesResponseTypeMetadata on the endpoint, because what the framework infers from the
+        // shape of the mapping lambda is target-framework-dependent: net9.0 adds a
+        // "200, System.Void, text/plain" entry of its own and net10.0 adds nothing. Filtering to
+        // ProducesResponseMetadata pins what this library declares, which is the thing under test.
+        var declared = endpoint.Metadata.OfType<ProducesResponseMetadata>().ToArray();
 
-        // Distinguished from the framework's own default "200, System.Void" entry by Type: ours for
-        // a no-response endpoint is null, the framework's inferred one is typeof(void).
-        Assert.DoesNotContain(produces, metadata => metadata.StatusCode == StatusCodes.Status200OK &&
-                                                     metadata.Type is null);
+        // Exactly one declaration, and it is the 204 — not a default 200.
+        var single = Assert.Single(declared);
+        Assert.Equal(StatusCodes.Status204NoContent, single.StatusCode);
+
+        // Described as void rather than null. Microsoft.AspNetCore.OpenApi skips a null-Type entry
+        // outright, so while the metadata was present the declared 204 never reached
+        // /openapi/v1.json — see docs/known-issues/051.
+        Assert.Equal(typeof(void), single.Type);
+        Assert.Empty(single.ContentTypes);
     }
 
     [Fact]
@@ -205,6 +214,113 @@ public sealed class OpenApiMetadataTests
     }
 
     private sealed record MetaQuery : IRequest<string>;
+
+    // A declarative mapper that writes no body must not declare one. NoContent() and StatusCode(int)
+    // set only the status code, so declaring typeof(TResponse) alongside them put a JSON schema on a
+    // response that never carries a body — invalid for a 204, and a client generator would model a
+    // return value that never arrives. See docs/known-issues/054.
+    [Theory]
+    [InlineData(true, StatusCodes.Status204NoContent)]
+    [InlineData(false, StatusCodes.Status304NotModified)]
+    public void CreateDescriptor_ForABodylessSuccessMapper_DeclaresNoResponseBody(bool noContent, int expected)
+    {
+        // Arrange
+        BodylessMapperEndpoint.UseNoContent = noContent;
+        EndpointRegistry.RegisterBinder(new BodylessMetaBinder());
+        EndpointRegistry.RegisterMetadata<BodylessMapperEndpoint>(
+            new EndpointMetadata(["GET"], "/meta-bodyless-mapper"));
+        var app = WebApplication.CreateSlimBuilder().Build();
+
+        // Act
+        app.MapEndpoint<BodylessMapperEndpoint>();
+
+        // Assert
+        var endpoint = ((IEndpointRouteBuilder)app).DataSources
+            .SelectMany(source => source.Endpoints)
+            .Single();
+        var declared = endpoint.Metadata.OfType<ProducesResponseMetadata>().Single();
+
+        Assert.Equal(expected, declared.StatusCode);
+        Assert.Equal(typeof(void), declared.Type);
+        Assert.Empty(declared.ContentTypes);
+    }
+
+    // The counterpart: a mapper that does write a body still declares it, so the fix above did not
+    // simply stop declaring response types.
+    [Fact]
+    public void CreateDescriptor_ForASuccessMapperWithABody_StillDeclaresTheResponseType()
+    {
+        // Arrange
+        EndpointRegistry.RegisterBinder(new BodylessMetaBinder());
+        EndpointRegistry.RegisterMetadata<CreatedMapperEndpoint>(
+            new EndpointMetadata(["GET"], "/meta-created-mapper"));
+        var app = WebApplication.CreateSlimBuilder().Build();
+
+        // Act
+        app.MapEndpoint<CreatedMapperEndpoint>();
+
+        // Assert
+        var endpoint = ((IEndpointRouteBuilder)app).DataSources
+            .SelectMany(source => source.Endpoints)
+            .Single();
+        var declared = endpoint.Metadata.OfType<ProducesResponseMetadata>().Single();
+
+        Assert.Equal(StatusCodes.Status201Created, declared.StatusCode);
+        Assert.Equal(typeof(string), declared.Type);
+        Assert.Equal(["application/json"], declared.ContentTypes);
+    }
+
+    // Binding failures answer with HttpValidationProblemDetails — a problem document plus an errors
+    // dictionary — since the accumulating binders landed. The declared 400 was still a plain
+    // ProblemDetails, so the document described a narrower body than the endpoint sends. See
+    // docs/known-issues/055.
+    [Fact]
+    public void CreateDescriptor_DeclaresTheValidationProblemItActuallySendsForA400()
+    {
+        // Arrange
+        EndpointRegistry.RegisterBinder(new BodylessMetaBinder());
+        EndpointRegistry.RegisterMetadata<BodylessMetaEndpoint>(
+            new EndpointMetadata(["GET"], "/meta-problem-shape"));
+        var app = WebApplication.CreateSlimBuilder().Build();
+
+        // Act
+        app.MapEndpoint<BodylessMetaEndpoint>();
+
+        // Assert
+        var endpoint = ((IEndpointRouteBuilder)app).DataSources
+            .SelectMany(source => source.Endpoints)
+            .Single();
+        var badRequest = endpoint.Metadata.OfType<IProducesResponseTypeMetadata>()
+            .Single(metadata => metadata.StatusCode == StatusCodes.Status400BadRequest);
+
+        Assert.Equal(typeof(HttpValidationProblemDetails), badRequest.Type);
+        Assert.Equal(["application/problem+json"], badRequest.ContentTypes);
+    }
+
+    private sealed class BodylessMapperEndpoint : Endpoint<BodylessMetaQuery, string>
+    {
+        internal static bool UseNoContent { get; set; }
+
+        public override void Configure(IEndpointBuilder<string> builder)
+        {
+            if (UseNoContent)
+            {
+                builder.NoContent();
+            }
+            else
+            {
+                builder.StatusCode(StatusCodes.Status304NotModified);
+            }
+        }
+    }
+
+    private sealed class CreatedMapperEndpoint : Endpoint<BodylessMetaQuery, string>
+    {
+        public override void Configure(IEndpointBuilder<string> builder)
+        {
+            builder.Created(value => $"/things/{value}");
+        }
+    }
 
     private sealed class MetaEndpoint : Endpoint<MetaQuery, string>;
 

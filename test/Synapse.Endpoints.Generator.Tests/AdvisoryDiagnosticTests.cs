@@ -781,4 +781,249 @@ public sealed class AdvisoryDiagnosticTests
         Assert.Contains(diagnostics, d => d.Id == "SYNE003");
         GeneratorHarness.AssertGeneratedCompiles(source);
     }
+
+    // SYNE008 for the low level. A high-level endpoint's JSON-relevant types are its base class's type
+    // arguments; a low-level endpoint has none, so the same types appear only as type arguments at call
+    // sites inside the class. Without this the AOT guarantee the library sells would hold for one level
+    // and not the other, and the failure mode is a runtime 500 rather than a build warning.
+    [Fact]
+    public void Generate_WhenARawEndpointReadsABodyTypeMissingFromTheJsonContext_ReportsSyne008()
+    {
+        // Arrange
+        const string source = """
+                              using System.Text.Json.Serialization;
+                              using System.Threading;
+                              using System.Threading.Tasks;
+                              using Microsoft.AspNetCore.Http;
+                              using UnambitiousFx.Synapse.Endpoints;
+                              using UnambitiousFx.Synapse.Endpoints.Binding;
+
+                              namespace TestNs;
+
+                              public sealed record WebhookDto(string Kind);
+                              public sealed record RegisteredDto(string Name);
+
+                              [Post("/webhooks")]
+                              public sealed class WebhookEndpoint : RawEndpoint
+                              {
+                                  public override async ValueTask<IResult> HandleAsync(HttpContext context, CancellationToken cancellationToken)
+                                  {
+                                      var body = await context.BodyAsync<WebhookDto>(cancellationToken);
+                                      return body.IsSuccess ? TypedResults.NoContent() : body.Problem();
+                                  }
+                              }
+
+                              [JsonSerializable(typeof(RegisteredDto))]
+                              internal sealed partial class AppJsonContext : JsonSerializerContext;
+                              """;
+
+        // Act
+        var diagnostics = GeneratorHarness.GetDiagnostics(source);
+
+        // Assert
+        var diagnostic = Assert.Single(diagnostics, d => d.Id == "SYNE008");
+        Assert.Contains("WebhookDto", diagnostic.GetMessage());
+    }
+
+    [Fact]
+    public void Generate_WhenARawEndpointsBodyTypeIsRegistered_ReportsNothing()
+    {
+        // Arrange
+        const string source = """
+                              using System.Text.Json.Serialization;
+                              using System.Threading;
+                              using System.Threading.Tasks;
+                              using Microsoft.AspNetCore.Http;
+                              using UnambitiousFx.Synapse.Endpoints;
+                              using UnambitiousFx.Synapse.Endpoints.Binding;
+
+                              namespace TestNs;
+
+                              public sealed record WebhookDto(string Kind);
+
+                              [Post("/webhooks")]
+                              public sealed class WebhookEndpoint : RawEndpoint
+                              {
+                                  public override async ValueTask<IResult> HandleAsync(HttpContext context, CancellationToken cancellationToken)
+                                  {
+                                      var body = await context.BodyAsync<WebhookDto>(cancellationToken);
+                                      return body.IsSuccess ? TypedResults.NoContent() : body.Problem();
+                                  }
+                              }
+
+                              [JsonSerializable(typeof(WebhookDto))]
+                              internal sealed partial class AppJsonContext : JsonSerializerContext;
+                              """;
+
+        // Act
+        var diagnostics = GeneratorHarness.GetDiagnostics(source);
+
+        // Assert
+        Assert.DoesNotContain(diagnostics, d => d.Id == "SYNE008");
+    }
+
+    [Fact]
+    public void Generate_WhenARawEndpointDeclaresAnUnregisteredAcceptsOrProducesType_ReportsSyne008()
+    {
+        // Arrange — what the endpoint declares in Configure IS its wire contract, so those type
+        // arguments are exactly as JSON-relevant as a high-level endpoint's type parameters.
+        const string source = """
+                              using System.Text.Json.Serialization;
+                              using System.Threading;
+                              using System.Threading.Tasks;
+                              using Microsoft.AspNetCore.Http;
+                              using UnambitiousFx.Synapse.Endpoints;
+                              using UnambitiousFx.Synapse.Endpoints.Builders;
+
+                              namespace TestNs;
+
+                              public sealed record InboundDto(string Kind);
+                              public sealed record OutboundDto(string Name);
+                              public sealed record RegisteredDto(string Name);
+
+                              [Post("/declared")]
+                              public sealed class DeclaringEndpoint : RawEndpoint
+                              {
+                                  public override void Configure(IRawEndpointBuilder builder)
+                                      => builder.Accepts<InboundDto>().Produces<OutboundDto>();
+
+                                  public override ValueTask<IResult> HandleAsync(HttpContext context, CancellationToken cancellationToken)
+                                      => ValueTask.FromResult(TypedResults.NoContent() as IResult);
+                              }
+
+                              [JsonSerializable(typeof(RegisteredDto))]
+                              internal sealed partial class AppJsonContext : JsonSerializerContext;
+                              """;
+
+        // Act
+        var diagnostics = GeneratorHarness.GetDiagnostics(source);
+
+        // Assert
+        var reported = diagnostics.Where(d => d.Id == "SYNE008").Select(d => d.GetMessage()).ToArray();
+        Assert.Equal(2, reported.Length);
+        Assert.Contains(reported, message => message.Contains("InboundDto", StringComparison.Ordinal));
+        Assert.Contains(reported, message => message.Contains("OutboundDto", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Generate_WhenARawEndpointReadsAFrameworkType_ReportsNothing()
+    {
+        // Arrange
+        const string source = """
+                              using System.Text.Json.Serialization;
+                              using System.Threading;
+                              using System.Threading.Tasks;
+                              using Microsoft.AspNetCore.Http;
+                              using UnambitiousFx.Synapse.Endpoints;
+                              using UnambitiousFx.Synapse.Endpoints.Binding;
+
+                              namespace TestNs;
+
+                              public sealed record RegisteredDto(string Name);
+
+                              [Post("/strings")]
+                              public sealed class StringEndpoint : RawEndpoint
+                              {
+                                  public override async ValueTask<IResult> HandleAsync(HttpContext context, CancellationToken cancellationToken)
+                                  {
+                                      var body = await context.BodyAsync<string>(cancellationToken);
+                                      return body.IsSuccess ? TypedResults.NoContent() : body.Problem();
+                                  }
+                              }
+
+                              [JsonSerializable(typeof(RegisteredDto))]
+                              internal sealed partial class AppJsonContext : JsonSerializerContext;
+                              """;
+
+        // Act
+        var diagnostics = GeneratorHarness.GetDiagnostics(source);
+
+        // Assert
+        Assert.DoesNotContain(diagnostics, d => d.Id == "SYNE008");
+    }
+
+    // The documented limit of the call-site scan: only invocations written inside the endpoint class
+    // are seen. Following calls across types would mean a whole-program walk on every keystroke, so
+    // this shape stays a runtime failure under AOT. Pinned so the limitation is visible rather than
+    // discovered.
+    [Fact]
+    public void Generate_WhenARawEndpointReadsItsBodyThroughAHelperOnAnotherType_ReportsNothing()
+    {
+        // Arrange
+        const string source = """
+                              using System.Text.Json.Serialization;
+                              using System.Threading;
+                              using System.Threading.Tasks;
+                              using Microsoft.AspNetCore.Http;
+                              using UnambitiousFx.Synapse.Endpoints;
+                              using UnambitiousFx.Synapse.Endpoints.Binding;
+
+                              namespace TestNs;
+
+                              public sealed record WebhookDto(string Kind);
+                              public sealed record RegisteredDto(string Name);
+
+                              internal static class BodyReader
+                              {
+                                  internal static ValueTask<BindResult<WebhookDto>> ReadAsync(HttpContext context)
+                                      => context.BodyAsync<WebhookDto>();
+                              }
+
+                              [Post("/webhooks")]
+                              public sealed class WebhookEndpoint : RawEndpoint
+                              {
+                                  public override async ValueTask<IResult> HandleAsync(HttpContext context, CancellationToken cancellationToken)
+                                  {
+                                      var body = await BodyReader.ReadAsync(context);
+                                      return body.IsSuccess ? TypedResults.NoContent() : body.Problem();
+                                  }
+                              }
+
+                              [JsonSerializable(typeof(RegisteredDto))]
+                              internal sealed partial class AppJsonContext : JsonSerializerContext;
+                              """;
+
+        // Act
+        var diagnostics = GeneratorHarness.GetDiagnostics(source);
+
+        // Assert
+        Assert.DoesNotContain(diagnostics, d => d.Id == "SYNE008");
+    }
+
+    [Fact]
+    public void Generate_WhenAHandBoundEndpointsResponseTypeIsMissing_ReportsSyne008()
+    {
+        // Arrange — the response of a RawEndpoint<TRequest, TResponse> is serialized by the library, so
+        // it is known from the type arguments; the request is not, because BindAsync is hand-written.
+        const string source = """
+                              using System.Text.Json.Serialization;
+                              using System.Threading.Tasks;
+                              using Microsoft.AspNetCore.Http;
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+                              using UnambitiousFx.Synapse.Endpoints.Binding;
+
+                              namespace TestNs;
+
+                              public sealed record ThingDto(string Name);
+                              public sealed record GetThingQuery : IRequest<ThingDto>;
+
+                              [Post("/things")]
+                              public sealed class GetThingEndpoint : RawEndpoint<GetThingQuery, ThingDto>
+                              {
+                                  public override ValueTask<BindResult<GetThingQuery>> BindAsync(HttpContext context)
+                                      => ValueTask.FromResult(BindResult<GetThingQuery>.Success(new GetThingQuery()));
+                              }
+
+                              [JsonSerializable(typeof(GetThingQuery))]
+                              internal sealed partial class AppJsonContext : JsonSerializerContext;
+                              """;
+
+        // Act
+        var diagnostics = GeneratorHarness.GetDiagnostics(source);
+
+        // Assert
+        var diagnostic = Assert.Single(diagnostics, d => d.Id == "SYNE008");
+        Assert.Contains("ThingDto", diagnostic.GetMessage());
+    }
 }

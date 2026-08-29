@@ -136,7 +136,7 @@ internal static class EndpointDiagnostics
     internal static readonly DiagnosticDescriptor UnparsableBoundPropertyType = new(
         "SYNE012",
         "Bound property type cannot be parsed from a string",
-        "Property '{0}' on '{1}' has type '{2}', which is not string, not an enum, and has no public static TryParse(string, out {2}) method, so its bound value cannot be parsed. Add a TryParse(string, out {2}) method to '{2}', or change the type of '{0}'.",
+        "Property '{0}' on '{1}' has type '{2}', which is not string, not an enum, and has no public static TryParse(string, out {2}) or TryParse(string, IFormatProvider, out {2}) method, so its bound value cannot be parsed. Add either overload to '{2}' — implementing IParsable<{2}> supplies the second — or change the type of '{0}'.",
         Category,
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);

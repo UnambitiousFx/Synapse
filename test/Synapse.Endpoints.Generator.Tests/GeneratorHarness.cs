@@ -43,6 +43,43 @@ internal static class GeneratorHarness
                ?? throw new InvalidOperationException($"The generator did not emit '{fileName}'.");
     }
 
+    /// <summary>
+    ///     Same as <see cref="GetFile" />, but with additional metadata references, so a test can put
+    ///     the message type in a referenced assembly — the case that decides whether an
+    ///     <c>internal</c> constructor is actually callable from the generated binder.
+    /// </summary>
+    internal static string GetFileWithReferences(string source, string fileName,
+        params MetadataReference[] extraReferences)
+    {
+        var driver = CSharpGeneratorDriver.Create(new EndpointsGenerator());
+        var result = driver.RunGenerators(CreateCompilation(source).AddReferences(extraReferences))
+            .GetRunResult();
+        var tree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.EndsWith(fileName, StringComparison.Ordinal));
+
+        return tree?.ToString()
+               ?? throw new InvalidOperationException($"The generator did not emit '{fileName}'.");
+    }
+
+    /// <summary>
+    ///     Same as <see cref="AssertGeneratedCompiles(string)" />, but with additional metadata
+    ///     references.
+    /// </summary>
+    internal static void AssertGeneratedCompilesWithReferences(string source,
+        params MetadataReference[] extraReferences)
+    {
+        var compilation = CreateCompilation(source).AddReferences(extraReferences);
+        var driver = CSharpGeneratorDriver.Create(new EndpointsGenerator());
+        driver.RunGeneratorsAndUpdateCompilation(compilation, out var updated, out _);
+
+        var errors = updated.GetDiagnostics()
+            .Where(d => d.Severity == DiagnosticSeverity.Error)
+            .ToArray();
+
+        Assert.True(errors.Length == 0,
+            "Generated code should compile, but got: " + string.Join("; ", errors.Select(e => e.ToString())));
+    }
+
     internal static ImmutableArray<Diagnostic> GetDiagnostics(string source)
     {
         var (diagnostics, _) = Run(source, optionsProvider: null);

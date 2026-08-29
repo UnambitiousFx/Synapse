@@ -1,10 +1,6 @@
-using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.DependencyInjection;
 using UnambitiousFx.Synapse.Abstractions;
-using UnambitiousFx.Synapse.AspNetCore.Http;
 using UnambitiousFx.Synapse.Endpoints.Binding;
-using UnambitiousFx.Synapse.Endpoints.Builders;
 using UnambitiousFx.Synapse.Endpoints.Internal;
 
 namespace UnambitiousFx.Synapse.Endpoints;
@@ -17,86 +13,47 @@ namespace UnambitiousFx.Synapse.Endpoints;
 /// <typeparam name="TRequest">The command or query, which doubles as the HTTP request contract.</typeparam>
 /// <typeparam name="TResponse">The response type.</typeparam>
 /// <remarks>
-///     Endpoints are stateless singletons: one instance is created at startup, <c>Configure</c>
-///     runs once, and the same instance serves every request. Constructor injection is therefore
-///     unavailable by design — take what you need from the <see cref="HttpContext" /> passed to
-///     <see cref="OnSuccess" />.
+///     <para>
+///         The high level, and the one to reach for by default: a route attribute and a class
+///         declaration are usually the whole endpoint. The request is bound by a binder the analyzer
+///         generates at compile time, with no reflection and nothing to write by hand.
+///     </para>
+///     <para>
+///         This is <see cref="RawEndpoint{TRequest,TResponse}" /> with its binding supplied. Everything
+///         else — <c>Configure</c>, <c>OnSuccess</c>, dispatch, failure mapping, the OpenAPI metadata —
+///         is inherited unchanged, so the two levels cannot behave differently. If the generated
+///         binding is not what you need, derive from that class instead and write
+///         <c>BindAsync</c> yourself; nothing else about the endpoint changes.
+///     </para>
+///     <para>
+///         Endpoints are stateless singletons: one instance is created at startup, <c>Configure</c>
+///         runs once, and the same instance serves every request. Constructor injection is therefore
+///         unavailable by design — take what you need from the <see cref="HttpContext" /> passed to
+///         <c>OnSuccess</c>.
+///     </para>
 /// </remarks>
-public abstract class Endpoint<TRequest, TResponse> : EndpointBase
+public abstract class Endpoint<TRequest, TResponse> : RawEndpoint<TRequest, TResponse>
     where TRequest : IRequest<TResponse>
     where TResponse : notnull
 {
-    /// <summary>Configures the endpoint. Called once at startup.</summary>
-    /// <param name="builder">The endpoint builder.</param>
-    public virtual void Configure(IEndpointBuilder<TResponse> builder)
+    private IEndpointBinder<TRequest>? _binder;
+
+    /// <inheritdoc />
+    /// <remarks>
+    ///     Sealed: the generated binder is what makes this the high level. Override the binding by
+    ///     deriving from <see cref="RawEndpoint{TRequest,TResponse}" /> instead.
+    /// </remarks>
+    public sealed override ValueTask<BindResult<TRequest>> BindAsync(HttpContext context)
     {
+        return Mapped(_binder).BindAsync(context);
     }
 
-    /// <summary>
-    ///     Maps a successful response to an HTTP result. Override for full control; prefer the
-    ///     declarative methods on <see cref="IEndpointBuilder{TResponse}" /> where they suffice,
-    ///     because those also produce accurate OpenAPI metadata.
-    /// </summary>
-    /// <param name="response">The handler's response.</param>
-    /// <param name="context">The HTTP context.</param>
-    /// <returns>The HTTP result to write.</returns>
-    public virtual IResult OnSuccess(TResponse response,
-        HttpContext context)
+    internal sealed override RawEndpointPlan CreatePlan(EndpointMetadata metadata)
     {
-        return TypedResults.Ok(response);
-    }
-
-    internal override EndpointDescriptor CreateDescriptor(EndpointMetadata metadata)
-    {
-        var builder = new EndpointBuilder<TResponse>(metadata);
-        Configure(builder);
-        var configuration = builder.Build();
-        var binder = EndpointRegistry.GetBinder<TRequest>();
-
-        return new EndpointDescriptor
-        {
-            Route = configuration.Route,
-            HttpMethods = configuration.HttpMethods,
-            ApplyMetadata = handlerBuilder =>
-            {
-                // Declared explicitly because a RequestDelegate-shaped endpoint infers nothing.
-                if (!HttpMethodHelpers.AllVerbsAreBodyless(configuration.HttpMethods))
-                {
-                    handlerBuilder.Accepts<TRequest>("application/json");
-                }
-
-                handlerBuilder.WithMetadata(
-                    new ProducesResponseMetadata(SuccessStatusCode(configuration), typeof(TResponse)));
-                handlerBuilder.ProducesProblem(StatusCodes.Status400BadRequest);
-                configuration.ApplyMetadata(handlerBuilder);
-            },
-            InvokeAsync = async context =>
-            {
-                var bound = await binder.BindAsync(context);
-                if (!bound.IsSuccess)
-                {
-                    await TypedResults.Problem(bound.Error, statusCode: StatusCodes.Status400BadRequest)
-                        .ExecuteAsync(context);
-                    return;
-                }
-
-                var invoker = context.RequestServices.GetRequiredService<IHttpInvoker>();
-
-                // Failures flow through the registered IFailureHttpMapper, unchanged.
-                var result = await invoker.InvokeAsync(
-                    bound.Value!,
-                    response => configuration.SuccessMapper is not null
-                        ? configuration.SuccessMapper(response)
-                        : OnSuccess(response, context),
-                    context.RequestAborted);
-
-                await result.ExecuteAsync(context);
-            }
-        };
-    }
-
-    private static int SuccessStatusCode(EndpointConfiguration<TResponse> configuration)
-    {
-        return configuration.DeclaredSuccessStatusCode ?? StatusCodes.Status200OK;
+        // Resolved after the plan, matching the order the route and binder were resolved in before:
+        // an endpoint missing both reports its missing route first, which is the more useful error.
+        var plan = base.CreatePlan(metadata);
+        _binder = EndpointRegistry.GetBinder<TRequest>();
+        return plan;
     }
 }

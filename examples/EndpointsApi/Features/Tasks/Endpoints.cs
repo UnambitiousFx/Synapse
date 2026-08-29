@@ -43,7 +43,8 @@ public sealed class DeleteTaskEndpoint : Endpoint<DeleteTaskCommand>;
 
 /// <summary>
 ///     Searches tasks by title. Declares its route in <c>Configure</c> rather than through a route
-///     attribute — the "computed route" escape hatch documented in <c>docs/docs/endpoints.mdx</c>.
+///     attribute — the "computed route" escape hatch documented in
+///     <c>docs/docs/endpoints/reference/escape-hatches.mdx</c>.
 ///     Kept in the example precisely because that shape used to be broken: a route declared only in
 ///     <c>Configure</c> left the generator with no verb string to reason about, so it emitted a
 ///     request-body read for what is in fact a <c>GET</c> and every request 500'd. See

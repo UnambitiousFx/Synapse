@@ -59,11 +59,12 @@ public sealed class BindingHelpersTests
         var context = CreateContext("{not json");
 
         // Act
-        var result = await BindingHelpers.ReadJsonBodyAsync<BindingHelpersTestPayload>(context);
+        var result = await BindingHelpers.ReadJsonBodyAsync<BindingHelpersTestPayload>(
+            context, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.False(result.IsSuccess);
-        Assert.Contains("not valid JSON", result.Error);
+        Assert.Contains("not valid JSON", BodyError(result));
     }
 
     [Fact]
@@ -75,11 +76,12 @@ public sealed class BindingHelpersTests
         var context = CreateContext("null");
 
         // Act
-        var result = await BindingHelpers.ReadJsonBodyAsync<BindingHelpersTestPayload>(context);
+        var result = await BindingHelpers.ReadJsonBodyAsync<BindingHelpersTestPayload>(
+            context, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.False(result.IsSuccess);
-        Assert.Contains("required", result.Error);
+        Assert.Contains("required", BodyError(result));
     }
 
     [Fact]
@@ -93,11 +95,12 @@ public sealed class BindingHelpersTests
         var context = CreateContext("");
 
         // Act
-        var result = await BindingHelpers.ReadJsonBodyAsync<BindingHelpersTestPayload>(context);
+        var result = await BindingHelpers.ReadJsonBodyAsync<BindingHelpersTestPayload>(
+            context, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.False(result.IsSuccess);
-        Assert.Contains("required", result.Error);
+        Assert.Contains("required", BodyError(result));
     }
 
     [Fact]
@@ -113,11 +116,12 @@ public sealed class BindingHelpersTests
         var context = CreateContext("", omitContentLength: true);
 
         // Act
-        var result = await BindingHelpers.ReadJsonBodyAsync<BindingHelpersTestPayload>(context);
+        var result = await BindingHelpers.ReadJsonBodyAsync<BindingHelpersTestPayload>(
+            context, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.False(result.IsSuccess);
-        Assert.NotNull(result.Error);
+        Assert.NotNull(BodyError(result));
     }
 
     [Fact]
@@ -131,11 +135,12 @@ public sealed class BindingHelpersTests
         var context = CreateContext("""{"name":"x"}""", contentType: null);
 
         // Act
-        var result = await BindingHelpers.ReadJsonBodyAsync<BindingHelpersTestPayload>(context);
+        var result = await BindingHelpers.ReadJsonBodyAsync<BindingHelpersTestPayload>(
+            context, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.False(result.IsSuccess);
-        Assert.Contains("JSON", result.Error);
+        Assert.Contains("JSON", BodyError(result));
     }
 
     [Fact]
@@ -146,11 +151,12 @@ public sealed class BindingHelpersTests
         var context = CreateContext("""{"name":"x"}""", contentType: "text/plain");
 
         // Act
-        var result = await BindingHelpers.ReadJsonBodyAsync<BindingHelpersTestPayload>(context);
+        var result = await BindingHelpers.ReadJsonBodyAsync<BindingHelpersTestPayload>(
+            context, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.False(result.IsSuccess);
-        Assert.Contains("text/plain", result.Error);
+        Assert.Contains("text/plain", BodyError(result));
     }
 
     [Theory]
@@ -164,10 +170,11 @@ public sealed class BindingHelpersTests
         var context = CreateContext("""{"name":"kept"}""", contentType: contentType);
 
         // Act
-        var result = await BindingHelpers.ReadJsonBodyAsync<BindingHelpersTestPayload>(context);
+        var result = await BindingHelpers.ReadJsonBodyAsync<BindingHelpersTestPayload>(
+            context, TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.True(result.IsSuccess, result.Error);
+        Assert.True(result.IsSuccess, BodyError(result));
         Assert.Equal("kept", result.Value!.Name);
     }
 
@@ -191,6 +198,18 @@ public sealed class BindingHelpersTests
             }
         };
     }
+
+    /// <summary>
+    ///     The body failure message. Body problems are reported under the <c>body</c> key rather than
+    ///     as a flat detail string, so that route and query failures can accumulate alongside each other.
+    /// </summary>
+    private static string? BodyError<T>(BindResult<T> result)
+    {
+        return result.Errors is null
+            ? null
+            : string.Join(" ", result.Errors[BindingHelpers.BodyField]);
+    }
+
 }
 
 internal sealed record BindingHelpersTestPayload(string Name);

@@ -3,10 +3,61 @@ namespace UnambitiousFx.Synapse.Endpoints.Generator.Model;
 /// <summary>Which base class an endpoint derives from.</summary>
 internal enum EndpointKind
 {
+    /// <summary><c>Endpoint&lt;TRequest&gt;</c> — generated binder, no response body.</summary>
     Void,
+
+    /// <summary><c>Endpoint&lt;TRequest, TResponse&gt;</c> — generated binder, response body.</summary>
     Value,
+
+    /// <summary><c>MappedEndpoint&lt;...&gt;</c> — generated binder over the wire DTO.</summary>
     Mapped,
-    Stream
+
+    /// <summary><c>StreamEndpoint&lt;TRequest, TItem&gt;</c> — generated binder, streamed body.</summary>
+    Stream,
+
+    /// <summary><c>RawEndpoint</c> — the free-form low level; binds nothing, returns its own result.</summary>
+    Raw,
+
+    /// <summary><c>RawEndpoint&lt;TRequest&gt;</c> — hand-written binding, no response body.</summary>
+    RawVoid,
+
+    /// <summary><c>RawEndpoint&lt;TRequest, TResponse&gt;</c> — hand-written binding, response body.</summary>
+    RawValue
+}
+
+/// <summary>Which generator behaviours apply to each endpoint kind.</summary>
+internal static class EndpointKindExtensions
+{
+    /// <summary>
+    ///     Whether the analyzer generates a binder for this kind, and therefore whether the
+    ///     binding diagnostics (SYNE001, SYNE002, SYNE007, SYNE011–SYNE014) have anything to say
+    ///     about it.
+    /// </summary>
+    /// <remarks>
+    ///     The low level exists precisely so that binding can be written by hand:
+    ///     <see cref="EndpointKind.Raw" /> binds nothing at all, and the two
+    ///     <c>RawEndpoint&lt;…&gt;</c> kinds supply their own <c>BindAsync</c>. Reporting a binding
+    ///     diagnostic against code the generator did not write would be a false positive every time.
+    /// </remarks>
+    internal static bool HasGeneratedBinder(this EndpointKind kind)
+    {
+        return kind is EndpointKind.Void or EndpointKind.Value or EndpointKind.Mapped or EndpointKind.Stream;
+    }
+
+    /// <summary>
+    ///     Whether the base class knows the type of the message this endpoint dispatches, so the
+    ///     diagnostics about dispatch and success mapping (SYNE003, SYNE005) apply.
+    /// </summary>
+    internal static bool DispatchesKnownMessage(this EndpointKind kind)
+    {
+        return kind is EndpointKind.Void or EndpointKind.Value or EndpointKind.RawVoid or EndpointKind.RawValue;
+    }
+
+    /// <summary>Whether this kind returns a single response value, so SYNE003 applies.</summary>
+    internal static bool ReturnsValue(this EndpointKind kind)
+    {
+        return kind is EndpointKind.Value or EndpointKind.RawValue;
+    }
 }
 
 /// <summary>
@@ -35,7 +86,8 @@ internal readonly record struct EndpointTarget
         bool hasParameterlessConstructor,
         EquatableArray<ConstructorParameterModel> primaryConstructorParameters,
         string? jsonRequestTypeName,
-        string? jsonResponseTypeName)
+        string? jsonResponseTypeName,
+        EquatableArray<JsonCallSite> jsonCallSites)
     {
         EndpointFullName = endpointFullName;
         BoundTypeFullName = boundTypeFullName;
@@ -49,6 +101,7 @@ internal readonly record struct EndpointTarget
         PrimaryConstructorParameters = primaryConstructorParameters;
         JsonRequestTypeName = jsonRequestTypeName;
         JsonResponseTypeName = jsonResponseTypeName;
+        JsonCallSites = jsonCallSites;
     }
 
     /// <summary>Fully-qualified name of the endpoint class.</summary>
@@ -132,4 +185,11 @@ internal readonly record struct EndpointTarget
     ///     primitive/framework scalar type, which needs no registration.
     /// </summary>
     public string? JsonResponseTypeName { get; }
+
+    /// <summary>
+    ///     SYNE008: the types this endpoint names at its own call sites — a <c>BodyAsync&lt;T&gt;</c>
+    ///     read, or an <c>Accepts&lt;T&gt;</c>/<c>Produces&lt;T&gt;</c> declaration. Populated only for
+    ///     the low-level kinds, whose JSON-relevant types cannot be read off a base class.
+    /// </summary>
+    public EquatableArray<JsonCallSite> JsonCallSites { get; }
 }

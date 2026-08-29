@@ -7,26 +7,20 @@ namespace UnambitiousFx.Synapse.Endpoints.Builders;
 /// <typeparam name="TResponse">The response type.</typeparam>
 internal sealed class EndpointBuilder<TResponse> : IEndpointBuilder<TResponse>
 {
-    private readonly List<Action<RouteHandlerBuilder>> _metadata = [];
-    private readonly EndpointMetadata _declared;
-    private string? _route;
-    private string[]? _httpMethods;
+    private readonly EndpointBuilderCore _core;
     private Func<TResponse, IResult>? _successMapper;
     private int? _declaredSuccessStatusCode;
+    private bool _successResponseHasBody = true;
 
     internal EndpointBuilder(EndpointMetadata declared)
     {
-        _declared = declared;
+        _core = new EndpointBuilderCore(declared);
     }
 
     /// <inheritdoc cref="IEndpointBuilder{TResponse}.Route" />
     public IEndpointBuilder<TResponse> Route(string method, string template)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(method);
-        ArgumentException.ThrowIfNullOrWhiteSpace(template);
-
-        _httpMethods = [method.ToUpperInvariant()];
-        _route = template;
+        _core.Route(method, template);
         return this;
     }
 
@@ -63,35 +57,35 @@ internal sealed class EndpointBuilder<TResponse> : IEndpointBuilder<TResponse>
     /// <inheritdoc cref="IEndpointBuilder{TResponse}.Tag" />
     public IEndpointBuilder<TResponse> Tag(params string[] tags)
     {
-        _metadata.Add(builder => builder.WithTags(tags));
+        _core.AddMetadata(builder => builder.WithTags(tags));
         return this;
     }
 
     /// <inheritdoc cref="IEndpointBuilder{TResponse}.Summary" />
     public IEndpointBuilder<TResponse> Summary(string summary)
     {
-        _metadata.Add(builder => builder.WithSummary(summary));
+        _core.AddMetadata(builder => builder.WithSummary(summary));
         return this;
     }
 
     /// <inheritdoc cref="IEndpointBuilder{TResponse}.Description" />
     public IEndpointBuilder<TResponse> Description(string description)
     {
-        _metadata.Add(builder => builder.WithDescription(description));
+        _core.AddMetadata(builder => builder.WithDescription(description));
         return this;
     }
 
     /// <inheritdoc cref="IEndpointBuilder{TResponse}.Name" />
     public IEndpointBuilder<TResponse> Name(string name)
     {
-        _metadata.Add(builder => builder.WithName(name));
+        _core.AddMetadata(builder => builder.WithName(name));
         return this;
     }
 
     /// <inheritdoc cref="IEndpointBuilder{TResponse}.RequireAuthorization" />
     public IEndpointBuilder<TResponse> RequireAuthorization(params string[] policies)
     {
-        _metadata.Add(builder =>
+        _core.AddMetadata(builder =>
         {
             if (policies.Length == 0)
             {
@@ -108,7 +102,7 @@ internal sealed class EndpointBuilder<TResponse> : IEndpointBuilder<TResponse>
     /// <inheritdoc cref="IEndpointBuilder{TResponse}.AllowAnonymous" />
     public IEndpointBuilder<TResponse> AllowAnonymous()
     {
-        _metadata.Add(builder => builder.AllowAnonymous());
+        _core.AddMetadata(builder => builder.AllowAnonymous());
         return this;
     }
 
@@ -117,22 +111,25 @@ internal sealed class EndpointBuilder<TResponse> : IEndpointBuilder<TResponse>
     {
         _successMapper = _ => TypedResults.NoContent();
         _declaredSuccessStatusCode = StatusCodes.Status204NoContent;
+        _successResponseHasBody = false;
         return this;
     }
 
     /// <inheritdoc cref="IEndpointBuilder{TResponse}.StatusCode" />
     public IEndpointBuilder<TResponse> StatusCode(int statusCode)
     {
+        // TypedResults.StatusCode writes the status line and nothing else, so whatever TResponse is,
+        // this response has no body to declare.
         _successMapper = _ => TypedResults.StatusCode(statusCode);
         _declaredSuccessStatusCode = statusCode;
+        _successResponseHasBody = false;
         return this;
     }
 
     /// <inheritdoc cref="IEndpointBuilder{TResponse}.Raw" />
     public IEndpointBuilder<TResponse> Raw(Action<RouteHandlerBuilder> configure)
     {
-        ArgumentNullException.ThrowIfNull(configure);
-        _metadata.Add(configure);
+        _core.AddMetadata(configure);
         return this;
     }
 
@@ -141,6 +138,7 @@ internal sealed class EndpointBuilder<TResponse> : IEndpointBuilder<TResponse>
     {
         _successMapper = value => TypedResults.Ok(value);
         _declaredSuccessStatusCode = StatusCodes.Status200OK;
+        _successResponseHasBody = true;
         return this;
     }
 
@@ -152,6 +150,7 @@ internal sealed class EndpointBuilder<TResponse> : IEndpointBuilder<TResponse>
         // TypedResults.Created, deliberately not CreatedAtRoute, which is RequiresUnreferencedCode.
         _successMapper = value => TypedResults.Created(location(value), value);
         _declaredSuccessStatusCode = StatusCodes.Status201Created;
+        _successResponseHasBody = true;
         return this;
     }
 
@@ -162,6 +161,7 @@ internal sealed class EndpointBuilder<TResponse> : IEndpointBuilder<TResponse>
             ? TypedResults.Accepted((string?)null, value)
             : TypedResults.Accepted(location(value), value);
         _declaredSuccessStatusCode = StatusCodes.Status202Accepted;
+        _successResponseHasBody = true;
         return this;
     }
 
@@ -242,31 +242,16 @@ internal sealed class EndpointBuilder<TResponse> : IEndpointBuilder<TResponse>
 
     internal EndpointConfiguration<TResponse> Build()
     {
-        var route = _route ?? (_declared.IsRouteDeclaredInConfigure ? null : _declared.Route);
-        var methods = _httpMethods ?? (_declared.HttpMethods.Length > 0 ? _declared.HttpMethods : null);
-
-        if (route is null || methods is null)
-        {
-            throw new InvalidOperationException(
-                "The endpoint declares no route. Add a route attribute such as [Get(\"/things\")] to " +
-                "the endpoint class, or declare one in Configure with builder.Get(\"/things\").");
-        }
-
-        var metadata = _metadata.ToArray();
+        var plan = _core.Resolve();
 
         return new EndpointConfiguration<TResponse>
         {
-            Route = route,
-            HttpMethods = methods,
+            Route = plan.Route,
+            HttpMethods = plan.HttpMethods,
             SuccessMapper = _successMapper,
             DeclaredSuccessStatusCode = _declaredSuccessStatusCode,
-            ApplyMetadata = builder =>
-            {
-                foreach (var action in metadata)
-                {
-                    action(builder);
-                }
-            }
+            SuccessResponseHasBody = _successResponseHasBody,
+            ApplyMetadata = plan.ApplyMetadata
         };
     }
 }

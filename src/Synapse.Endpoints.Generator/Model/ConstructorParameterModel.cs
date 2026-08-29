@@ -16,14 +16,45 @@ namespace UnambitiousFx.Synapse.Endpoints.Generator.Model;
 /// </remarks>
 internal sealed record ConstructorParameterModel
 {
-    public ConstructorParameterModel(string name, bool isReferenceType)
+    public ConstructorParameterModel(string name,
+        bool isReferenceType,
+        string? matchedPropertyName,
+        string? defaultValueExpression)
     {
         Name = name;
         IsReferenceType = isReferenceType;
+        MatchedPropertyName = matchedPropertyName;
+        DefaultValueExpression = defaultValueExpression;
     }
 
     /// <summary>The constructor parameter's name.</summary>
     public string Name { get; }
+
+    /// <summary>
+    ///     The name of the bindable property whose value this parameter takes, or
+    ///     <see langword="null" /> when no property matches it.
+    /// </summary>
+    /// <remarks>
+    ///     Resolved during analysis, where the parameter's and the property's type symbols are both
+    ///     available, so a parameter is matched only when the property's value can actually be passed
+    ///     to it. Matching on the name alone — which is all the emitter can do from strings — paired an
+    ///     <c>int? Page</c> property with an <c>int page</c> parameter and emitted an argument that
+    ///     does not convert (CS1503), or a <c>string?</c> property with a <c>string</c> parameter for a
+    ///     CS8604 warning that fails a <c>TreatWarningsAsErrors</c> build. See
+    ///     docs/known-issues/059.
+    /// </remarks>
+    public string? MatchedPropertyName { get; }
+
+    /// <summary>
+    ///     The parameter's default value as a C# expression, or <see langword="null" /> when the
+    ///     parameter has no default.
+    /// </summary>
+    /// <remarks>
+    ///     Used both for a parameter no property matches and as the initial value of a matched
+    ///     property's local, so an absent optional value falls back to the default the constructor
+    ///     declares instead of overwriting it with <c>default</c>. See docs/known-issues/060.
+    /// </remarks>
+    public string? DefaultValueExpression { get; }
 
     /// <summary>
     ///     Whether the parameter's type is a reference type, so an unmatched parameter must be

@@ -154,7 +154,7 @@ public sealed class MappedEndpointTests
     {
         public ValueTask<BindResult<CreateBody>> BindAsync(HttpContext context)
         {
-            return ValueTask.FromResult(BindResult<CreateBody>.Failure("'name' is required."));
+            return ValueTask.FromResult(BindResult<CreateBody>.Failure("name", "is required."));
         }
     }
 

@@ -18,14 +18,25 @@ namespace UnambitiousFx.Synapse.Endpoints;
 /// <typeparam name="TResponse">The handler's response.</typeparam>
 /// <typeparam name="THttpResponse">The HTTP response DTO written to the wire.</typeparam>
 /// <remarks>
-///     Prefer <see cref="Endpoint{TRequest,TResponse}" /> unless the wire contract genuinely must
-///     differ from the message; this variant costs two mapping methods per endpoint.
+///     <para>
+///         Prefer <see cref="Endpoint{TRequest,TResponse}" /> unless the wire contract genuinely must
+///         differ from the message; this variant costs two mapping methods per endpoint.
+///     </para>
+///     <para>
+///         Derives from <see cref="RawEndpoint" /> rather than
+///         <see cref="RawEndpoint{TRequest,TResponse}" /> because the type it binds is
+///         <typeparamref name="THttpRequest" />, a wire DTO which is not a message at all and so
+///         cannot satisfy that level's <c>IRequest&lt;TResponse&gt;</c> constraint.
+///     </para>
 /// </remarks>
-public abstract class MappedEndpoint<THttpRequest, TRequest, TResponse, THttpResponse> : EndpointBase
+public abstract class MappedEndpoint<THttpRequest, TRequest, TResponse, THttpResponse> : RawEndpoint
     where TRequest : IRequest<TResponse>
     where TResponse : notnull
     where THttpResponse : notnull
 {
+    private EndpointConfiguration<THttpResponse>? _configuration;
+    private IEndpointBinder<THttpRequest>? _binder;
+
     /// <summary>Configures the endpoint. Called once at startup.</summary>
     /// <param name="builder">The endpoint builder, typed on the HTTP response.</param>
     public virtual void Configure(IEndpointBuilder<THttpResponse> builder)
@@ -52,14 +63,46 @@ public abstract class MappedEndpoint<THttpRequest, TRequest, TResponse, THttpRes
         return TypedResults.Ok(response);
     }
 
-    internal override EndpointDescriptor CreateDescriptor(EndpointMetadata metadata)
+    /// <summary>Not used at this level; configure through the typed overload instead.</summary>
+    /// <param name="builder">Unused.</param>
+    public sealed override void Configure(IRawEndpointBuilder builder)
+    {
+    }
+
+    /// <inheritdoc />
+    public sealed override async ValueTask<IResult> HandleAsync(HttpContext context,
+        CancellationToken cancellationToken)
+    {
+        var bound = await Mapped(_binder).BindAsync(context);
+        if (!bound.IsSuccess)
+        {
+            return bound.Problem();
+        }
+
+        var configuration = Mapped(_configuration);
+        var invoker = context.RequestServices.GetRequiredService<IHttpInvoker>();
+
+        return await invoker.InvokeAsync(
+            ToRequest(bound.Value!),
+            response =>
+            {
+                var httpResponse = ToResponse(response);
+                return configuration.SuccessMapper is not null
+                    ? configuration.SuccessMapper(httpResponse)
+                    : OnSuccess(httpResponse, context);
+            },
+            cancellationToken);
+    }
+
+    internal sealed override RawEndpointPlan CreatePlan(EndpointMetadata metadata)
     {
         var builder = new EndpointBuilder<THttpResponse>(metadata);
         Configure(builder);
         var configuration = builder.Build();
-        var binder = EndpointRegistry.GetBinder<THttpRequest>();
+        _configuration = configuration;
+        _binder = EndpointRegistry.GetBinder<THttpRequest>();
 
-        return new EndpointDescriptor
+        return new RawEndpointPlan
         {
             Route = configuration.Route,
             HttpMethods = configuration.HttpMethods,
@@ -71,34 +114,12 @@ public abstract class MappedEndpoint<THttpRequest, TRequest, TResponse, THttpRes
                     handlerBuilder.Accepts(typeof(THttpRequest), "application/json");
                 }
 
-                handlerBuilder.WithMetadata(
-                    new ProducesResponseMetadata(SuccessStatusCode(configuration), typeof(THttpResponse)));
-                handlerBuilder.ProducesProblem(StatusCodes.Status400BadRequest);
+                // Declared only when the configured mapper writes a body — see docs/known-issues/054.
+                handlerBuilder.WithMetadata(new ProducesResponseMetadata(
+                    SuccessStatusCode(configuration),
+                    configuration.SuccessResponseHasBody ? typeof(THttpResponse) : null));
+                handlerBuilder.ProducesValidationProblem();
                 configuration.ApplyMetadata(handlerBuilder);
-            },
-            InvokeAsync = async context =>
-            {
-                var bound = await binder.BindAsync(context);
-                if (!bound.IsSuccess)
-                {
-                    await TypedResults.Problem(bound.Error, statusCode: StatusCodes.Status400BadRequest)
-                        .ExecuteAsync(context);
-                    return;
-                }
-
-                var invoker = context.RequestServices.GetRequiredService<IHttpInvoker>();
-                var result = await invoker.InvokeAsync(
-                    ToRequest(bound.Value!),
-                    response =>
-                    {
-                        var httpResponse = ToResponse(response);
-                        return configuration.SuccessMapper is not null
-                            ? configuration.SuccessMapper(httpResponse)
-                            : OnSuccess(httpResponse, context);
-                    },
-                    context.RequestAborted);
-
-                await result.ExecuteAsync(context);
             }
         };
     }

@@ -30,7 +30,10 @@ internal sealed record BindablePropertyModel
         bool isNullable,
         bool isString,
         bool isEnum,
-        bool isRecordWith)
+        bool isRecordWith,
+        bool parsesWithFormatProvider,
+        bool isReferenceType,
+        bool isRequired)
     {
         Name = name;
         TypeFullName = typeFullName;
@@ -40,6 +43,9 @@ internal sealed record BindablePropertyModel
         IsString = isString;
         IsEnum = isEnum;
         IsRecordWith = isRecordWith;
+        ParsesWithFormatProvider = parsesWithFormatProvider;
+        IsReferenceType = isReferenceType;
+        IsRequired = isRequired;
     }
 
     /// <summary>The property's name on the bound type.</summary>
@@ -74,4 +80,34 @@ internal sealed record BindablePropertyModel
     ///     <c>init</c>-only on a record) rather than a direct property assignment.
     /// </summary>
     public bool IsRecordWith { get; }
+
+    /// <summary>
+    ///     Whether the property's type exposes <c>TryParse(string, IFormatProvider, out T)</c>, so the
+    ///     emitted parse can pin the invariant culture.
+    /// </summary>
+    /// <remarks>
+    ///     Route and query values are a wire format and must not be read differently depending on the
+    ///     server's locale, which is also what ASP.NET Core's own parameter binding does. Types that
+    ///     only offer the two-argument <c>TryParse</c> (the minimum SYNE012 requires) still get that
+    ///     one, because emitting an overload the type does not have would not compile.
+    /// </remarks>
+    public bool ParsesWithFormatProvider { get; }
+
+    /// <summary>
+    ///     Whether the property's type is a reference type, so a pre-declared local needs
+    ///     <c>default!</c> rather than bare <c>default</c> to stay warning-free.
+    /// </summary>
+    public bool IsReferenceType { get; }
+
+    /// <summary>
+    ///     Whether the property is declared <c>required</c>, so it must be set in the object
+    ///     initializer of the <c>new</c> expression rather than assigned afterwards.
+    /// </summary>
+    /// <remarks>
+    ///     C# enforces <c>required</c> at the creation site (CS9035), and a later assignment or
+    ///     <c>with</c> expression does not satisfy it. Constructing the message and then assigning
+    ///     therefore did not compile for a message with a required member that no constructor
+    ///     parameter covers. See docs/known-issues/061.
+    /// </remarks>
+    public bool IsRequired { get; }
 }
