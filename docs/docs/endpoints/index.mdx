@@ -31,9 +31,6 @@ The package has **two levels**, and this is the only decision you need to make b
 anything else. The question is not "how complicated is my endpoint" — it is **"is this route a
 command or a query?"**
 
-<div className="row">
-<div className="col col--6">
-
 ### The high level
 
 **The route *is* a message.** You declare the message and the endpoint; the analyzer writes the
@@ -49,9 +46,6 @@ Use it for the CRUD and query surface of an application — which in practice is
 
 **[Start the high-level guide →](./high-level/overview.mdx)**
 
-</div>
-<div className="col col--6">
-
 ### The low level
 
 **The route is about the HTTP exchange itself.** You get the `HttpContext` and return an `IResult`.
@@ -61,16 +55,13 @@ Use it for the CRUD and query surface of an application — which in practice is
 public sealed class HealthEndpoint : RawEndpoint
 {
     public override ValueTask<IResult> HandleAsync(
-        HttpContext context, CancellationToken ct) => …
+        HttpContext ctx, CancellationToken ct) => …
 }
 ```
 
 Use it for a conditional `GET`, a webhook, a health check, a redirect, a file download.
 
 **[Start the low-level guide →](./low-level/overview.mdx)**
-
-</div>
-</div>
 
 If you are not sure, start high. Dropping a level later changes only the part that did not fit —
 which is the point of how the two are built.
@@ -83,10 +74,10 @@ The high level is not a parallel implementation of the low one. It **is** the lo
 binding supplied, so the two cannot drift apart:
 
 ```
-RawEndpoint                              ← low level: you get the context, you return a result
- ├── RawEndpoint<TRequest>               ← middle:    you write BindAsync, the base dispatches
+RawEndpoint                              ← low level:  context in, result out
+ ├── RawEndpoint<TRequest>               ← middle:     you write BindAsync
  ├── RawEndpoint<TRequest, TResponse>
- │    └── Endpoint<TRequest, TResponse>  ← high:      the analyzer writes BindAsync for you
+ │    └── Endpoint<TRequest, TResponse>  ← high level: the analyzer writes it
  ├── StreamEndpoint<TRequest, TItem>
  └── MappedEndpoint<...>
 ```
