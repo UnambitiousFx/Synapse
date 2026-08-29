@@ -1,0 +1,137 @@
+---
+sidebar_position: 5
+title: Streaming
+description: StreamEndpoint — many items over server-sent events or an incrementally written JSON array, negotiated on Accept.
+---
+
+# Streaming
+
+`StreamEndpoint<TRequest, TItem>` serves an `IStreamRequest<TItem>`. The transport is negotiated on
+the request's `Accept` header, and the endpoint declaration is as short as any other:
+
+```csharp
+public sealed record StreamTasksQuery : IStreamRequest<TaskDto>;
+
+[Get("/tasks/stream")]
+public sealed class StreamTasksEndpoint : StreamEndpoint<StreamTasksQuery, TaskDto>;
+```
+
+```csharp title="The handler yields items as they arrive"
+[StreamRequestHandler<StreamTasksQuery, TaskDto>]
+public sealed class StreamTasksQueryHandler : IStreamRequestHandler<StreamTasksQuery, TaskDto>
+{
+    private readonly TaskRepository _repository;
+
+    public StreamTasksQueryHandler(TaskRepository repository)
+    {
+        _repository = repository;
+    }
+
+    public async IAsyncEnumerable<Result<TaskDto>> HandleAsync(
+        StreamTasksQuery request,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        foreach (var task in _repository.GetAll())
+        {
+            await Task.Delay(50, cancellationToken);   // stand-in for real work
+            yield return Result.Success(task);
+        }
+    }
+}
+```
+
+## Two transports, one endpoint
+
+| `Accept` contains | Response |
+|---|---|
+| `text/event-stream` | Server-sent events |
+| Anything else, or no `Accept` header | A JSON array, written incrementally as items arrive |
+
+```bash title="JSON array — the default"
+$ curl -s localhost:5000/tasks/stream
+[{"id":"…","title":"write the docs"},{"id":"…","title":"ship it"}]
+```
+
+```bash title="Server-sent events"
+$ curl -s -H 'Accept: text/event-stream' localhost:5000/tasks/stream
+data: {"id":"…","title":"write the docs"}
+
+data: {"id":"…","title":"ship it"}
+
+```
+
+Neither transport buffers the whole sequence: items are written as the handler yields them.
+
+## Failed items are skipped
+
+Matching `IHttpInvoker.InvokeStreamAsync`, an item that comes back as a failed `Result` is **silently
+skipped** — the stream continues with the next item. A stream has already committed its `200` and its
+headers by the time item two is produced, so there is no way to turn a mid-stream failure into a
+status code.
+
+If a failure mid-sequence needs to reach the client, make it part of `TItem`:
+
+```csharp
+public sealed record TaskOrError
+{
+    public TaskDto? Task { get; init; }
+    public string? Error { get; init; }
+}
+```
+
+## Configuring a stream endpoint
+
+`Configure` receives an `IStreamEndpointBuilder`:
+
+```csharp
+[Get("/tasks/stream")]
+public sealed class StreamTasksEndpoint : StreamEndpoint<StreamTasksQuery, TaskDto>
+{
+    public override void Configure(IStreamEndpointBuilder builder)
+    {
+        builder.Tag("Tasks")
+            .Summary("Stream every task")
+            .RequireAuthorization("ApiScope")
+            .Raw(route => route.RequireRateLimiting("streams"));
+    }
+}
+```
+
+It carries routing (`Route`, `Get`, `Post`), metadata (`Tag`, `Summary`, `Description`, `Name`),
+authorization (`RequireAuthorization`, `AllowAnonymous`) and `Raw`.
+
+What it deliberately **omits** is the success-mapping vocabulary — `NoContent()`, `StatusCode(int)`,
+`Ok()`, `Created(...)`, `Accepted(...)`. None of them can mean anything for a stream: the status line
+is committed before the first item is produced, and the body is the negotiated sequence, not a single
+value. Rather than accept those calls and ignore them, this tier does not offer them, so reaching for
+one is a compile error instead of a silent no-op.
+
+The response is declared from the type arguments — `200` with `IAsyncEnumerable<TItem>` for both
+`application/json` and `text/event-stream`, plus the `400` — and anything further goes through
+`Raw`, for example an extra `Produces` for a status your handler's failures map to.
+
+## Deriving from the wrong base class
+
+A message implementing `IStreamRequest<T>` on a plain `Endpoint<…>` is reported as
+[`SYNE005`](../reference/diagnostics) — an error, not a runtime surprise.
+
+## Native AOT: register `IAsyncEnumerable<TItem>`
+
+:::danger The one gotcha this base class introduces
+A stream endpoint's wire type is `IAsyncEnumerable<TItem>`, **not** bare `TItem`. Registering only
+`TaskDto` leaves the build green and `SYNE008` silent, and then `/openapi/v1.json` throws at request
+time.
+
+```csharp
+[JsonSerializable(typeof(TaskDto))]
+[JsonSerializable(typeof(IAsyncEnumerable<TaskDto>))]   // ← required, and nothing warns you
+internal sealed partial class AppJsonSerializerContext : JsonSerializerContext;
+```
+
+Full detail in [Native AOT](../reference/native-aot#register-every-reachable-type).
+:::
+
+## Next
+
+- [Streaming (core)](../../streaming) — `IStreamRequest<T>` and the mediator side
+- [Native AOT](../reference/native-aot) — before you publish

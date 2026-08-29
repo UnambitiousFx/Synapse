@@ -1,0 +1,98 @@
+---
+sidebar_position: 4
+title: Groups
+description: Share a route prefix, tags or an authorization policy across a set of endpoints.
+---
+
+# Groups
+
+A group gives a set of endpoints a shared route prefix, tags or authorization policy. Derive from
+`EndpointGroup`, then point endpoints at it with `[InGroup<T>]`.
+
+```csharp title="Features/Tasks/TasksGroup.cs"
+using UnambitiousFx.Synapse.Endpoints;
+using UnambitiousFx.Synapse.Endpoints.Builders;
+
+namespace TaskApi.Features.Tasks;
+
+public sealed class TasksGroup : EndpointGroup
+{
+    public override void Configure(IEndpointGroupBuilder builder)
+    {
+        builder.Prefix("/tasks")
+            .Tag("Tasks");
+    }
+}
+```
+
+```csharp title="Features/Tasks/Endpoints.cs"
+// Serves GET /tasks — the group's prefix plus the endpoint's own route.
+[Get("/")]
+[InGroup<TasksGroup>]
+public sealed class ListTasksEndpoint : Endpoint<ListTasksQuery, IReadOnlyList<TaskDto>>;
+
+// GET /tasks/{taskId}
+[Get("/{taskId:guid}")]
+[InGroup<TasksGroup>]
+public sealed class GetTaskEndpoint : Endpoint<GetTaskQuery, TaskDto>;
+
+// POST /tasks
+[Post("/")]
+[InGroup<TasksGroup>]
+public sealed class CreateTaskEndpoint : Endpoint<CreateTaskCommand, TaskCreated>;
+
+// DELETE /tasks/{taskId}
+[Delete("/{taskId:guid}")]
+[InGroup<TasksGroup>]
+public sealed class DeleteTaskEndpoint : Endpoint<DeleteTaskCommand>;
+```
+
+Each endpoint's own route is relative to the group's prefix. `[Get("/")]` inside a `/tasks` group
+serves `GET /tasks`; `[Get("/{taskId:guid}")]` serves `GET /tasks/{taskId}`.
+
+## A secured group
+
+```csharp
+public sealed class AdminGroup : EndpointGroup
+{
+    public override void Configure(IEndpointGroupBuilder builder)
+    {
+        builder.Prefix("/admin")
+            .Tag("Admin")
+            .RequireAuthorization("AdminOnly");
+    }
+}
+```
+
+Every endpoint in the group inherits the policy. An individual endpoint can still opt out with
+`AllowAnonymous()` in its own `Configure`.
+
+## Reaching the underlying group builder
+
+`IEndpointGroupBuilder.Raw(...)` is an escape hatch onto ASP.NET Core's `RouteGroupBuilder`, for
+anything the fluent surface does not wrap:
+
+```csharp
+public sealed class ApiGroup : EndpointGroup
+{
+    public override void Configure(IEndpointGroupBuilder builder)
+    {
+        builder.Prefix("/api/v1")
+            .Raw(group => group.RequireRateLimiting("fixed")
+                               .WithGroupName("v1"));
+    }
+}
+```
+
+## `SYNE006` will essentially never fire
+
+`[InGroup<TGroup>]`'s type parameter is constrained to `where TGroup : EndpointGroup, new()`. So
+passing a type that is not a group is a **compiler** error (`CS0311`) reported before the analyzer
+runs, and `SYNE006` — the diagnostic for that same mistake — cannot normally be reached.
+
+If you never see `SYNE006`, that is expected; it is not a sign the check is broken.
+
+## Next
+
+- [Streaming](./streaming) — a group's endpoints can stream too
+- [Escape hatches](../reference/escape-hatches) — `Raw` at the endpoint level

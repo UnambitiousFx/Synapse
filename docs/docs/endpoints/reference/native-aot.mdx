@@ -1,0 +1,150 @@
+---
+sidebar_position: 3
+title: Native AOT
+description: The section most likely to save you a bad afternoon — JSON registration, the diagnostic's four blind spots, and the ProjectReference trap.
+---
+
+# Native AOT
+
+Every item on this page was found the hard way during implementation — several as a `500` on
+`/openapi/v1.json` or on the first request, with the build itself staying green and warning-free.
+
+The package is fully Native AOT compatible. Publishing works, and the example application publishes
+with zero `IL####` and zero `RDG###` warnings. What follows is what you have to get right.
+
+## Register every reachable type
+
+Every type reachable from an endpoint's response **or from the OpenAPI document** must be in your
+`JsonSerializerContext`, or the app throws at runtime, on the first request that touches it:
+
+```
+NotSupportedException: JsonTypeInfo metadata for type 'X' was not provided by TypeInfoResolverChain
+```
+
+There is no build warning to catch it first, unless [`SYNE008`](./diagnostics) happens to cover that
+exact type.
+
+```csharp title="AppJsonSerializerContext.cs"
+using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+
+// Requests and responses
+[JsonSerializable(typeof(TaskDto))]
+[JsonSerializable(typeof(IReadOnlyList<TaskDto>))]
+[JsonSerializable(typeof(TaskCreated))]
+[JsonSerializable(typeof(CreateTaskCommand))]
+[JsonSerializable(typeof(UpdateTaskCommand))]
+
+// A stream endpoint's wire type — NOT just TaskDto. Nothing warns you about this one.
+[JsonSerializable(typeof(IAsyncEnumerable<TaskDto>))]
+
+// Low-level endpoints: whatever you declared or read
+[JsonSerializable(typeof(HealthDto))]
+[JsonSerializable(typeof(TagReportDto))]
+
+// Error and document types. SYNE008 does not check these; they are needed anyway.
+[JsonSerializable(typeof(ProblemDetails))]
+[JsonSerializable(typeof(HttpValidationProblemDetails))]
+internal sealed partial class AppJsonSerializerContext : JsonSerializerContext;
+```
+
+```csharp title="Program.cs"
+builder.Services.ConfigureHttpJsonOptions(options =>
+{
+    options.SerializerOptions.TypeInfoResolverChain.Insert(0, AppJsonSerializerContext.Default);
+});
+```
+
+## What `SYNE008` covers
+
+`SYNE008` flags a request or response type used by an endpoint but missing from every
+`JsonSerializerContext` it can find in the compilation. It is only reported once your app has at least
+one `JsonSerializerContext` at all — an app not using source-generated JSON is not nagged.
+
+For a **low-level** endpoint there is no base-class type argument to read, so it scans the endpoint's
+own code instead: the type argument of each `context.BodyAsync<T>()` read, and of each `Accepts<T>()` /
+`Produces<T>()` declaration in `Configure`. The diagnostic points at the call rather than at the class.
+
+## Its four blind spots
+
+These are deliberate, and they are yours to cover:
+
+### 1. `ProblemDetails` and `HttpValidationProblemDetails`
+
+`SYNE008` checks only the endpoint's own declared request/response type — not every type reachable
+from the failure pipeline or the OpenAPI document. Both of these are genuinely needed at runtime, for
+error responses and for the document's schema. Register them yourself; nothing else will remind you.
+
+### 2. A stream endpoint's `IAsyncEnumerable<TItem>`
+
+A `StreamEndpoint<TRequest, TItem>`'s wire type is `IAsyncEnumerable<TItem>`, not bare `TItem`. That is
+the exact type the endpoint declares via `ProducesResponseMetadata`, and the type
+`Microsoft.AspNetCore.OpenApi` asks the resolver chain for when building the schema.
+
+Registering only `TItem` leaves the build green — `SYNE008` does **not** flag this gap — and then
+`/openapi/v1.json` throws `JsonTypeInfo metadata for type 'IAsyncEnumerable<TaskDto>' was not
+provided` at request time.
+
+### 3. A resolver-chain entry that is not a `JsonSerializerContext`
+
+A custom `IJsonTypeInfoResolver` inserted into the chain is invisible to `SYNE008` entirely. It cannot
+see what such a resolver does or does not cover.
+
+### 4. A body read behind a helper on another type
+
+The call-site scan only sees invocations written **lexically inside the endpoint class**. Following
+calls across types would mean a whole-program walk on every keystroke.
+
+```csharp
+// Seen by SYNE008
+var body = await context.BodyAsync<WebhookDto>();
+
+// NOT seen — the read happens in another type
+var body = await WebhookReader.ReadAsync(context);
+```
+
+Read the body in the endpoint, or register the type by hand.
+
+## Consuming by `ProjectReference` needs its own analyzer reference
+
+The NuGet package bundles the analyzer with `PrivateAssets="all"` on its own reference to the generator
+project — which is exactly what keeps the generator from becoming a transitive *build* dependency of
+your project when you add the package normally.
+
+That same setting means the analyzer does **not** flow to a project that references
+`Synapse.Endpoints` via `ProjectReference` instead of the NuGet package — a multi-repo or monorepo
+setup, for instance. Add the generator as your own analyzer reference in that case:
+
+```xml
+<ProjectReference Include="...\Synapse.Endpoints.Generator.csproj"
+                  OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+```
+
+Without it, every `EndpointRegistry.GetBinder<T>()` / `GetMetadata<T>()` call throws at startup with a
+message pointing at exactly this.
+
+## Verifying a publish
+
+```bash
+dotnet publish -r linux-x64 -c Release 2>&1 | grep -E 'IL[0-9]{4}|RDG[0-9]{3}'
+```
+
+That should print nothing. Then run the published binary and actually exercise it — a trimming or JSON
+gap shows up at request time, not at publish time:
+
+```bash
+curl -s localhost:5000/openapi/v1.json > /dev/null   # the document is its own AOT surface
+curl -s localhost:5000/tasks
+curl -s localhost:5000/tasks/stream                  # the IAsyncEnumerable<T> registration
+curl -s 'localhost:5000/tasks/search?title='         # a 400: the problem-details registration
+```
+
+The `/openapi/v1.json` request matters most: it touches schemas for types no successful request
+necessarily returns.
+
+## Related
+
+- [OpenAPI → APIs this library steers you away from](./openapi#apis-this-library-steers-you-away-from) — `WithOpenApi`, `CreatedAtRoute`
+- [Diagnostics](./diagnostics) — `SYNE008` in the full table
+- [Streaming](../high-level/streaming#native-aot-register-iasyncenumerabletitem) — the registration that nothing warns about

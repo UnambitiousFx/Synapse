@@ -1,0 +1,150 @@
+---
+sidebar_position: 3
+title: Responses
+description: Status codes and bodies — the declarative vocabulary, OnSuccess for the rest, and the shape of a failure.
+---
+
+# Responses
+
+## The defaults
+
+| Base class | Default success response |
+|---|---|
+| `Endpoint<TRequest>` | `204 No Content` |
+| `Endpoint<TRequest, TResponse>` | `200 OK`, response serialized as the body |
+| `MappedEndpoint<…>` | `200 OK`, `THttpResponse` serialized as the body |
+| `StreamEndpoint<TRequest, TItem>` | `200 OK`, negotiated on `Accept` — see [Streaming](./streaming) |
+
+If the default is what you want, write nothing:
+
+```csharp
+[Get("/tasks")]
+public sealed class ListTasksEndpoint : Endpoint<ListTasksQuery, IReadOnlyList<TaskDto>>;
+
+[Delete("/tasks/{taskId:guid}")]
+public sealed class DeleteTaskEndpoint : Endpoint<DeleteTaskCommand>;
+```
+
+## Changing it declaratively
+
+Override `Configure` and say what the endpoint produces:
+
+```csharp
+[Post("/tasks")]
+public sealed class CreateTaskEndpoint : Endpoint<CreateTaskCommand, TaskCreated>
+{
+    public override void Configure(IEndpointBuilder<TaskCreated> builder)
+    {
+        builder.Created(created => $"/tasks/{created.TaskId}")
+            .Summary("Create a task")
+            .Tag("Tasks");
+    }
+}
+```
+
+```bash
+$ curl -s -X POST localhost:5000/tasks -H 'Content-Type: application/json' \
+       -d '{"title":"write the docs"}' -i
+HTTP/1.1 201 Created
+Location: /tasks/6f9619ff-8b86-d011-b42d-00cf4fc964ff
+
+{"taskId":"6f9619ff-8b86-d011-b42d-00cf4fc964ff"}
+```
+
+The vocabulary:
+
+| Method | Response |
+|---|---|
+| `Ok()` | `200 OK` with the response body (the default) |
+| `Created(location)` | `201 Created`, the response as the body, `Location` built from the response |
+| `Accepted(location?)` | `202 Accepted`, optionally with a `Location` header |
+| `NoContent()` | `204 No Content` |
+| `StatusCode(code)` | A fixed status code, no body |
+
+Alongside them, the metadata and behaviour methods: `Summary`, `Description`, `Tag`, `Name`,
+`RequireAuthorization`, `AllowAnonymous`, and [`Raw`](../reference/escape-hatches) for the
+`RouteHandlerBuilder` itself.
+
+:::tip Prefer these over `OnSuccess`
+A declarative call also updates the endpoint's OpenAPI metadata — the declared status code and whether
+there is a response body both reach `/openapi/v1.json`. An `OnSuccess` override does not: the document
+keeps describing the default. See [OpenAPI](../reference/openapi).
+:::
+
+`Created(...)` is written in terms of `TypedResults.Created`, deliberately **not**
+`TypedResults.CreatedAtRoute` — see [Native AOT](../reference/openapi#apis-this-library-steers-you-away-from)
+for why that distinction matters. Using the declarative vocabulary keeps you off the AOT-hostile path
+by construction.
+
+## Changing it imperatively
+
+Override `OnSuccess` for anything the vocabulary cannot express. It receives the response and the
+`HttpContext` and returns any `IResult`:
+
+```csharp
+[Get("/tasks/{taskId:guid}")]
+public sealed class GetTaskEndpoint : Endpoint<GetTaskQuery, TaskDto>
+{
+    public override IResult OnSuccess(TaskDto response, HttpContext context)
+    {
+        context.Response.Headers.ETag = $"\"{response.Id}\"";
+        context.Response.Headers.CacheControl = "private, max-age=60";
+
+        return TypedResults.Ok(response);
+    }
+}
+```
+
+If both are used on the same endpoint, **the declarative call always wins** and the override is dead
+code — [`SYNE004`](../reference/diagnostics) warns about exactly that.
+
+## Failures
+
+Failures are untouched by any of the above, and there are two distinct kinds.
+
+### A bind failure — `400`, before dispatch
+
+If the request cannot produce the message, the endpoint answers `400` and the message is never
+dispatched. The body is `HttpValidationProblemDetails`: an `errors` object keyed by field carrying
+**every** problem the request had, not only the first one found.
+
+```json title="two bad values, one response"
+{
+  "title": "One or more validation errors occurred.",
+  "status": 400,
+  "errors": {
+    "taskId": ["The route value is required."],
+    "page":   ["The query value is not a valid int."]
+  }
+}
+```
+
+Both levels report through the same collector, so both produce the same shape. See
+[Low level: validating](../low-level/validating) for the collector itself.
+
+**A body that cannot be read at all is the one exception**: it is reported alone, under the `body`
+key. Without a deserialized message there is nothing left to bind the remaining values onto, so route
+and query values are not read in that case.
+
+```json
+{ "status": 400, "errors": { "body": ["The request body is not valid JSON: …"] } }
+```
+
+### A dispatch failure — whatever your mapper says
+
+A handler returning a failed `Result` flows through the `IFailureHttpMapper` registered for
+`IHttpInvoker` (see [Failure mapping](../../aspnetcore#failure-mapping--ifailurehttpmapper)),
+completely unchanged by this package. A `Result.FailNotFound(...)` becomes whatever your mapper maps
+its typed `NotFoundFailure` to — a `404` with the default mapper.
+
+```
+bind fails      → 400, generated, message never dispatched
+handler fails   → your IFailureHttpMapper decides
+handler returns → your success mapping decides
+```
+
+## Next
+
+- [Groups](./groups) — share a prefix, tag or policy across endpoints
+- [Streaming](./streaming) — many items instead of one response
+- [OpenAPI](../reference/openapi) — what all of this declares in the document

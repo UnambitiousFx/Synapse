@@ -1,0 +1,231 @@
+---
+sidebar_position: 2
+title: Messages & binding
+description: How route, query, header and body values reach your message — the five rules, optionality, required members, and why a positional record is better.
+---
+
+# Messages & binding
+
+Binding is the whole job of the high level: getting values off the request and into your message. It
+is decided entirely by the message's shape, at compile time.
+
+## The five binding rules
+
+Each property of the message is matched against the route, the query string, headers and the body by
+five rules, applied in order. **The first rule that applies wins.**
+
+| # | Rule |
+|---|---|
+| 1 | `[NotBound]` excludes the property entirely, regardless of anything else |
+| 2 | `[FromRoute]` / `[FromQuery]` / `[FromHeader]` / `[FromBody]` pins the source explicitly, with the key taken from the attribute's name or else the property name |
+| 3 | A name matching a route template parameter (case-insensitively) binds from the route |
+| 4 | On a bodyless verb (`GET` / `DELETE` / `HEAD` / `OPTIONS` / `TRACE`), an unmatched property binds from the query string |
+| 5 | Otherwise, the property binds from the request body |
+
+Worked through one message:
+
+```csharp
+[Put("/tasks/{taskId:guid}")]
+public sealed class UpdateTaskEndpoint : Endpoint<UpdateTaskCommand>;
+
+public sealed record UpdateTaskCommand : IRequest
+{
+    // Rule 3: the name matches {taskId} in the route template.
+    public Guid TaskId { get; init; }
+
+    // Rule 5: PUT carries a body, and nothing else claimed this property.
+    public required string Title { get; init; }
+
+    // Rule 2: headers are never bound by convention, so this attribute is the only way.
+    [FromHeader("If-Match")]
+    public string? ETag { get; init; }
+
+    // Rule 1: set by a pipeline behaviour, never by the caller.
+    [NotBound]
+    public string? ModifiedBy { get; init; }
+}
+```
+
+`PUT /tasks/{id}` with `{"title":"…"}` and an `If-Match` header binds all four correctly, and a caller
+cannot supply `ModifiedBy` by guessing the property name.
+
+:::note Headers are never bound by convention
+Rule 3 matches only route parameters, and rule 5 falls through to the body — never to a header.
+`[FromHeader]` is the only way to read one.
+
+Both `UnambitiousFx.Synapse.Endpoints.FromHeaderAttribute` (whose name is a constructor argument,
+`[FromHeader("If-Match")]`) and `Microsoft.AspNetCore.Mvc.FromHeaderAttribute` (whose name is a
+property, `[FromHeader(Name = "If-Match")]`) are honoured. Importing both namespaces in one file makes
+the bare name ambiguous — see [attribute collisions](../reference/escape-hatches#attribute-collisions).
+:::
+
+## Is a missing value an error?
+
+Whichever source a property lands on, whether a *missing* value is tolerated is decided by the
+property's shape alone:
+
+| Property shape | Missing value |
+|---|---|
+| Bound from a constructor parameter with a default — `record ListUsers(int Page = 1)` | **Optional.** The declared default stands |
+| Nullable — `int?`, `string?`, a nullable reference type | **Optional.** The property is left alone and binding succeeds |
+| Anything else | **Mandatory.** Binding fails with `400` under that property's source key |
+
+```csharp
+public sealed record SearchTasksQuery(
+    string Title,          // mandatory: ?title= missing is a 400
+    int Page = 1,          // optional: the default stands
+    string? Sort = null    // optional twice over
+) : IRequest<IReadOnlyList<TaskDto>>;
+```
+
+:::warning A property initialiser does not make a property optional
+```csharp
+public int Page { get; init; } = 20;   // still MANDATORY — a 400 when ?page= is absent
+```
+`Page` is non-nullable, so it is required, and the `20` is overwritten or never reached. Express the
+default one of the two ways that work:
+
+```csharp
+public int? Page { get; init; }                          // optional; apply the default in the handler
+public sealed record Q(int Page = 20) : IRequest<…>;     // optional; the binder honours the default
+```
+:::
+
+## Property types
+
+A bound property's type must be one the binder can produce from a string:
+
+- `string` — used as-is, no parse step
+- any `enum` — by name or by numeric value, matching ASP.NET Core (case-**sensitive**)
+- anything with `TryParse(string, out T)` **or** `TryParse(string, IFormatProvider, out T)` — the
+  second is what `IParsable<T>` mandates, so a strongly-typed id works:
+
+```csharp
+public readonly record struct TaskId(Guid Value) : IParsable<TaskId>
+{
+    public static TaskId Parse(string s, IFormatProvider? provider) => new(Guid.Parse(s));
+
+    public static bool TryParse(string? s, IFormatProvider? provider, out TaskId result)
+    {
+        if (Guid.TryParse(s, out var value)) { result = new TaskId(value); return true; }
+        result = default;
+        return false;
+    }
+}
+
+public sealed record GetTask(TaskId TaskId) : IRequest<TaskDto>;   // binds
+```
+
+Anything else is reported as [`SYNE012`](../reference/diagnostics) and omitted.
+
+Parsing always pins the **invariant culture** where the type offers the `IFormatProvider` overload,
+matching ASP.NET Core's own parameter binding. A route or query value is a wire format: `?amount=1.5`
+means one and a half on every host, not "1.5 or 15 depending on the server's locale".
+
+## The record-or-setter rule
+
+A property bound from the route, query string or a header must be assignable after the message already
+exists — the generated binder either calls a setter directly, or applies the value through a `with`
+expression, which only a `record` supports.
+
+A property that is neither on a record nor has an accessible setter is reported as
+[`SYNE011`](../reference/diagnostics) and omitted from the generated code: it does not stop the build,
+but the value is never bound.
+
+This restriction applies only to route/query/header-bound properties. A `[FromBody]` property is
+populated by deserializing the whole message in one JSON read, so neither a setter nor `SYNE011`
+applies to it.
+
+## `required` properties
+
+A route/query/header-bound property may be `required`. The binder sets it in the object initializer of
+the `new` expression, which is the one call site the language accepts for a required member:
+
+```csharp
+public sealed record GetTaskQuery : IRequest<TaskDto>
+{
+    public required Guid TaskId { get; init; }
+}
+
+// emitted:
+var message = new GetTaskQuery() { TaskId = valueTaskId };
+```
+
+A positional record with an extra `required` member works the same way:
+
+```csharp
+public sealed record GetThing(int Id) : IRequest
+{
+    public required string Tenant { get; init; }
+}
+
+// emitted:
+var message = new GetThing(valueId) { Tenant = valueTenant };
+```
+
+The one case outside this is a `required` property that is **not bound at all** — because it is
+`[NotBound]`, or because its type is unparsable and `SYNE012` omitted it. Construction cannot set what
+it has no value for, so that remains a compile error (`CS9035`); the accompanying `SYNE011`/`SYNE012`
+says which property to look at.
+
+:::info This did not always work
+The binder used to construct the message and apply each value afterwards, by assignment or `with` —
+neither of which satisfies `required` — so a `required` bound property broke the build with an error
+pointing into generated code. Both shapes are covered now.
+:::
+
+## Prefer a positional record
+
+Give a bound message a positional constructor instead of init-only properties where you can:
+
+```csharp
+public sealed record GetTaskQuery(Guid TaskId) : IRequest<TaskDto>;
+```
+
+This is a genuine improvement, not just style, for two independent reasons.
+
+**1. The constructor states the contract, and can carry defaults.** A type with no parameterless
+constructor is constructed through a direct call to that constructor — each bound argument computed
+and validated first, then `new GetTaskQuery(taskId)` once. A parameter with a default makes that value
+optional and binds the default when it is absent, which no property initialiser can do.
+
+**2. It allocates once instead of twice.** The init-only path does `new GetThingQuery()` followed by
+`message = message with { Id = valueId }`: two record allocations.
+
+```csharp
+// two allocations per request
+public sealed record GetThingQuery : IRequest<ThingDto>
+{
+    public Guid Id { get; init; }
+}
+
+// one
+public sealed record GetThingQuery(Guid Id) : IRequest<ThingDto>;
+```
+
+That extra allocation is the *entire* ~100 B/request (1.01x) gap
+`benchmarks/SynapseBenchmark/EndpointDispatchBenchmark.cs` measures between a generated endpoint and
+an equivalent hand-written Minimal API lambda; everything else about the two paths was
+latency-indistinguishable. A positional record's single constructor call removes it.
+
+The same benchmark carries a `RawEndpointHandWrittenBinding` arm — the identical route and message
+bound by hand instead of by the generated binder — which measures the same allocation as the generated
+one. **Dropping a tier buys control over the binding, not speed.**
+
+## One message, one binder
+
+`EndpointRegistry.RegisterBinder` is keyed by message type, so exactly one binder is ever generated
+per message — built from whichever endpoint sorts first ordinally by fully-qualified name — however
+many endpoints share that type.
+
+Two endpoints sharing a message with *identical* routes and verbs is harmless: the resolved bindings
+are identical too. Give them different routes or verbs and only the first endpoint's resolution is
+correct, which [`SYNE013`](../reference/diagnostics) warns about. It is a real standing limitation of
+the current design, and the diagnostic warns rather than fixes — give each endpoint its own message
+type.
+
+## Next
+
+- [Responses](./responses) — what comes back, including the shape of that `400`
+- [Low level: mediator-bound](../low-level/mediator-bound) — when the five rules cannot express your binding
+- [Diagnostics](../reference/diagnostics) — every `SYNE` code referenced above
