@@ -16,7 +16,7 @@ five rules, applied in order. **The first rule that applies wins.**
 
 | # | Rule |
 |---|---|
-| 1 | `[NotBound]` excludes the property entirely, regardless of anything else |
+| 1 | `[NotBound]` excludes the property from the generated bindings, regardless of anything else |
 | 2 | `[FromRoute]` / `[FromQuery]` / `[FromHeader]` / `[FromBody]` pins the source explicitly, with the key taken from the attribute's name or else the property name |
 | 3 | A name matching a route template parameter (case-insensitively) binds from the route |
 | 4 | On a bodyless verb (`GET` / `DELETE` / `HEAD` / `OPTIONS` / `TRACE`), an unmatched property binds from the query string |
@@ -40,14 +40,27 @@ public sealed record UpdateTaskCommand : IRequest
     [FromHeader("If-Match")]
     public string? ETag { get; init; }
 
-    // Rule 1: set by a pipeline behaviour, never by the caller.
+    // Rule 1: set by a pipeline behaviour, never by the caller. [JsonIgnore] is required
+    // alongside it here -- see the note below.
     [NotBound]
+    [JsonIgnore]
     public string? ModifiedBy { get; init; }
 }
 ```
 
-`PUT /tasks/{id}` with `{"title":"…"}` and an `If-Match` header binds all four correctly, and a caller
-cannot supply `ModifiedBy` by guessing the property name.
+`PUT /tasks/{id}` with `{"title":"…"}` and an `If-Match` header binds all four correctly.
+
+:::warning `[NotBound]` needs `[JsonIgnore]` on a verb that carries a body
+Rule 1 excludes a property from the route, query and header assignments the analyzer generates. It
+cannot exclude it from JSON deserialization: a body-carrying verb is bound by reading the whole message
+in one shot, and `System.Text.Json` does not read `[NotBound]`. Without `[JsonIgnore]`, a caller who
+sends `{"modifiedBy":"someone else"}` sets the property, and only an unconditional overwrite by
+whatever owns the value keeps that from reaching the handler -- so assign it unconditionally rather
+than only when it is still at its default.
+
+`SYNE015` reports the shape that needs this -- see [Diagnostics](../reference/diagnostics). On a
+bodyless verb nothing deserializes the message, and `[NotBound]` alone is sufficient.
+:::
 
 :::note Headers are never bound by convention
 Rule 3 matches only route parameters, and rule 5 falls through to the body — never to a header.

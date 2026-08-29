@@ -70,6 +70,8 @@ filed as a GitHub issue with minimal editing.
 | [062](062-mvc-fromheader-is-ignored-and-binds-from-the-query-string.md) | Source resolution recognised `Microsoft.AspNetCore.Mvc`'s `FromRoute`, `FromQuery` and `FromBody` but only Synapse's own `FromHeader`, so MVC's `[FromHeader(Name = "If-Match")]` matched nothing, fell through to the convention and bound from the **query string** under the property name with no diagnostic; MVC's attribute is now accepted too | ✅ Resolved | Medium | Generator |
 | [063](063-bodyasync-discards-the-cancellation-token.md) | `context.BodyAsync<T>(ct)` accepted a cancellation token and discarded it with `_ = cancellationToken;`, reading the body under `RequestAborted` regardless, while the signature, the docs table and every call site said otherwise; the token is now linked with `RequestAborted` so both apply | ✅ Resolved | Low | AspNetCore mapping |
 | [064](064-stream-endpoint-offers-success-mapping-it-ignores.md) | `StreamEndpoint.Configure` took the non-generic `IEndpointBuilder`, whose `NoContent()` and `StatusCode(int)` set a success mapper a streaming endpoint never reads, so both compiled and did nothing; `Configure` now takes a narrower `IStreamEndpointBuilder` that omits them, making the mistake a compile error | ✅ Resolved | Low | AspNetCore mapping |
+| [065](065-stream-endpoint-on-a-body-carrying-verb-declares-no-request-body.md) | `StreamEndpoint` never called `Accepts<TRequest>`, unlike every other body-carrying tier, so a `POST` stream bound its message from the JSON body while publishing no `requestBody` in the OpenAPI document and letting a wrong content type reach the binder as a `400` instead of routing's `415`; the declaration is now emitted, guarded on the verb | ✅ Resolved | Medium | AspNetCore mapping |
+| [066](066-notbound-property-is-still-populated-from-the-request-body.md) | `[NotBound]` excludes a property from the generated route/query/header assignments but not from JSON deserialization, so on a body-carrying verb a caller could still set a property documented as unsettable by naming it in the payload; a new SYNE015 warning reports the shape and names the fix, `[JsonIgnore]` alongside it | ✅ Resolved | **High** | Generator |
 
 > **Discovery context:** 001–003 were found while building the pipeline-behavior showcase in
 > `examples/MinimalApi` on branch `feature/typed-pipeline-behaviors` against .NET 10 with
@@ -93,8 +95,9 @@ filed as a GitHub issue with minimal editing.
 > guidance around `BindingValidator` rather than in its behaviour, 054–056 in what the endpoint bases
 > declare and how their new public entry points fail, and 057–061 in the generated binder's construction
 > path, where four of the five shapes emitted code that did not compile. 062 came out of asking what
-> that review had left unaddressed, alongside 063 and 064. All resolved on the same branch, each reproduced
-> before being fixed.
+> that review had left unaddressed, alongside 063 and 064. 065 and 066 were found while filling the
+> remaining gaps in `examples/EndpointsApi`, each surfaced by writing a live instance of a shape that
+> had none. All resolved on the same branch, each reproduced before being fixed.
 >
 > Each file is the report as written at discovery. Where a later change replaced the mechanism a report
 > describes — most often the v2 context-propagation refactor, which removed `CorrelationContext`,

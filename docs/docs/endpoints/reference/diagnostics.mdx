@@ -1,7 +1,7 @@
 ---
 sidebar_position: 4
 title: Diagnostics
-description: SYNE001-SYNE014 - what each one means, why it fires, and what to do about it.
+description: SYNE001-SYNE015 - what each one means, why it fires, and what to do about it.
 ---
 
 # Diagnostics
@@ -24,6 +24,7 @@ The bundled analyzer reports these at build time. Errors stop the build; warning
 | `SYNE012` | Error | A non-string, non-enum route/query/header-bound property's type has neither public static `TryParse(string, out T)` nor `TryParse(string, IFormatProvider, out T)` | Add either overload — implementing `IParsable<T>` supplies the second — or change the property's type |
 | `SYNE013` | Warning | A message type is bound by two or more endpoints whose *resolved* bindings differ (different route/verb produced different bindable properties) | Give each endpoint its own message type — only one endpoint's binding resolution is baked into the single shared binder; **this diagnostic warns, it does not fix anything** — every other endpoint sharing the type keeps binding incorrectly at runtime |
 | `SYNE014` | Warning | An endpoint declares its route in `Configure` (so no verb is visible at compile time) and at least one property's binding source came from convention rather than an explicit `[From*]` attribute | Annotate those properties with `[FromRoute]`/`[FromQuery]`/`[FromHeader]`/`[FromBody]`, or declare the route with a route attribute — see [Escape hatches](./escape-hatches). Harmless for a computed `GET`; a real bug for a computed `POST` |
+| `SYNE015` | Warning | A `[NotBound]` property sits on a message the binder deserializes from the request body (a body-carrying verb, or an explicit `[FromBody]` on a bodyless one), so a caller can still set it by naming it in the payload | Add `[JsonIgnore]` beside `[NotBound]`, and have whatever owns the value assign it unconditionally rather than only when it is still at its default — see [Messages & binding](../high-level/messages). `[NotBound]` alone is sufficient on a bodyless verb |
 
 ## `SYNE013` is a standing limitation
 
@@ -36,7 +37,7 @@ is correct.
 
 ## Grouped by what they are about
 
-**Binding** — `SYNE001`, `SYNE002`, `SYNE007`, `SYNE011`, `SYNE012`, `SYNE013`, `SYNE014`
+**Binding** — `SYNE001`, `SYNE002`, `SYNE007`, `SYNE011`, `SYNE012`, `SYNE013`, `SYNE014`, `SYNE015`
 See [Messages & binding](../high-level/messages).
 
 **Responses** — `SYNE003`, `SYNE004`
@@ -66,5 +67,5 @@ suppressed by kind rather than reported and ignored:
 | Level | Applies | Suppressed |
 |---|---|---|
 | `Endpoint<…>`, `StreamEndpoint<…>`, `MappedEndpoint<…>` | All of them | — |
-| `RawEndpoint<TRequest>` / `RawEndpoint<TRequest, TResponse>` | `SYNE003`, `SYNE004`, `SYNE005`, `SYNE008`, `SYNE009`, `SYNE010` | `SYNE001`, `SYNE002`, `SYNE007`, `SYNE011`, `SYNE012`, `SYNE013`, `SYNE014` |
+| `RawEndpoint<TRequest>` / `RawEndpoint<TRequest, TResponse>` | `SYNE003`, `SYNE004`, `SYNE005`, `SYNE008`, `SYNE009`, `SYNE010` | `SYNE001`, `SYNE002`, `SYNE007`, `SYNE011`, `SYNE012`, `SYNE013`, `SYNE014`, `SYNE015` |
 | `RawEndpoint` | `SYNE008` (call sites), `SYNE009`, `SYNE010` | Everything else |
