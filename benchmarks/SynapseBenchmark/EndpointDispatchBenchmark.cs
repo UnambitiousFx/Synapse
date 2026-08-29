@@ -13,6 +13,7 @@ using UnambitiousFx.Synapse.Abstractions;
 using UnambitiousFx.Synapse.AspNetCore;
 using UnambitiousFx.Synapse.AspNetCore.Http;
 using UnambitiousFx.Synapse.Endpoints;
+using UnambitiousFx.Synapse.Endpoints.Binding;
 
 namespace UnambitiousFx.Benchmarks.SynapseBenchmark;
 
@@ -43,8 +44,10 @@ public class EndpointDispatchBenchmark
 
     private IHost _handWrittenHost = null!;
     private IHost _endpointHost = null!;
+    private IHost _rawHost = null!;
     private HttpClient _handWritten = null!;
     private HttpClient _endpoint = null!;
+    private HttpClient _raw = null!;
 
     [GlobalSetup]
     public void Setup()
@@ -77,8 +80,15 @@ public class EndpointDispatchBenchmark
             });
         });
 
+        _rawHost = BuildHost(app =>
+        {
+            app.UseRouting();
+            app.UseEndpoints(endpoints => { endpoints.MapEndpoint<RawGetThingEndpoint>(); });
+        });
+
         _handWritten = _handWrittenHost.GetTestServer().CreateClient();
         _endpoint = _endpointHost.GetTestServer().CreateClient();
+        _raw = _rawHost.GetTestServer().CreateClient();
     }
 
     [GlobalCleanup]
@@ -86,8 +96,10 @@ public class EndpointDispatchBenchmark
     {
         _handWritten.Dispose();
         _endpoint.Dispose();
+        _raw.Dispose();
         _handWrittenHost.Dispose();
         _endpointHost.Dispose();
+        _rawHost.Dispose();
     }
 
     [Benchmark(Baseline = true)]
@@ -100,6 +112,18 @@ public class EndpointDispatchBenchmark
     public Task<HttpResponseMessage> SynapseEndpoint()
     {
         return _endpoint.GetAsync(RequestPath);
+    }
+
+    /// <summary>
+    ///     The same dispatch through the low level, where the binding is hand-written instead of
+    ///     generated. Isolates what the generated binder costs: this arm and
+    ///     <see cref="SynapseEndpoint" /> share every line downstream of <c>BindAsync</c>, because the
+    ///     high-level class is the low-level one with its binder supplied.
+    /// </summary>
+    [Benchmark]
+    public Task<HttpResponseMessage> RawEndpointHandWrittenBinding()
+    {
+        return _raw.GetAsync(RequestPath);
     }
 
     /// <summary>
@@ -199,6 +223,25 @@ public sealed class GetThingQueryHandler : IRequestHandler<GetThingQuery, ThingD
 /// <summary>The Synapse endpoint side of the comparison, mapped via <c>MapEndpoint&lt;GetThingEndpoint&gt;()</c>.</summary>
 [Get("/things/{id:guid}")]
 public sealed class GetThingEndpoint : Endpoint<GetThingQuery, ThingDto>;
+
+/// <summary>
+///     The low-level counterpart of <see cref="GetThingEndpoint" />: the same route, message, handler
+///     and response mapping, with <c>BindAsync</c> written by hand rather than generated.
+/// </summary>
+[Get("/things/{id:guid}")]
+public sealed class RawGetThingEndpoint : RawEndpoint<GetThingQuery, ThingDto>
+{
+    /// <inheritdoc />
+    public override ValueTask<BindResult<GetThingQuery>> BindAsync(HttpContext context)
+    {
+        var validation = context.Validate();
+        validation.Route<Guid>("id", out var id);
+
+        return ValueTask.FromResult(validation.IsValid
+            ? BindResult<GetThingQuery>.Success(new GetThingQuery { Id = id })
+            : BindResult<GetThingQuery>.Failure(validation));
+    }
+}
 
 /// <summary>Creates a thing from a JSON request body — the body-reading half of the comparison.</summary>
 public sealed record CreateThingCommand : IRequest<ThingDto>
