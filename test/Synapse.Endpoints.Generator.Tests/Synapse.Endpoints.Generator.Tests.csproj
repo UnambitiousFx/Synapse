@@ -1,8 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
-        <!-- Override Directory.Build.props multi-targeting: generator tests only need net9.0 -->
-        <TargetFrameworks>net9.0</TargetFrameworks>
+        <!-- Multi-targeted on purpose. The harness compiles generated code against the *running*
+             process's platform assemblies, so each target framework verifies that the emitter's
+             output compiles against that framework's ASP.NET Core and BCL surface. Pinning this to
+             one TFM meant emitted binders were only ever compile-checked against one of the three
+             the library ships for. -->
+        <TargetFrameworks>$(LibraryTargetFrameworks)</TargetFrameworks>
     </PropertyGroup>
 
     <ItemGroup>
