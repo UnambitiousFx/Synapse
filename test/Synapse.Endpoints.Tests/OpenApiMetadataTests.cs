@@ -213,6 +213,52 @@ public sealed class OpenApiMetadataTests
         Assert.Contains(produces, metadata => metadata.ContentTypes.Contains("text/event-stream"));
     }
 
+    // StreamEndpoint was the one body-carrying tier that never declared what it accepts: a POST
+    // stream binds TRequest by deserializing the request body exactly as the single-response tiers do,
+    // but published no requestBody and so could not have a wrong content type rejected by routing.
+    // See docs/known-issues/065.
+    [Fact]
+    public void CreateDescriptor_ForStreamEndpointOnABodyCarryingVerb_DeclaresAcceptsMetadata()
+    {
+        // Arrange
+        EndpointRegistry.RegisterBinder(new PostStreamMetaBinder());
+        EndpointRegistry.RegisterMetadata<PostStreamMetaEndpoint>(
+            new EndpointMetadata(["POST"], "/meta-stream-post"));
+        var app = WebApplication.CreateSlimBuilder().Build();
+
+        // Act
+        app.MapEndpoint<PostStreamMetaEndpoint>();
+
+        // Assert
+        var endpoint = ((IEndpointRouteBuilder)app).DataSources
+            .SelectMany(source => source.Endpoints)
+            .Single();
+        var accepts = endpoint.Metadata.GetMetadata<IAcceptsMetadata>();
+        Assert.NotNull(accepts);
+        Assert.Equal(typeof(PostStreamMetaQuery), accepts.RequestType);
+        Assert.Contains("application/json", accepts.ContentTypes);
+    }
+
+    // The guard is on the verb, so the common bodyless stream keeps declaring nothing.
+    [Fact]
+    public void CreateDescriptor_ForStreamEndpointOnABodylessVerb_DeclaresNoAcceptsMetadata()
+    {
+        // Arrange
+        EndpointRegistry.RegisterBinder(new StreamMetaBinder());
+        EndpointRegistry.RegisterMetadata<StreamMetaEndpoint>(
+            new EndpointMetadata(["GET"], "/meta-stream-bodyless"));
+        var app = WebApplication.CreateSlimBuilder().Build();
+
+        // Act
+        app.MapEndpoint<StreamMetaEndpoint>();
+
+        // Assert
+        var endpoint = ((IEndpointRouteBuilder)app).DataSources
+            .SelectMany(source => source.Endpoints)
+            .Single();
+        Assert.Null(endpoint.Metadata.GetMetadata<IAcceptsMetadata>());
+    }
+
     private sealed record MetaQuery : IRequest<string>;
 
     // A declarative mapper that writes no body must not declare one. NoContent() and StatusCode(int)
@@ -428,6 +474,19 @@ public sealed class OpenApiMetadataTests
         public ValueTask<BindResult<StreamMetaQuery>> BindAsync(HttpContext context)
         {
             return ValueTask.FromResult(BindResult<StreamMetaQuery>.Success(new StreamMetaQuery()));
+        }
+    }
+
+    private sealed record PostStreamMetaQuery : IStreamRequest<int>;
+
+    private sealed class PostStreamMetaEndpoint : StreamEndpoint<PostStreamMetaQuery, int>;
+
+    private sealed class PostStreamMetaBinder : IEndpointBinder<PostStreamMetaQuery>
+    {
+        public ValueTask<BindResult<PostStreamMetaQuery>> BindAsync(HttpContext context)
+        {
+            return ValueTask.FromResult(
+                BindResult<PostStreamMetaQuery>.Success(new PostStreamMetaQuery()));
         }
     }
 }

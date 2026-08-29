@@ -90,9 +90,21 @@ public abstract class StreamEndpoint<TRequest, TItem> : RawEndpoint
             HttpMethods = plan.HttpMethods,
             ApplyMetadata = handlerBuilder =>
             {
-                // Declared explicitly because a RequestDelegate-shaped endpoint infers nothing. The
-                // response format is negotiated at request time (see WantsServerSentEvents), so both
-                // content types are declared for the same 200 response.
+                // Declared explicitly because a RequestDelegate-shaped endpoint infers nothing, and
+                // guarded on the verb because a bodyless stream (the common GET) accepts nothing. This
+                // tier is a body-carrying one whenever its verb is: a POST stream binds TRequest by
+                // deserializing the request body exactly as the single-response tiers do, so it owes
+                // the same declaration. Omitting it left the input shape absent from the OpenAPI
+                // document and left routing unable to reject a wrong content type, which surfaced as a
+                // 400 from the binder where every other endpoint answers 415 — see
+                // docs/known-issues/065.
+                if (!HttpMethodHelpers.AllVerbsAreBodyless(plan.HttpMethods))
+                {
+                    handlerBuilder.Accepts<TRequest>("application/json");
+                }
+
+                // The response format is negotiated at request time (see WantsServerSentEvents), so
+                // both content types are declared for the same 200 response.
                 handlerBuilder.WithMetadata(new ProducesResponseMetadata(
                     StatusCodes.Status200OK,
                     typeof(IAsyncEnumerable<TItem>),
