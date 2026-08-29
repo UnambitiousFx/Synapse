@@ -77,6 +77,16 @@ public abstract class StreamEndpoint<TRequest, TItem> : RawEndpoint
             : new JsonArrayStreamResult<TItem>(items, typeInfo);
     }
 
+    /// <inheritdoc />
+    /// <remarks>The generated binder knows whether a body is read; the verb alone does not.</remarks>
+    private protected sealed override bool DeclaresRequestBody(string[] httpMethods)
+    {
+        // Both must hold: the verb has to be one that carries a body at all, and the binder has
+        // to actually read one. Narrowing only — a bodyless verb declared nothing before and
+        // still does, including the explicit-[FromBody]-on-a-GET shape SYNE007 warns about.
+        return base.DeclaresRequestBody(httpMethods) && (_binder?.ReadsRequestBody ?? true);
+    }
+
     internal sealed override RawEndpointPlan CreatePlan(EndpointMetadata metadata)
     {
         var builder = new StreamEndpointBuilder(metadata);
@@ -98,7 +108,7 @@ public abstract class StreamEndpoint<TRequest, TItem> : RawEndpoint
                 // document and left routing unable to reject a wrong content type, which surfaced as a
                 // 400 from the binder where every other endpoint answers 415 — see
                 // docs/known-issues/065.
-                if (!HttpMethodHelpers.AllVerbsAreBodyless(plan.HttpMethods))
+                if (DeclaresRequestBody(plan.HttpMethods))
                 {
                     handlerBuilder.Accepts<TRequest>("application/json");
                 }

@@ -13,15 +13,17 @@ namespace UnambitiousFx.Examples.EndpointsApi.Features.Tasks;
 
 /// <summary>Queues a task for archival.</summary>
 /// <remarks>
-///     <see cref="TaskId" /> is not <c>required</c>, for the same reason
-///     <see cref="UpdateTaskCommand.TaskId" /> is not: <c>POST</c> carries a body, so the message is
-///     JSON-deserialized before the route value is applied, and <c>required</c> would make the
-///     source-generated deserializer demand a <c>taskId</c> in a payload that never carries one.
+///     <see cref="TaskId" /> is <c>required</c>, which it could not be while a <c>POST</c> read a body
+///     regardless of whether anything bound from one: the deserializer constructed the message and
+///     demanded a <c>taskId</c> the payload never carries. Nothing here binds from the body, so the
+///     binder constructs the message itself and sets this in the object initializer — the same path a
+///     bodyless verb has always used. Contrast <see cref="RetitleTaskCommand.TaskId" />, which sits
+///     beside a body-bound property and so still cannot be <c>required</c>.
 /// </remarks>
 public sealed record ArchiveTaskCommand : IRequest<TaskArchived>
 {
     /// <summary>The task's id, bound from the route.</summary>
-    public Guid TaskId { get; init; }
+    public required Guid TaskId { get; init; }
 }
 
 /// <summary>Acknowledges an archival request.</summary>
@@ -33,12 +35,11 @@ public sealed record TaskArchived(Guid TaskId);
 ///     poll — the mapper for work that has been taken on but not finished.
 /// </summary>
 /// <remarks>
-///     Worth knowing: <c>POST</c> is not a bodyless verb, so the generated binder reads a JSON body
-///     even though every property here binds from the route. A caller must send <c>{}</c>. Sending
-///     nothing answers <c>400</c> either way, with whichever check fails first: an empty body under
-///     <c>Content-Type: application/json</c> gives "The request body is required but was empty or
-///     null.", while a request with no content type at all gives "The request body is required to be
-///     JSON, but the request declared content type ''." Both verified against the running app.
+///     Every property binds from the route, so this endpoint reads no request body and declares none:
+///     a caller sends nothing at all, and <c>/openapi/v1.json</c> shows no <c>requestBody</c> for the
+///     operation. What decides that is the binding, not the verb — see
+///     <c>docs/known-issues/067</c>, and contrast <see cref="RetitleTaskEndpoint" /> below, whose
+///     <c>Title</c> does bind from the body.
 /// </remarks>
 [Post("/{taskId:guid}/archive")]
 [InGroup<TasksGroup>]
@@ -97,8 +98,8 @@ public sealed record CompactReport(int Examined);
 ///     <c>StatusCode(int)</c> is the general form of <c>NoContent()</c> — a fixed success code and no
 ///     body. <c>205 Reset Content</c> is the honest use for it here: it tells the caller its view of
 ///     the collection is stale, which is exactly what a compaction means and which no named mapper
-///     covers. Like <see cref="ArchiveTaskEndpoint" />, this is a <c>POST</c> and so still expects
-///     <c>{}</c> on the wire.
+///     covers. Like <see cref="ArchiveTaskEndpoint" />, it binds nothing from the body and so accepts
+///     no request body at all — here because the message has no properties whatsoever.
 /// </remarks>
 [Post("/compact")]
 [InGroup<TasksGroup>]

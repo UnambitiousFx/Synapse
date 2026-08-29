@@ -249,7 +249,7 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
             // see. A hand-written BindAsync may read any type it likes, or none — those call sites are
             // checked separately, by scanning the endpoint's own body-reading calls.
             var jsonRequestTypeName = kind.Value.HasGeneratedBinder() && bound is not null
-                ? ResolveJsonRequestTypeName(bound, method, boundProperties)
+                ? ResolveJsonRequestTypeName(bound, boundProperties)
                 : null;
             var jsonResponseTypeName = ResolveJsonResponseTypeName(responseType);
 
@@ -1249,7 +1249,6 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
     ///     type or a type parameter — see <see cref="IsJsonCheckable" />.
     /// </summary>
     private static string? ResolveJsonRequestTypeName(ITypeSymbol bound,
-        string httpMethod,
         EquatableArray<BindablePropertyModel> boundProperties)
     {
         if (!IsJsonCheckable(bound))
@@ -1257,25 +1256,20 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
             return null;
         }
 
-        if (IsBodylessVerb(httpMethod))
+        // Registration is owed only when the type actually reaches the JSON deserializer, which is
+        // when some property binds from the body — the same rule BinderEmitter uses to decide whether
+        // to emit the read at all, and it must stay in step with it. The verb is not the question: a
+        // POST binding only from the route no longer reads a body, so demanding a registration for it
+        // would be advice about a call that is never made.
+        foreach (var property in boundProperties)
         {
-            var hasBodyProperty = false;
-            foreach (var property in boundProperties)
+            if (property.Source == BindingSource.Body)
             {
-                if (property.Source == BindingSource.Body)
-                {
-                    hasBodyProperty = true;
-                    break;
-                }
-            }
-
-            if (!hasBodyProperty)
-            {
-                return null;
+                return bound.ToDisplayString();
             }
         }
 
-        return bound.ToDisplayString();
+        return null;
     }
 
     /// <summary>
@@ -1781,8 +1775,7 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
             .Select(g =>
             {
                 var first = g.First();
-                var isBodylessVerb = IsBodylessVerb(first.HttpMethod);
-                return new BoundTypeInfo(first.BoundTypeFullName, first.BoundProperties, isBodylessVerb,
+                return new BoundTypeInfo(first.BoundTypeFullName, first.BoundProperties,
                     first.HasParameterlessConstructor, first.PrimaryConstructorParameters);
             })
             .OrderBy(t => t.TypeFullName, StringComparer.Ordinal)

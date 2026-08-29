@@ -543,6 +543,211 @@ public sealed class BinderEmissionEdgeCaseTests
         // Assert
         Assert.Contains("ReadJsonBodyAsync<global::TestNs.SubmitCommand>(context)", generated);
     }
+
+    // The other half of the same rule, and the point of docs/known-issues/067: what decides whether a
+    // body is read is whether anything binds from it, not the verb. A POST whose every property comes
+    // off the route has nothing to deserialize, and reading a body anyway made such an endpoint answer
+    // 400 unless the caller sent "{}".
+    [Theory]
+    [InlineData("POST")]
+    [InlineData("PUT")]
+    [InlineData("PATCH")]
+    public void Generate_ForABodyCarryingVerbWithNoBodyBoundProperty_EmitsNoBodyRead(string verb)
+    {
+        // Arrange
+        var source = $$"""
+                       using UnambitiousFx.Synapse.Abstractions;
+                       using UnambitiousFx.Synapse.Endpoints;
+
+                       namespace TestNs;
+
+                       public sealed record ArchiveCommand : IRequest<int>
+                       {
+                           public global::System.Guid ThingId { get; init; }
+                       }
+
+                       [HttpEndpoint("{{verb}}", "/things/{thingId:guid}/archive")]
+                       public sealed class ArchiveEndpoint : Endpoint<ArchiveCommand, int>;
+                       """;
+
+        // Act
+        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+
+        // Assert
+        Assert.DoesNotContain("ReadJsonBodyAsync", generated);
+        Assert.Contains("new global::TestNs.ArchiveCommand()", generated);
+        GeneratorHarness.AssertGeneratedCompiles(source);
+    }
+
+    // A message with no properties at all is the same case: nothing binds from anywhere, so there is
+    // nothing to read.
+    [Fact]
+    public void Generate_ForAPostWithAPropertylessMessage_EmitsNoBodyRead()
+    {
+        // Arrange
+        const string source = """
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+
+                              namespace TestNs;
+
+                              public sealed record CompactCommand : IRequest<int>;
+
+                              [Post("/compact")]
+                              public sealed class CompactEndpoint : Endpoint<CompactCommand, int>;
+                              """;
+
+        // Act
+        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+
+        // Assert
+        Assert.DoesNotContain("ReadJsonBodyAsync", generated);
+        GeneratorHarness.AssertGeneratedCompiles(source);
+    }
+
+    // Once the binder constructs the message itself, `required` on a route-bound property works on a
+    // body-carrying verb too: it goes into the object initializer of the `new` expression, exactly as
+    // it already did on a bodyless one. Before, the deserializer constructed the message and demanded
+    // a value the payload never carries. See docs/known-issues/061 and 067.
+    [Fact]
+    public void Generate_ForARequiredRouteBoundPropertyOnAPost_SetsItInTheObjectInitializer()
+    {
+        // Arrange
+        const string source = """
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+
+                              namespace TestNs;
+
+                              public sealed record ArchiveCommand : IRequest<int>
+                              {
+                                  public required global::System.Guid ThingId { get; init; }
+                              }
+
+                              [Post("/things/{thingId:guid}/archive")]
+                              public sealed class ArchiveEndpoint : Endpoint<ArchiveCommand, int>;
+                              """;
+
+        // Act
+        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+
+        // Assert
+        Assert.DoesNotContain("ReadJsonBodyAsync", generated);
+        Assert.Contains("ThingId =", generated);
+        GeneratorHarness.AssertGeneratedCompiles(source);
+    }
+
+    // A positional record on a body-carrying verb is now constructed through its primary constructor,
+    // the path that was previously reachable only on a bodyless verb.
+    [Fact]
+    public void Generate_ForAPositionalRecordOnAPost_ConstructsThroughThePrimaryConstructor()
+    {
+        // Arrange
+        const string source = """
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+
+                              namespace TestNs;
+
+                              public sealed record ArchiveCommand(global::System.Guid ThingId) : IRequest<int>;
+
+                              [Post("/things/{thingId:guid}/archive")]
+                              public sealed class ArchiveEndpoint : Endpoint<ArchiveCommand, int>;
+                              """;
+
+        // Act
+        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+
+        // Assert
+        Assert.DoesNotContain("ReadJsonBodyAsync", generated);
+        Assert.Contains("new global::TestNs.ArchiveCommand(", generated);
+        GeneratorHarness.AssertGeneratedCompiles(source);
+    }
+
+    // The verb still decides where an unannotated property binds (rule 4), so a POST property with no
+    // route match resolves to the body and the read comes back.
+    [Fact]
+    public void Generate_ForAPostMixingARouteMatchAndAnUnannotatedProperty_StillEmitsABodyRead()
+    {
+        // Arrange
+        const string source = """
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+
+                              namespace TestNs;
+
+                              public sealed record RetitleCommand : IRequest<int>
+                              {
+                                  public global::System.Guid ThingId { get; init; }
+
+                                  public string Title { get; init; } = "";
+                              }
+
+                              [Post("/things/{thingId:guid}/title")]
+                              public sealed class RetitleEndpoint : Endpoint<RetitleCommand, int>;
+                              """;
+
+        // Act
+        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+
+        // Assert
+        Assert.Contains("ReadJsonBodyAsync<global::TestNs.RetitleCommand>(context)", generated);
+    }
+
+    // The generated binder tells the runtime whether it reads a body, so the endpoint can declare
+    // Accepts to match. Without it the declaration could only be made from the verb, which is the
+    // half of the picture that is wrong here.
+    [Fact]
+    public void Generate_ForABinderThatReadsNoBody_ReportsReadsRequestBodyFalse()
+    {
+        // Arrange
+        const string source = """
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+
+                              namespace TestNs;
+
+                              public sealed record ArchiveCommand : IRequest<int>
+                              {
+                                  public global::System.Guid ThingId { get; init; }
+                              }
+
+                              [Post("/things/{thingId:guid}/archive")]
+                              public sealed class ArchiveEndpoint : Endpoint<ArchiveCommand, int>;
+                              """;
+
+        // Act
+        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+
+        // Assert
+        Assert.Contains("public bool ReadsRequestBody => false;", generated);
+    }
+
+    [Fact]
+    public void Generate_ForABinderThatReadsABody_ReportsReadsRequestBodyTrue()
+    {
+        // Arrange
+        const string source = """
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+
+                              namespace TestNs;
+
+                              public sealed record CreateCommand : IRequest<int>
+                              {
+                                  public string Title { get; init; } = "";
+                              }
+
+                              [Post("/things")]
+                              public sealed class CreateEndpoint : Endpoint<CreateCommand, int>;
+                              """;
+
+        // Act
+        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+
+        // Assert
+        Assert.Contains("public bool ReadsRequestBody => true;", generated);
+    }
 }
 
 /// <summary>

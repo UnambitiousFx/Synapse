@@ -11,13 +11,11 @@ internal sealed class BoundTypeInfo
 {
     public BoundTypeInfo(string typeFullName,
         EquatableArray<BindablePropertyModel> properties,
-        bool isBodylessVerb,
         bool hasParameterlessConstructor,
         EquatableArray<ConstructorParameterModel> primaryConstructorParameters)
     {
         TypeFullName = typeFullName;
         Properties = properties;
-        IsBodylessVerb = isBodylessVerb;
         HasParameterlessConstructor = hasParameterlessConstructor;
         PrimaryConstructorParameters = primaryConstructorParameters;
     }
@@ -27,9 +25,6 @@ internal sealed class BoundTypeInfo
 
     /// <summary>The type's resolved bindable properties.</summary>
     public EquatableArray<BindablePropertyModel> Properties { get; }
-
-    /// <summary>Whether the winning endpoint's HTTP verb is one that never carries a body.</summary>
-    public bool IsBodylessVerb { get; }
 
     /// <summary>Whether the type has an accessible parameterless constructor.</summary>
     public bool HasParameterlessConstructor { get; }

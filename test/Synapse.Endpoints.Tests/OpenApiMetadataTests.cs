@@ -259,6 +259,70 @@ public sealed class OpenApiMetadataTests
         Assert.Null(endpoint.Metadata.GetMetadata<IAcceptsMetadata>());
     }
 
+    // docs/known-issues/067: the verb is not what decides whether a body is read, so it cannot be
+    // what decides whether one is declared. A POST whose binder reads nothing must declare nothing,
+    // or the document promises a schema the endpoint ignores and routing rejects a content type it
+    // never looks at.
+    [Fact]
+    public void CreateDescriptor_ForABodyCarryingVerbWhoseBinderReadsNoBody_DeclaresNoAcceptsMetadata()
+    {
+        // Arrange
+        EndpointRegistry.RegisterBinder(new NoBodyMetaBinder());
+        EndpointRegistry.RegisterMetadata<NoBodyMetaEndpoint>(
+            new EndpointMetadata(["POST"], "/meta-no-body"));
+        var app = WebApplication.CreateSlimBuilder().Build();
+
+        // Act
+        app.MapEndpoint<NoBodyMetaEndpoint>();
+
+        // Assert
+        var endpoint = ((IEndpointRouteBuilder)app).DataSources
+            .SelectMany(source => source.Endpoints)
+            .Single();
+        Assert.Null(endpoint.Metadata.GetMetadata<IAcceptsMetadata>());
+    }
+
+    // A hand-written binder predating the member keeps today's behaviour through the interface's
+    // default, so the declaration still follows the verb where nothing better is known.
+    [Fact]
+    public void CreateDescriptor_ForABinderNotOverridingReadsRequestBody_StillDeclaresAcceptsOnAPost()
+    {
+        // Arrange
+        EndpointRegistry.RegisterBinder(new MetaBinder());
+        EndpointRegistry.RegisterMetadata<MetaEndpoint>(
+            new EndpointMetadata(["POST"], "/meta-default-binder"));
+        var app = WebApplication.CreateSlimBuilder().Build();
+
+        // Act
+        app.MapEndpoint<MetaEndpoint>();
+
+        // Assert
+        var endpoint = ((IEndpointRouteBuilder)app).DataSources
+            .SelectMany(source => source.Endpoints)
+            .Single();
+        Assert.NotNull(endpoint.Metadata.GetMetadata<IAcceptsMetadata>());
+    }
+
+    // The hand-bound middle tier has no generated binder to ask, so it keeps declaring from the verb:
+    // its author writes BindAsync and may read a body on any verb that carries one.
+    [Fact]
+    public void CreateDescriptor_ForAHandBoundEndpointOnAPost_StillDeclaresAcceptsMetadata()
+    {
+        // Arrange
+        EndpointRegistry.RegisterMetadata<HandBoundMetaEndpoint>(
+            new EndpointMetadata(["POST"], "/meta-hand-bound"));
+        var app = WebApplication.CreateSlimBuilder().Build();
+
+        // Act
+        app.MapEndpoint<HandBoundMetaEndpoint>();
+
+        // Assert
+        var endpoint = ((IEndpointRouteBuilder)app).DataSources
+            .SelectMany(source => source.Endpoints)
+            .Single();
+        Assert.NotNull(endpoint.Metadata.GetMetadata<IAcceptsMetadata>());
+    }
+
     private sealed record MetaQuery : IRequest<string>;
 
     // A declarative mapper that writes no body must not declare one. NoContent() and StatusCode(int)
@@ -462,6 +526,31 @@ public sealed class OpenApiMetadataTests
         public ValueTask<BindResult<VoidMetaCommand>> BindAsync(HttpContext context)
         {
             return ValueTask.FromResult(BindResult<VoidMetaCommand>.Success(new VoidMetaCommand()));
+        }
+    }
+
+    private sealed record NoBodyMetaQuery : IRequest<string>;
+
+    private sealed class NoBodyMetaEndpoint : Endpoint<NoBodyMetaQuery, string>;
+
+    private sealed class NoBodyMetaBinder : IEndpointBinder<NoBodyMetaQuery>
+    {
+        public bool ReadsRequestBody => false;
+
+        public ValueTask<BindResult<NoBodyMetaQuery>> BindAsync(HttpContext context)
+        {
+            return ValueTask.FromResult(BindResult<NoBodyMetaQuery>.Success(new NoBodyMetaQuery()));
+        }
+    }
+
+    private sealed record HandBoundMetaCommand : IRequest<string>;
+
+    private sealed class HandBoundMetaEndpoint : RawEndpoint<HandBoundMetaCommand, string>
+    {
+        public override ValueTask<BindResult<HandBoundMetaCommand>> BindAsync(HttpContext context)
+        {
+            return ValueTask.FromResult(
+                BindResult<HandBoundMetaCommand>.Success(new HandBoundMetaCommand()));
         }
     }
 

@@ -94,6 +94,16 @@ public abstract class MappedEndpoint<THttpRequest, TRequest, TResponse, THttpRes
             cancellationToken);
     }
 
+    /// <inheritdoc />
+    /// <remarks>The generated binder over <typeparamref name="THttpRequest" /> knows the answer.</remarks>
+    private protected sealed override bool DeclaresRequestBody(string[] httpMethods)
+    {
+        // Both must hold: the verb has to be one that carries a body at all, and the binder has
+        // to actually read one. Narrowing only — a bodyless verb declared nothing before and
+        // still does, including the explicit-[FromBody]-on-a-GET shape SYNE007 warns about.
+        return base.DeclaresRequestBody(httpMethods) && (_binder?.ReadsRequestBody ?? true);
+    }
+
     internal sealed override RawEndpointPlan CreatePlan(EndpointMetadata metadata)
     {
         var builder = new EndpointBuilder<THttpResponse>(metadata);
@@ -109,7 +119,7 @@ public abstract class MappedEndpoint<THttpRequest, TRequest, TResponse, THttpRes
             ApplyMetadata = handlerBuilder =>
             {
                 // Declared explicitly because a RequestDelegate-shaped endpoint infers nothing.
-                if (!HttpMethodHelpers.AllVerbsAreBodyless(configuration.HttpMethods))
+                if (DeclaresRequestBody(configuration.HttpMethods))
                 {
                     handlerBuilder.Accepts(typeof(THttpRequest), "application/json");
                 }

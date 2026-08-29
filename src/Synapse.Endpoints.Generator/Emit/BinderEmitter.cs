@@ -72,9 +72,18 @@ internal static class BinderEmitter
             }
         }
 
-        // Skip reading the body only when the verb never carries one AND nothing resolved to Body
-        // (an explicit [FromBody] can still force a body read even on a bodyless verb).
-        var isBodyless = boundType.IsBodylessVerb && !hasBodyProperty;
+        // What decides whether a body is read is whether anything binds from it — not the verb. A
+        // POST whose every property comes off the route has nothing to deserialize, and reading a
+        // body anyway made such an endpoint answer 400 unless the caller sent "{}" (see
+        // docs/known-issues/067). The verb has already had its say by this point: it is what rule 4
+        // consulted to resolve an unannotated property to the query string or to the body, so a
+        // body-carrying verb with an unannotated property does have one here.
+        //
+        // `isBodyless` therefore now means "this binder constructs the message itself", which is the
+        // thing the rest of this method actually branches on: construction through the primary
+        // constructor, and `required` members set in the object initializer, both belong to the case
+        // where no deserializer has already built the instance.
+        var isBodyless = !hasBodyProperty;
 
         // Which properties the constructor will consume, decided before anything is emitted so that a
         // consumed property does not also get a presence flag it would never read. The value is the
@@ -87,6 +96,14 @@ internal static class BinderEmitter
         builder.AppendLine(
             $"internal sealed class {className} : {BindingNamespace}.IEndpointBinder<{typeFullName}>");
         builder.AppendLine("{");
+
+        // Declared so the endpoint can align its Accepts declaration with what this binder actually
+        // does. The runtime tier cannot work it out: it knows the verb, not what the properties bound
+        // from. Emitted on every binder rather than only the false case, so the generated code states
+        // the answer rather than relying on the interface's default.
+        builder.AppendLine($"    public bool ReadsRequestBody => {(isBodyless ? "false" : "true")};");
+        builder.AppendLine();
+
         builder.AppendLine(
             $"    public async global::System.Threading.Tasks.ValueTask<{BindingNamespace}.BindResult<{typeFullName}>> BindAsync(");
         builder.AppendLine("        global::Microsoft.AspNetCore.Http.HttpContext context)");

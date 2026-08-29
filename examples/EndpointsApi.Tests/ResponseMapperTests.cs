@@ -26,8 +26,9 @@ public sealed class ResponseMapperTests : IClassFixture<WebApplicationFactory<Pr
         var client = _factory.CreateClient();
         var id = await CreateTaskAsync(client, "to be archived");
 
-        // Act — an empty body is not enough for a POST; see the endpoint's remarks.
-        var response = await client.PostAsJsonAsync($"/tasks/{id}/archive", new { },
+        // Act — no body at all: nothing on this message binds from one.
+        var response = await client.SendAsync(
+            new HttpRequestMessage(HttpMethod.Post, $"/tasks/{id}/archive"),
             TestContext.Current.CancellationToken);
 
         // Assert
@@ -35,37 +36,68 @@ public sealed class ResponseMapperTests : IClassFixture<WebApplicationFactory<Pr
         Assert.Equal($"/tasks/{id}", response.Headers.Location!.ToString());
     }
 
-    // Pins the consequence of a POST reading a body it has no property to fill from: the caller has
-    // to send {} even though TaskId comes off the route. Both 400s are asserted because which one
-    // you get depends on whether a content type was sent at all.
+    // The fix for docs/known-issues/067, from the caller's side: a POST whose every property comes
+    // off the route used to answer 400 unless "{}" was sent. Both shapes that used to fail now work,
+    // and a caller that does send a body is not punished for it either.
     [Fact]
-    public async Task ArchiveTask_WithNoBody_Returns400()
+    public async Task ArchiveTask_WithNoBody_Succeeds()
     {
         // Arrange
         var client = _factory.CreateClient();
         var id = await CreateTaskAsync(client, "to be archived without a body");
 
-        // Act — no content type, so the JSON content-type check fails first.
+        // Act
         var noContentType = await client.SendAsync(
             new HttpRequestMessage(HttpMethod.Post, $"/tasks/{id}/archive"),
             TestContext.Current.CancellationToken);
 
-        // Act — a declared JSON content type with nothing in the body.
-        var emptyBody = new HttpRequestMessage(HttpMethod.Post, $"/tasks/{id}/archive")
+        var emptyJson = new HttpRequestMessage(HttpMethod.Post, $"/tasks/{id}/archive")
         {
             Content = new StringContent("", Encoding.UTF8, "application/json")
         };
-        var emptyBodyResponse = await client.SendAsync(emptyBody,
+        var emptyJsonResponse = await client.SendAsync(emptyJson,
             TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal(HttpStatusCode.BadRequest, noContentType.StatusCode);
-        Assert.Contains("required to be JSON",
-            await noContentType.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(HttpStatusCode.Accepted, noContentType.StatusCode);
+        Assert.Equal(HttpStatusCode.Accepted, emptyJsonResponse.StatusCode);
+    }
 
-        Assert.Equal(HttpStatusCode.BadRequest, emptyBodyResponse.StatusCode);
-        Assert.Contains("empty or null",
-            await emptyBodyResponse.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+    // A body sent to an endpoint that binds nothing from one is ignored rather than rejected. Worth
+    // pinning because it is the loosening this change makes: routing no longer has an Accepts
+    // declaration to match a content type against, so nothing answers 415 here any more.
+    [Fact]
+    public async Task ArchiveTask_WithAnUnexpectedBody_IgnoresIt()
+    {
+        // Arrange
+        var client = _factory.CreateClient();
+        var id = await CreateTaskAsync(client, "archived despite a stray body");
+
+        var request = new HttpRequestMessage(HttpMethod.Post, $"/tasks/{id}/archive")
+        {
+            Content = new StringContent("not json at all", Encoding.UTF8, "text/plain")
+        };
+
+        // Act
+        var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task CompactTasks_WithNoBody_Succeeds()
+    {
+        // Arrange
+        var client = _factory.CreateClient();
+
+        // Act
+        var response = await client.SendAsync(
+            new HttpRequestMessage(HttpMethod.Post, "/tasks/compact"),
+            TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.ResetContent, response.StatusCode);
     }
 
     // NoContent() on an Endpoint<TRequest, TResponse>: the handler produced a TaskDto and the wire
@@ -99,7 +131,8 @@ public sealed class ResponseMapperTests : IClassFixture<WebApplicationFactory<Pr
         var client = _factory.CreateClient();
 
         // Act
-        var response = await client.PostAsJsonAsync("/tasks/compact", new { },
+        var response = await client.SendAsync(
+            new HttpRequestMessage(HttpMethod.Post, "/tasks/compact"),
             TestContext.Current.CancellationToken);
 
         // Assert
@@ -134,6 +167,37 @@ public sealed class ResponseMapperTests : IClassFixture<WebApplicationFactory<Pr
             paths.GetProperty("/tasks/compact").GetProperty("post")
                 .GetProperty("responses").TryGetProperty("205", out _),
             "POST /tasks/compact does not document its 205.");
+    }
+
+    // The document side of docs/known-issues/067: an endpoint that reads no body must not advertise
+    // one, while its sibling that does read one still must.
+    [Fact]
+    public async Task GetOpenApi_DeclaresARequestBodyOnlyWhereOneIsRead()
+    {
+        // Arrange
+        var client = _factory.CreateClient();
+
+        // Act
+        var document = await client.GetStringAsync("/openapi/v1.json",
+            TestContext.Current.CancellationToken);
+        using var parsed = JsonDocument.Parse(document);
+        var paths = parsed.RootElement.GetProperty("paths");
+
+        // Assert — route-only and propertyless messages declare nothing.
+        Assert.False(
+            paths.GetProperty("/tasks/{taskId}/archive").GetProperty("post")
+                .TryGetProperty("requestBody", out _),
+            "POST /tasks/{taskId}/archive declares a request body it never reads.");
+        Assert.False(
+            paths.GetProperty("/tasks/compact").GetProperty("post")
+                .TryGetProperty("requestBody", out _),
+            "POST /tasks/compact declares a request body it never reads.");
+
+        // Assert — a body-bound property still declares one.
+        Assert.True(
+            paths.GetProperty("/tasks/{taskId}/title").GetProperty("put")
+                .TryGetProperty("requestBody", out _),
+            "PUT /tasks/{taskId}/title should declare a request body.");
     }
 
     private static async Task<Guid> CreateTaskAsync(HttpClient client, string title)

@@ -48,6 +48,20 @@ public abstract class Endpoint<TRequest, TResponse> : RawEndpoint<TRequest, TRes
         return Mapped(_binder).BindAsync(context);
     }
 
+    /// <inheritdoc />
+    /// <remarks>
+    ///     The generated binder reports whether it deserializes the message, which is what decides
+    ///     this — a verb that carries a body but whose every property binds from the route, query or a
+    ///     header reads nothing. See <c>docs/known-issues/067</c>.
+    /// </remarks>
+    private protected sealed override bool DeclaresRequestBody(string[] httpMethods)
+    {
+        // Both must hold: the verb has to be one that carries a body at all, and the binder has
+        // to actually read one. Narrowing only — a bodyless verb declared nothing before and
+        // still does, including the explicit-[FromBody]-on-a-GET shape SYNE007 warns about.
+        return base.DeclaresRequestBody(httpMethods) && (_binder?.ReadsRequestBody ?? true);
+    }
+
     internal sealed override RawEndpointPlan CreatePlan(EndpointMetadata metadata)
     {
         // Resolved after the plan, matching the order the route and binder were resolved in before:
