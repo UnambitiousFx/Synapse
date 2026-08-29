@@ -16,3 +16,4 @@ SYNE003 | Synapse.Endpoints | Info | POST/PUT endpoint declares no explicit succ
 SYNE004 | Synapse.Endpoints | Warning | OnSuccess override conflicts with a declarative success method
 SYNE008 | Synapse.Endpoints | Warning | Type used by an endpoint is missing from every JsonSerializerContext
 SYNE014 | Synapse.Endpoints | Warning | Route declared in Configure on a message with convention-bound properties
+SYNE015 | Synapse.Endpoints | Warning | [NotBound] property is still populated from the request body

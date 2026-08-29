@@ -252,6 +252,51 @@ internal static class EndpointDiagnostics
         "whose properties are all pinned explicitly stays silent.");
 
     /// <summary>
+    ///     SYNE015: a <c>[NotBound]</c> property sits on a message that the generated binder
+    ///     populates by deserializing the request body, and nothing stops
+    ///     <c>System.Text.Json</c> from setting it from that body.
+    /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         <c>[NotBound]</c> excludes a property from the route/query/header assignments the
+    ///         generator emits. It does not, and cannot, exclude it from JSON deserialization: a
+    ///         body-carrying verb is bound by reading the whole message in one shot
+    ///         (<c>BindingHelpers.ReadJsonBodyAsync&lt;T&gt;</c>), and the serializer has never heard of
+    ///         the attribute. The attribute's stated purpose — a value "a pipeline behaviour or handler
+    ///         sets, so a caller cannot supply them by guessing the property name" — therefore holds
+    ///         only on a bodyless verb unless <c>[JsonIgnore]</c> is applied as well.
+    ///     </para>
+    ///     <para>
+    ///         Warning rather than Error: the code compiles and the endpoint works, and a pipeline
+    ///         behaviour that overwrites the property unconditionally already closes the hole. It is
+    ///         not merely advisory, though — the properties this attribute guards are the ones a caller
+    ///         must not control (an actor, a tenant, a timestamp), so silently accepting a caller's
+    ///         value is a privilege question rather than a tidiness one.
+    ///     </para>
+    ///     <para>
+    ///         Reported only when the binder actually reads a body: a bodyless verb with no explicit
+    ///         <c>[FromBody]</c> property never deserializes the message, so <c>[NotBound]</c> alone is
+    ///         sufficient there and this stays silent. A <c>[JsonIgnore]</c> whose <c>Condition</c> is
+    ///         anything other than <c>Always</c> still permits deserialization and so does not suppress
+    ///         it.
+    ///     </para>
+    /// </remarks>
+    internal static readonly DiagnosticDescriptor NotBoundPropertyIsStillDeserialized = new(
+        "SYNE015",
+        "[NotBound] property is still populated from the request body",
+        "'{0}' on '{1}' is marked [NotBound], but this endpoint's verb carries a body and the binder populates the message by deserializing it, so a caller can still set this property by naming it in the JSON payload. Add [JsonIgnore] alongside [NotBound], and have whatever owns the value assign it unconditionally.",
+        Category,
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description:
+        "[NotBound] excludes a property from the route/query/header assignments the generator emits; " +
+        "it cannot exclude it from JSON deserialization, which populates the whole message in one " +
+        "shot on a body-carrying verb. Reported only when the binder actually reads a body -- a " +
+        "bodyless verb with no explicit [FromBody] property never deserializes the message, so " +
+        "[NotBound] alone is sufficient there. A [JsonIgnore] with a Condition other than Always " +
+        "still permits deserialization and does not suppress this warning.");
+
+    /// <summary>
     ///     SYNE008: a type used by an endpoint as its request or response — the exact type as
     ///     declared, not decomposed into a generic collection's element type — is not registered by
     ///     any <c>[JsonSerializable(typeof(...))]</c> attribute on any <c>JsonSerializerContext</c>

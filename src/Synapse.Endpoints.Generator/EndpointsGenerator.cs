@@ -581,6 +581,11 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
         var propertyLocations = new Dictionary<string, LocationInfo?>(StringComparer.Ordinal);
         var explicitFromBodyProperties = new List<string>();
 
+        // SYNE015 — collected here and reported below, because whether the binder reads a body at all
+        // is not known until every property has been resolved (an explicit [FromBody] forces a read
+        // even on a bodyless verb).
+        var unprotectedNotBoundProperties = new List<(string Name, LocationInfo? Location)>();
+
         for (var type = boundType; type is not null; type = type.BaseType)
         {
             foreach (var member in type.GetMembers())
@@ -600,6 +605,16 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
                 }
 
                 var propertyLocation = LocationInfo.CreateFrom(property.Locations.FirstOrDefault());
+
+                if (HasNotBoundAttribute(property))
+                {
+                    if (!HasSuppressingJsonIgnoreAttribute(property))
+                    {
+                        unprotectedNotBoundProperties.Add((property.Name, propertyLocation));
+                    }
+
+                    continue;
+                }
 
                 var model = ResolveBindableProperty(property, routeParameters, isBodylessVerb, propertyLocation,
                     diagnostics, out var isConventionBound);
@@ -636,6 +651,22 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
                         explicitFromBodyProperties.Add(property.Name);
                     }
                 }
+            }
+        }
+
+        // SYNE015 — mirrors BinderEmitter's own condition for emitting a body read: the message is
+        // deserialized unless the verb is bodyless *and* nothing resolved to Body. Kept in step with
+        // that emitter by hand; the two must agree, since this warning is about exactly the code it
+        // emits.
+        if (unprotectedNotBoundProperties.Count > 0 &&
+            (!isBodylessVerb || models.Any(static m => m.Source == BindingSource.Body)))
+        {
+            foreach (var (name, propertyLocation) in unprotectedNotBoundProperties)
+            {
+                diagnostics.Add(new DiagnosticInfo(
+                    EndpointDiagnostics.NotBoundPropertyIsStillDeserialized,
+                    propertyLocation,
+                    new EquatableArray<string>([name, boundTypeDisplay])));
             }
         }
 
@@ -899,6 +930,56 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
     ///     share code (this project targets netstandard2.0 and does not reference the runtime
     ///     assembly), so they are kept in sync by hand and each points at the other.
     /// </remarks>
+    /// <summary>Rule 1: <c>[NotBound]</c> excludes a property from the generated bindings entirely.</summary>
+    private static bool HasNotBoundAttribute(IPropertySymbol property)
+    {
+        foreach (var attribute in property.GetAttributes())
+        {
+            if (attribute.AttributeClass?.ToDisplayString() ==
+                "UnambitiousFx.Synapse.Endpoints.NotBoundAttribute")
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    ///     Whether the property carries a <c>[JsonIgnore]</c> that actually prevents deserialization.
+    /// </summary>
+    /// <remarks>
+    ///     Only <c>JsonIgnoreCondition.Always</c> — the default when the attribute is written with no
+    ///     arguments — stops the serializer setting the property. Every other condition
+    ///     (<c>Never</c>, <c>WhenWritingDefault</c>, <c>WhenWritingNull</c>) governs serialization
+    ///     only, and leaves the property writable from the request body.
+    /// </remarks>
+    private static bool HasSuppressingJsonIgnoreAttribute(IPropertySymbol property)
+    {
+        const int always = 1;
+
+        foreach (var attribute in property.GetAttributes())
+        {
+            if (attribute.AttributeClass?.ToDisplayString() !=
+                "System.Text.Json.Serialization.JsonIgnoreAttribute")
+            {
+                continue;
+            }
+
+            foreach (var named in attribute.NamedArguments)
+            {
+                if (named.Key == "Condition")
+                {
+                    return named.Value.Value is int condition && condition == always;
+                }
+            }
+
+            return true;
+        }
+
+        return false;
+    }
+
     private static bool IsDeclaredBodylessVerb(string httpMethod)
     {
         return httpMethod is "GET" or "DELETE" or "HEAD" or "OPTIONS" or "TRACE";
@@ -912,16 +993,6 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
         out bool isConventionBound)
     {
         isConventionBound = false;
-
-        foreach (var attribute in property.GetAttributes())
-        {
-            var attributeName = attribute.AttributeClass?.ToDisplayString();
-
-            if (attributeName == "UnambitiousFx.Synapse.Endpoints.NotBoundAttribute")
-            {
-                return null;
-            }
-        }
 
         var (source, sourceKey, fromConvention) = ResolveSource(property, routeParameters, isBodylessVerb);
         if (source is null)
