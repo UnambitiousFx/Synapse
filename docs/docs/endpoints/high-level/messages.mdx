@@ -187,6 +187,25 @@ neither of which satisfies `required` — so a `required` bound property broke t
 pointing into generated code. Both shapes are covered now.
 :::
 
+:::warning Only when the binder is the one constructing the message
+Everything above describes the case where the binder constructs the message. When some property binds
+from the **request body**, the deserializer constructs it instead — and `required` then means
+`System.Text.Json` demands that member in the payload, including a route-bound one the payload never
+carries.
+
+So a route/query/header-bound property may be `required` exactly when nothing else on that message
+binds from the body:
+
+| Message | `required` on the route-bound property? |
+|---|---|
+| `GET /tasks/{taskId}` — `TaskId` only | Yes — a bodyless verb reads nothing |
+| `POST /tasks/{taskId}/archive` — `TaskId` only | Yes — nothing binds from the body, so nothing is read |
+| `PUT /tasks/{taskId}` — `TaskId` plus a body-bound `Title` | **No** — leave `TaskId` non-`required` |
+
+The middle row only became true once a body-carrying verb stopped reading a body it had nothing to
+bind from; see [known issue 067](https://github.com/UnambitiousFx/Synapse/blob/feat/synapse-endpoints/docs/known-issues/067-a-body-carrying-verb-reads-a-body-nothing-binds-from.md).
+:::
+
 ## Prefer a positional record
 
 Give a bound message a positional constructor instead of init-only properties where you can:

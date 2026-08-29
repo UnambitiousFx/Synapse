@@ -12,6 +12,13 @@
 > site the language accepts — which also retires the documented limitation that `required` "does not
 > work here".
 
+
+> **Later change.** This report's fix covered the case where the binder constructs the message, which
+> at the time meant a bodyless verb. [067](067-a-body-carrying-verb-reads-a-body-nothing-binds-from.md)
+> widened that case: a body-carrying verb whose every property binds from the route, query or a header
+> now constructs the message too, so `required` works there as well. A property beside a body-bound one
+> still cannot be `required` — the deserializer constructs that message and demands the member.
+
 ---
 
 ## Describe the bug

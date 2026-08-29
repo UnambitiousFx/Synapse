@@ -73,14 +73,17 @@ Run it with `dotnet run`, then read `/openapi/v1.json`.
 Several of these routes are here because the shape was once broken, and the XML comments say so at
 each site. Worth knowing before writing your own:
 
-- A `required` property bound from the route is fine on a **bodyless** verb and wrong on a
-  body-carrying one — the message is deserialized before the route value is applied, so `required`
-  makes the deserializer demand a field the payload never carries. Compare `GetTaskQuery.TaskId`
-  with `UpdateTaskCommand.TaskId` and `ArchiveTaskCommand.TaskId`.
+- A `required` property bound from the route is fine whenever nothing else on the message binds from
+  the body, and wrong when something does — there the message is deserialized before the route value
+  is applied, so `required` makes the deserializer demand a field the payload never carries. Compare
+  `GetTaskQuery.TaskId` and `ArchiveTaskCommand.TaskId`, which are `required`, with
+  `UpdateTaskCommand.TaskId` and `RetitleTaskCommand.TaskId`, which cannot be.
 - `[NotBound]` alone does not stop a caller supplying a value on a body-carrying verb. Pair it with
   `[JsonIgnore]`, and have the pipeline overwrite unconditionally. See `PatchTaskCommand.StampedAt`.
-- `POST` and `PUT` read a JSON body even when every property binds from the route, so a caller has
-  to send `{}` — sending nothing is a `400`. See `ArchiveTaskEndpoint`.
+- What decides whether a body is read is the binding, not the verb: a `POST` whose every property
+  comes off the route reads nothing, declares no `requestBody`, and accepts a request with no body at
+  all. The flip side is that a body sent to such an endpoint is ignored rather than rejected. See
+  `ArchiveTaskEndpoint`.
 - A route declared only in `Configure` leaves the generator with no verb to reason about, so it
   assumes a bodyless one; annotate the properties explicitly. See `SearchTasksEndpoint`.
 - `POST /tasks/stream/search` binds its message from the body but publishes no `requestBody` in the
