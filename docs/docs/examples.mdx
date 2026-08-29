@@ -17,7 +17,7 @@ Runnable projects in the [`examples/`](https://github.com/UnambitiousFx/Synapse/
 | [`MinimalApi.Modules.Contracts`](https://github.com/UnambitiousFx/Synapse/tree/main/examples/MinimalApi.Modules.Contracts) | Class library (shared contract) | Shared `IEvent` contract — the decoupling seam between Orders and Notifications |
 | [`MinimalApi.Modules.Orders`](https://github.com/UnambitiousFx/Synapse/tree/main/examples/MinimalApi.Modules.Orders) | Class library (module) | Emitter module using `[RequestHandler<>]` + source-generated `RegisterGroup`; publishes `OrderPlacedEvent` |
 | [`MinimalApi.Modules.Notifications`](https://github.com/UnambitiousFx/Synapse/tree/main/examples/MinimalApi.Modules.Notifications) | Class library (module) | Subscriber module using **manual** `cfg.RegisterEventHandler<>()` — no source generator |
-| [`EndpointsApi`](https://github.com/UnambitiousFx/Synapse/tree/main/examples/EndpointsApi) | ASP.NET Core + Native AOT | Every [Endpoints](./endpoints/) shape: all four high-level base classes, groups, streaming, a computed route, and both low-level tiers (`RawEndpoint`, `RawEndpoint<TRequest, TResponse>`) |
+| [`EndpointsApi`](https://github.com/UnambitiousFx/Synapse/tree/main/examples/EndpointsApi) | ASP.NET Core + Native AOT | Every [Endpoints](./endpoints/) shape: all four high-level base classes (including `MappedEndpoint`), all three low-level tiers, every binding rule, every response mapper, groups, streaming from a body and without one, a computed route, a custom verb, and a pipeline behaviour. See its [README](https://github.com/UnambitiousFx/Synapse/tree/main/examples/EndpointsApi#readme) for the shape-to-file map |
 
 ---
 

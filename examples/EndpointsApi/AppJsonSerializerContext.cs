@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using UnambitiousFx.Examples.EndpointsApi.Features.Contracts;
 using UnambitiousFx.Examples.EndpointsApi.Features.Ops;
 using UnambitiousFx.Examples.EndpointsApi.Features.Tasks;
 
@@ -39,6 +40,16 @@ namespace UnambitiousFx.Examples.EndpointsApi;
 [JsonSerializable(typeof(StreamTasksQuery))]
 [JsonSerializable(typeof(HealthDto))]
 [JsonSerializable(typeof(TagReportDto))]
+[JsonSerializable(typeof(CreateTaskRequestV1))]
+[JsonSerializable(typeof(CreateTaskResponseV1))]
+[JsonSerializable(typeof(PatchTaskCommand))]
+[JsonSerializable(typeof(TaskPatched))]
+[JsonSerializable(typeof(ArchiveTaskCommand))]
+[JsonSerializable(typeof(TaskArchived))]
+[JsonSerializable(typeof(RetitleTaskCommand))]
+[JsonSerializable(typeof(CompactTasksCommand))]
+[JsonSerializable(typeof(CompactReport))]
+[JsonSerializable(typeof(StreamSearchTasksQuery))]
 [JsonSerializable(typeof(ProblemDetails))]
 [JsonSerializable(typeof(HttpValidationProblemDetails))]
 internal sealed partial class AppJsonSerializerContext : JsonSerializerContext;

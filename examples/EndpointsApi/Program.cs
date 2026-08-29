@@ -13,6 +13,9 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 });
 
 builder.Services.AddSingleton<TaskRepository>();
+
+// StampPatchBehavior takes a clock, so the pipeline can stamp a [NotBound] property.
+builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSynapseAspNetCore();
 builder.Services.AddSynapse(cfg =>
     cfg.AddRegisterGroup(new global::UnambitiousFx.Examples.EndpointsApi.RegisterGroup()));
