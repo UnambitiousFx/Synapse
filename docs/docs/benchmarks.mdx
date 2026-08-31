@@ -1,7 +1,7 @@
 ---
 sidebar_position: 11
 title: Benchmarks
-description: Performance and allocation comparison of Synapse against MediatR and martinothamar/Mediator across send, publish, and pipeline scenarios.
+description: Performance and allocation comparison of Synapse against MediatR and martinothamar/Mediator across send, publish, and pipeline scenarios, plus the Endpoints adapter overhead.
 ---
 
 # Benchmarks
@@ -89,12 +89,53 @@ Synapse's pipeline allocation stays **flat at 72 B** regardless of behavior coun
 
 Pick based on your workload: pipeline-heavy / allocation-sensitive favors Synapse; raw publish throughput favors Mediator.
 
+## Endpoints — adapter overhead
+
+A separate benchmark, `EndpointDispatchBenchmark`, measures what the
+[Endpoints](./endpoints/index.mdx) package costs on top of a hand-written Minimal API route. Both
+sides share the exact same host — same handler, same source-generated `JsonSerializerContext`, same
+`AddSynapseAspNetCore` / `AddSynapse` wiring, same three-argument `IHttpInvoker.InvokeAsync` call.
+The **only** difference is how the route is mapped: a hand-rolled `MapGet`/`MapPost` lambda versus
+`MapEndpoint<T>()` going through the generated binder.
+
+Each arm is a full in-memory HTTP round-trip through `Microsoft.AspNetCore.TestHost` — request
+parsing, routing, model binding, serialization, the lot. That means:
+
+:::note
+Absolute times here are dominated by the TestServer pipeline, not by dispatch, and are **noisy** —
+BenchmarkDotNet flags the distributions as multimodal and the standard deviation approaches the mean.
+The number that reproduces run to run is **allocation**. Read this table for the allocation delta,
+not for nanosecond-precise timings.
+:::
+
+Baseline is `HandWrittenLambda`. Allocated is per request; **Alloc Ratio** is relative to the
+hand-written equivalent.
+
+| Arm | Allocated | Alloc Ratio | What it isolates |
+|---|---:|---:|---|
+| `HandWrittenLambda` (GET) | 9.41 KB | 1.00 | Minimal API lambda, route-only bind — baseline |
+| `SynapseEndpoint` (GET) | 9.52 KB | 1.01 | `Endpoint<T,R>` via the generated binder |
+| `RawEndpointHandWrittenBinding` (GET) | 9.52 KB | 1.01 | Low-level `RawEndpoint<T,R>`, `BindAsync` by hand |
+| `HandWrittenLambdaWithJsonBody` (POST) | 11.55 KB | 1.23 | Minimal API lambda reading a JSON body |
+| `SynapseEndpointWithJsonBody` (POST) | 11.69 KB | 1.24 | Generated binder's `ReadJsonBodyAsync` path |
+
+The generated adapter adds **~0.1–0.15 KB per request (~1%)** over the hand-written route, and no
+extra Gen0 pressure. On time, the endpoint arm sits inside the hand-written arm's error bars across
+repeated runs — the adapter has no dispatch cost you can measure above the HTTP pipeline it runs in.
+The high-level and low-level tiers allocate identically, as expected: the high level *is* the low
+level with its `BindAsync` generated.
+
+Environment: same machine as above, .NET SDK 10.0.400 / .NET 10.0.11.
+
 ## Running the benchmarks
 
 ```bash
 cd benchmarks/SynapseBenchmark
-dotnet run -c Release                 # full suite, all libraries
-dotnet run -c Release -- --filter '*Pipeline*'   # one category
+dotnet run -c Release                 # full suite, all classes
+dotnet run -c Release -- --filter '*Pipeline*'          # one category
+dotnet run -c Release -- --filter '*EndpointDispatch*'  # the Endpoints adapter benchmark
 ```
 
-The suite lives in a single class, `SynapseVsMediatorsBenchmarks`. Results land in `BenchmarkDotNet.Artifacts/results/`.
+The mediator comparison is `SynapseVsMediatorsBenchmarks`; the Endpoints adapter overhead is
+`EndpointDispatchBenchmark`; context propagation is `PropagationBenchmarks`. Results land in
+`BenchmarkDotNet.Artifacts/results/`.
