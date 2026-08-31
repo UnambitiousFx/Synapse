@@ -61,6 +61,7 @@ const sidebars: SidebarsConfig = {
             'endpoints/reference/native-aot',
             'endpoints/reference/diagnostics',
             'endpoints/reference/escape-hatches',
+            'endpoints/reference/preview',
           ],
         },
       ],
