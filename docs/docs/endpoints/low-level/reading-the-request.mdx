@@ -1,0 +1,145 @@
+---
+sidebar_position: 2
+title: Reading the request
+description: The HttpContext helper surface — typed route, query and header readers, the body, services, and the validator.
+---
+
+# Reading the request
+
+The helpers are extension methods on `HttpContext`, in `UnambitiousFx.Synapse.Endpoints.Binding`. Add
+the using and they are all there:
+
+```csharp
+using UnambitiousFx.Synapse.Endpoints.Binding;
+```
+
+They are the same primitives the high level's generated binders call. That is what makes "the high
+level is built on the low level" a fact about the code rather than a claim in these pages — and it
+means anything the generated binder can read, you can read the same way.
+
+## The surface
+
+| Member | Returns | Notes |
+|---|---|---|
+| `TryGetRoute(name, out string?)` | `bool` | Raw string; first value wins when a key repeats |
+| `TryGetQuery(name, out string?)` | `bool` | |
+| `TryGetHeader(name, out string?)` | `bool` | |
+| `TryGetRoute<T>(name, out T)` | `bool` | `where T : IParsable<T>`, parsed with the **invariant culture** |
+| `TryGetQuery<T>(name, out T)` | `bool` | |
+| `TryGetHeader<T>(name, out T)` | `bool` | |
+| `TryGetRouteEnum<T>(name, out T)` | `bool` | Named separately, not overloaded — see below |
+| `TryGetQueryEnum<T>(name, out T)` | `bool` | |
+| `TryGetHeaderEnum<T>(name, out T)` | `bool` | |
+| `Header(name)` | `string?` | The first value, or `null` |
+| `QueryValues(name)` | `StringValues` | **Every** value of a repeated key |
+| `BodyAsync<T>(ct)` | `ValueTask<BindResult<T>>` | JSON body; never throws for a client mistake |
+| `Service<T>()` | `T` | `RequestServices.GetRequiredService<T>()` |
+| `Validate()` | `BindingValidator` | [The accumulating collector](./validating) |
+
+The enum readers are named `…Enum` rather than overloaded because two generic methods differing only
+in their constraints are a duplicate signature to the compiler (`CS0111`).
+
+## Reading values
+
+```csharp
+public override ValueTask<IResult> HandleAsync(HttpContext context, CancellationToken ct)
+{
+    // Typed, invariant culture. false when absent OR unparsable.
+    if (!context.TryGetRoute<Guid>("taskId", out var taskId))
+    {
+        return ValueTask.FromResult(Results.BadRequest("taskId must be a GUID") );
+    }
+
+    // Optional with a fallback of your choosing.
+    var page = context.TryGetQuery<int>("page", out var p) ? p : 1;
+
+    // An enum by name or numeric value.
+    context.TryGetQueryEnum<SortOrder>("sort", out var sort);
+
+    // A header, or null.
+    var ifMatch = context.Header("If-Match");
+
+    // Every value of a repeated key: ?tag=a&tag=b
+    var tags = context.QueryValues("tag").Where(t => !string.IsNullOrWhiteSpace(t)).ToArray();
+
+    …
+}
+```
+
+`QueryValues` is the one that has no equivalent at the high level: the single-value readers take the
+first value when a key repeats, which is what convention binding needs, and a hand-written handler
+frequently wants all of them.
+
+:::note Invariant culture, always
+The typed readers pin `CultureInfo.InvariantCulture`, matching ASP.NET Core's own parameter binding. A
+route or query value is a wire format — `?amount=1.5` means one and a half regardless of the server's
+locale, and it must not mean something different from the identical value on a hand-written `MapGet`
+route in the same application.
+:::
+
+## Reading the body
+
+`BodyAsync<T>` deserializes the JSON body using the application's configured JSON options, and
+**never throws for a client mistake**. Every way the body can be unusable — absent, not JSON,
+malformed, or sent with no `Content-Type` — comes back as a failure instead, so a client error stays a
+`400` and does not become a `500`.
+
+```csharp
+[Post("/webhooks/github")]
+public sealed class GitHubWebhookEndpoint : RawEndpoint
+{
+    public override void Configure(IRawEndpointBuilder builder)
+    {
+        builder.Accepts<GitHubPushPayload>()
+            .Produces(StatusCodes.Status202Accepted)
+            .Produces<HttpValidationProblemDetails>(StatusCodes.Status400BadRequest);
+    }
+
+    public override async ValueTask<IResult> HandleAsync(HttpContext context, CancellationToken ct)
+    {
+        // A webhook payload is someone else's schema, not one of your messages — which is
+        // exactly why this endpoint is at the low level.
+        var body = await context.BodyAsync<GitHubPushPayload>(ct);
+        if (!body.IsSuccess)
+        {
+            return body.Problem();          // 400 with the failure under the "body" key
+        }
+
+        var signature = context.Header("X-Hub-Signature-256");
+        if (!SignatureIsValid(signature, body.Value!))
+        {
+            return TypedResults.Unauthorized();
+        }
+
+        await context.Service<IWebhookQueue>().EnqueueAsync(body.Value!, ct);
+
+        return TypedResults.Accepted((string?)null);
+    }
+}
+```
+
+`BindResult<T>` is what comes back: `IsSuccess`, `Value`, `Errors` (keyed by field), and `Problem()`
+to turn a failure straight into the `400`. The `ct` you pass is linked with
+`HttpContext.RequestAborted`, which applies either way.
+
+:::warning Native AOT
+`T` must be registered on a `JsonSerializerContext`. `SYNE008` scans `BodyAsync<T>` call sites written
+lexically inside the endpoint class and warns if it is missing — but it cannot follow a body read into
+a helper on another type. See [Native AOT](../reference/native-aot).
+:::
+
+## Reaching services
+
+Endpoints are startup singletons, so there is no constructor to inject into:
+
+```csharp
+var repository = context.Service<TaskRepository>();
+var clock      = context.Service<IClock>();
+```
+
+This is `RequestServices.GetRequiredService<T>()` — scoped services resolve per request, as usual.
+
+## Next
+
+- [Validating](./validating) — collect every bad input into one `400` instead of returning on the first
+- [Mediator-bound](./mediator-bound) — hand-written binding, everything else inherited

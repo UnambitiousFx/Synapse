@@ -1,0 +1,142 @@
+---
+sidebar_position: 2
+title: OpenAPI
+description: What each endpoint shape declares in the document, how to add to it, and the net8.0 gap.
+---
+
+# OpenAPI
+
+Every mapped endpoint carries `Accepts`/`Produces` metadata. At the high level it is derived from the
+base class's type arguments; at the low level you declare it, because nothing about a hand-written
+handler can be inferred.
+
+## What is declared for you
+
+| Shape | Declared automatically |
+|---|---|
+| `Endpoint<TRequest, TResponse>` | `Accepts<TRequest>` on body-carrying verbs; `200` (or the declared status) with `TResponse`; `400` validation problem |
+| `Endpoint<TRequest>` | `Accepts<TRequest>` on body-carrying verbs; `204` (or the declared status), no body; `400` validation problem |
+| `StreamEndpoint<TRequest, TItem>` | `200` with `IAsyncEnumerable<TItem>` for both `application/json` and `text/event-stream`; `400` validation problem |
+| `MappedEndpoint<…>` | `Accepts<THttpRequest>`; `200` (or the declared status) with `THttpResponse`; `400` validation problem |
+| `RawEndpoint` | **Nothing.** Declare it yourself |
+
+`Accepts` is skipped on verbs that carry no body (`GET`, `DELETE`, `HEAD`, `OPTIONS`, `TRACE`), so a
+`GET` endpoint does not advertise a request body no such request can send.
+
+The `400` is declared as `HttpValidationProblemDetails` — a problem document plus an `errors`
+dictionary — because that is what a bind failure actually sends. Not a plain `ProblemDetails`.
+
+## The declared status code follows `Configure`
+
+A declarative success method updates the metadata as well as the behaviour:
+
+```csharp
+public override void Configure(IEndpointBuilder<TaskCreated> builder) =>
+    builder.Created(created => $"/tasks/{created.TaskId}");
+```
+
+```json title="/openapi/v1.json"
+"post": {
+  "responses": {
+    "201": { "content": { "application/json": {
+               "schema": { "$ref": "#/components/schemas/TaskCreated" } } } },
+    "400": { "content": { "application/problem+json": {
+               "schema": { "$ref": "#/components/schemas/HttpValidationProblemDetails" } } } }
+  }
+}
+```
+
+A response with **no body** is declared with no content schema, which is what `NoContent()` and
+`StatusCode(int)` produce:
+
+```json
+"204": { "description": "No Content" }
+```
+
+:::warning `OnSuccess` does not update the document
+An `OnSuccess` override changes the response without telling the document: the declared status stays
+whatever the default (or the last declarative call) was. Prefer the
+[declarative vocabulary](../high-level/responses#changing-it-declaratively) where it suffices, and use
+`Raw` to correct the metadata when it does not.
+:::
+
+## Declaring it at the low level
+
+```csharp
+public override void Configure(IRawEndpointBuilder builder)
+{
+    builder.Accepts<WebhookPayload>()
+        .Produces<HealthDto>()                                        // 200 + body
+        .Produces(StatusCodes.Status304NotModified)                   // status, no body
+        .Produces<ProblemDetails>(StatusCodes.Status409Conflict)      // status + body
+        .Tag("Ops")
+        .Summary("Liveness, with an ETag");
+}
+```
+
+Declaring nothing is valid and emits nothing — the route still works, it just has no documented
+contract.
+
+## Adding anything else
+
+`Raw(Action<RouteHandlerBuilder>)` reaches the underlying builder, at either level:
+
+```csharp
+builder.Raw(route => route.WithOpenApi());   // ⚠ not AOT-safe — see below
+```
+
+Under Native AOT, use a transformer instead. There are two, and which one you want depends on
+whether you are changing one route or the whole document:
+
+```csharp title="One route — the direct replacement for WithOpenApi"
+builder.Raw(route => route.AddOpenApiOperationTransformer((operation, context, ct) =>
+{
+    operation.Deprecated = true;
+    return Task.CompletedTask;
+}));
+```
+
+```csharp title="Every route — on the options, in Program.cs"
+builder.Services.AddOpenApi(options =>
+{
+    options.AddOperationTransformer((operation, context, ct) =>
+    {
+        operation.Extensions["x-generated-by"] = new OpenApiAny("Synapse.Endpoints");
+        return Task.CompletedTask;
+    });
+});
+```
+
+## APIs this library steers you away from
+
+A few standard ASP.NET Core OpenAPI/routing APIs are unavailable under Native AOT, and are
+deliberately never used by this library's own implementation:
+
+| API | Why it is unavailable |
+|---|---|
+| `WithOpenApi` | `[RequiresDynamicCode]` + `[RequiresUnreferencedCode]`, and `[Obsolete("ASPDEPR002")]` as of .NET 10. Use `AddOpenApiOperationTransformer` on the route instead — see [above](#adding-anything-else) |
+| `TypedResults.CreatedAtRoute` / `AcceptedAtRoute` / `RedirectToRoute` | `[RequiresUnreferencedCode]` |
+
+`IEndpointBuilder<TResponse>.Created(...)` compiles down to `TypedResults.Created`, deliberately not
+`TypedResults.CreatedAtRoute` — so using the declarative response vocabulary keeps you off the
+hazardous path by construction, without having to know these attributes exist.
+
+## `net8.0` has no document integration
+
+`Synapse.Endpoints` targets `net8.0;net9.0;net10.0`, but `Microsoft.AspNetCore.OpenApi` — the package
+that generates `/openapi/v1.json` — is `net9.0`+ only.
+
+On `net8.0` you still get accurate `Accepts`/`Produces` metadata on every mapped route, and nothing
+about request handling or routing is degraded. You just get no generated OpenAPI document to serve.
+
+## Serving the document
+
+```csharp
+builder.Services.AddOpenApi();
+…
+app.MapOpenApi();          // GET /openapi/v1.json
+```
+
+Under Native AOT, every type reachable from the document must be registered on a
+`JsonSerializerContext` — including some the diagnostics cannot see for you. That is the subject of
+[Native AOT](./native-aot), which is worth reading before you publish rather than after.

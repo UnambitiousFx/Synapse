@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+    <PropertyGroup>
+        <InvariantGlobalization>true</InvariantGlobalization>
+        <PublishAot>true</PublishAot>
+        <StripSymbols>true</StripSymbols>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\..\src\Synapse\Synapse.csproj" />
+        <ProjectReference Include="..\..\src\Synapse.AspNetCore\Synapse.AspNetCore.csproj" />
+        <ProjectReference Include="..\..\src\Synapse.Endpoints\Synapse.Endpoints.csproj" />
+        <ProjectReference Include="..\..\src\Synapse.Endpoints.Generator\Synapse.Endpoints.Generator.csproj"
+                          OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+        <ProjectReference Include="..\..\src\Synapse.Generator\Synapse.Generator.csproj"
+                          OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    </ItemGroup>
+
+</Project>

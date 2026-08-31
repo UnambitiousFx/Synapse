@@ -1,0 +1,65 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFrameworks>$(LibraryTargetFrameworks)</TargetFrameworks>
+        <!-- Endpoints are mapped in this library; the Request Delegate Generator must run here to keep them AOT-safe. -->
+        <EnableRequestDelegateGenerator>true</EnableRequestDelegateGenerator>
+        <Description>Endpoint-per-class HTTP layer for UnambitiousFx.Synapse. Maps HTTP requests to CQRS commands and queries with minimal code and full Native AOT support.</Description>
+        <PackageTags>aspnetcore;minimal-api;endpoints;cqrs;mediator;native-aot;source-generator</PackageTags>
+        <!-- The endpoint-per-class API is not settled yet, so this package stays a prerelease even
+             on a stable v* tag (X.Y.Z is published as X.Y.Z-preview.1). Delete this line to
+             graduate it. See src/Directory.Build.targets. -->
+        <PreviewPackage>true</PreviewPackage>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\Synapse.AspNetCore\Synapse.AspNetCore.csproj" />
+        <!-- The generator runs against this project's consumers, and ships inside this package. -->
+        <ProjectReference Include="..\Synapse.Endpoints.Generator\Synapse.Endpoints.Generator.csproj"
+                          OutputItemType="Analyzer"
+                          ReferenceOutputAssembly="false"
+                          PrivateAssets="all" />
+    </ItemGroup>
+
+    <!--
+        Packs the generator into this package's analyzers/ folder. The generator project is
+        IsPackable=false and ships here instead, because a consumer referencing UnambitiousFx.Synapse.Endpoints
+        must get the binder generator automatically — without it, every endpoint throws
+        "No binder was registered for 'X'" at startup.
+
+        BeforeTargets="_GetPackageFiles" because that is the target that collects None items into the
+        package: contributing the item any later than that and it is simply not packed, with no error.
+
+        The literal "netstandard2.0" segment is safe: the generator declares a single
+        <TargetFramework>netstandard2.0</TargetFramework> (Roslyn analyzers must), so there is exactly
+        one output directory and no per-TFM fan-out to resolve. It is a literal rather than the
+        sibling's MSBuild-resolved $(OutputPath) because that property belongs to the *other* project
+        and is not available here; resolving it properly would mean an MSBuild task call, and the Error
+        below covers the failure mode that would buy.
+
+        The Error is the point of this target being a target at all. `None Include` on a path that does
+        not exist is silently empty, so without it a no-build pack after a differently-configured build,
+        or any change to the generator's output path, would produce a package whose analyzers/ folder is
+        empty — every consumer then failing at startup, with nothing in CI to catch it.
+    -->
+    <Target Name="PackEndpointsAnalyzer" BeforeTargets="_GetPackageFiles">
+        <PropertyGroup>
+            <_EndpointsAnalyzerPath>$(MSBuildThisFileDirectory)..\Synapse.Endpoints.Generator\bin\$(Configuration)\netstandard2.0\UnambitiousFx.Synapse.Endpoints.Generator.dll</_EndpointsAnalyzerPath>
+        </PropertyGroup>
+
+        <Error Condition="!Exists('$(_EndpointsAnalyzerPath)')"
+               Text="The endpoints generator was not found at '$(_EndpointsAnalyzerPath)', so this package would ship an empty analyzers/ folder and every consumer would throw 'No binder was registered' at startup. Build Synapse.Endpoints.Generator for the '$(Configuration)' configuration first (packing with no-build after building a different configuration is the usual cause)." />
+
+        <ItemGroup>
+            <None Include="$(_EndpointsAnalyzerPath)"
+                  Pack="true"
+                  PackagePath="analyzers/dotnet/cs"
+                  Visible="false" />
+        </ItemGroup>
+    </Target>
+
+</Project>

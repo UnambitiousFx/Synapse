@@ -1,0 +1,183 @@
+---
+sidebar_position: 3
+title: Validating
+description: BindingValidator — gather every bad input into one 400 instead of sending the caller round the loop.
+---
+
+# Validating
+
+A hand-written handler that returns on the first bad value sends the caller round the loop once per
+mistake. `context.Validate()` returns a collector that gathers every problem it finds, so a request
+with three bad values gets one response naming all three.
+
+```csharp
+var v = context.Validate();
+
+v.Route<Guid>("taskId", out var taskId);
+v.Query<int>("page", out var page);
+v.Header<int>("X-Count", out var count);
+
+if (!v.IsValid)
+{
+    return v.Problem();
+}
+```
+
+```json title="one request, three mistakes, one response"
+{
+  "title": "One or more validation errors occurred.",
+  "status": 400,
+  "errors": {
+    "taskId":  ["The route value is required."],
+    "page":    ["The query value is not a valid int."],
+    "X-Count": ["The header is required."]
+  }
+}
+```
+
+This is the same collector the high level's generated binders use, so both levels produce the same
+`400` shape.
+
+## The surface
+
+| Member | Behaviour |
+|---|---|
+| `Route<T>` / `Query<T>` / `Header<T>` | Required. Reports "is required" when absent, "is not a valid T" when unparsable |
+| `RouteOptional<T>` / `QueryOptional<T>` / `HeaderOptional<T>` | Absent is fine (`null`); present-but-unparsable still reports |
+| `RouteEnum<T>` / `QueryEnum<T>` / `HeaderEnum<T>` | Required, by enum name or numeric value |
+| `Check(condition, field, message)` | Reports `message` against `field` when the condition is false; returns the condition |
+| `AddError(field, message)` | Reports directly |
+| `IsValid` | `true` while nothing has been reported |
+| `Errors` | The collected errors, or `null` when valid |
+| `Problem()` | The `400` describing everything collected |
+
+Every reader returns `bool`, and that return value matters — see below.
+
+## Guard a rule on the read that fed it
+
+:::danger The one mistake worth knowing about
+A failed read reports its own error **and leaves the out value at `default(T)`**. A rule checked
+against that value is therefore checking a value the caller never sent:
+
+```csharp
+// WRONG — a request with no ?page at all is told BOTH
+//   "The query value is required."  (true)
+//   "must be at least 1"            (false — nothing was sent, and 0 came from default(int))
+v.Query<int>("page", out var page);
+v.Check(page >= 1, "page", "must be at least 1");
+```
+
+The readers return `bool` for exactly this. Guard the check:
+
+```csharp
+// RIGHT — the rule only runs on a value that actually bound
+if (v.Query<int>("page", out var page))
+{
+    v.Check(page >= 1, "page", "must be at least 1");
+}
+```
+:::
+
+## A complete BindAsync
+
+Putting the pieces together — the binding that the [five rules](../high-level/messages#the-five-binding-rules)
+cannot express, because one repeated query key has to become a collection:
+
+```csharp
+public sealed record TagReportQuery(int Page, int Size, IReadOnlyList<string> Tags)
+    : IRequest<TagReportDto>;
+
+[Get("/reports")]
+public sealed class TagReportEndpoint : RawEndpoint<TagReportQuery, TagReportDto>
+{
+    public override ValueTask<BindResult<TagReportQuery>> BindAsync(HttpContext context)
+    {
+        var v = context.Validate();
+
+        // Every value is read before anything is rejected, so a caller who got two of them
+        // wrong learns about both from one response.
+        v.QueryOptional<int>("size", out var size);
+
+        if (v.Query<int>("page", out var page))
+        {
+            v.Check(page >= 1, "page", "must be at least 1");
+        }
+
+        var tags = context.QueryValues("tag")
+            .Where(static tag => !string.IsNullOrWhiteSpace(tag))
+            .Select(static tag => tag!)
+            .ToArray();
+
+        v.Check(tags.Length > 0, "tag", "at least one tag is required");
+
+        return ValueTask.FromResult(v.IsValid
+            ? BindResult<TagReportQuery>.Success(new TagReportQuery(page, size ?? 20, tags))
+            : BindResult<TagReportQuery>.Failure(v));
+    }
+}
+```
+
+```bash
+$ curl -s 'localhost:5000/reports?page=2&tag=docs&tag=ship'
+{"page":2,"matched":2,"tags":["docs","ship"]}
+
+$ curl -s 'localhost:5000/reports?page=0'
+{"status":400,"errors":{"page":["must be at least 1"],
+                        "tag":["at least one tag is required"]}}
+
+$ curl -s 'localhost:5000/reports?tag=docs'
+{"status":400,"errors":{"page":["The query value is required."]}}
+```
+
+Note the last one: because the check is guarded, a missing `page` says only that it is required. It
+does not also claim the value is too small.
+
+## What belongs here, and what does not
+
+The collector's job is **presence, parseability, and one open `Check`**. Business rules belong in
+`IRequestValidator` and the Synapse pipeline — see [Validation](../../validation) — where they apply to
+the message however it arrived, not only over HTTP.
+
+```
+Is "page" present and an int?      → BindingValidator
+Is page within the user's quota?   → IRequestValidator
+```
+
+## Optional readers are value types only
+
+The `…Optional<T>` members are constrained to `where T : struct, IParsable<T>`. The collector only
+carries readers that **can fail**: an optional value type is `null` when absent and can still be
+unparsable when present, whereas an optional **string** cannot fail at all.
+
+```csharp
+v.QueryOptional<int>("size", out var size);         // int? — reports if present and unparsable
+context.TryGetQuery("sort", out var sort);          // string? — nothing to report, so not on the collector
+```
+
+## It is a mutable struct
+
+`BindingValidator` is a **mutable struct** whose error dictionary is allocated only when the first
+error arrives, so a valid request allocates nothing. That matters because the generated binders use it
+on every request to every high-level endpoint; `BindResult<T>` is a struct for the same reason.
+
+:::warning Copy semantics
+Use it as a local and **do not pass it to another method** — errors added by the callee land on a copy
+and are silently lost.
+
+```csharp
+// WRONG: ValidateTags gets a copy; anything it reports is thrown away.
+var v = context.Validate();
+ValidateTags(v, tags);
+
+// RIGHT: pass it by reference, or keep the logic inline.
+ValidateTags(ref v, tags);
+```
+
+It is a plain struct rather than a `ref struct` because a handler needs to `await` a body read between
+calls, which a `ref struct` local forbids.
+:::
+
+## Next
+
+- [Mediator-bound](./mediator-bound) — the tier this `BindAsync` belongs to
+- [Validation](../../validation) — where business rules go

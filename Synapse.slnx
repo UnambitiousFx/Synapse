@@ -12,6 +12,8 @@
         <Project Path="examples/MinimalApi.Modules.Orders/MinimalApi.Modules.Orders.csproj" />
         <Project Path="examples/MinimalApi.Modules.Notifications/MinimalApi.Modules.Notifications.csproj" />
         <Project Path="examples/MinimalApi.Tests/MinimalApi.Tests.csproj" />
+        <Project Path="examples/EndpointsApi/EndpointsApi.csproj" />
+        <Project Path="examples/EndpointsApi.Tests/EndpointsApi.Tests.csproj" />
     </Folder>
     <Folder Name="/examples/_/">
         <File Path="examples\compose.yml" />
@@ -23,11 +25,15 @@
         <Project Path="src\Synapse.Abstractions\Synapse.Abstractions.csproj" />
         <Project Path="src\Synapse.Generator\Synapse.Generator.csproj" />
         <Project Path="src\Synapse\Synapse.csproj" />
+        <Project Path="src/Synapse.Endpoints/Synapse.Endpoints.csproj" />
+        <Project Path="src/Synapse.Endpoints.Generator/Synapse.Endpoints.Generator.csproj" />
     </Folder>
     <Folder Name="/test/">
         <Project Path="test/Synapse.AspNetCore.Tests/Synapse.AspNetCore.Tests.csproj" />
         <Project Path="test/Synapse.Generator.Tests/Synapse.Generator.Tests.csproj" />
         <Project Path="test\Synapse.Tests\Synapse.Tests.csproj" />
+        <Project Path="test/Synapse.Endpoints.Tests/Synapse.Endpoints.Tests.csproj" />
+        <Project Path="test/Synapse.Endpoints.Generator.Tests/Synapse.Endpoints.Generator.Tests.csproj" />
     </Folder>
     <Folder Name="/_/">
         <File Path="build.props" />

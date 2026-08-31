@@ -1,0 +1,71 @@
+---
+sidebar_position: 4
+title: Diagnostics
+description: SYNE001-SYNE015 - what each one means, why it fires, and what to do about it.
+---
+
+# Diagnostics
+
+The bundled analyzer reports these at build time. Errors stop the build; warnings and info do not.
+
+| ID | Severity | Fires when | Fix |
+|---|---|---|---|
+| `SYNE001` | Error | A route template parameter has no matching bindable property | Add a property with that name, or rename the route parameter |
+| `SYNE002` | Error | Two properties resolve to the same route parameter, the same query key, or more than one carries an explicit `[FromBody]` | Rename one, give it a distinct `[FromRoute]`/`[FromQuery]` name, or keep only one `[FromBody]` |
+| `SYNE003` | Info | A `POST`/`PUT` endpoint returning a value declares no explicit success mapping, so it always responds `200 OK` | Call `Created`/`Accepted`/etc. in `Configure`, or override `OnSuccess`, to make the status explicit |
+| `SYNE004` | Warning | `OnSuccess` is overridden *and* `Configure` calls a declarative success method | Remove one — the declarative call always wins, so the override is dead code |
+| `SYNE005` | Error | The bound message implements `IStreamRequest<T>` but the endpoint derives from `Endpoint<...>` | Derive from `StreamEndpoint<...>` instead |
+| `SYNE006` | Error | `[InGroup<T>]`'s `T` does not derive from `EndpointGroup` | Make `T` a subclass of `EndpointGroup` — in practice the compiler's `CS0311` reports this first, since `InGroupAttribute<TGroup>` is itself constrained to `where TGroup : EndpointGroup, new()`; do not expect to actually see `SYNE006` fire |
+| `SYNE007` | Warning | An explicit `[FromBody]` property is declared on a bodyless verb (`GET`/`DELETE`/`HEAD`/`OPTIONS`/`TRACE`), so it can never bind | Remove `[FromBody]`, change the verb, or accept the property will always be missing |
+| `SYNE008` | Warning | A request/response type is not registered in any `JsonSerializerContext` found in the compilation. For a low-level endpoint, also the type argument of a `BodyAsync<T>` read or an `Accepts<T>`/`Produces<T>` declaration | Add `[JsonSerializable(typeof(...))]` for it — see [Native AOT](./native-aot); only reported once your app has at least one `JsonSerializerContext` at all |
+| `SYNE009` | Error | A route is declared both by attribute and by a verb call in `Configure` | Remove one — only one may declare the route |
+| `SYNE010` | Error | The endpoint class is generic, nested inside a generic type, or has no public parameterless constructor | Make it a top-level, non-generic class with a public parameterless constructor — `MapEndpoint<TEndpoint>()` requires `TEndpoint : EndpointBase, new()`. An `abstract` endpoint class never fires this: discovery skips abstract classes outright, so an abstract intermediate base shared by several endpoints is a supported pattern |
+| `SYNE011` | Error | A route/query/header-bound property has no accessible setter and its type is not a record | Add a setter, or make the type a record so the value can be applied through `with` |
+| `SYNE012` | Error | A non-string, non-enum route/query/header-bound property's type has neither public static `TryParse(string, out T)` nor `TryParse(string, IFormatProvider, out T)` | Add either overload — implementing `IParsable<T>` supplies the second — or change the property's type |
+| `SYNE013` | Warning | A message type is bound by two or more endpoints whose *resolved* bindings differ (different route/verb produced different bindable properties) | Give each endpoint its own message type — only one endpoint's binding resolution is baked into the single shared binder; **this diagnostic warns, it does not fix anything** — every other endpoint sharing the type keeps binding incorrectly at runtime |
+| `SYNE014` | Warning | An endpoint declares its route in `Configure` (so no verb is visible at compile time) and at least one property's binding source came from convention rather than an explicit `[From*]` attribute | Annotate those properties with `[FromRoute]`/`[FromQuery]`/`[FromHeader]`/`[FromBody]`, or declare the route with a route attribute — see [Escape hatches](./escape-hatches). Harmless for a computed `GET`; a real bug for a computed `POST` |
+| `SYNE015` | Warning | A `[NotBound]` property sits on a message the binder deserializes from the request body (a body-carrying verb, or an explicit `[FromBody]` on a bodyless one), so a caller can still set it by naming it in the payload | Add `[JsonIgnore]` beside `[NotBound]`, and have whatever owns the value assign it unconditionally rather than only when it is still at its default — see [Messages & binding](../high-level/messages). `[NotBound]` alone is sufficient on a bodyless verb |
+
+## `SYNE013` is a standing limitation
+
+`SYNE013` is a real, standing limitation of the current design: `EndpointRegistry.RegisterBinder`
+is keyed by message type, so exactly one binder is ever generated per type — built from whichever
+endpoint sorts first ordinally by fully-qualified name — regardless of how many endpoints share
+that message. Give a shared type identical routes and verbs (so the resolved bindings are actually
+identical) and this is harmless; give it different ones and only the first endpoint's resolution
+is correct.
+
+## Grouped by what they are about
+
+**Binding** — `SYNE001`, `SYNE002`, `SYNE007`, `SYNE011`, `SYNE012`, `SYNE013`, `SYNE014`, `SYNE015`
+See [Messages & binding](../high-level/messages).
+
+**Responses** — `SYNE003`, `SYNE004`
+See [Responses](../high-level/responses).
+
+**Shape of the endpoint class** — `SYNE005`, `SYNE006`, `SYNE009`, `SYNE010`
+See [Base classes](./base-classes).
+
+**Native AOT** — `SYNE008`
+See [Native AOT](./native-aot), which also documents its four blind spots.
+
+## Two you should not expect to see
+
+`SYNE006` (an `[InGroup<T>]` whose `T` is not an `EndpointGroup`) is essentially unreachable:
+`InGroupAttribute<TGroup>` is itself constrained to `where TGroup : EndpointGroup, new()`, so the
+compiler reports `CS0311` first. If you never see `SYNE006`, that is expected.
+
+`SYNE010` never fires for an `abstract` endpoint class — discovery skips abstract classes outright, so
+an abstract intermediate base shared by several endpoints is a supported pattern rather than a
+violation.
+
+## Which diagnostics apply at which level
+
+A low-level endpoint binds nothing, so the binding diagnostics have nothing to check. They are
+suppressed by kind rather than reported and ignored:
+
+| Level | Applies | Suppressed |
+|---|---|---|
+| `Endpoint<…>`, `StreamEndpoint<…>`, `MappedEndpoint<…>` | All of them | — |
+| `RawEndpoint<TRequest>` / `RawEndpoint<TRequest, TResponse>` | `SYNE003`, `SYNE004`, `SYNE005`, `SYNE008`, `SYNE009`, `SYNE010` | `SYNE001`, `SYNE002`, `SYNE007`, `SYNE011`, `SYNE012`, `SYNE013`, `SYNE014`, `SYNE015` |
+| `RawEndpoint` | `SYNE008` (call sites), `SYNE009`, `SYNE010` | Everything else |

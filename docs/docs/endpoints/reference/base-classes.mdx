@@ -1,0 +1,116 @@
+---
+sidebar_position: 1
+title: Base classes
+description: All six base classes side by side, plus the rules every endpoint obeys.
+---
+
+# Base classes
+
+| Base class | Level | Default response | Reach for it when |
+|---|---|---|---|
+| `Endpoint<TRequest, TResponse>` | High | `200 OK` with the response body | The message is `IRequest<TResponse>` and the wire contract can be the message itself — the common case |
+| `Endpoint<TRequest>` | High | `204 No Content` | The message is `IRequest` (no response) — a delete, a fire-and-forget command |
+| `StreamEndpoint<TRequest, TItem>` | High | Negotiated on `Accept` — see [Streaming](../high-level/streaming) | The message is `IStreamRequest<TItem>` |
+| `MappedEndpoint<THttpRequest, TRequest, TResponse, THttpResponse>` | High | `200 OK` with `THttpResponse` | The public HTTP contract must not be the same shape as the internal CQRS message |
+| `RawEndpoint<TRequest>` / `RawEndpoint<TRequest, TResponse>` | Middle | Same as the `Endpoint<…>` of the matching arity | The binding is yours to write — see [Mediator-bound](../low-level/mediator-bound) |
+| `RawEndpoint` | Low | Whatever `HandleAsync` returns | There is no message at all — see [Low level](../low-level/overview) |
+
+## The inheritance chain
+
+```
+EndpointBase
+ └── RawEndpoint                              HandleAsync(HttpContext, CancellationToken) → IResult
+     ├── RawEndpoint<TRequest>                + BindAsync, dispatch, 204 default
+     ├── RawEndpoint<TRequest, TResponse>     + BindAsync, dispatch, 200 default
+     │    └── Endpoint<TRequest, TResponse>   + BindAsync from the generated registry
+     ├── StreamEndpoint<TRequest, TItem>
+     └── MappedEndpoint<...>
+```
+
+Every shape reaches the route table through one `HandleAsync`, because `CreateDescriptor` is sealed on
+`RawEndpoint` and is the only place in the library a route descriptor is constructed. The two levels
+cannot drift apart without the compiler saying so.
+
+## What each shape asks you to write
+
+| | `Configure` takes | Binding | Success mapping |
+|---|---|---|---|
+| `Endpoint<TRequest, TResponse>` | `IEndpointBuilder<TResponse>` | Generated | Optional (`Configure` or `OnSuccess`) |
+| `Endpoint<TRequest>` | `IEndpointBuilder` | Generated | Optional (`Configure` or `OnSuccess`) |
+| `StreamEndpoint<…>` | `IStreamEndpointBuilder` | Generated | Negotiated — the builder offers none |
+| `MappedEndpoint<…>` | `IEndpointBuilder<THttpResponse>` | Generated + `ToRequest`/`ToResponse` | Optional |
+| `RawEndpoint<…>` | `IEndpointBuilder<TResponse>` | **Required** — `BindAsync` | Optional |
+| `RawEndpoint` | `IRawEndpointBuilder` | — | **Required** — `HandleAsync` returns it |
+
+Two of those builders are narrowed on purpose. `IRawEndpointBuilder` and `IStreamEndpointBuilder` omit
+the success-mapping methods, because neither tier consults a success mapper — a low-level endpoint
+returns its own result, and a stream's status is committed before its first item. Offering the methods
+anyway would make the call compile and do nothing.
+
+## Rules that apply to all of them
+
+### Stateless singletons
+
+One instance is created at startup, `Configure` runs once against it, and the same instance serves
+every request. **Constructor injection is unavailable by design** — resolve dependencies from the
+request with `context.Service<T>()`.
+
+Storing per-request state in a field is a bug, not a supported pattern: every concurrent request
+shares the instance.
+
+### Shape requirements
+
+An endpoint class must be top-level, non-generic, and have a public parameterless constructor —
+`MapEndpoint<TEndpoint>()` is constrained to `where TEndpoint : EndpointBase, new()`. Violations are
+reported as [`SYNE010`](./diagnostics).
+
+An `abstract` endpoint class never fires it: discovery skips abstract classes outright, so an abstract
+intermediate base shared by several endpoints is a supported pattern.
+
+```csharp
+// Supported: shared configuration, never mapped itself.
+public abstract class SecuredEndpoint<TRequest, TResponse> : Endpoint<TRequest, TResponse>
+    where TRequest : IRequest<TResponse>
+    where TResponse : notnull
+{
+    public override void Configure(IEndpointBuilder<TResponse> builder) =>
+        builder.RequireAuthorization("ApiScope");
+}
+```
+
+### Two sealed members
+
+Both exist so a mistake is a compile error rather than a silent no-op:
+
+| Sealed | Why |
+|---|---|
+| `Endpoint<…>.BindAsync` | The generated binder is what makes it the high level. To replace the binding, [drop a tier](../low-level/mediator-bound) rather than override it |
+| `RawEndpoint<…>.Configure(IRawEndpointBuilder)` | That tier configures through the typed `Configure(IEndpointBuilder<TResponse>)`, so overriding the low-level overload would configure nothing |
+
+### Mapping
+
+`MapSynapseEndpoints(new SynapseEndpointGroup())` maps every discovered endpoint in an assembly, and
+`MapEndpoint<TEndpoint>()` maps one by hand. The two behave identically — the generated group is a
+list of `MapEndpoint<T>()` calls.
+
+`MapSynapseEndpoints` additionally walks the resulting route table once, after every group has mapped,
+and throws if two Synapse endpoints claim the same HTTP method and route.
+
+## Verb attributes
+
+| Attribute | Verb |
+|---|---|
+| `[Get(route)]` | `GET` |
+| `[Post(route)]` | `POST` |
+| `[Put(route)]` | `PUT` |
+| `[Patch(route)]` | `PATCH` |
+| `[Delete(route)]` | `DELETE` |
+| `[HttpEndpoint(method, route)]` | Anything else — `HEAD`, `OPTIONS`, `TRACE`, … |
+
+```csharp
+[HttpEndpoint("HEAD", "/tasks")]
+public sealed class HeadTasksEndpoint : Endpoint<ListTasksQuery, IReadOnlyList<TaskDto>>;
+```
+
+An endpoint may also declare its route in `Configure` instead of by attribute — see
+[escape hatches](./escape-hatches#a-computed-route). Doing both is [`SYNE009`](./diagnostics).

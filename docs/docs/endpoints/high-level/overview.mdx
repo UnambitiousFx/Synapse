@@ -1,0 +1,114 @@
+---
+sidebar_position: 1
+title: Overview
+description: The high level — when the HTTP contract is the message, and the analyzer writes the binding.
+---
+
+# The high level
+
+Use the high level when **the route is a command or a query**. You declare the message and the
+endpoint class; the analyzer generates the binding between them.
+
+```csharp
+public sealed record GetTaskQuery(Guid TaskId) : IRequest<TaskDto>;
+
+[Get("/tasks/{taskId:guid}")]
+public sealed class GetTaskEndpoint : Endpoint<GetTaskQuery, TaskDto>;
+```
+
+That is the entire endpoint. There is no method body because there is nothing left to write: the
+route value becomes `TaskId`, the query goes to its handler, and the handler's `TaskDto` is written as
+`200 OK`.
+
+## What you get without writing anything
+
+| | Where it comes from |
+|---|---|
+| Route and verb | The `[Get]` attribute |
+| Binding | Generated from the message's properties — [five rules](./messages#the-five-binding-rules) |
+| `400` on bad input | Generated: every bad value in [one response](./responses#failures) |
+| Dispatch | `IHttpInvoker`, unchanged |
+| Failure mapping | The registered `IFailureHttpMapper`, unchanged |
+| `200 OK` + JSON body | The default success mapping — [changeable](./responses) |
+| OpenAPI metadata | `Accepts`/`Produces` derived from the type arguments |
+
+## The four shapes
+
+Which base class you derive from follows from the message, not from taste:
+
+```csharp
+// IRequest<TResponse> — the common case. 200 OK with the response as the body.
+[Get("/tasks/{taskId:guid}")]
+public sealed class GetTaskEndpoint : Endpoint<GetTaskQuery, TaskDto>;
+
+// IRequest — no response. 204 No Content.
+[Delete("/tasks/{taskId:guid}")]
+public sealed class DeleteTaskEndpoint : Endpoint<DeleteTaskCommand>;
+
+// IStreamRequest<TItem> — many items. SSE or a JSON array, negotiated on Accept.
+[Get("/tasks/stream")]
+public sealed class StreamTasksEndpoint : StreamEndpoint<StreamTasksQuery, TaskDto>;
+
+// The wire contract must differ from the internal message.
+public sealed class CreateThingEndpoint
+    : MappedEndpoint<CreateThingRequestDto, CreateThingCommand, int, CreateThingResponseDto>;
+```
+
+Deriving from `Endpoint<…>` for a message that implements `IStreamRequest<T>` is reported as
+[`SYNE005`](../reference/diagnostics) rather than misbehaving at runtime.
+
+See [Base classes](../reference/base-classes) for all six side by side, including the low-level ones.
+
+### `MappedEndpoint` is a deliberate opt-in
+
+Prefer `Endpoint<TRequest, TResponse>` unless the wire contract genuinely must differ from the
+internal message: the mapped variant costs two extra mapping methods per endpoint.
+
+```csharp
+public sealed class CreateThingEndpoint
+    : MappedEndpoint<CreateThingRequestDto, CreateThingCommand, int, CreateThingResponseDto>
+{
+    public override CreateThingCommand ToRequest(CreateThingRequestDto request) =>
+        new(request.Name);
+
+    public override CreateThingResponseDto ToResponse(int response) =>
+        new(response.ToString());
+
+    public override void Configure(IEndpointBuilder<CreateThingResponseDto> builder) =>
+        builder.Created(value => $"/things/{value.Id}");
+}
+```
+
+The four type parameters read in wire → internal → internal → wire order:
+`THttpRequest`, `TRequest`, `TResponse`, `THttpResponse`.
+
+## Endpoints are singletons
+
+One instance is created at startup, `Configure` runs once against it, and that same instance serves
+every request. **Constructor injection is therefore unavailable by design.** Pull what you need off
+the request instead:
+
+```csharp
+public override IResult OnSuccess(TaskDto response, HttpContext context)
+{
+    var clock = context.Service<IClock>();     // RequestServices.GetRequiredService<IClock>()
+    …
+}
+```
+
+An endpoint class must also be top-level, non-generic, and have a public parameterless constructor —
+`MapEndpoint<TEndpoint>()` is constrained to `where TEndpoint : EndpointBase, new()`. Violations are
+reported as [`SYNE010`](../reference/diagnostics). An `abstract` endpoint class never fires it:
+discovery skips abstract classes, so an abstract intermediate base shared by several endpoints is a
+supported pattern.
+
+## Where to go next
+
+| Question | Page |
+|---|---|
+| How do request values reach my message? | [Messages & binding](./messages) |
+| How do I return `201`, or a different body? | [Responses](./responses) |
+| How do I share a prefix or a policy? | [Groups](./groups) |
+| How do I stream many items? | [Streaming](./streaming) |
+| The five rules cannot express my binding | [Low level: mediator-bound](../low-level/mediator-bound) |
+| What does this warning mean? | [Diagnostics](../reference/diagnostics) |

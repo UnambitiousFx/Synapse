@@ -1,0 +1,161 @@
+---
+sidebar_position: 1
+title: Endpoints
+description: Endpoint-per-class HTTP layer with two levels — generated binding when the route is a message, raw HttpContext when it is not.
+---
+
+# Endpoints
+
+`UnambitiousFx.Synapse.Endpoints` turns an HTTP route into a class. For the common case that is the
+whole endpoint — one attribute, one class declaration, no method body:
+
+```csharp
+public sealed record GetTaskQuery(Guid TaskId) : IRequest<TaskDto>;
+
+[Get("/tasks/{taskId:guid}")]
+public sealed class GetTaskEndpoint : Endpoint<GetTaskQuery, TaskDto>;
+```
+
+That is a complete, working `GET /tasks/{taskId}`. The route value is bound to `TaskId`, the query is
+dispatched through the mediator, the handler's result is written as `200 OK` with the `TaskDto` as the
+JSON body, and a bad `taskId` answers `400` — all generated at compile time.
+
+It sits on top of `IHttpInvoker` (see [ASP.NET Core Integration](../aspnetcore.mdx)). The invoker still
+does the dispatch and the failure mapping; this package removes the boilerplate around calling it.
+
+---
+
+## Which level do you want?
+
+The package has **two levels**, and this is the only decision you need to make before reading
+anything else. The question is not "how complicated is my endpoint" — it is **"is this route a
+command or a query?"**
+
+### The high level
+
+**The route *is* a message.** You declare the message and the endpoint; the analyzer writes the
+binding.
+
+```csharp
+[Post("/tasks")]
+public sealed class CreateTaskEndpoint
+    : Endpoint<CreateTaskCommand, TaskCreated>;
+```
+
+Use it for the CRUD and query surface of an application — which in practice is almost everything.
+
+**[Start the high-level guide →](./high-level/overview.mdx)**
+
+### The low level
+
+**The route is about the HTTP exchange itself.** You get the `HttpContext` and return an `IResult`.
+
+```csharp
+[Get("/health")]
+public sealed class HealthEndpoint : RawEndpoint
+{
+    public override ValueTask<IResult> HandleAsync(
+        HttpContext ctx, CancellationToken ct) => …
+}
+```
+
+Use it for a conditional `GET`, a webhook, a health check, a redirect, a file download.
+
+**[Start the low-level guide →](./low-level/overview.mdx)**
+
+If you are not sure, start high. Dropping a level later changes only the part that did not fit —
+which is the point of how the two are built.
+
+---
+
+## The two levels are one inheritance chain
+
+The high level is not a parallel implementation of the low one. It **is** the low one with its
+binding supplied, so the two cannot drift apart:
+
+```
+RawEndpoint                              ← low level:  context in, result out
+ ├── RawEndpoint<TRequest>               ← middle:     you write BindAsync
+ ├── RawEndpoint<TRequest, TResponse>
+ │    └── Endpoint<TRequest, TResponse>  ← high level: the analyzer writes it
+ ├── StreamEndpoint<TRequest, TItem>
+ └── MappedEndpoint<...>
+```
+
+`Endpoint<TRequest, TResponse>` adds exactly one member to `RawEndpoint<TRequest, TResponse>`: a
+`BindAsync` that calls the generated binder. `Configure`, `OnSuccess`, the dispatch, the failure
+mapping and the OpenAPI metadata are all inherited unchanged from the tier below.
+
+That gives you a middle level worth knowing about: when the request *does* map onto a message but
+not by any of the [five binding rules](./high-level/messages.mdx#the-five-binding-rules) — a header that
+must be split, one repeated query key becoming a collection — you replace `BindAsync` and keep
+everything else.
+
+| Level | What you write | Reach for it when |
+|---|---|---|
+| `Endpoint<…>` | A class declaration and an attribute | Almost always |
+| `RawEndpoint<…>` | `BindAsync` | The request maps onto a message, but not by the five rules |
+| `RawEndpoint` | `HandleAsync` | There is no message — the endpoint is about the HTTP exchange |
+
+---
+
+## Why it exists
+
+Every route in a hand-written Minimal API surface repeats the same four steps: read the inputs, build
+a message, call the invoker, map the success response.
+
+```csharp title="Hand-written: the shape repeats once per route"
+tasks.MapGet("/{id:guid}", async (
+        [FromRoute] Guid id,
+        [FromServices] IHttpInvoker invoker,
+        CancellationToken ct) =>
+    await invoker.InvokeAsync(new GetTaskQuery { TaskId = id }, ct))
+    .WithName("GetTask")
+    .WithSummary("Get a task by ID");
+```
+
+```csharp title="With Endpoints: the shape is generated"
+[Get("/tasks/{taskId:guid}")]
+public sealed class GetTaskEndpoint : Endpoint<GetTaskQuery, TaskDto>;
+```
+
+Nothing is given up in exchange. The status code and response shape stay fully controllable —
+[declaratively](./high-level/responses.mdx) for the common shapes, imperatively (`OnSuccess`, `Raw`) for
+the rest — and the whole surface is [Native AOT](./reference/native-aot.mdx) clean.
+
+---
+
+## This section
+
+**Guides** — read one track, in order.
+
+| Page | For |
+|---|---|
+| [Quickstart](./quickstart.mdx) | Install, first endpoint, wiring it up. Either level. |
+| [High level: overview](./high-level/overview.mdx) | When the route is a message |
+| [High level: messages & binding](./high-level/messages.mdx) | How request values reach your message |
+| [High level: responses](./high-level/responses.mdx) | Status codes, bodies, failures |
+| [High level: groups](./high-level/groups.mdx) | Shared prefixes, tags, authorization |
+| [High level: streaming](./high-level/streaming.mdx) | `IStreamRequest<T>` over SSE or a JSON array |
+| [Low level: overview](./low-level/overview.mdx) | When the route is not a message |
+| [Low level: reading the request](./low-level/reading-the-request.mdx) | The `HttpContext` helper surface |
+| [Low level: validating](./low-level/validating.mdx) | Collecting every bad input into one `400` |
+| [Low level: mediator-bound](./low-level/mediator-bound.mdx) | Hand-written binding, inherited dispatch |
+
+**Reference** — look things up.
+
+| Page | For |
+|---|---|
+| [Base classes](./reference/base-classes.mdx) | All six, side by side |
+| [OpenAPI](./reference/openapi.mdx) | What each shape declares, and the `net8.0` gap |
+| [Native AOT](./reference/native-aot.mdx) | The section most likely to save you an afternoon |
+| [Diagnostics](./reference/diagnostics.mdx) | `SYNE001`–`SYNE014`, what each means |
+| [Escape hatches](./reference/escape-hatches.mdx) | When the fluent surface is not enough |
+| [Preview status](./reference/preview.mdx) | Why it ships prerelease-only, and the `NU5104` warning |
+
+## See also
+
+- [ASP.NET Core Integration](../aspnetcore.mdx) — the `IHttpInvoker`/`IMvcInvoker` layer this package builds on.
+- [Source Generator](../source-generator.mdx) — the sibling generator for handler registration; this package ships its own.
+- [Validation](../validation.mdx) — `IRequestValidator` and the pipeline, where business rules belong.
+- [Getting Started](../getting-started.mdx) — end-to-end Synapse setup with Minimal API.

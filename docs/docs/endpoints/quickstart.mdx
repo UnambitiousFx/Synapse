@@ -1,0 +1,296 @@
+---
+sidebar_position: 2
+title: Quickstart
+description: Install the package and get a working endpoint — the complete files, nothing elided.
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Quickstart
+
+A complete, runnable application. Every file is shown in full — nothing is elided, so you can copy
+the five of them into an empty web project and run it.
+
+## Install
+
+<Tabs>
+  <TabItem value="cli" label=".NET CLI" default>
+    ```bash
+    dotnet add package UnambitiousFx.Synapse.Endpoints --prerelease
+    ```
+  </TabItem>
+  <TabItem value="packageref" label="PackageReference">
+    ```xml
+    <PackageReference Include="UnambitiousFx.Synapse.Endpoints" Version="*-*" />
+    ```
+  </TabItem>
+</Tabs>
+
+:::note Prerelease only
+This package's API is not settled yet, so it is published to nuget.org as a prerelease even on a
+tagged release — hence the `--prerelease` flag and the `*-*` floating version. The rest of Synapse
+ships stable versions. See [Preview status](./reference/preview) for the version scheme, the
+`NU5104` warning it triggers when you pack your own package, and what "preview" allows to change.
+:::
+
+One package. The Roslyn analyzer that generates binders and route metadata is bundled inside it
+(`analyzers/dotnet/cs`) and runs automatically — there is no separate analyzer package to add,
+**provided you consume it as a NuGet package**. If you reference the library by `ProjectReference`
+instead, see [Native AOT → consuming by ProjectReference](./reference/native-aot#consuming-by-projectreference-needs-its-own-analyzer-reference).
+
+## The five files
+
+### 1. The messages
+
+Plain records. They know nothing about HTTP.
+
+```csharp title="Features/Tasks/Messages.cs"
+using UnambitiousFx.Synapse.Abstractions;
+
+namespace TaskApi.Features.Tasks;
+
+/// <summary>Lists every task.</summary>
+public sealed record ListTasksQuery : IRequest<IReadOnlyList<TaskDto>>;
+
+/// <summary>Gets one task by its id.</summary>
+public sealed record GetTaskQuery : IRequest<TaskDto>
+{
+    public required Guid TaskId { get; init; }
+}
+
+/// <summary>Creates a task.</summary>
+public sealed record CreateTaskCommand : IRequest<TaskCreated>
+{
+    public required string Title { get; init; }
+}
+
+/// <summary>The id of the task a <see cref="CreateTaskCommand" /> just created.</summary>
+public sealed record TaskCreated
+{
+    public required Guid TaskId { get; init; }
+}
+
+/// <summary>A task, as returned to clients.</summary>
+public sealed record TaskDto
+{
+    public required Guid Id { get; init; }
+    public required string Title { get; init; }
+}
+```
+
+### 2. The handlers
+
+Also plain — they take the message and return a `Result`. This is ordinary Synapse; see
+[Commands and Queries](../commands-and-queries).
+
+```csharp title="Features/Tasks/Handlers.cs"
+using UnambitiousFx.Functional;
+using UnambitiousFx.Synapse.Abstractions;
+
+namespace TaskApi.Features.Tasks;
+
+[RequestHandler<ListTasksQuery, IReadOnlyList<TaskDto>>]
+public sealed class ListTasksQueryHandler : IRequestHandler<ListTasksQuery, IReadOnlyList<TaskDto>>
+{
+    private readonly TaskRepository _repository;
+
+    public ListTasksQueryHandler(TaskRepository repository)
+    {
+        _repository = repository;
+    }
+
+    public ValueTask<Result<IReadOnlyList<TaskDto>>> HandleAsync(
+        ListTasksQuery request,
+        CancellationToken cancellationToken = default)
+    {
+        return ValueTask.FromResult(Result.Success<IReadOnlyList<TaskDto>>(_repository.GetAll()));
+    }
+}
+
+[RequestHandler<GetTaskQuery, TaskDto>]
+public sealed class GetTaskQueryHandler : IRequestHandler<GetTaskQuery, TaskDto>
+{
+    private readonly TaskRepository _repository;
+
+    public GetTaskQueryHandler(TaskRepository repository)
+    {
+        _repository = repository;
+    }
+
+    public ValueTask<Result<TaskDto>> HandleAsync(
+        GetTaskQuery request,
+        CancellationToken cancellationToken = default)
+    {
+        var task = _repository.GetById(request.TaskId);
+
+        return ValueTask.FromResult(task is not null
+            ? Result.Success(task)
+            : Result.FailNotFound<TaskDto>("Task", request.TaskId.ToString()));
+    }
+}
+
+[RequestHandler<CreateTaskCommand, TaskCreated>]
+public sealed class CreateTaskCommandHandler : IRequestHandler<CreateTaskCommand, TaskCreated>
+{
+    private readonly TaskRepository _repository;
+
+    public CreateTaskCommandHandler(TaskRepository repository)
+    {
+        _repository = repository;
+    }
+
+    public ValueTask<Result<TaskCreated>> HandleAsync(
+        CreateTaskCommand request,
+        CancellationToken cancellationToken = default)
+    {
+        var task = _repository.Create(request.Title);
+
+        return ValueTask.FromResult(Result.Success(new TaskCreated { TaskId = task.Id }));
+    }
+}
+```
+
+### 3. The endpoints
+
+Here is the whole point. Three routes, no method bodies.
+
+```csharp title="Features/Tasks/Endpoints.cs"
+using UnambitiousFx.Synapse.Endpoints;
+using UnambitiousFx.Synapse.Endpoints.Builders;
+
+namespace TaskApi.Features.Tasks;
+
+/// <summary>GET /tasks — nothing to configure.</summary>
+[Get("/tasks")]
+public sealed class ListTasksEndpoint : Endpoint<ListTasksQuery, IReadOnlyList<TaskDto>>;
+
+/// <summary>GET /tasks/{taskId} — TaskId binds from the route by name.</summary>
+[Get("/tasks/{taskId:guid}")]
+public sealed class GetTaskEndpoint : Endpoint<GetTaskQuery, TaskDto>;
+
+/// <summary>POST /tasks — Title binds from the JSON body; responds 201 with a Location.</summary>
+[Post("/tasks")]
+public sealed class CreateTaskEndpoint : Endpoint<CreateTaskCommand, TaskCreated>
+{
+    public override void Configure(IEndpointBuilder<TaskCreated> builder)
+    {
+        builder.Created(created => $"/tasks/{created.TaskId}")
+            .Summary("Create a task");
+    }
+}
+```
+
+`ListTasksEndpoint` has no `Configure`, no `OnSuccess` and no constructor. `ListTasksQuery` is
+dispatched exactly as if you had written `invoker.InvokeAsync(new ListTasksQuery(), ct)` yourself, and
+the response is written as `200 OK` with the value as the JSON body.
+
+### 4. The repository
+
+Only here so the example runs.
+
+```csharp title="Infrastructure/TaskRepository.cs"
+using System.Collections.Concurrent;
+using TaskApi.Features.Tasks;
+
+namespace TaskApi.Infrastructure;
+
+public sealed class TaskRepository
+{
+    private readonly ConcurrentDictionary<Guid, TaskDto> _tasks = new();
+
+    public TaskDto Create(string title)
+    {
+        var task = new TaskDto { Id = Guid.NewGuid(), Title = title };
+        _tasks[task.Id] = task;
+        return task;
+    }
+
+    public TaskDto? GetById(Guid id) => _tasks.TryGetValue(id, out var task) ? task : null;
+
+    public IReadOnlyList<TaskDto> GetAll() => _tasks.Values.ToList();
+}
+```
+
+### 5. Program.cs
+
+One line maps every endpoint in the assembly.
+
+```csharp title="Program.cs"
+using TaskApi.Infrastructure;
+using UnambitiousFx.Synapse;
+using UnambitiousFx.Synapse.AspNetCore;
+using UnambitiousFx.Synapse.Endpoints;
+
+var builder = WebApplication.CreateSlimBuilder(args);
+
+builder.Services.AddSingleton<TaskRepository>();
+builder.Services.AddSynapseAspNetCore();
+builder.Services.AddSynapse(cfg => cfg.AddRegisterGroup(new RegisterGroup()));
+
+var app = builder.Build();
+
+// One line per assembly. SynapseEndpointGroup is generated: a list of MapEndpoint<T>() calls.
+app.MapSynapseEndpoints(new SynapseEndpointGroup());
+
+app.Run();
+```
+
+## Run it
+
+```bash
+dotnet run
+```
+
+```bash
+$ curl -s -X POST localhost:5000/tasks \
+       -H 'Content-Type: application/json' -d '{"title":"write the docs"}' -i
+HTTP/1.1 201 Created
+Location: /tasks/6f9619ff-8b86-d011-b42d-00cf4fc964ff
+Content-Type: application/json
+
+{"taskId":"6f9619ff-8b86-d011-b42d-00cf4fc964ff"}
+
+$ curl -s localhost:5000/tasks
+[{"id":"6f9619ff-8b86-d011-b42d-00cf4fc964ff","title":"write the docs"}]
+
+$ curl -s localhost:5000/tasks/not-a-guid -i
+HTTP/1.1 404 Not Found
+
+$ curl -s "localhost:5000/tasks/00000000-0000-0000-0000-000000000000"
+{"type":"https://tools.ietf.org/html/rfc7231#section-6.5.4","title":"Not Found","status":404,
+ "detail":"Resource 'Task' with id '00000000-0000-0000-0000-000000000000' was not found.",
+ "code":"NOT_FOUND","resource":"Task","identifier":"00000000-0000-0000-0000-000000000000"}
+```
+
+The `404` on `not-a-guid` comes from the `:guid` route constraint — routing rejects it before the
+endpoint is reached. The second `404` is your handler's typed `NotFoundFailure`, turned into that
+problem document by the `IFailureHttpMapper` registered for `IHttpInvoker` (see
+[Failure mapping](../aspnetcore#failure-mapping--ifailurehttpmapper)) — which is also where the
+`code`, `resource` and `identifier` members come from. Neither `404` is something this package
+invents.
+
+## About that one line
+
+```csharp
+app.MapSynapseEndpoints(new SynapseEndpointGroup());
+```
+
+`SynapseEndpointGroup` is emitted by the analyzer — one per assembly, containing one
+`endpoints.MapEndpoint<T>()` call per discovered endpoint. It is named `SynapseEndpointGroup` rather
+than `EndpointGroup` so it never collides with the [`EndpointGroup`](./high-level/groups) base class
+you derive route groups from.
+
+`MapSynapseEndpoints` also walks the resulting route table once, after every group has mapped, and
+throws if two Synapse endpoints claim the same HTTP method and route — a duplicate you would
+otherwise discover as whichever one happened to win.
+
+You can map a single endpoint by hand too — `endpoints.MapEndpoint<GetTaskEndpoint>()` — which is
+exactly what the generated group does for each endpoint it finds. Mapping by hand and mapping through
+a generated group behave identically.
+
+## Next
+
+- The route *is* a message, as above → **[High level](./high-level/overview)**
+- The route is about the HTTP exchange → **[Low level](./low-level/overview)**
+- Publishing with Native AOT → **[Native AOT](./reference/native-aot)** (read it before you publish, not after)

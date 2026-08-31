@@ -1,0 +1,151 @@
+---
+sidebar_position: 1
+title: Overview
+description: The low level — you get the HttpContext and return an IResult, for routes that are not commands or queries.
+---
+
+# The low level
+
+Use the low level when **the route is not a command or a query**. You get the `HttpContext` and return
+an `IResult`. Nothing is bound, dispatched or mapped for you.
+
+```csharp
+[Get("/health")]
+public sealed class HealthEndpoint : RawEndpoint
+{
+    public override ValueTask<IResult> HandleAsync(HttpContext context, CancellationToken ct)
+    {
+        var count = context.Service<TaskRepository>().GetAll().Count;
+
+        return ValueTask.FromResult(TypedResults.Ok(new HealthDto("ok", count)) as IResult);
+    }
+}
+```
+
+## When this is the right level
+
+The shapes the high level has nothing to work with — no message to dispatch, no response DTO to map:
+
+| Endpoint | Why the high level does not fit |
+|---|---|
+| A conditional `GET` answering `304` from `If-None-Match` | The decision is about the HTTP exchange, not about a query |
+| A webhook | The payload is someone else's schema, not your message |
+| A health check | There is nothing to dispatch |
+| A redirect | The response is a `Location`, not a body |
+| A file download | The response is a stream, not a serialized DTO |
+
+If the route *is* a message and only the **binding** is unusual, do not come all the way down here —
+use [the middle level](./mediator-bound) and keep the dispatch, the failure mapping and the metadata.
+
+## A complete example: a conditional GET
+
+This is the endpoint the level exists for. It answers `304 Not Modified` from a request header, which
+is a decision about the exchange itself.
+
+```csharp title="Features/Ops/HealthEndpoint.cs"
+using Microsoft.AspNetCore.Http;
+using UnambitiousFx.Synapse.Endpoints;
+using UnambitiousFx.Synapse.Endpoints.Binding;
+using UnambitiousFx.Synapse.Endpoints.Builders;
+
+namespace TaskApi.Features.Ops;
+
+public sealed record HealthDto(string Status, int Tasks);
+
+[Get("/health")]
+public sealed class HealthEndpoint : RawEndpoint
+{
+    // Nothing about a hand-written handler can be inferred, so what it produces is declared here.
+    public override void Configure(IRawEndpointBuilder builder)
+    {
+        builder.Produces<HealthDto>()
+            .Produces(StatusCodes.Status304NotModified)
+            .Tag("Ops")
+            .Summary("Liveness, with an ETag");
+    }
+
+    public override ValueTask<IResult> HandleAsync(HttpContext context, CancellationToken ct)
+    {
+        // No constructor injection: endpoints are startup singletons, so dependencies come off
+        // the request. context.Service<T>() is the shorthand.
+        var count = context.Service<TaskRepository>().GetAll().Count;
+        var etag = $"\"tasks-{count}\"";
+
+        if (context.Header("If-None-Match") == etag)
+        {
+            return ValueTask.FromResult(TypedResults.StatusCode(StatusCodes.Status304NotModified) as IResult);
+        }
+
+        context.Response.Headers.ETag = etag;
+
+        return ValueTask.FromResult(TypedResults.Ok(new HealthDto("ok", count)) as IResult);
+    }
+}
+```
+
+```bash
+$ curl -si localhost:5000/health
+HTTP/1.1 200 OK
+ETag: "tasks-2"
+
+{"status":"ok","tasks":2}
+
+$ curl -si localhost:5000/health -H 'If-None-Match: "tasks-2"'
+HTTP/1.1 304 Not Modified
+```
+
+## Still a real Synapse endpoint
+
+A `RawEndpoint` is not an escape from the package. It is discovered by the analyzer, routed by
+attribute, groupable with `[InGroup<T>]`, and mapped by `MapSynapseEndpoints` alongside everything
+else — including the duplicate-route check.
+
+What it does **not** get, because there is nothing to infer it from:
+
+| | High level | Low level |
+|---|---|---|
+| Binding | Generated | Yours — [helpers](./reading-the-request) |
+| `400` on bad input | Automatic | Yours — [validator](./validating) |
+| Success mapping | `200 OK` or declared | Whatever `HandleAsync` returns |
+| OpenAPI `Accepts`/`Produces` | From the type arguments | Declared explicitly, or nothing |
+
+## Declaring the OpenAPI contract
+
+`IRawEndpointBuilder` carries the route/verb methods, the metadata methods (`Tag`, `Summary`,
+`Description`, `Name`, `RequireAuthorization`, `AllowAnonymous`, `Raw`) and three declarations that the
+higher tiers do not need:
+
+```csharp
+public override void Configure(IRawEndpointBuilder builder)
+{
+    builder.Accepts<WebhookPayload>()                  // request body type
+        .Produces<HealthDto>()                         // 200 with a body, default status 200
+        .Produces(StatusCodes.Status304NotModified)    // a status with no body
+        .Produces<ProblemDetails>(StatusCodes.Status409Conflict);
+}
+```
+
+Declaring nothing is valid and emits nothing.
+
+Two omissions are deliberate. `IRawEndpointBuilder` has **no `NoContent()` and no `StatusCode(int)`**:
+both set a success mapper that a low-level endpoint never consults — it returns its own result — so
+offering them would be a trap rather than a convenience. It also adds **no automatic
+`ProducesProblem(400)`**, because an endpoint that binds nothing does not necessarily have a `400`.
+
+## Singletons, and the sealed member
+
+One instance is created at startup, `Configure` runs once, and the same instance serves every request.
+Constructor injection is unavailable by design — use `context.Service<T>()`.
+
+`HandleAsync` must return a result; returning `null` throws an `InvalidOperationException` naming the
+endpoint rather than a bare `NullReferenceException`. Use `Results.Empty` if the intent is to write
+nothing.
+
+## Next
+
+| Question | Page |
+|---|---|
+| How do I read a route value, a header, the body? | [Reading the request](./reading-the-request) |
+| How do I answer with every bad input at once? | [Validating](./validating) |
+| My route *is* a message, but the binding is unusual | [Mediator-bound](./mediator-bound) |
+| What does the document say about this endpoint? | [OpenAPI](../reference/openapi) |

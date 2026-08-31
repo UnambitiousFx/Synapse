@@ -41,6 +41,14 @@ For web API projects, also install the ASP.NET Core integration layer:
   </TabItem>
 </Tabs>
 
+:::note Prerelease and preview builds
+`UnambitiousFx.Synapse.Endpoints` is published to nuget.org as a **prerelease only** — add it with
+`dotnet add package UnambitiousFx.Synapse.Endpoints --prerelease`. Every merge to `main` also
+pushes a `X.Y.Z-preview.0.N` build of all packages to
+[GitHub Packages](https://github.com/UnambitiousFx/Synapse/pkgs/nuget); see the
+[README](https://github.com/UnambitiousFx/Synapse#prerelease-packages) for the feed setup.
+:::
+
 ## Register Synapse
 
 Call `AddSynapse` in your `Program.cs` or `Startup.cs`:

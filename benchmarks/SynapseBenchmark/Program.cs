@@ -1,8 +1,8 @@
+using System.Reflection;
 using BenchmarkDotNet.Running;
-using UnambitiousFx.Benchmarks.SynapseBenchmark;
 
-// Run benchmarks comparing UnambitiousFx Synapse vs MediatR vs Mediator (martinothamar)
-BenchmarkRunner.Run<SynapseVsMediatorsBenchmarks>();
-
-// Context creation and cross-boundary propagation — both on the per-message hot path
-BenchmarkRunner.Run<PropagationBenchmarks>();
+// BenchmarkSwitcher discovers every benchmark class in this assembly (the Synapse-vs-MediatR/Mediator
+// comparison, context propagation, and endpoint dispatch) and honors command-line filters, e.g.
+// `dotnet run -c Release --project benchmarks/SynapseBenchmark -- --filter '*EndpointDispatch*'`.
+// With no filter it falls back to its interactive picker.
+BenchmarkSwitcher.FromAssembly(Assembly.GetExecutingAssembly()).Run(args);

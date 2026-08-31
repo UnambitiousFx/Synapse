@@ -1,0 +1,103 @@
+---
+sidebar_position: 6
+title: Preview status
+description: Why UnambitiousFx.Synapse.Endpoints ships prerelease-only, the NU5104 warning it triggers, and what "preview" allows to change.
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Preview status
+
+`UnambitiousFx.Synapse.Endpoints` — and the binder generator bundled inside it — is the one Synapse
+package that is **still stabilising**. The rest of Synapse (`UnambitiousFx.Synapse`,
+`UnambitiousFx.Synapse.Abstractions`, `UnambitiousFx.Synapse.AspNetCore`,
+`UnambitiousFx.Synapse.SourceGenerator`) publishes stable versions; Endpoints does not.
+
+## What "preview" means here
+
+The endpoint-per-class API is not frozen. While the package is in preview:
+
+- **The public surface can change without a major-version bump.** Base-class names and members,
+  attribute names, the fluent `Configure` builder, and the shape of generated code are all still
+  open to revision.
+- **Diagnostic IDs can move.** The `SYNE001`–`SYNE015` set (see [Diagnostics](./diagnostics)) may be
+  renumbered, split, or merged as the analyzer evolves.
+- **What will not break your app silently:** the generated binder is internal wiring. If the codegen
+  output changes, you recompile and pick it up — there is nothing to migrate by hand.
+
+Once the surface settles, the package graduates to stable versions and this page goes away.
+
+## Versioning
+
+Versions are derived by [MinVer](https://github.com/adamralph/minver) from the nearest `v*` git tag,
+then re-suffixed by repo policy so the preview package never publishes a bare stable version:
+
+| Trigger | Version published | Feed |
+|---|---|---|
+| A `v X.Y.Z` release tag | `X.Y.Z-preview.1` | nuget.org (as a prerelease) |
+| Every merge to `main` | `X.Y.Z-preview.0.<height>` | [GitHub Packages](https://github.com/UnambitiousFx/Synapse/pkgs/nuget) |
+| A local build | `X.Y.Z-local.<timestamp>` | — |
+
+`-preview.1` sorts **above** `-preview.0.<height>`, so a tagged release always wins over the `main`
+build that preceded it. The `main` builds push *all five* packages (so you can take a matched set
+between tags); only Endpoints is pinned to a prerelease suffix on a stable tag.
+
+## Installing it
+
+Because there is no stable version, you must opt into prereleases explicitly.
+
+<Tabs>
+  <TabItem value="cli" label=".NET CLI" default>
+    ```bash
+    dotnet add package UnambitiousFx.Synapse.Endpoints --prerelease
+    ```
+  </TabItem>
+  <TabItem value="packageref" label="PackageReference">
+    ```xml
+    <!-- *-* floats to the highest prerelease; pin to a specific one for reproducible builds -->
+    <PackageReference Include="UnambitiousFx.Synapse.Endpoints" Version="*-*" />
+    ```
+  </TabItem>
+</Tabs>
+
+To consume the `main` (`-preview.0.N`) builds from GitHub Packages, add the feed to a `nuget.config`
+and authenticate with a GitHub PAT that has `read:packages` — see the
+[README](https://github.com/UnambitiousFx/Synapse#prerelease-packages).
+
+## The NU5104 warning
+
+If your own project **produces a NuGet package** (`dotnet pack`, or `GeneratePackageOnBuild`) and it
+depends on `UnambitiousFx.Synapse.Endpoints`, NuGet raises:
+
+```
+warning NU5104: A stable release of a package should not have a prerelease dependency.
+Either modify the version spec of dependency "UnambitiousFx.Synapse.Endpoints [*-*]"
+or update the version field in the nuspec.
+```
+
+NuGet is telling you the truth: your stable `1.4.0` would carry a prerelease dependency, so anyone
+restoring it also needs prereleases enabled. Your options:
+
+1. **Publish your package as a prerelease too** — give it a `-preview`/`-beta` suffix until Endpoints
+   graduates. This is the honest choice while you depend on a moving API.
+2. **Suppress the warning** if you accept the coupling — this repo does exactly that for its own
+   examples and benchmarks:
+
+   ```xml
+   <PropertyGroup>
+     <NoWarn>$(NoWarn);NU5104</NoWarn>
+   </PropertyGroup>
+   ```
+
+   Needed whenever `TreatWarningsAsErrors` is on, or the pack step fails.
+
+An application (a deployable, not a package) never hits NU5104 — it only fires at pack time.
+
+## When it graduates
+
+Graduation is a single change in the repo: the `<PreviewPackage>true</PreviewPackage>` line is
+removed from `src/Synapse.Endpoints/Synapse.Endpoints.csproj`. From the next `v*` tag the package
+publishes as a plain `X.Y.Z`, the `--prerelease` flag is no longer required, and the `--prerelease`
+notes in the README, [Getting Started](../../getting-started), and
+[Quickstart](../quickstart) are dropped alongside it.

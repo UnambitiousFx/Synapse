@@ -1,0 +1,122 @@
+---
+sidebar_position: 5
+title: Escape hatches
+description: Raw, computed routes, dropping a tier, and the one attribute collision worth knowing about.
+---
+
+# Escape hatches
+
+Four ways out when the fluent surface is not enough, in increasing order of how much they change.
+
+## `Raw` — reach the `RouteHandlerBuilder`
+
+`Raw(Action<RouteHandlerBuilder>)` hands you ASP.NET Core's own builder, for filters, rate limiting,
+output caching, versioning or anything else this package does not wrap:
+
+```csharp
+public override void Configure(IEndpointBuilder<TaskDto> builder)
+{
+    builder.Raw(route => route
+        .RequireRateLimiting("fixed")
+        .CacheOutput(policy => policy.Expire(TimeSpan.FromSeconds(30)))
+        .WithMetadata(new ApiVersionAttribute("2.0")));
+}
+```
+
+It is available on all three builders — `IEndpointBuilder<TResponse>`, `IRawEndpointBuilder` and
+`IEndpointGroupBuilder` (where it hands you the `RouteGroupBuilder` instead).
+
+## A computed route
+
+An endpoint whose route cannot be a constant expression can omit the route attribute entirely and
+declare it in `Configure`:
+
+```csharp
+public sealed class SearchTasksEndpoint : Endpoint<SearchTasksQuery, IReadOnlyList<TaskDto>>
+{
+    public override void Configure(IEndpointBuilder<IReadOnlyList<TaskDto>> builder)
+    {
+        var segment = Environment.GetEnvironmentVariable("SEARCH_ROUTE_SEGMENT") ?? "search";
+
+        builder.Get($"/{segment}").Summary("Search tasks by title");
+    }
+}
+```
+
+Declaring the route both ways — a route attribute **and** a verb call on the builder — is
+[`SYNE009`](./diagnostics); only one may declare it.
+
+:::warning The verb is invisible to the generator
+The route is a runtime value, so the generator cannot see the verb — and it needs one to decide whether
+an unannotated property binds from the query string ([rule 4](../high-level/messages#the-five-binding-rules))
+or from the request body (rule 5).
+
+It **assumes a bodyless verb**, which is right for the computed `GET` this hatch is nearly always used
+for, and wrong for a computed `POST`, where properties would bind from the query string instead of the
+body.
+
+[`SYNE014`](./diagnostics) warns whenever any property's source actually came from that assumption, so
+a computed `POST` is told rather than silently mis-bound. Pin those properties and the warning goes
+away along with the ambiguity:
+
+```csharp
+public sealed record ComputedCommand : IRequest<string>
+{
+    // Explicit, so the assumed verb cannot get it wrong — and SYNE014 stays silent.
+    [FromBody] public required string Payload { get; init; }
+}
+```
+:::
+
+## Dropping a tier
+
+The largest escape hatch, and the one the package is designed around. `RawEndpoint<TRequest, TResponse>`
+replaces the generated binding and nothing else; `RawEndpoint` replaces the whole handler.
+
+Both are still ordinary Synapse endpoints — discovered by the analyzer, attribute-routed, groupable, and
+mapped by `MapSynapseEndpoints` alongside everything else — so reaching for one does not mean leaving
+the package behind.
+
+See [the two levels](../#the-two-levels-are-one-inheritance-chain), or go straight to
+[mediator-bound](../low-level/mediator-bound).
+
+## Attribute collisions
+
+The verb attributes (`[Get]`, `[Post]`, `[Put]`, `[Patch]`, `[Delete]`) are named differently from
+`Microsoft.AspNetCore.Mvc`'s `[HttpGet]`/`[HttpPost]`/… family, so they do not collide — both `using`
+directives can coexist in one file.
+
+`[FromHeader]` is where a real collision happens, because `Microsoft.AspNetCore.Mvc` has its own
+`FromHeaderAttribute`. **Both are honoured** by the binder:
+
+```csharp
+[FromHeader("If-Match")]           // Synapse's — the name is a constructor argument
+[FromHeader(Name = "If-Match")]    // Mvc's — the name is a property
+```
+
+But importing **both** namespaces in the same file makes the bare name ambiguous
+(`CS0104: 'FromHeader' is an ambiguous reference between …`) — for instance in a project that mixes MVC
+controllers with Synapse endpoints. Resolve it with a `using` alias, and **alias the full type name,
+not the short attribute form**:
+
+```csharp
+// Works: aliases the exact name the ambiguity is over.
+using FromHeaderAttribute = UnambitiousFx.Synapse.Endpoints.FromHeaderAttribute;
+
+// Does NOT work: [FromHeader] is still ambiguous, because the Mvc import still
+// resolves the "...Attribute"-suffixed form that attribute lookup also tries.
+using FromHeader = UnambitiousFx.Synapse.Endpoints.FromHeaderAttribute;
+```
+
+## Uncommon verbs
+
+`HEAD`, `OPTIONS`, `TRACE` and friends have no dedicated attribute. Use `[HttpEndpoint(method, route)]`:
+
+```csharp
+[HttpEndpoint("HEAD", "/tasks")]
+public sealed class HeadTasksEndpoint : Endpoint<ListTasksQuery, IReadOnlyList<TaskDto>>;
+```
+
+All of `GET`, `DELETE`, `HEAD`, `OPTIONS` and `TRACE` count as bodyless for
+[binding rule 4](../high-level/messages#the-five-binding-rules), so an unannotated property on any of
+them binds from the query string rather than the body.
