@@ -6,6 +6,10 @@
         <EnableRequestDelegateGenerator>true</EnableRequestDelegateGenerator>
         <Description>Endpoint-per-class HTTP layer for UnambitiousFx.Synapse. Maps HTTP requests to CQRS commands and queries with minimal code and full Native AOT support.</Description>
         <PackageTags>aspnetcore;minimal-api;endpoints;cqrs;mediator;native-aot;source-generator</PackageTags>
+        <!-- The endpoint-per-class API is not settled yet, so this package stays a prerelease even
+             on a stable v* tag (X.Y.Z is published as X.Y.Z-preview.1). Delete this line to
+             graduate it. See src/Directory.Build.targets. -->
+        <PreviewPackage>true</PreviewPackage>
     </PropertyGroup>
 
     <ItemGroup>

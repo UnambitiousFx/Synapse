@@ -1,0 +1,29 @@
+<Project>
+    <!--
+      MinVer (configured in src/Directory.Build.props) sets Version / PackageVersion from the
+      nearest v* git tag. Two repo-local policies adjust that output:
+
+        1. PreviewPackage projects never publish a stable version. On a tag build MinVerPreRelease
+           is empty and MinVer would ship e.g. 2.1.0; re-suffix to 2.1.0-preview.1, which sorts
+           above every 2.1.0-preview.0.<height> build published from main for the same base
+           version, so a pinned package's version never moves backwards across a tag. Delete
+           <PreviewPackage> from the csproj to graduate the package.
+
+        2. Local (non-CI) builds get a timestamp suffix so repeated packs into local_packages/
+           produce distinct versions, replacing the old build.props <VersionSuffix>.
+
+      AfterTargets="MinVer" is the post-processing hook documented in the MinVer README.
+    -->
+    <Target Name="ApplyVersionPolicy" AfterTargets="MinVer">
+        <PropertyGroup>
+            <_VersionBase>$(MinVerMajor).$(MinVerMinor).$(MinVerPatch)</_VersionBase>
+            <_PolicyVersion Condition="'$(PreviewPackage)' == 'true' and '$(MinVerPreRelease)' == ''">$(_VersionBase)-preview.1</_PolicyVersion>
+            <_PolicyVersion Condition="'$(CI)' != 'true'">$(_VersionBase)-local.$([System.DateTime]::Now.ToString('yyyyMMddHHmm'))</_PolicyVersion>
+        </PropertyGroup>
+        <PropertyGroup Condition="'$(_PolicyVersion)' != ''">
+            <Version>$(_PolicyVersion)</Version>
+            <PackageVersion>$(_PolicyVersion)</PackageVersion>
+            <InformationalVersion>$(_PolicyVersion)</InformationalVersion>
+        </PropertyGroup>
+    </Target>
+</Project>

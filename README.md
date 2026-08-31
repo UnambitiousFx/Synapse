@@ -37,6 +37,34 @@ A lightweight, **high-performance** mediator implementation for .NET with first-
 dotnet add package UnambitiousFx.Synapse
 ```
 
+### Prerelease packages
+
+`UnambitiousFx.Synapse.Endpoints` (and the binder generator it ships) is still stabilising, so it is
+published to nuget.org **as a prerelease only**, even on a tagged release. Install it with
+`--prerelease`:
+
+```bash
+dotnet add package UnambitiousFx.Synapse.Endpoints --prerelease
+```
+
+Every merge to `main` also publishes a `X.Y.Z-preview.0.N` build of all packages to
+[GitHub Packages](https://github.com/UnambitiousFx/Synapse/pkgs/nuget). To consume those, add the
+feed to a `nuget.config` and authenticate with a GitHub PAT that has `read:packages`:
+
+```xml
+<configuration>
+  <packageSources>
+    <add key="unambitiousfx-github" value="https://nuget.pkg.github.com/UnambitiousFx/index.json" />
+  </packageSources>
+  <packageSourceCredentials>
+    <unambitiousfx-github>
+      <add key="Username" value="YOUR_GITHUB_USER" />
+      <add key="ClearTextPassword" value="YOUR_GITHUB_PAT" />
+    </unambitiousfx-github>
+  </packageSourceCredentials>
+</configuration>
+```
+
 ## 🚀 Quick Start
 
 ### Register mediator services

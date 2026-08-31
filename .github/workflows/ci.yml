@@ -139,6 +139,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0   # MinVer needs the full tag history to version the src projects
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v6
@@ -367,6 +369,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0   # MinVer needs the full tag history to version the src projects
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
@@ -400,3 +404,44 @@ jobs:
           httpyac send examples/MinimalApi/Http/pipeline-behaviors.http --all
           httpyac send examples/MinimalApi/Http/streaming.http --all
           httpyac send examples/MinimalApi/Http/modules.http --all
+
+  publish-prerelease:
+    name: Publish prerelease to GitHub Packages
+    # Only real pushes to main on the canonical repo — never PRs, never forks.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'UnambitiousFx/Synapse'
+    needs: [build-and-test, native-aot, endpoints-native-aot, http-smoke]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0   # MinVer needs the full tag history
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            ${{ env.DOTNET_VERSION }}
+
+      - name: Restore dependencies
+        run: dotnet restore Synapse.slnx
+
+      # GeneratePackageOnBuild is on when CI=true (src/Directory.Build.props), so a Release build
+      # packs into local_packages/ as a side effect — the same mechanism release.yml relies on.
+      # MinVer stamps <next patch>-preview.0.<height> for commits past the last v* tag.
+      - name: Build and pack
+        run: dotnet build Synapse.slnx --no-restore --configuration Release
+
+      # GitHub Packages rejects symbol packages, so only *.nupkg is pushed. --skip-duplicate keeps
+      # a re-run green: MinVer yields the same version for the same commit.
+      - name: Push to GitHub Packages
+        run: >
+          dotnet nuget push ./local_packages/*.nupkg
+          --api-key ${{ secrets.GITHUB_TOKEN }}
+          --source https://nuget.pkg.github.com/UnambitiousFx/index.json
+          --skip-duplicate

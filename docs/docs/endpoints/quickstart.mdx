@@ -17,15 +17,21 @@ the five of them into an empty web project and run it.
 <Tabs>
   <TabItem value="cli" label=".NET CLI" default>
     ```bash
-    dotnet add package UnambitiousFx.Synapse.Endpoints
+    dotnet add package UnambitiousFx.Synapse.Endpoints --prerelease
     ```
   </TabItem>
   <TabItem value="packageref" label="PackageReference">
     ```xml
-    <PackageReference Include="UnambitiousFx.Synapse.Endpoints" Version="*" />
+    <PackageReference Include="UnambitiousFx.Synapse.Endpoints" Version="*-*" />
     ```
   </TabItem>
 </Tabs>
+
+:::note Prerelease only
+This package's API is not settled yet, so it is published to nuget.org as a prerelease even on a
+tagged release — hence the `--prerelease` flag and the `*-*` floating version. The rest of Synapse
+ships stable versions.
+:::
 
 One package. The Roslyn analyzer that generates binders and route metadata is bundled inside it
 (`analyzers/dotnet/cs`) and runs automatically — there is no separate analyzer package to add,
