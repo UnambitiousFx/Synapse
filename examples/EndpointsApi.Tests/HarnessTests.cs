@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using UnambitiousFx.Examples.EndpointsApi.Features.Tasks;
 using UnambitiousFx.Functional;
@@ -84,7 +85,7 @@ public sealed class HarnessTests
     }
 
     [Fact]
-    public async Task CreateTask_WithNoTitle_Returns400NamingTheField()
+    public async Task CreateTask_WithNoTitle_Returns400WithTheParseErrorNamingTheProperty()
     {
         // Arrange: the binding half, which before the harness needed a request over a socket.
         using var harness = CreateHarness<CreateTaskEndpoint>(static _ => { });
@@ -101,7 +102,7 @@ public sealed class HarnessTests
             .ValidationProblem()
             .WithErrorFor("body");
         Assert.Contains("title",
-            response.ShouldBe().Json<Microsoft.AspNetCore.Http.HttpValidationProblemDetails>().Errors["body"][0],
+            response.ShouldBe().Json<HttpValidationProblemDetails>().Errors["body"][0],
             StringComparison.Ordinal);
     }
 
