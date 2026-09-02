@@ -83,4 +83,50 @@ public sealed class EndpointHarnessOptions
         Invoker.RegisterVoid<TRequest>((request, token) => handler((TRequest)request, token));
         return this;
     }
+
+    /// <summary>Stubs the handler for a streaming message with a sequence of successful items.</summary>
+    /// <typeparam name="TRequest">The message type.</typeparam>
+    /// <typeparam name="TItem">The streamed item type.</typeparam>
+    /// <param name="handler">Returns the items the handler would have streamed.</param>
+    /// <returns>The options, for chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="handler" /> is <see langword="null" />.</exception>
+    public EndpointHarnessOptions HandleStream<TRequest, TItem>(Func<TRequest, IEnumerable<TItem>> handler)
+        where TRequest : IStreamRequest<TItem>
+        where TItem : notnull
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+
+        return HandleStream<TRequest, TItem>(request => Stream(handler(request)));
+
+        static async IAsyncEnumerable<Result<TItem>> Stream(IEnumerable<TItem> items)
+        {
+            foreach (var item in items)
+            {
+                yield return Result.Success(item);
+            }
+
+            await Task.CompletedTask;
+        }
+    }
+
+    /// <summary>Stubs the handler for a streaming message, including per-item failures.</summary>
+    /// <typeparam name="TRequest">The message type.</typeparam>
+    /// <typeparam name="TItem">The streamed item type.</typeparam>
+    /// <param name="handler">Returns the results the handler would have streamed.</param>
+    /// <returns>The options, for chaining.</returns>
+    /// <remarks>
+    ///     A failed item is skipped by <c>IHttpInvoker.InvokeStreamAsync</c> rather than surfaced, and
+    ///     the harness keeps that behaviour; this overload exists so a test can exercise it.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="handler" /> is <see langword="null" />.</exception>
+    public EndpointHarnessOptions HandleStream<TRequest, TItem>(
+        Func<TRequest, IAsyncEnumerable<Result<TItem>>> handler)
+        where TRequest : IStreamRequest<TItem>
+        where TItem : notnull
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+
+        Invoker.RegisterStream<TRequest, TItem>((request, _) => handler((TRequest)request));
+        return this;
+    }
 }
