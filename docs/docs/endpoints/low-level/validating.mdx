@@ -43,7 +43,7 @@ This is the same collector the high level's generated binders use, so both level
 | Member | Behaviour |
 |---|---|
 | `Route<T>` / `Query<T>` / `Header<T>` | Required. Reports "is required" when absent, "is not a valid T" when unparsable |
-| `RouteOptional<T>` / `QueryOptional<T>` / `HeaderOptional<T>` | Absent is fine (`null`); present-but-unparsable still reports |
+| `RouteOptional<T>` / `QueryOptional<T>` / `HeaderOptional<T>` | Absent is fine (`null`); present-but-unparsable still reports. Value **and** reference types |
 | `RouteEnum<T>` / `QueryEnum<T>` / `HeaderEnum<T>` | Required, by enum name or numeric value |
 | `Check(condition, field, message)` | Reports `message` against `field` when the condition is false; returns the condition |
 | `AddError(field, message)` | Reports directly |
@@ -143,16 +143,37 @@ Is "page" present and an int?      → BindingValidator
 Is page within the user's quota?   → IRequestValidator
 ```
 
-## Optional readers are value types only
+## Optional readers take reference types too
 
-The `…Optional<T>` members are constrained to `where T : struct, IParsable<T>`. The collector only
-carries readers that **can fail**: an optional value type is `null` when absent and can still be
-unparsable when present, whereas an optional **string** cannot fail at all.
+Each `…Optional<T>` is a pair of overloads, one `where T : struct, IParsable<T>` and one
+`where T : class, IParsable<T>`. You write the same call either way:
 
 ```csharp
-v.QueryOptional<int>("size", out var size);         // int? — reports if present and unparsable
-context.TryGetQuery("sort", out var sort);          // string? — nothing to report, so not on the collector
+var v = context.Validate();
+
+v.QueryOptional<int>("page", out var page);            // int?         — absent → null, bad → reported
+v.QueryOptional<string>("search", out var search);     // string?      — absent → null, never an error
+v.QueryOptional<CallbackUrl>("callback", out var cb);  // CallbackUrl? — absent → null, bad → reported
 ```
+
+```json title="GET /reports?page=2&callback=not-a-url"
+{
+  "title": "One or more validation errors occurred.",
+  "status": 400,
+  "errors": { "callback": ["The query value is not a valid CallbackUrl."] }
+}
+```
+
+A missing `search` is still a `200`. A present-but-invalid `callback` is a `400` naming the field,
+alongside every other problem the same request had — which is the point of reading it through the
+collector rather than off `context.TryGetQuery`.
+
+:::note Why an overload here and a `…Enum` name there
+Two generic methods differing *only* in their constraints are a duplicate signature (`CS0111`), which
+is why the enum readers are named separately. The optional readers escape that because their `out`
+parameter differs as well: `T?` is `Nullable<T>` under the `struct` constraint and plain `T` under the
+`class` one.
+:::
 
 ## It is a mutable struct
 

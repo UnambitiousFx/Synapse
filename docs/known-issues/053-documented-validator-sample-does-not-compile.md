@@ -11,6 +11,16 @@
 > the single most obvious optional query parameter, a string, cannot go through the collector at all.
 > Both samples were wrong from the moment they were written and nothing compiled them.
 
+> **Later change.** The constraint this report defended has since been lifted: each `…Optional<T>` is
+> now a `struct`-constrained *and* a `class`-constrained overload, so the original sample's
+> `QueryOptional<string>` compiles and the advice below — read an optional string off the context
+> instead — is superseded. The CS0111 reasoning in [Root cause](#root-cause) is wrong for these
+> members: their `out` parameter differs as well as the constraint (`Nullable<T>` against `T`), which
+> is what makes the overload legal where the enum readers' would not be. The wider argument, that the
+> collector carries only readers that can fail, did not survive contact with a reference type that
+> parses: `CallbackUrl` is absent-or-invalid exactly as `int?` is. See
+> `docs/endpoints/features/002-optional-reference-type-readers.md`.
+
 ---
 
 ## Describe the bug

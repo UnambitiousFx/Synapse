@@ -102,6 +102,72 @@ public sealed class BindingValidatorTests
     }
 
     [Fact]
+    public void Optional_ForAReferenceType_TreatsAnAbsentValueAsValid_ButStillReportsAnUnparsableOne()
+    {
+        // Arrange
+        var context = new DefaultHttpContext();
+        context.Request.QueryString = new QueryString("?callback=not-a-url");
+
+        // Act
+        var validation = context.Validate();
+        var absent = validation.QueryOptional<CallbackUrl>("webhook", out var webhook);
+        var unparsable = validation.QueryOptional<CallbackUrl>("callback", out var callback);
+
+        // Assert — the same contract the struct overload has: absent is silent, invalid is reported.
+        Assert.True(absent);
+        Assert.Null(webhook);
+        Assert.False(unparsable);
+        Assert.Null(callback);
+        Assert.Equal(["callback"], validation.Errors!.Keys);
+        Assert.Contains("not a valid", validation.Errors["callback"][0]);
+    }
+
+    [Fact]
+    public void Optional_ForAReferenceType_ReadsAPresentValueFromEverySource()
+    {
+        // Arrange
+        var context = new DefaultHttpContext();
+        context.Request.RouteValues["from"] = "https://acme.test/route";
+        context.Request.QueryString = new QueryString("?callback=https://acme.test/query");
+        context.Request.Headers["X-Callback"] = "https://acme.test/header";
+
+        // Act
+        var validation = context.Validate();
+        validation.RouteOptional<CallbackUrl>("from", out var fromRoute);
+        validation.QueryOptional<CallbackUrl>("callback", out var fromQuery);
+        validation.HeaderOptional<CallbackUrl>("X-Callback", out var fromHeader);
+
+        // Assert
+        Assert.Equal("https://acme.test/route", fromRoute?.ToString());
+        Assert.Equal("https://acme.test/query", fromQuery?.ToString());
+        Assert.Equal("https://acme.test/header", fromHeader?.ToString());
+        Assert.True(validation.IsValid);
+    }
+
+    // ?search= is the most common optional input an HTTP API has, and it went through the collector
+    // for the first time here: before, it had to be read off it with TryGetQuery.
+    [Fact]
+    public void Optional_ForAString_ReadsThePresentValueAndReportsNothingWhenAbsent()
+    {
+        // Arrange
+        var context = new DefaultHttpContext();
+        context.Request.QueryString = new QueryString("?search=ship");
+
+        // Act
+        var validation = context.Validate();
+        var found = validation.QueryOptional<string>("search", out var search);
+        var absent = validation.QueryOptional<string>("sort", out var sort);
+
+        // Assert
+        Assert.True(found);
+        Assert.Equal("ship", search);
+        Assert.True(absent);
+        Assert.Null(sort);
+        Assert.True(validation.IsValid);
+        Assert.Null(validation.Errors);
+    }
+
+    [Fact]
     public void Enum_AcceptsBothTheNameAndTheNumericValue()
     {
         // Arrange

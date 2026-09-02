@@ -76,6 +76,39 @@ public sealed class BinderEmissionEdgeCaseTests
         Assert.DoesNotContain("Query value 'Age' is missing", generated);
     }
 
+    // Regression guard for the shape SearchTasksQuery.Title has in examples/EndpointsApi. A nullable
+    // *reference* type is the case BindingValidator could not express until the class-constrained
+    // optional readers were added; the generator never used those readers, reading the raw string with
+    // a presence flag instead, and it must go on doing exactly that.
+    [Fact]
+    public void Generate_ForNullableStringQueryValue_ReportsNothingWhenItIsAbsent()
+    {
+        // Arrange
+        const string source = """
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+
+                              namespace TestNs;
+
+                              public sealed record SearchQuery : IRequest<int>
+                              {
+                                  public string? Title { get; init; }
+                              }
+
+                              [Get("/search")]
+                              public sealed class SearchEndpoint : Endpoint<SearchQuery, int>;
+                              """;
+
+        // Act
+        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+
+        // Assert — read behind a presence flag, and no error of any kind is ever reported for it.
+        Assert.Contains("var hasTitle = false;", generated);
+        Assert.Contains("BindingHelpers.TryGetQuery(context, \"Title\", out var rawTitle)", generated);
+        Assert.DoesNotContain("validation.AddError(\"Title\"", generated);
+        GeneratorHarness.AssertGeneratedCompiles(source);
+    }
+
     [Fact]
     public void Generate_ForEnumRouteProperty_ParsesThroughEnumTryParse()
     {

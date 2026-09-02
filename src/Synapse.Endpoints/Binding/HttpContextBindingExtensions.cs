@@ -20,7 +20,17 @@ namespace UnambitiousFx.Synapse.Endpoints.Binding;
 ///         Typed readers parse with <see cref="CultureInfo.InvariantCulture" />, matching ASP.NET
 ///         Core's own parameter binding. Enum readers are named separately (<c>…Enum</c>) rather than
 ///         overloaded, because two generic methods differing only in their constraints are a duplicate
-///         signature to the compiler.
+///         signature to the compiler. The <c>…Optional</c> readers do overload, one
+///         <see langword="struct" />-constrained and one <see langword="class" />-constrained: their
+///         <see langword="out" /> parameter is <c>Nullable&lt;T&gt;</c> in the one case and <c>T</c> in
+///         the other, so the signatures genuinely differ.
+///     </para>
+///     <para>
+///         The plain readers answer <see langword="false" /> to both an absent value and an invalid
+///         one. The <c>…Optional</c> readers separate them: absent is <see langword="true" /> with a
+///         <see langword="null" /> value, and only a present-but-unparsable value is
+///         <see langword="false" />. That is the same contract
+///         <see cref="BindingValidator" />'s optional readers have, minus the error collection.
 ///     </para>
 ///     <para>
 ///         Being extension methods rather than a wrapper type, they are usable anywhere a
@@ -109,6 +119,90 @@ public static class HttpContextBindingExtensions
         where T : IParsable<T>
     {
         return TryParse(context.TryGetHeader(name, out var raw), raw, out value);
+    }
+
+    /// <summary>Reads an optional route value, treating an absent one as success.</summary>
+    /// <typeparam name="T">The value type.</typeparam>
+    /// <param name="context">The HTTP context.</param>
+    /// <param name="name">The route parameter name.</param>
+    /// <param name="value">The parsed value, or <see langword="null" /> when absent.</param>
+    /// <returns><see langword="true" /> when the value was absent or present and parsed.</returns>
+    public static bool TryGetRouteOptional<T>(this HttpContext context,
+        string name,
+        out T? value)
+        where T : struct, IParsable<T>
+    {
+        return TryParseOptional(context.TryGetRoute(name, out var raw), raw, out value);
+    }
+
+    /// <summary>Reads an optional route value of a reference type, treating an absent one as success.</summary>
+    /// <typeparam name="T">The reference type to parse into.</typeparam>
+    /// <param name="context">The HTTP context.</param>
+    /// <param name="name">The route parameter name.</param>
+    /// <param name="value">The parsed value, or <see langword="null" /> when absent.</param>
+    /// <returns><see langword="true" /> when the value was absent or present and parsed.</returns>
+    public static bool TryGetRouteOptional<T>(this HttpContext context,
+        string name,
+        out T? value)
+        where T : class, IParsable<T>
+    {
+        return TryParseOptional(context.TryGetRoute(name, out var raw), raw, out value);
+    }
+
+    /// <summary>Reads an optional query value, treating an absent one as success.</summary>
+    /// <typeparam name="T">The value type.</typeparam>
+    /// <param name="context">The HTTP context.</param>
+    /// <param name="name">The query key.</param>
+    /// <param name="value">The parsed value, or <see langword="null" /> when absent.</param>
+    /// <returns><see langword="true" /> when the value was absent or present and parsed.</returns>
+    public static bool TryGetQueryOptional<T>(this HttpContext context,
+        string name,
+        out T? value)
+        where T : struct, IParsable<T>
+    {
+        return TryParseOptional(context.TryGetQuery(name, out var raw), raw, out value);
+    }
+
+    /// <summary>Reads an optional query value of a reference type, treating an absent one as success.</summary>
+    /// <typeparam name="T">The reference type to parse into.</typeparam>
+    /// <param name="context">The HTTP context.</param>
+    /// <param name="name">The query key.</param>
+    /// <param name="value">The parsed value, or <see langword="null" /> when absent.</param>
+    /// <returns><see langword="true" /> when the value was absent or present and parsed.</returns>
+    public static bool TryGetQueryOptional<T>(this HttpContext context,
+        string name,
+        out T? value)
+        where T : class, IParsable<T>
+    {
+        return TryParseOptional(context.TryGetQuery(name, out var raw), raw, out value);
+    }
+
+    /// <summary>Reads an optional header, treating an absent one as success.</summary>
+    /// <typeparam name="T">The value type.</typeparam>
+    /// <param name="context">The HTTP context.</param>
+    /// <param name="name">The header name.</param>
+    /// <param name="value">The parsed value, or <see langword="null" /> when absent.</param>
+    /// <returns><see langword="true" /> when the value was absent or present and parsed.</returns>
+    public static bool TryGetHeaderOptional<T>(this HttpContext context,
+        string name,
+        out T? value)
+        where T : struct, IParsable<T>
+    {
+        return TryParseOptional(context.TryGetHeader(name, out var raw), raw, out value);
+    }
+
+    /// <summary>Reads an optional header of a reference type, treating an absent one as success.</summary>
+    /// <typeparam name="T">The reference type to parse into.</typeparam>
+    /// <param name="context">The HTTP context.</param>
+    /// <param name="name">The header name.</param>
+    /// <param name="value">The parsed value, or <see langword="null" /> when absent.</param>
+    /// <returns><see langword="true" /> when the value was absent or present and parsed.</returns>
+    public static bool TryGetHeaderOptional<T>(this HttpContext context,
+        string name,
+        out T? value)
+        where T : class, IParsable<T>
+    {
+        return TryParseOptional(context.TryGetHeader(name, out var raw), raw, out value);
     }
 
     /// <summary>Reads a route value as an enum, accepting its name or its numeric value.</summary>
@@ -245,6 +339,48 @@ public static class HttpContextBindingExtensions
 
         value = default!;
         return false;
+    }
+
+    private static bool TryParseOptional<T>(bool present,
+        string? raw,
+        out T? value)
+        where T : struct, IParsable<T>
+    {
+        value = null;
+
+        if (!present)
+        {
+            return true;
+        }
+
+        if (!T.TryParse(raw, CultureInfo.InvariantCulture, out var parsed))
+        {
+            return false;
+        }
+
+        value = parsed;
+        return true;
+    }
+
+    private static bool TryParseOptional<T>(bool present,
+        string? raw,
+        out T? value)
+        where T : class, IParsable<T>
+    {
+        value = null;
+
+        if (!present)
+        {
+            return true;
+        }
+
+        if (!T.TryParse(raw, CultureInfo.InvariantCulture, out var parsed))
+        {
+            return false;
+        }
+
+        value = parsed;
+        return true;
     }
 
     private static bool TryParseEnum<TEnum>(bool present,

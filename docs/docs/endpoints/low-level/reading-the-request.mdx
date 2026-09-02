@@ -27,6 +27,9 @@ means anything the generated binder can read, you can read the same way.
 | `TryGetRoute<T>(name, out T)` | `bool` | `where T : IParsable<T>`, parsed with the **invariant culture** |
 | `TryGetQuery<T>(name, out T)` | `bool` | |
 | `TryGetHeader<T>(name, out T)` | `bool` | |
+| `TryGetRouteOptional<T>(name, out T?)` | `bool` | Absent is `true` with a `null` value; only present-but-unparsable is `false` |
+| `TryGetQueryOptional<T>(name, out T?)` | `bool` | |
+| `TryGetHeaderOptional<T>(name, out T?)` | `bool` | |
 | `TryGetRouteEnum<T>(name, out T)` | `bool` | Named separately, not overloaded — see below |
 | `TryGetQueryEnum<T>(name, out T)` | `bool` | |
 | `TryGetHeaderEnum<T>(name, out T)` | `bool` | |
@@ -37,7 +40,10 @@ means anything the generated binder can read, you can read the same way.
 | `Validate()` | `BindingValidator` | [The accumulating collector](./validating) |
 
 The enum readers are named `…Enum` rather than overloaded because two generic methods differing only
-in their constraints are a duplicate signature to the compiler (`CS0111`).
+in their constraints are a duplicate signature to the compiler (`CS0111`). The `…Optional` readers
+*are* overloaded — one `where T : struct, IParsable<T>` and one `where T : class, IParsable<T>` — which
+is legal because their `out` parameter differs too: `T?` is `Nullable<T>` in the first and plain `T` in
+the second.
 
 ## Reading values
 
@@ -52,6 +58,14 @@ public override ValueTask<IResult> HandleAsync(HttpContext context, Cancellation
 
     // Optional with a fallback of your choosing.
     var page = context.TryGetQuery<int>("page", out var p) ? p : 1;
+
+    // Optional, but still rejecting a value that was sent and is wrong. Absent is true with a
+    // null value; only ?limit=abc answers false. Reference types read the same way:
+    // TryGetQueryOptional<string> and TryGetQueryOptional<CallbackUrl> both compile.
+    if (!context.TryGetQueryOptional<int>("limit", out var limit))
+    {
+        return ValueTask.FromResult(Results.BadRequest("limit must be an integer"));
+    }
 
     // An enum by name or numeric value.
     context.TryGetQueryEnum<SortOrder>("sort", out var sort);

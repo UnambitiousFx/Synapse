@@ -22,6 +22,14 @@ namespace UnambitiousFx.Synapse.Endpoints.Binding;
 ///         local forbids.
 ///     </para>
 ///     <para>
+///         The <c>…Optional</c> readers come as a <see langword="struct" />-constrained and a
+///         <see langword="class" />-constrained overload pair. That is a legal overload rather than a
+///         duplicate signature because the <see langword="out" /> parameter itself differs —
+///         <c>Nullable&lt;T&gt;</c> against <c>T</c> — not merely the constraint. The enum readers get
+///         a <c>…Enum</c> name instead precisely because theirs would not: their parameter is <c>T</c>
+///         either way.
+///     </para>
+///     <para>
 ///         Its job is presence and parseability, plus <see cref="Check" /> for anything else. Business
 ///         rules belong in <c>IRequestValidator</c> and the Synapse pipeline, not here.
 ///     </para>
@@ -31,6 +39,7 @@ namespace UnambitiousFx.Synapse.Endpoints.Binding;
 /// var v = context.Validate();
 /// v.Route&lt;Guid&gt;("taskId", out var taskId);
 /// v.QueryOptional&lt;int&gt;("size", out var size);
+/// v.QueryOptional&lt;string&gt;("sort", out var sort);
 ///
 /// // Guarded on the read, so a request that sent no page is not also told it is too small.
 /// if (v.Query&lt;int&gt;("page", out var page))
@@ -89,6 +98,20 @@ public struct BindingValidator
         return Optional(BindingSourceKind.Route, name, out value);
     }
 
+    /// <summary>
+    ///     Reads an optional route value of a reference type, reporting nothing when it is absent.
+    /// </summary>
+    /// <typeparam name="T">The reference type to parse into.</typeparam>
+    /// <param name="name">The route parameter name.</param>
+    /// <param name="value">The parsed value, or <see langword="null" /> when absent.</param>
+    /// <returns><see langword="true" /> when the value was absent or present and parsed.</returns>
+    public bool RouteOptional<T>(string name,
+        out T? value)
+        where T : class, IParsable<T>
+    {
+        return Optional(BindingSourceKind.Route, name, out value);
+    }
+
     /// <summary>Reads a required query value.</summary>
     /// <typeparam name="T">The value type.</typeparam>
     /// <param name="name">The query key.</param>
@@ -113,6 +136,26 @@ public struct BindingValidator
         return Optional(BindingSourceKind.Query, name, out value);
     }
 
+    /// <summary>
+    ///     Reads an optional query value of a reference type, reporting nothing when it is absent.
+    /// </summary>
+    /// <typeparam name="T">The reference type to parse into.</typeparam>
+    /// <param name="name">The query key.</param>
+    /// <param name="value">The parsed value, or <see langword="null" /> when absent.</param>
+    /// <returns><see langword="true" /> when the value was absent or present and parsed.</returns>
+    /// <example>
+    ///     <code>
+    /// v.QueryOptional&lt;string&gt;("search", out var search);           // absent → null, never an error
+    /// v.QueryOptional&lt;CallbackUrl&gt;("callback", out var callback);  // absent → null, bad → reported
+    ///     </code>
+    /// </example>
+    public bool QueryOptional<T>(string name,
+        out T? value)
+        where T : class, IParsable<T>
+    {
+        return Optional(BindingSourceKind.Query, name, out value);
+    }
+
     /// <summary>Reads a required header.</summary>
     /// <typeparam name="T">The value type.</typeparam>
     /// <param name="name">The header name.</param>
@@ -133,6 +176,18 @@ public struct BindingValidator
     public bool HeaderOptional<T>(string name,
         out T? value)
         where T : struct, IParsable<T>
+    {
+        return Optional(BindingSourceKind.Header, name, out value);
+    }
+
+    /// <summary>Reads an optional header of a reference type, reporting nothing when it is absent.</summary>
+    /// <typeparam name="T">The reference type to parse into.</typeparam>
+    /// <param name="name">The header name.</param>
+    /// <param name="value">The parsed value, or <see langword="null" /> when absent.</param>
+    /// <returns><see langword="true" /> when the value was absent or present and parsed.</returns>
+    public bool HeaderOptional<T>(string name,
+        out T? value)
+        where T : class, IParsable<T>
     {
         return Optional(BindingSourceKind.Header, name, out value);
     }
@@ -278,6 +333,28 @@ public struct BindingValidator
         string name,
         out T? value)
         where T : struct, IParsable<T>
+    {
+        value = null;
+
+        if (!TryRead(source, name, out var raw))
+        {
+            return true;
+        }
+
+        if (!T.TryParse(raw, CultureInfo.InvariantCulture, out var parsed))
+        {
+            AddError(name, $"The {Describe(source)} is not a valid {typeof(T)}.");
+            return false;
+        }
+
+        value = parsed;
+        return true;
+    }
+
+    private bool Optional<T>(BindingSourceKind source,
+        string name,
+        out T? value)
+        where T : class, IParsable<T>
     {
         value = null;
 

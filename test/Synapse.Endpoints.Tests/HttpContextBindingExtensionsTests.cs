@@ -100,6 +100,54 @@ public sealed class HttpContextBindingExtensionsTests
     }
 
     [Fact]
+    public void TryGetQueryOptional_SeparatesAnAbsentValueFromAnInvalidOne()
+    {
+        // Arrange — the plain readers answer false to both, which is why a caller wanting to 400 on
+        // a bad value while defaulting a missing one had to read the raw string and parse it again.
+        var context = new DefaultHttpContext();
+        context.Request.QueryString = new QueryString("?limit=abc&page=2");
+
+        // Act
+        var absent = context.TryGetQueryOptional<int>("offset", out var offset);
+        var invalid = context.TryGetQueryOptional<int>("limit", out var limit);
+        var present = context.TryGetQueryOptional<int>("page", out var page);
+
+        // Assert
+        Assert.True(absent);
+        Assert.Null(offset);
+        Assert.False(invalid);
+        Assert.Null(limit);
+        Assert.True(present);
+        Assert.Equal(2, page);
+    }
+
+    [Fact]
+    public void TryGetOptional_ForAReferenceType_ReadsEverySource()
+    {
+        // Arrange
+        var context = new DefaultHttpContext();
+        context.Request.RouteValues["from"] = "https://acme.test/route";
+        context.Request.QueryString = new QueryString("?search=ship&callback=not-a-url");
+        context.Request.Headers["X-Callback"] = "https://acme.test/header";
+
+        // Act
+        var fromRoute = context.TryGetRouteOptional<CallbackUrl>("from", out var route);
+        var fromHeader = context.TryGetHeaderOptional<CallbackUrl>("X-Callback", out var header);
+        var invalid = context.TryGetQueryOptional<CallbackUrl>("callback", out var callback);
+        var text = context.TryGetQueryOptional<string>("search", out var search);
+
+        // Assert
+        Assert.True(fromRoute);
+        Assert.Equal("https://acme.test/route", route?.ToString());
+        Assert.True(fromHeader);
+        Assert.Equal("https://acme.test/header", header?.ToString());
+        Assert.False(invalid);
+        Assert.Null(callback);
+        Assert.True(text);
+        Assert.Equal("ship", search);
+    }
+
+    [Fact]
     public void Header_ReturnsTheFirstValueOrNull()
     {
         // Arrange
