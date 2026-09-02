@@ -1,5 +1,10 @@
+using System.Text;
+using System.Text.Json;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Json;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+using Microsoft.Net.Http.Headers;
 
 namespace UnambitiousFx.Synapse.Endpoints.Testing;
 
@@ -14,6 +19,9 @@ public sealed class EndpointRequest
     private readonly string _method;
     private readonly string _path;
     private QueryString _query;
+    private readonly HeaderDictionary _headers = [];
+    private byte[]? _body;
+    private string? _contentType;
 
     /// <summary>Initializes a new instance of the <see cref="EndpointRequest" /> class.</summary>
     /// <param name="provider">The harness's service provider.</param>
@@ -45,6 +53,76 @@ public sealed class EndpointRequest
         }
     }
 
+    /// <summary>Appends a query-string value.</summary>
+    /// <param name="name">The parameter name.</param>
+    /// <param name="value">The value; <see langword="null" /> sends the parameter with an empty value.</param>
+    /// <returns>The request, for chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="name" /> is <see langword="null" />.</exception>
+    public EndpointRequest Query(string name,
+        string? value)
+    {
+        ArgumentNullException.ThrowIfNull(name);
+
+        _query = _query.Add(name, value ?? string.Empty);
+        return this;
+    }
+
+    /// <summary>Sets a request header, replacing any previous value for the same name.</summary>
+    /// <param name="name">The header name.</param>
+    /// <param name="value">The header value.</param>
+    /// <returns>The request, for chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="name" /> or <paramref name="value" /> is <see langword="null" />.</exception>
+    public EndpointRequest Header(string name,
+        string value)
+    {
+        ArgumentNullException.ThrowIfNull(name);
+        ArgumentNullException.ThrowIfNull(value);
+
+        _headers[name] = value;
+        return this;
+    }
+
+    /// <summary>Sets the <c>Accept</c> header.</summary>
+    /// <param name="mediaType">The media type to request, such as <c>text/event-stream</c>.</param>
+    /// <returns>The request, for chaining.</returns>
+    public EndpointRequest Accept(string mediaType)
+    {
+        return Header(HeaderNames.Accept, mediaType);
+    }
+
+    /// <summary>Sends <paramref name="body" /> as a JSON request body.</summary>
+    /// <typeparam name="TBody">The body type.</typeparam>
+    /// <param name="body">The value to serialize.</param>
+    /// <returns>The request, for chaining.</returns>
+    /// <remarks>
+    ///     Serialized with the harness's own <c>JsonOptions</c>, so a test that calls
+    ///     <c>ConfigureHttpJsonOptions</c> — to install a source-generated context, say — writes the
+    ///     request the same way the endpoint reads it.
+    /// </remarks>
+    public EndpointRequest JsonBody<TBody>(TBody body)
+    {
+        var options = _provider.GetRequiredService<IOptions<JsonOptions>>().Value.SerializerOptions;
+        _body = JsonSerializer.SerializeToUtf8Bytes(body, options);
+        _contentType = "application/json";
+        return this;
+    }
+
+    /// <summary>Sends <paramref name="content" /> verbatim as the request body.</summary>
+    /// <param name="content">The body, encoded as UTF-8.</param>
+    /// <param name="contentType">The content type to declare.</param>
+    /// <returns>The request, for chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="content" /> or <paramref name="contentType" /> is <see langword="null" />.</exception>
+    public EndpointRequest Body(string content,
+        string contentType)
+    {
+        ArgumentNullException.ThrowIfNull(content);
+        ArgumentNullException.ThrowIfNull(contentType);
+
+        _body = Encoding.UTF8.GetBytes(content);
+        _contentType = contentType;
+        return this;
+    }
+
     /// <summary>Sends the request through the endpoint.</summary>
     /// <param name="cancellationToken">The token surfaced to the endpoint as <c>RequestAborted</c>.</param>
     /// <returns>What the endpoint wrote.</returns>
@@ -65,6 +143,18 @@ public sealed class EndpointRequest
         context.Request.Host = new HostString("localhost");
         context.Request.Path = _path;
         context.Request.QueryString = _query;
+
+        foreach (var header in _headers)
+        {
+            context.Request.Headers[header.Key] = header.Value;
+        }
+
+        if (_body is not null)
+        {
+            context.Request.Body = new MemoryStream(_body);
+            context.Request.ContentLength = _body.Length;
+            context.Request.ContentType = _contentType;
+        }
 
         var responseBody = new MemoryStream();
         context.Response.Body = responseBody;

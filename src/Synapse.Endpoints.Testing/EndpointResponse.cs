@@ -1,5 +1,7 @@
 using System.Text;
+using System.Text.Json;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 
 namespace UnambitiousFx.Synapse.Endpoints.Testing;
 
@@ -12,6 +14,10 @@ namespace UnambitiousFx.Synapse.Endpoints.Testing;
 /// </remarks>
 public sealed class EndpointResponse
 {
+    // Case-insensitive because ASP.NET writes camelCase and a test's DTO is PascalCase; this reader
+    // is for assertions, not for reproducing the application's own serializer settings.
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
     private readonly Lazy<string> _body;
 
     /// <summary>Initializes a new instance of the <see cref="EndpointResponse" /> class.</summary>
@@ -45,4 +51,45 @@ public sealed class EndpointResponse
 
     /// <summary>Gets the response body decoded as UTF-8.</summary>
     public string Body => _body.Value;
+
+    /// <summary>Deserializes the response body as JSON.</summary>
+    /// <typeparam name="TValue">The type to deserialize to.</typeparam>
+    /// <returns>The deserialized value.</returns>
+    /// <exception cref="InvalidOperationException">The body is not valid JSON for <typeparamref name="TValue" />.</exception>
+    public TValue? ReadJson<TValue>()
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<TValue>(BodyBytes, JsonOptions);
+        }
+        catch (JsonException exception)
+        {
+            throw new InvalidOperationException(
+                $"The response body could not be read as '{typeof(TValue).Name}'. The response was " +
+                $"{StatusCode} ({ContentType ?? "no content type"}): {Body}",
+                exception);
+        }
+    }
+
+    /// <summary>Reads the body as the validation problem a binding failure produces.</summary>
+    /// <returns>The problem details, including the per-field errors.</returns>
+    /// <exception cref="InvalidOperationException">The body is not a validation problem.</exception>
+    public HttpValidationProblemDetails ReadValidationProblem()
+    {
+        return ReadJson<HttpValidationProblemDetails>()
+               ?? throw new InvalidOperationException(
+                   $"The response body was null, so it is not a validation problem. The response was " +
+                   $"{StatusCode} ({ContentType ?? "no content type"}).");
+    }
+
+    /// <summary>Reads the body as problem details.</summary>
+    /// <returns>The problem details.</returns>
+    /// <exception cref="InvalidOperationException">The body is not problem details.</exception>
+    public ProblemDetails ReadProblem()
+    {
+        return ReadJson<ProblemDetails>()
+               ?? throw new InvalidOperationException(
+                   $"The response body was null, so it is not problem details. The response was " +
+                   $"{StatusCode} ({ContentType ?? "no content type"}).");
+    }
 }
