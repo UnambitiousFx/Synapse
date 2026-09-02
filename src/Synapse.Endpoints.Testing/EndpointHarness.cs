@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
+using UnambitiousFx.Synapse.Abstractions;
 using UnambitiousFx.Synapse.AspNetCore;
 using UnambitiousFx.Synapse.Endpoints.Testing.Internal;
 
@@ -59,6 +60,10 @@ public static class EndpointHarness
         options.Services.AddSingleton<DiagnosticSource>(diagnosticListener);
 
         configure(options);
+
+        // After the caller so the stub is the invoker even when a test also touched Services, and
+        // singleton because the stub holds only the registrations made above.
+        options.Services.AddSingleton<IInvoker>(options.Invoker);
 
         var (provider, pipeline, routeDescription) = HarnessPipeline.Build<TEndpoint>(options.Services);
         return new EndpointHarness<TEndpoint>(provider, pipeline, routeDescription);
