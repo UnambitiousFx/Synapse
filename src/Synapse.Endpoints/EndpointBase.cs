@@ -27,6 +27,8 @@ public abstract class EndpointBase
     ///     <c>BindAsync</c> directly — the natural way to try to unit-test an endpoint, and possible
     ///     because both are public — used to dereference a null field and produce a bare
     ///     <see cref="NullReferenceException" /> naming nothing. See docs/known-issues/056.
+    ///     The harness in <c>UnambitiousFx.Synapse.Endpoints.Testing</c> exists so this is a
+    ///     signpost rather than a dead end.
     /// </remarks>
     private protected TState Mapped<TState>(TState? state)
         where TState : class
@@ -35,7 +37,9 @@ public abstract class EndpointBase
             $"Endpoint '{GetType()}' has not been mapped, so it has no request-time state. That state " +
             "is created by MapEndpoint<TEndpoint>() (or MapSynapseEndpoints()) at startup, which means " +
             "HandleAsync and BindAsync cannot run before the endpoint is mapped. This usually means one " +
-            "of them was called directly on a new instance; map the endpoint into a route builder and " +
-            "exercise it through the pipeline instead.");
+            "of them was called directly on a new instance. To exercise one endpoint on its own, use " +
+            "EndpointHarness.Create<TEndpoint>() from the UnambitiousFx.Synapse.Endpoints.Testing " +
+            "package, which maps it and hands back something that answers requests; otherwise map the " +
+            "endpoint into a route builder and exercise it through the pipeline.");
     }
 }

@@ -61,6 +61,22 @@ public sealed class EndpointGenericTests
         Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
     }
 
+    [Fact]
+    public async Task BindAsync_OnAnUnmappedEndpoint_PointsAtTheTestHarness()
+    {
+        // Arrange: the message is the only guidance a user gets at the moment they try the obvious
+        // thing, so it has to name the supported alternative rather than only the host.
+        var endpoint = new EchoEndpoint();
+
+        // Act
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            async () => await endpoint.BindAsync(new DefaultHttpContext()));
+
+        // Assert
+        Assert.Contains("EndpointHarness.Create", exception.Message);
+        Assert.Contains("UnambitiousFx.Synapse.Endpoints.Testing", exception.Message);
+    }
+
     private sealed record EchoQuery : IRequest<string>;
 
     private sealed class EchoEndpoint : Endpoint<EchoQuery, string>;
