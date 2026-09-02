@@ -24,6 +24,7 @@
 
     <ItemGroup>
         <ProjectReference Include="..\EndpointsApi\EndpointsApi.csproj" />
+        <ProjectReference Include="..\..\src\Synapse.Endpoints.Testing\Synapse.Endpoints.Testing.csproj" />
     </ItemGroup>
 
 </Project>

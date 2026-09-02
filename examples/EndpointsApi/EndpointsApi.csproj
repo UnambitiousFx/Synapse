@@ -11,6 +11,12 @@
     </ItemGroup>
 
     <ItemGroup>
+        <!-- Lets EndpointsApi.Tests install AppJsonSerializerContext into the harness's JSON
+             options, the same way Program.cs does, without making the context public. -->
+        <InternalsVisibleTo Include="$(AssemblyName).Tests" />
+    </ItemGroup>
+
+    <ItemGroup>
         <ProjectReference Include="..\..\src\Synapse\Synapse.csproj" />
         <ProjectReference Include="..\..\src\Synapse.AspNetCore\Synapse.AspNetCore.csproj" />
         <ProjectReference Include="..\..\src\Synapse.Endpoints\Synapse.Endpoints.csproj" />
