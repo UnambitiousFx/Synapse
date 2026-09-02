@@ -116,7 +116,13 @@ public sealed class EndpointResponseAssertions
         }
         catch (InvalidOperationException exception)
         {
-            throw Failed($"Expected a '{typeof(TValue).Name}' body but it could not be read", exception);
+            // ReadJson's own message already restates the status, content type and body, so
+            // chaining it as-is would print that description twice once this exception's
+            // InnerException is rendered alongside its own Describe()-appended message. Its
+            // InnerException — the actual JsonException — carries the real parse diagnostics
+            // without repeating the description, so that is what stays attached here.
+            throw Failed($"Expected a '{typeof(TValue).Name}' body but it could not be read",
+                exception.InnerException ?? exception);
         }
     }
 

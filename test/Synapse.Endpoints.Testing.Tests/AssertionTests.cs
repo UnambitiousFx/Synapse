@@ -48,6 +48,87 @@ public sealed class AssertionTests
     }
 
     [Fact]
+    public async Task Created_WhenTheStatusIs201_DoesNotThrow()
+    {
+        // Arrange
+        var response = await Respond<CreatedEndpoint>("/created");
+
+        // Act
+        var exception = Record.Exception(() => response.ShouldBe().Created());
+
+        // Assert
+        Assert.Null(exception);
+    }
+
+    [Fact]
+    public async Task NoContent_WhenTheStatusIs204_DoesNotThrow()
+    {
+        // Arrange
+        var response = await Respond<NoContentEndpoint>("/no-content");
+
+        // Act
+        var exception = Record.Exception(() => response.ShouldBe().NoContent());
+
+        // Assert
+        Assert.Null(exception);
+    }
+
+    [Fact]
+    public async Task NotFound_WhenTheStatusIs404_DoesNotThrow()
+    {
+        // Arrange
+        var response = await Respond<NotFoundEndpoint>("/not-found");
+
+        // Act
+        var exception = Record.Exception(() => response.ShouldBe().NotFound());
+
+        // Assert
+        Assert.Null(exception);
+    }
+
+    [Fact]
+    public async Task ContentType_WhenItMatches_DoesNotThrow()
+    {
+        // Arrange
+        var response = await Respond<OkEndpoint>("/ok");
+
+        // Act
+        var exception = Record.Exception(() => response.ShouldBe().ContentType("application/json"));
+
+        // Assert
+        Assert.Null(exception);
+    }
+
+    [Fact]
+    public async Task ContentType_WhenItDoesNotMatch_ThrowsNamingExpectedAndActual()
+    {
+        // Arrange
+        var response = await Respond<OkEndpoint>("/ok");
+
+        // Act
+        var exception = Assert.Throws<EndpointAssertionException>(
+            () => response.ShouldBe().ContentType("text/plain"));
+
+        // Assert
+        Assert.Contains("Expected content type containing 'text/plain'", exception.Message);
+        Assert.Contains("application/json", exception.Message);
+    }
+
+    [Fact]
+    public async Task ContentType_WhenNoneWasWritten_ThrowsReportingItsAbsence()
+    {
+        // Arrange
+        var response = await Respond<NoContentEndpoint>("/no-content");
+
+        // Act
+        var exception = Assert.Throws<EndpointAssertionException>(
+            () => response.ShouldBe().ContentType("application/json"));
+
+        // Assert
+        Assert.Contains("Expected content type containing 'application/json' but got 'none'", exception.Message);
+    }
+
+    [Fact]
     public async Task Json_WhenTheBodyMatches_ReturnsTheDeserializedValue()
     {
         // Arrange
@@ -141,6 +222,24 @@ public sealed class AssertionTests
             CancellationToken cancellationToken)
         {
             return ValueTask.FromResult<IResult>(TypedResults.Created("/created/1"));
+        }
+    }
+
+    private sealed class NoContentEndpoint : RawEndpoint
+    {
+        public override ValueTask<IResult> HandleAsync(HttpContext context,
+            CancellationToken cancellationToken)
+        {
+            return ValueTask.FromResult<IResult>(TypedResults.NoContent());
+        }
+    }
+
+    private sealed class NotFoundEndpoint : RawEndpoint
+    {
+        public override ValueTask<IResult> HandleAsync(HttpContext context,
+            CancellationToken cancellationToken)
+        {
+            return ValueTask.FromResult<IResult>(TypedResults.NotFound());
         }
     }
 
