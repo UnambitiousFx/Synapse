@@ -141,8 +141,9 @@ public async Task GetTask_WithNonGuidId_Returns400NamingTheField()
 - [x] `CreatePlan` runs, binder and configuration resolve, `Mapped<T>` does not throw.
 - [x] Works for all five tiers, including `StreamEndpoint` (harness materialises the stream).
 - [x] Binding failures surface as the same `400` `HttpValidationProblemDetails` the pipeline writes.
-- [x] A fake `IHttpInvoker` is supplied by default so an endpoint can be tested without registering
-      a real handler.
+- [x] A fake `IInvoker` is supplied by default so an endpoint can be tested without registering
+      a real handler, while the real `IHttpInvoker` and `DefaultFailureHttpMapper` stay in the
+      pipeline.
 - [x] Documented on a new `docs/docs/endpoints/reference/testing.mdx` page.
 
 ## State after this change
