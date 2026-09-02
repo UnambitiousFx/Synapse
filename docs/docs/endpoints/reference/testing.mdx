@@ -344,7 +344,9 @@ public async Task Body_WhenSet_IsReadableVerbatimByTheEndpoint()
 under xunit, NUnit and MSTest without depending on any of them. Every failure message ends with the
 actual status, content type and body, so an unexpected `400` shows the validation errors that caused
 it without a second run. `EndpointResponse` itself is public, for anyone who prefers to assert with
-their own library instead of `ShouldBe()`.
+their own library instead of `ShouldBe()` — reach it from an assertion chain with
+`EndpointResponseAssertions.Response`, or `ValidationProblemAssertions.Problem` for the already-parsed
+`HttpValidationProblemDetails`, rather than deserializing the body a second time.
 
 `Ok()`/`Created()`/`NoContent()`/`NotFound()` are shorthands over `Status(int)`.
 `GetTask_WithAGeneratedBinder_BindsTheRouteValueOntoTheQuery` (`examples/EndpointsApi.Tests/HarnessTests.cs`)
@@ -449,23 +451,23 @@ public async Task CreateTask_WithNoTitle_Returns400WithTheParseErrorNamingThePro
     // Assert: the generated binder does not key this as "title" or "Title" — a required-property
     // gap surfaces as a JsonException from the source-generated deserializer, which the binder
     // reports as a single "body" error whose message names the missing property. Verified against
-    // the real generated binder (see task-8-report.md); the key genuinely is "body", not the
-    // field name.
-    response.ShouldBe()
+    // the generated binder for CreateTaskCommand; the key genuinely is "body", not the field name.
+    var problem = response.ShouldBe()
         .ValidationProblem()
-        .WithErrorFor("body");
-    Assert.Contains("title",
-        response.ShouldBe().Json<HttpValidationProblemDetails>().Errors["body"][0],
-        StringComparison.Ordinal);
+        .WithErrorFor("body")
+        .Problem;
+    Assert.Contains("title", problem.Errors["body"][0], StringComparison.Ordinal);
 }
 ```
 
 That `"body"` key is specific to a missing-required-property failure: the source-generated
 deserializer throws before the binder gets a chance to attribute the failure to a property, so
-everything it knows collapses into one generic key with the property named inside the message. Not
-every binding failure looks like this — a route or query value that fails to parse genuinely is
-keyed by its own field, as `WithError("taskId", "The route value is not a valid Guid.")` above shows,
-and as `SendAsync_WhenBindingFails_Returns400WithTheFieldThatFailed`
+everything it knows collapses into one generic key with the property named inside the message. This
+is a known limitation of the current binder, not intended design — a form client cannot map that
+error back to a field, and it has simply not been fixed yet. Not every binding failure looks like
+this — a route or query value that fails to parse genuinely is keyed by its own field, as
+`WithError("taskId", "The route value is not a valid Guid.")` above shows, and as
+`SendAsync_WhenBindingFails_Returns400WithTheFieldThatFailed`
 (`test/Synapse.Endpoints.Testing.Tests/BinderTierHarnessTests.cs`) shows again against a hand-written
 binder:
 
