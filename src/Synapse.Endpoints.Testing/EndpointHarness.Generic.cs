@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -18,22 +19,45 @@ public sealed class EndpointHarness<TEndpoint> : IDisposable
     private readonly ServiceProvider _provider;
     private readonly RequestDelegate _pipeline;
     private readonly string _routeDescription;
+    private readonly DiagnosticListener _diagnosticListener;
 
     /// <summary>Initializes a new instance of the <see cref="EndpointHarness{TEndpoint}" /> class.</summary>
     /// <param name="provider">The built service provider.</param>
     /// <param name="pipeline">The built request pipeline.</param>
     /// <param name="routeDescription">The mapped route, for diagnostics.</param>
+    /// <param name="diagnosticListener">
+    ///     The listener registered so <c>EndpointRoutingMiddleware</c> could be activated; owned here
+    ///     because DI never disposes a pre-built singleton instance.
+    /// </param>
     internal EndpointHarness(ServiceProvider provider,
         RequestDelegate pipeline,
-        string routeDescription)
+        string routeDescription,
+        DiagnosticListener diagnosticListener)
     {
         _provider = provider;
         _pipeline = pipeline;
         _routeDescription = routeDescription;
+        _diagnosticListener = diagnosticListener;
     }
 
-    /// <summary>Gets the services the endpoint resolves from.</summary>
+    /// <summary>Gets the root service provider the harness was built with.</summary>
+    /// <remarks>
+    ///     This is the <em>root</em> provider, not the per-request scope: <see cref="EndpointRequest.SendAsync" />
+    ///     resolves the endpoint's own services from a scope created for that one request, the same way
+    ///     a host does. A scoped service resolved from <see cref="Services" /> is therefore <em>not</em>
+    ///     the instance the endpoint saw - assert against what the endpoint returned or wrote instead of
+    ///     resolving a scoped dependency here and comparing identity.
+    /// </remarks>
     public IServiceProvider Services => _provider;
+
+    /// <summary>
+    ///     Gets the <see cref="DiagnosticListener" /> the harness registered so
+    ///     <c>EndpointRoutingMiddleware</c> could be activated. Exposed only for the harness's own
+    ///     disposal tests - DI never disposes a pre-built singleton, so <see cref="Dispose" /> disposes
+    ///     it explicitly and this lets a test confirm that without reaching into
+    ///     <see cref="DiagnosticListener.AllListeners" /> by name.
+    /// </summary>
+    internal DiagnosticListener DiagnosticListener => _diagnosticListener;
 
     /// <summary>Gets the route the endpoint is mapped at, as <c>GET /tasks/{taskId:guid}</c>.</summary>
     public string RouteDescription => _routeDescription;
@@ -112,5 +136,10 @@ public sealed class EndpointHarness<TEndpoint> : IDisposable
     public void Dispose()
     {
         _provider.Dispose();
+
+        // DI holds this as a pre-built singleton instance and never disposes those, so without this
+        // the listener would stay in the process-wide DiagnosticListener.AllListeners for the life of
+        // the test process - across every harness the prescribed one-per-test usage creates.
+        _diagnosticListener.Dispose();
     }
 }

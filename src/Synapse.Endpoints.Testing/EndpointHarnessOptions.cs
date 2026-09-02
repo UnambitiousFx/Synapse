@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using UnambitiousFx.Functional;
 using UnambitiousFx.Synapse.Abstractions;
@@ -23,6 +24,14 @@ public sealed class EndpointHarnessOptions
 
     /// <summary>Gets the stubbed invoker the harness registers as <see cref="IInvoker" />.</summary>
     internal StubInvoker Invoker { get; } = new();
+
+    /// <summary>
+    ///     Gets the <see cref="DiagnosticListener" /> registered so
+    ///     <c>EndpointRoutingMiddleware</c> can be activated without a host. Owned here rather than by
+    ///     DI, which never disposes a pre-built singleton instance, so <see cref="EndpointHarness{TEndpoint}" />
+    ///     disposes it alongside its provider.
+    /// </summary>
+    internal DiagnosticListener DiagnosticListener { get; } = new("UnambitiousFx.Synapse.Endpoints.Testing");
 
     /// <summary>Stubs the handler for a message that returns a response.</summary>
     /// <typeparam name="TRequest">The message type.</typeparam>
@@ -105,6 +114,8 @@ public sealed class EndpointHarnessOptions
                 yield return Result.Success(item);
             }
 
+            // A yield-return-only body never awaits, which CS1998 flags; this method has to stay
+            // async to return IAsyncEnumerable, so the await exists purely to satisfy the compiler.
             await Task.CompletedTask;
         }
     }

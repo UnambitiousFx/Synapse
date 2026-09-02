@@ -130,8 +130,10 @@ public sealed class EndpointRequest
     public async Task<EndpointResponse> SendAsync(CancellationToken cancellationToken = default)
     {
         // A scope per request because IHttpInvoker is registered scoped; in a host that scope comes
-        // from RequestServicesContainerMiddleware, which is not part of this pipeline.
-        using var scope = _provider.CreateScope();
+        // from RequestServicesContainerMiddleware, which is not part of this pipeline. An async scope
+        // so a consumer's scoped IAsyncDisposable-only service disposes correctly instead of throwing
+        // from a synchronous Dispose().
+        await using var scope = _provider.CreateAsyncScope();
 
         var context = new DefaultHttpContext
         {
