@@ -146,5 +146,12 @@ Status of the original action items:
 2. **Fix issue [001]** at the root — ✅ done (closed registrations via the generator + assembly
    attribute).
 3. **Add a note** to the AOT documentation explaining that `ValidateOnBuild` governs startup sweeps
-   only — ⏳ **not done / optional follow-up.** Tracked here so it isn't lost; the runtime crash it
-   would have warned about is no longer reachable for the CQRS path.
+   only — ✅ done. `docs/docs/pipelines.mdx` now carries
+   [Why `ValidateOnBuild = false` does not rescue an open-generic registration](../docs/pipelines.mdx),
+   with the exception text, the misleading workaround, and the startup-sweep-vs-per-request
+   distinction; the ASP.NET Core AOT section and the endpoints Native AOT reference page link to it.
+
+The CQRS path no longer reaches this failure, but `AddOpenGenericRequestPipelineBehavior` /
+`AddOpenGenericRequestWithResponsePipelineBehavior` remain public (both carry
+`[RequiresDynamicCode]`), so a caller can still opt into an open-generic registration and hit the
+original error — which is why the documentation note was still worth writing.

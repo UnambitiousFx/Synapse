@@ -273,6 +273,8 @@ internal partial class AppJsonContext : JsonSerializerContext { }
 
 Also use the [Source Generator](./source-generator) — the generated `RegisterGroup` implements both `IRegisterGroup` and `IEventDispatcherRegistration`, so a single `AddRegisterGroup(new RegisterGroup())` call covers NativeAOT-safe polymorphic event dispatch.
 
+Keep every pipeline behavior registration **closed** as well. `UseDefaultServiceProvider(o => o.ValidateOnBuild = false)` is not a way around an open-generic registration that MS DI rejects under AOT: `ValidateOnBuild` governs the startup descriptor sweep only, and the same check runs again on per-request resolution — see [Why `ValidateOnBuild = false` does not rescue an open-generic registration](./pipelines#why-validateonbuild--false-does-not-rescue-an-open-generic-registration).
+
 ## See also
 
 - [Endpoints](./endpoints/) — the recommended default for a new HTTP surface: endpoint-per-class, generated binding, full Native AOT support.

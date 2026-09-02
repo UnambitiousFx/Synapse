@@ -107,6 +107,37 @@ By default an assembly's `[PipelineBehavior]` classes are applied to handlers in
 Registering an open-generic behavior at runtime (`AddOpenGenericRequestPipelineBehavior(typeof(...))`) is supported but is **not** Native-AOT safe for value-type responses. Prefer `[PipelineBehavior]` so the generator emits closed registrations.
 :::
 
+### Why `ValidateOnBuild = false` does not rescue an open-generic registration
+
+If you do register an open generic at runtime and publish with `PublishAot=true`, MS DI refuses to
+close it over a value-type response:
+
+```
+System.InvalidOperationException: Unable to create a generic service for type
+'IRequestPipelineBehavior`2[CreateTaskCommand,System.Guid]' because 'System.Guid' is a ValueType.
+```
+
+The instinctive workaround is to switch off the container's build-time validation:
+
+```csharp
+// Hides the startup AggregateException. Does NOT fix the failure.
+builder.Host.UseDefaultServiceProvider(o => o.ValidateOnBuild = false);
+```
+
+That is a false fix. `ValidateOnBuild` governs **only** the eager sweep `BuildServiceProvider()`
+performs over every registered descriptor. The AOT open-generic check
+(`CallSiteFactory.VerifyOpenGenericAotCompatibility`) also runs on the normal per-request resolution
+path, gated on `RuntimeFeature.IsDynamicCodeSupported` alone — which is `false` in any project built
+with `PublishAot=true`, including a plain `dotnet run`. Disabling validation therefore moves the same
+exception from startup to the first request that resolves the behavior: the app appears healthy and
+every affected endpoint returns a `500`.
+
+Emit closed registrations instead — `[PipelineBehavior]`, or
+[`[assembly: SynapseGlobalBehavior]`](#registering-a-behavior-you-dont-own-eg-from-a-nuget-package)
+for a behavior you don't own — and the check is never reached. See
+[known issue 002](https://github.com/UnambitiousFx/Synapse/blob/main/docs/known-issues/002-validateonbuild-does-not-suppress-aot-open-generic-check.md)
+for the full analysis.
+
 ### Registering a behavior you don't own (e.g. from a NuGet package)
 
 `[PipelineBehavior]` requires decorating the behavior class, so it only works for behaviors whose source you control. When a behavior ships in a referenced package — for example a company's shared pipeline library — opt into it from the composition root with `[assembly: SynapseGlobalBehavior(typeof(...))]`. The generator treats it exactly like a `[PipelineBehavior]` open generic: it closes the behavior over every matching handler and emits one closed, Native-AOT-safe registration per match.
