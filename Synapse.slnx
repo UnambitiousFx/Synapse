@@ -27,6 +27,7 @@
         <Project Path="src\Synapse\Synapse.csproj" />
         <Project Path="src/Synapse.Endpoints/Synapse.Endpoints.csproj" />
         <Project Path="src/Synapse.Endpoints.Generator/Synapse.Endpoints.Generator.csproj" />
+        <Project Path="src/Synapse.Endpoints.Testing/Synapse.Endpoints.Testing.csproj" />
     </Folder>
     <Folder Name="/test/">
         <Project Path="test/Synapse.AspNetCore.Tests/Synapse.AspNetCore.Tests.csproj" />
@@ -34,6 +35,7 @@
         <Project Path="test\Synapse.Tests\Synapse.Tests.csproj" />
         <Project Path="test/Synapse.Endpoints.Tests/Synapse.Endpoints.Tests.csproj" />
         <Project Path="test/Synapse.Endpoints.Generator.Tests/Synapse.Endpoints.Generator.Tests.csproj" />
+        <Project Path="test/Synapse.Endpoints.Testing.Tests/Synapse.Endpoints.Testing.Tests.csproj" />
     </Folder>
     <Folder Name="/_/">
         <File Path="build.props" />

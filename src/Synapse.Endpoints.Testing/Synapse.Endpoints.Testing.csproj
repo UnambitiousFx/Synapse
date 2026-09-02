@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFrameworks>$(LibraryTargetFrameworks)</TargetFrameworks>
+        <!-- Referenced by test projects only, and it reflects over types to read JSON. Claiming AOT
+             compatibility here would be a promise nothing in this package can keep or needs to. -->
+        <IsAotCompatible>false</IsAotCompatible>
+        <Description>Test harness for UnambitiousFx.Synapse.Endpoints. Runs one endpoint through the real ASP.NET Core routing stack so it can be asserted on without booting a host.</Description>
+        <PackageTags>aspnetcore;endpoints;testing;unit-testing;cqrs;mediator</PackageTags>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\Synapse.Endpoints\Synapse.Endpoints.csproj" />
+    </ItemGroup>
+
+</Project>
