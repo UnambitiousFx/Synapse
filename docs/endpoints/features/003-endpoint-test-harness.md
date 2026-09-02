@@ -2,7 +2,7 @@
 
 |  |  |
 |---|---|
-| **Status** | 🔴 Missing |
+| **Status** | ✅ Shipped |
 | **Priority** | High |
 | **Area** | Testing |
 | **Tiers** | All |
@@ -16,7 +16,7 @@ which makes calling them the obvious thing to try, and doing so throws by design
 This contradicts the repository's own guidance — *"test handlers in isolation + integration tests
 for end-to-end dispatch"* (`.claude/CLAUDE.md`) — for the one component that has no isolation story.
 
-## Current state
+## State before this change
 
 - `src/Synapse.Endpoints/EndpointRouteBuilderExtensions.cs` — `MapEndpoint<TEndpoint>` is the only
   path that calls `CreateDescriptor`, which is the only path that calls `CreatePlan`, which is what
@@ -138,13 +138,37 @@ public async Task GetTask_WithNonGuidId_Returns400NamingTheField()
 
 ## Acceptance criteria
 
-- [ ] `CreatePlan` runs, binder and configuration resolve, `Mapped<T>` does not throw.
-- [ ] Works for all five tiers, including `StreamEndpoint` (harness materialises the stream).
-- [ ] Binding failures surface as the same `400` `HttpValidationProblemDetails` the pipeline writes.
-- [ ] A fake `IHttpInvoker` is supplied by default so an endpoint can be tested without registering
+- [x] `CreatePlan` runs, binder and configuration resolve, `Mapped<T>` does not throw.
+- [x] Works for all five tiers, including `StreamEndpoint` (harness materialises the stream).
+- [x] Binding failures surface as the same `400` `HttpValidationProblemDetails` the pipeline writes.
+- [x] A fake `IHttpInvoker` is supplied by default so an endpoint can be tested without registering
       a real handler.
-- [ ] Documented on a new `docs/docs/endpoints/reference/testing.mdx` page.
+- [x] Documented on a new `docs/docs/endpoints/reference/testing.mdx` page.
 
-## Notes
+## State after this change
 
-The `Mapped<T>` error message should be updated to point at the harness once it exists.
+The shipped design departs from the proposal above it in three places:
+
+- **The request is addressed by a concrete URL, not a template plus an anonymous object.** The
+  proposal's `harness.Get("/tasks/{taskId}", new { taskId })` implied the harness would substitute
+  route values itself. The shipped `EndpointRequest` takes a plain URL —
+  `harness.Get($"/tasks/{taskId}")` — and hands it straight to the real route matcher, so the
+  endpoint's own route is what gets exercised: constraints, group prefixes and verb matching all
+  apply exactly as they do in an application, rather than being bypassed by pre-substituted values.
+
+- **The fake is `IInvoker`, not `IHttpInvoker`.** The proposal's `options.Services = services; //
+  for context.Service<T>() and IHttpInvoker` implied `IHttpInvoker` itself would be replaced. It
+  is not: the harness fakes `IInvoker`, the mediator seam a stubbed handler plugs into, and leaves
+  the real `IHttpInvoker` and the real `DefaultFailureHttpMapper` in the pipeline. A stubbed failed
+  `Result` is therefore mapped to HTTP by the same code the application runs, so a `404` in a test
+  is the same `404` the application writes — not a status the harness invented on the fake's
+  behalf.
+
+- **An unmatched URL throws rather than returning routing's own `404`.** Returning that `404` like
+  any other response would let a typo'd URL silently satisfy an assertion written for the
+  endpoint's *own* `404` — the one produced by `Result.FailNotFound(...)` and mapped by
+  `DefaultFailureHttpMapper`. `SendAsync` instead throws `InvalidOperationException`, naming the
+  mapped route, whenever the response is a `404` with no matched endpoint at all.
+
+`EndpointBase.Mapped<TState>`'s error message now points at the harness, as this document's original
+Notes section asked for — see `src/Synapse.Endpoints/EndpointBase.cs`.
