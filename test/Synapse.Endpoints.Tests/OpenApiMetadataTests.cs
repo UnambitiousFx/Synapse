@@ -2,6 +2,7 @@ using System.Reflection;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Metadata;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using UnambitiousFx.Synapse.Abstractions;
 using UnambitiousFx.Synapse.Endpoints.Binding;
@@ -576,6 +577,338 @@ public sealed class OpenApiMetadataTests
         {
             return ValueTask.FromResult(
                 BindResult<PostStreamMetaQuery>.Success(new PostStreamMetaQuery()));
+        }
+    }
+    // docs/endpoints/features/001: the document listed the success status and the binding 400 and
+    // nothing else, so every status the registered IFailureHttpMapper really writes was absent — and
+    // the high tier could not add one even by hand, because Produces lived on IRawEndpointBuilder
+    // only. Declaring them is now the endpoint's own business, at every tier.
+    [Fact]
+    public void CreateDescriptor_ForAnEndpointDeclaringAProblemResponse_DeclaresTheProblemBody()
+    {
+        // Arrange
+        EndpointRegistry.RegisterBinder(new BodylessMetaBinder());
+        EndpointRegistry.RegisterMetadata<FailureAwareEndpoint>(
+            new EndpointMetadata(["GET"], "/meta-failure-problem"));
+        var app = WebApplication.CreateSlimBuilder().Build();
+
+        // Act
+        app.MapEndpoint<FailureAwareEndpoint>();
+
+        // Assert
+        var endpoint = ((IEndpointRouteBuilder)app).DataSources
+            .SelectMany(source => source.Endpoints)
+            .Single();
+        var notFound = endpoint.Metadata.OfType<IProducesResponseTypeMetadata>()
+            .Single(metadata => metadata.StatusCode == StatusCodes.Status404NotFound);
+
+        Assert.Equal(typeof(ProblemDetails), notFound.Type);
+        Assert.Equal(["application/problem+json"], notFound.ContentTypes);
+    }
+
+    [Fact]
+    public void CreateDescriptor_ForAnEndpointDeclaringATypedFailureBody_DeclaresThatType()
+    {
+        // Arrange
+        EndpointRegistry.RegisterBinder(new BodylessMetaBinder());
+        EndpointRegistry.RegisterMetadata<FailureAwareEndpoint>(
+            new EndpointMetadata(["GET"], "/meta-failure-typed"));
+        var app = WebApplication.CreateSlimBuilder().Build();
+
+        // Act
+        app.MapEndpoint<FailureAwareEndpoint>();
+
+        // Assert
+        var endpoint = ((IEndpointRouteBuilder)app).DataSources
+            .SelectMany(source => source.Endpoints)
+            .Single();
+        var conflict = endpoint.Metadata.OfType<IProducesResponseTypeMetadata>()
+            .Single(metadata => metadata.StatusCode == StatusCodes.Status409Conflict);
+
+        Assert.Equal(typeof(MetaError), conflict.Type);
+        Assert.Equal(["application/json"], conflict.ContentTypes);
+    }
+
+    // The regression guard ProducesResponseMetadata exists for: Microsoft.AspNetCore.OpenApi skips an
+    // IProducesResponseTypeMetadata whose Type is null outright, so a declared bodyless status has to
+    // reach the document as void or it never reaches it at all — see docs/known-issues/051.
+    [Fact]
+    public void CreateDescriptor_ForADeclaredStatusWithNoBody_DeclaresItAsVoidRatherThanSkippingIt()
+    {
+        // Arrange
+        EndpointRegistry.RegisterBinder(new BodylessMetaBinder());
+        EndpointRegistry.RegisterMetadata<FailureAwareEndpoint>(
+            new EndpointMetadata(["GET"], "/meta-failure-bodyless"));
+        var app = WebApplication.CreateSlimBuilder().Build();
+
+        // Act
+        app.MapEndpoint<FailureAwareEndpoint>();
+
+        // Assert
+        var endpoint = ((IEndpointRouteBuilder)app).DataSources
+            .SelectMany(source => source.Endpoints)
+            .Single();
+        var notModified = endpoint.Metadata.OfType<IProducesResponseTypeMetadata>()
+            .Single(metadata => metadata.StatusCode == StatusCodes.Status304NotModified);
+
+        Assert.Equal(typeof(void), notModified.Type);
+        Assert.Empty(notModified.ContentTypes);
+    }
+
+    // A second validation problem at a different status, so the errors dictionary is described rather
+    // than the narrower plain ProblemDetails — the same distinction docs/known-issues/055 drew for the
+    // binding 400.
+    [Fact]
+    public void CreateDescriptor_ForADeclaredValidationProblem_DeclaresTheErrorsDictionaryBody()
+    {
+        // Arrange
+        EndpointRegistry.RegisterBinder(new BodylessMetaBinder());
+        EndpointRegistry.RegisterMetadata<FailureAwareEndpoint>(
+            new EndpointMetadata(["GET"], "/meta-failure-validation"));
+        var app = WebApplication.CreateSlimBuilder().Build();
+
+        // Act
+        app.MapEndpoint<FailureAwareEndpoint>();
+
+        // Assert
+        var endpoint = ((IEndpointRouteBuilder)app).DataSources
+            .SelectMany(source => source.Endpoints)
+            .Single();
+        var unprocessable = endpoint.Metadata.OfType<IProducesResponseTypeMetadata>()
+            .Single(metadata => metadata.StatusCode == StatusCodes.Status422UnprocessableEntity);
+
+        Assert.Equal(typeof(HttpValidationProblemDetails), unprocessable.Type);
+        Assert.Equal(["application/problem+json"], unprocessable.ContentTypes);
+    }
+
+    // Declaring the success status must not be a side effect of declaring a failure one: the endpoint
+    // above configures Ok() at the end of the chain and still gets its 200 with the response body.
+    [Fact]
+    public void CreateDescriptor_ForAnEndpointDeclaringFailureResponses_StillDeclaresTheSuccessResponse()
+    {
+        // Arrange
+        EndpointRegistry.RegisterBinder(new BodylessMetaBinder());
+        EndpointRegistry.RegisterMetadata<FailureAwareEndpoint>(
+            new EndpointMetadata(["GET"], "/meta-failure-success"));
+        var app = WebApplication.CreateSlimBuilder().Build();
+
+        // Act
+        app.MapEndpoint<FailureAwareEndpoint>();
+
+        // Assert
+        var endpoint = ((IEndpointRouteBuilder)app).DataSources
+            .SelectMany(source => source.Endpoints)
+            .Single();
+        var success = endpoint.Metadata.OfType<ProducesResponseMetadata>()
+            .Single(metadata => metadata.StatusCode == StatusCodes.Status200OK);
+
+        Assert.Equal(typeof(string), success.Type);
+    }
+
+    // The remaining tiers, one test each: the builder surface is per-tier, so "available on every
+    // builder interface" is only true if each tier's own Configure can reach it.
+    [Fact]
+    public void CreateDescriptor_ForAVoidEndpointDeclaringAProblemResponse_DeclaresIt()
+    {
+        // Arrange
+        EndpointRegistry.RegisterBinder(new VoidMetaBinder());
+        EndpointRegistry.RegisterMetadata<FailureAwareVoidEndpoint>(
+            new EndpointMetadata(["POST"], "/meta-failure-void"));
+        var app = WebApplication.CreateSlimBuilder().Build();
+
+        // Act
+        app.MapEndpoint<FailureAwareVoidEndpoint>();
+
+        // Assert
+        var endpoint = ((IEndpointRouteBuilder)app).DataSources
+            .SelectMany(source => source.Endpoints)
+            .Single();
+        var notFound = endpoint.Metadata.OfType<IProducesResponseTypeMetadata>()
+            .Single(metadata => metadata.StatusCode == StatusCodes.Status404NotFound);
+
+        Assert.Equal(typeof(ProblemDetails), notFound.Type);
+    }
+
+    [Fact]
+    public void CreateDescriptor_ForAMappedEndpointDeclaringAProblemResponse_DeclaresIt()
+    {
+        // Arrange
+        EndpointRegistry.RegisterBinder(new CreatedMappedRequestBinder());
+        EndpointRegistry.RegisterMetadata<FailureAwareMappedEndpoint>(
+            new EndpointMetadata(["POST"], "/meta-failure-mapped"));
+        var app = WebApplication.CreateSlimBuilder().Build();
+
+        // Act
+        app.MapEndpoint<FailureAwareMappedEndpoint>();
+
+        // Assert
+        var endpoint = ((IEndpointRouteBuilder)app).DataSources
+            .SelectMany(source => source.Endpoints)
+            .Single();
+        var notFound = endpoint.Metadata.OfType<IProducesResponseTypeMetadata>()
+            .Single(metadata => metadata.StatusCode == StatusCodes.Status404NotFound);
+
+        Assert.Equal(typeof(ProblemDetails), notFound.Type);
+    }
+
+    [Fact]
+    public void CreateDescriptor_ForAHandBoundEndpointDeclaringAProblemResponse_DeclaresIt()
+    {
+        // Arrange
+        EndpointRegistry.RegisterMetadata<FailureAwareHandBoundEndpoint>(
+            new EndpointMetadata(["POST"], "/meta-failure-hand-bound"));
+        var app = WebApplication.CreateSlimBuilder().Build();
+
+        // Act
+        app.MapEndpoint<FailureAwareHandBoundEndpoint>();
+
+        // Assert
+        var endpoint = ((IEndpointRouteBuilder)app).DataSources
+            .SelectMany(source => source.Endpoints)
+            .Single();
+        var notFound = endpoint.Metadata.OfType<IProducesResponseTypeMetadata>()
+            .Single(metadata => metadata.StatusCode == StatusCodes.Status404NotFound);
+
+        Assert.Equal(typeof(ProblemDetails), notFound.Type);
+    }
+
+    [Fact]
+    public void CreateDescriptor_ForAStreamEndpointDeclaringAProblemResponse_DeclaresIt()
+    {
+        // Arrange
+        EndpointRegistry.RegisterBinder(new FailureAwareStreamBinder());
+        EndpointRegistry.RegisterMetadata<FailureAwareStreamEndpoint>(
+            new EndpointMetadata(["GET"], "/meta-failure-stream"));
+        var app = WebApplication.CreateSlimBuilder().Build();
+
+        // Act
+        app.MapEndpoint<FailureAwareStreamEndpoint>();
+
+        // Assert
+        var endpoint = ((IEndpointRouteBuilder)app).DataSources
+            .SelectMany(source => source.Endpoints)
+            .Single();
+        var notFound = endpoint.Metadata.OfType<IProducesResponseTypeMetadata>()
+            .Single(metadata => metadata.StatusCode == StatusCodes.Status404NotFound);
+
+        Assert.Equal(typeof(ProblemDetails), notFound.Type);
+    }
+
+    // The low tier already had Produces; it lacked the problem shorthands, so an endpoint that
+    // answers 404 had to spell out ProblemDetails and its content type by hand.
+    [Fact]
+    public void CreateDescriptor_ForARawEndpointDeclaringProblemResponses_DeclaresThem()
+    {
+        // Arrange
+        EndpointRegistry.RegisterMetadata<FailureAwareRawEndpoint>(
+            new EndpointMetadata(["GET"], "/meta-failure-raw"));
+        var app = WebApplication.CreateSlimBuilder().Build();
+
+        // Act
+        app.MapEndpoint<FailureAwareRawEndpoint>();
+
+        // Assert
+        var endpoint = ((IEndpointRouteBuilder)app).DataSources
+            .SelectMany(source => source.Endpoints)
+            .Single();
+        var produces = endpoint.Metadata.OfType<IProducesResponseTypeMetadata>().ToArray();
+
+        Assert.Contains(produces, metadata => metadata.StatusCode == StatusCodes.Status404NotFound &&
+                                              metadata.Type == typeof(ProblemDetails));
+        Assert.Contains(produces, metadata => metadata.StatusCode == StatusCodes.Status422UnprocessableEntity &&
+                                              metadata.Type == typeof(HttpValidationProblemDetails));
+    }
+
+    private sealed record MetaError(string Code);
+
+    // Chained on purpose: the whole chain compiles only while every declaration returns
+    // IEndpointBuilder<string> rather than widening to the non-generic IEndpointBuilder, which is what
+    // lets the response-shaping Ok() at the end still be in reach.
+    private sealed class FailureAwareEndpoint : Endpoint<BodylessMetaQuery, string>
+    {
+        public override void Configure(IEndpointBuilder<string> builder)
+        {
+            builder.ProducesProblem(StatusCodes.Status404NotFound)
+                   .Produces<MetaError>(StatusCodes.Status409Conflict)
+                   .Produces(StatusCodes.Status304NotModified)
+                   .ProducesValidationProblem(StatusCodes.Status422UnprocessableEntity)
+                   .Ok();
+        }
+    }
+
+    private sealed class FailureAwareVoidEndpoint : Endpoint<VoidMetaCommand>
+    {
+        public override void Configure(IEndpointBuilder builder)
+        {
+            builder.ProducesProblem(StatusCodes.Status404NotFound)
+                   .NoContent();
+        }
+    }
+
+    private sealed class FailureAwareMappedEndpoint
+        : MappedEndpoint<CreatedMappedRequest, CreatedMappedCommand, int, CreatedMappedResponse>
+    {
+        public override CreatedMappedCommand ToRequest(CreatedMappedRequest request)
+        {
+            return new CreatedMappedCommand(request.Name);
+        }
+
+        public override CreatedMappedResponse ToResponse(int response)
+        {
+            return new CreatedMappedResponse(response.ToString());
+        }
+
+        public override void Configure(IEndpointBuilder<CreatedMappedResponse> builder)
+        {
+            builder.ProducesProblem(StatusCodes.Status404NotFound);
+        }
+    }
+
+    private sealed class FailureAwareHandBoundEndpoint : RawEndpoint<HandBoundMetaCommand, string>
+    {
+        public override ValueTask<BindResult<HandBoundMetaCommand>> BindAsync(HttpContext context)
+        {
+            return ValueTask.FromResult(
+                BindResult<HandBoundMetaCommand>.Success(new HandBoundMetaCommand()));
+        }
+
+        public override void Configure(IEndpointBuilder<string> builder)
+        {
+            builder.ProducesProblem(StatusCodes.Status404NotFound);
+        }
+    }
+
+    private sealed record FailureAwareStreamQuery : IStreamRequest<int>;
+
+    private sealed class FailureAwareStreamEndpoint : StreamEndpoint<FailureAwareStreamQuery, int>
+    {
+        public override void Configure(IStreamEndpointBuilder builder)
+        {
+            builder.ProducesProblem(StatusCodes.Status404NotFound);
+        }
+    }
+
+    private sealed class FailureAwareStreamBinder : IEndpointBinder<FailureAwareStreamQuery>
+    {
+        public ValueTask<BindResult<FailureAwareStreamQuery>> BindAsync(HttpContext context)
+        {
+            return ValueTask.FromResult(
+                BindResult<FailureAwareStreamQuery>.Success(new FailureAwareStreamQuery()));
+        }
+    }
+
+    private sealed class FailureAwareRawEndpoint : RawEndpoint
+    {
+        public override void Configure(IRawEndpointBuilder builder)
+        {
+            builder.ProducesProblem(StatusCodes.Status404NotFound)
+                   .ProducesValidationProblem(StatusCodes.Status422UnprocessableEntity);
+        }
+
+        public override ValueTask<IResult> HandleAsync(HttpContext context,
+            CancellationToken cancellationToken)
+        {
+            return ValueTask.FromResult(TypedResults.NoContent() as IResult);
         }
     }
 }

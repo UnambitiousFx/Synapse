@@ -94,6 +94,36 @@ internal sealed class StreamEndpointBuilder : IStreamEndpointBuilder
     }
 
     /// <inheritdoc />
+    public IStreamEndpointBuilder Produces(int statusCode)
+    {
+        _core.Produces(statusCode);
+        return this;
+    }
+
+    /// <inheritdoc />
+    public IStreamEndpointBuilder Produces<TBody>(int statusCode,
+        string contentType = "application/json")
+        where TBody : notnull
+    {
+        _core.Produces(statusCode, typeof(TBody), contentType);
+        return this;
+    }
+
+    /// <inheritdoc />
+    public IStreamEndpointBuilder ProducesProblem(int statusCode)
+    {
+        _core.ProducesProblem(statusCode);
+        return this;
+    }
+
+    /// <inheritdoc />
+    public IStreamEndpointBuilder ProducesValidationProblem(int statusCode = 400)
+    {
+        _core.ProducesValidationProblem(statusCode);
+        return this;
+    }
+
+    /// <inheritdoc />
     public IStreamEndpointBuilder Raw(Action<RouteHandlerBuilder> configure)
     {
         _core.AddMetadata(configure);

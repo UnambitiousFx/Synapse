@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Http;
 using UnambitiousFx.Synapse.Endpoints;
 using UnambitiousFx.Synapse.Endpoints.Builders;
 
@@ -9,9 +10,24 @@ namespace UnambitiousFx.Examples.EndpointsApi.Features.Tasks;
 public sealed class ListTasksEndpoint : Endpoint<ListTasksQuery, IReadOnlyList<TaskDto>>;
 
 /// <summary>Gets one task. TaskId binds from the route by name.</summary>
+/// <remarks>
+///     The <c>404</c> is the part nothing can infer. Two outcomes are declared for you — the success
+///     status, and the <c>400</c> a binding failure sends — while every status the registered
+///     <c>IFailureHttpMapper</c> writes for a failed <c>Result</c> is invisible to the document until
+///     the endpoint names it. <c>GetTaskQueryHandler</c> answers an unknown id with
+///     <c>Result.FailNotFound(...)</c>, so without this call the published contract would claim
+///     <c>200</c> and <c>400</c> are the only things this route can return.
+/// </remarks>
 [Get("/{taskId:guid}")]
 [InGroup<TasksGroup>]
-public sealed class GetTaskEndpoint : Endpoint<GetTaskQuery, TaskDto>;
+public sealed class GetTaskEndpoint : Endpoint<GetTaskQuery, TaskDto>
+{
+    /// <inheritdoc />
+    public override void Configure(IEndpointBuilder<TaskDto> builder)
+    {
+        builder.ProducesProblem(StatusCodes.Status404NotFound);
+    }
+}
 
 /// <summary>Streams tasks; the transport is negotiated on Accept.</summary>
 [Get("/stream")]
@@ -31,15 +47,34 @@ public sealed class CreateTaskEndpoint : Endpoint<CreateTaskCommand, TaskCreated
     }
 }
 
-/// <summary>Updates a task. Responds 204.</summary>
+/// <summary>Updates a task. Responds 204, or 404 when the id is unknown.</summary>
+/// <remarks>
+///     The arity with no response declares its failures through the non-generic
+///     <see cref="IEndpointBuilder" />, which is the only difference from
+///     <see cref="GetTaskEndpoint" />.
+/// </remarks>
 [Put("/{taskId:guid}")]
 [InGroup<TasksGroup>]
-public sealed class UpdateTaskEndpoint : Endpoint<UpdateTaskCommand>;
+public sealed class UpdateTaskEndpoint : Endpoint<UpdateTaskCommand>
+{
+    /// <inheritdoc />
+    public override void Configure(IEndpointBuilder builder)
+    {
+        builder.ProducesProblem(StatusCodes.Status404NotFound);
+    }
+}
 
-/// <summary>Deletes a task. Responds 204.</summary>
+/// <summary>Deletes a task. Responds 204, or 404 when the id is unknown.</summary>
 [Delete("/{taskId:guid}")]
 [InGroup<TasksGroup>]
-public sealed class DeleteTaskEndpoint : Endpoint<DeleteTaskCommand>;
+public sealed class DeleteTaskEndpoint : Endpoint<DeleteTaskCommand>
+{
+    /// <inheritdoc />
+    public override void Configure(IEndpointBuilder builder)
+    {
+        builder.ProducesProblem(StatusCodes.Status404NotFound);
+    }
+}
 
 /// <summary>
 ///     Searches tasks by title. Declares its route in <c>Configure</c> rather than through a route

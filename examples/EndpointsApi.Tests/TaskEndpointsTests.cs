@@ -290,4 +290,60 @@ public sealed class TaskEndpointsTests : IClassFixture<WebApplicationFactory<Pro
         var responses = taskByIdPath.GetProperty("get").GetProperty("responses");
         Assert.True(responses.EnumerateObject().Any(), "GET /tasks/{taskId} has no documented responses.");
     }
+
+    // The gap docs/endpoints/features/001 exists for: the mapper's statuses reach the wire (see
+    // Get_ForUnknownId_Returns404ProblemDetails) but reached no document, so a generated client had
+    // no error model at all. Asserted on the document rather than on the metadata, because metadata
+    // presence is not document presence — that is exactly how the bodyless declarations of
+    // docs/known-issues/051 went missing.
+    [Fact]
+    public async Task GetOpenApi_DocumentsTheFailureStatusesTheEndpointsDeclare()
+    {
+        // Arrange
+        var client = _factory.CreateClient();
+
+        // Act
+        var document = await client.GetStringAsync("/openapi/v1.json", TestContext.Current.CancellationToken);
+        using var parsed = JsonDocument.Parse(document);
+        var byId = parsed.RootElement.GetProperty("paths").GetProperty("/tasks/{taskId}");
+
+        // Assert — the high tier with a response, whose handler answers an unknown id with 404.
+        var get = byId.GetProperty("get").GetProperty("responses");
+        Assert.True(get.TryGetProperty("404", out var notFound), "GET /tasks/{taskId} does not document its 404.");
+        Assert.True(
+            notFound.GetProperty("content").TryGetProperty("application/problem+json", out _),
+            "GET /tasks/{taskId}'s 404 is not a problem document.");
+
+        // Assert — the arity with no response, which declares through the non-generic builder.
+        Assert.True(
+            byId.GetProperty("put").GetProperty("responses").TryGetProperty("404", out _),
+            "PUT /tasks/{taskId} does not document its 404.");
+        Assert.True(
+            byId.GetProperty("delete").GetProperty("responses").TryGetProperty("404", out _),
+            "DELETE /tasks/{taskId} does not document its 404.");
+    }
+
+    // A declared failure must not displace what was declared for you: the success status and the
+    // binding 400 are still there, and NoContent()'s 204 still coexists with the 404 on the one
+    // endpoint that configures both.
+    [Fact]
+    public async Task GetOpenApi_KeepsTheInferredResponsesAlongsideTheDeclaredFailures()
+    {
+        // Arrange
+        var client = _factory.CreateClient();
+
+        // Act
+        var document = await client.GetStringAsync("/openapi/v1.json", TestContext.Current.CancellationToken);
+        using var parsed = JsonDocument.Parse(document);
+        var paths = parsed.RootElement.GetProperty("paths");
+
+        // Assert
+        var get = paths.GetProperty("/tasks/{taskId}").GetProperty("get").GetProperty("responses");
+        Assert.True(get.TryGetProperty("200", out _), "GET /tasks/{taskId} lost its 200.");
+        Assert.True(get.TryGetProperty("400", out _), "GET /tasks/{taskId} lost its 400.");
+
+        var retitle = paths.GetProperty("/tasks/{taskId}/title").GetProperty("put").GetProperty("responses");
+        Assert.True(retitle.TryGetProperty("204", out _), "PUT /tasks/{taskId}/title lost its 204.");
+        Assert.True(retitle.TryGetProperty("404", out _), "PUT /tasks/{taskId}/title does not document its 404.");
+    }
 }

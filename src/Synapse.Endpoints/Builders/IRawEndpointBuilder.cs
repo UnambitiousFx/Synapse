@@ -106,6 +106,24 @@ public interface IRawEndpointBuilder
     IRawEndpointBuilder Produces<TResponse>(int statusCode = 200, string contentType = "application/json")
         where TResponse : notnull;
 
+    /// <summary>Declares a <c>ProblemDetails</c> response.</summary>
+    /// <param name="statusCode">The status code.</param>
+    /// <returns>The builder, for chaining.</returns>
+    IRawEndpointBuilder ProducesProblem(int statusCode);
+
+    /// <summary>
+    ///     Declares an <c>HttpValidationProblemDetails</c> response — a problem document plus its
+    ///     <c>errors</c> dictionary.
+    /// </summary>
+    /// <param name="statusCode">The status code.</param>
+    /// <returns>The builder, for chaining.</returns>
+    /// <remarks>
+    ///     Unlike the higher tiers this one declares no <c>400</c> of its own, because nothing binds,
+    ///     so the default status is the useful one for an endpoint whose hand-written handler validates
+    ///     its input.
+    /// </remarks>
+    IRawEndpointBuilder ProducesValidationProblem(int statusCode = 400);
+
     /// <summary>
     ///     Escape hatch onto the underlying <see cref="RouteHandlerBuilder" />, for endpoint
     ///     filters, rate limiting, output caching, versioning and anything else this surface does

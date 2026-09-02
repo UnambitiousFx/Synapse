@@ -116,7 +116,7 @@ internal sealed class RawEndpointBuilder : IRawEndpointBuilder
     /// <inheritdoc />
     public IRawEndpointBuilder Produces(int statusCode)
     {
-        _core.AddMetadata(builder => builder.WithMetadata(new ProducesResponseMetadata(statusCode)));
+        _core.Produces(statusCode);
         return this;
     }
 
@@ -125,12 +125,23 @@ internal sealed class RawEndpointBuilder : IRawEndpointBuilder
         string contentType = "application/json")
         where TResponse : notnull
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(contentType);
-
         // The library's own IProducesResponseTypeMetadata, not the framework's Produces extension —
         // see ProducesResponseMetadata for why, and note that WithOpenApi is avoided entirely for AOT.
-        _core.AddMetadata(builder => builder.WithMetadata(
-            new ProducesResponseMetadata(statusCode, typeof(TResponse), [contentType])));
+        _core.Produces(statusCode, typeof(TResponse), contentType);
+        return this;
+    }
+
+    /// <inheritdoc />
+    public IRawEndpointBuilder ProducesProblem(int statusCode)
+    {
+        _core.ProducesProblem(statusCode);
+        return this;
+    }
+
+    /// <inheritdoc />
+    public IRawEndpointBuilder ProducesValidationProblem(int statusCode = 400)
+    {
+        _core.ProducesValidationProblem(statusCode);
         return this;
     }
 

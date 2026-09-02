@@ -112,8 +112,7 @@ What it does **not** get, because there is nothing to infer it from:
 ## Declaring the OpenAPI contract
 
 `IRawEndpointBuilder` carries the route/verb methods, the metadata methods (`Tag`, `Summary`,
-`Description`, `Name`, `RequireAuthorization`, `AllowAnonymous`, `Raw`) and three declarations that the
-higher tiers do not need:
+`Description`, `Name`, `RequireAuthorization`, `AllowAnonymous`, `Raw`) and the contract declarations:
 
 ```csharp
 public override void Configure(IRawEndpointBuilder builder)
@@ -121,16 +120,24 @@ public override void Configure(IRawEndpointBuilder builder)
     builder.Accepts<WebhookPayload>()                  // request body type
         .Produces<HealthDto>()                         // 200 with a body, default status 200
         .Produces(StatusCodes.Status304NotModified)    // a status with no body
-        .Produces<ProblemDetails>(StatusCodes.Status409Conflict);
+        .ProducesProblem(StatusCodes.Status409Conflict) // a status with a ProblemDetails body
+        .ProducesValidationProblem();                  // 400, with an errors dictionary
 }
 ```
 
 Declaring nothing is valid and emits nothing.
 
+`Accepts` is the one declaration only this tier needs — the higher tiers read the request type off
+their own type arguments — while the `Produces` family is on
+[every builder](../reference/openapi#declaring-the-failures-your-handler-produces), because no tier
+can infer which failures its handler reaches.
+
 Two omissions are deliberate. `IRawEndpointBuilder` has **no `NoContent()` and no `StatusCode(int)`**:
 both set a success mapper that a low-level endpoint never consults — it returns its own result — so
 offering them would be a trap rather than a convenience. It also adds **no automatic
-`ProducesProblem(400)`**, because an endpoint that binds nothing does not necessarily have a `400`.
+`ProducesProblem(400)`**, because an endpoint that binds nothing does not necessarily have a `400` —
+which is why `ProducesValidationProblem()`'s default status is the useful call here and a duplicate
+at the higher tiers.
 
 ## Singletons, and the sealed member
 

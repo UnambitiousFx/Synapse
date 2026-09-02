@@ -79,7 +79,11 @@ public sealed class RetitleTaskEndpoint : Endpoint<RetitleTaskCommand, TaskDto>
     /// <inheritdoc />
     public override void Configure(IEndpointBuilder<TaskDto> builder)
     {
+        // The declaration survives a bodyless success mapper: NoContent() decides what a success
+        // looks like and says nothing about a failure, so the 404 the handler really produces still
+        // has to be named.
         builder.NoContent()
+            .ProducesProblem(StatusCodes.Status404NotFound)
             .Summary("Rename a task, publishing nothing back");
     }
 }

@@ -126,6 +126,36 @@ internal sealed class EndpointBuilder<TResponse> : IEndpointBuilder<TResponse>
         return this;
     }
 
+    /// <inheritdoc cref="IEndpointBuilder{TResponse}.Produces(int)" />
+    public IEndpointBuilder<TResponse> Produces(int statusCode)
+    {
+        _core.Produces(statusCode);
+        return this;
+    }
+
+    /// <inheritdoc cref="IEndpointBuilder{TResponse}.Produces{TBody}(int,string)" />
+    public IEndpointBuilder<TResponse> Produces<TBody>(int statusCode,
+        string contentType = "application/json")
+        where TBody : notnull
+    {
+        _core.Produces(statusCode, typeof(TBody), contentType);
+        return this;
+    }
+
+    /// <inheritdoc cref="IEndpointBuilder{TResponse}.ProducesProblem" />
+    public IEndpointBuilder<TResponse> ProducesProblem(int statusCode)
+    {
+        _core.ProducesProblem(statusCode);
+        return this;
+    }
+
+    /// <inheritdoc cref="IEndpointBuilder{TResponse}.ProducesValidationProblem" />
+    public IEndpointBuilder<TResponse> ProducesValidationProblem(int statusCode = 400)
+    {
+        _core.ProducesValidationProblem(statusCode);
+        return this;
+    }
+
     /// <inheritdoc cref="IEndpointBuilder{TResponse}.Raw" />
     public IEndpointBuilder<TResponse> Raw(Action<RouteHandlerBuilder> configure)
     {
@@ -233,6 +263,26 @@ internal sealed class EndpointBuilder<TResponse> : IEndpointBuilder<TResponse>
     IEndpointBuilder IEndpointBuilder.StatusCode(int statusCode)
     {
         return StatusCode(statusCode);
+    }
+
+    IEndpointBuilder IEndpointBuilder.Produces(int statusCode)
+    {
+        return Produces(statusCode);
+    }
+
+    IEndpointBuilder IEndpointBuilder.Produces<TBody>(int statusCode, string contentType)
+    {
+        return Produces<TBody>(statusCode, contentType);
+    }
+
+    IEndpointBuilder IEndpointBuilder.ProducesProblem(int statusCode)
+    {
+        return ProducesProblem(statusCode);
+    }
+
+    IEndpointBuilder IEndpointBuilder.ProducesValidationProblem(int statusCode)
+    {
+        return ProducesValidationProblem(statusCode);
     }
 
     IEndpointBuilder IEndpointBuilder.Raw(Action<RouteHandlerBuilder> configure)

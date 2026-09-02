@@ -92,7 +92,7 @@ public sealed class GitHubWebhookEndpoint : RawEndpoint
     {
         builder.Accepts<GitHubPushPayload>()
             .Produces(StatusCodes.Status202Accepted)
-            .Produces<HttpValidationProblemDetails>(StatusCodes.Status400BadRequest);
+            .ProducesValidationProblem();
     }
 
     public override async ValueTask<IResult> HandleAsync(HttpContext context, CancellationToken ct)

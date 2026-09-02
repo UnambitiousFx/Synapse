@@ -68,6 +68,39 @@ public interface IStreamEndpointBuilder
     /// <returns>The builder, for chaining.</returns>
     IStreamEndpointBuilder AllowAnonymous();
 
+    /// <summary>Declares an additional response with no body, for OpenAPI.</summary>
+    /// <param name="statusCode">The status code.</param>
+    /// <returns>The builder, for chaining.</returns>
+    /// <remarks>
+    ///     The <c>200</c> and its negotiated content types are declared from the type arguments, and a
+    ///     binding failure's <c>400</c> is declared for you. A stream can still fail before its first
+    ///     item — the request is dispatched, so the registered <c>IFailureHttpMapper</c> answers a
+    ///     failed <c>Result</c> with its own status — and nothing about that is inferable, so it is
+    ///     declared here.
+    /// </remarks>
+    IStreamEndpointBuilder Produces(int statusCode);
+
+    /// <summary>Declares an additional response with a typed body, for OpenAPI.</summary>
+    /// <typeparam name="TBody">The response body type.</typeparam>
+    /// <param name="statusCode">The status code.</param>
+    /// <param name="contentType">The content type.</param>
+    /// <returns>The builder, for chaining.</returns>
+    IStreamEndpointBuilder Produces<TBody>(int statusCode, string contentType = "application/json")
+        where TBody : notnull;
+
+    /// <summary>Declares an additional <c>ProblemDetails</c> response, for OpenAPI.</summary>
+    /// <param name="statusCode">The status code.</param>
+    /// <returns>The builder, for chaining.</returns>
+    IStreamEndpointBuilder ProducesProblem(int statusCode);
+
+    /// <summary>
+    ///     Declares an additional <c>HttpValidationProblemDetails</c> response — a problem document
+    ///     plus its <c>errors</c> dictionary — for OpenAPI.
+    /// </summary>
+    /// <param name="statusCode">The status code.</param>
+    /// <returns>The builder, for chaining.</returns>
+    IStreamEndpointBuilder ProducesValidationProblem(int statusCode = 400);
+
     /// <summary>
     ///     Escape hatch onto the underlying <see cref="RouteHandlerBuilder" />, for filters, caching,
     ///     rate limiting, additional <c>Produces</c> declarations, or anything else not wrapped here.

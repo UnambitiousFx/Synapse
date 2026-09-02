@@ -81,6 +81,32 @@ public interface IEndpointBuilder<TResponse> : IEndpointBuilder
     /// <returns>The builder, for chaining.</returns>
     new IEndpointBuilder<TResponse> StatusCode(int statusCode);
 
+    /// <summary>Declares an additional response with no body, for OpenAPI.</summary>
+    /// <param name="statusCode">The status code.</param>
+    /// <returns>The builder, for chaining.</returns>
+    new IEndpointBuilder<TResponse> Produces(int statusCode);
+
+    /// <summary>Declares an additional response with a typed body, for OpenAPI.</summary>
+    /// <typeparam name="TBody">The response body type.</typeparam>
+    /// <param name="statusCode">The status code.</param>
+    /// <param name="contentType">The content type.</param>
+    /// <returns>The builder, for chaining.</returns>
+    new IEndpointBuilder<TResponse> Produces<TBody>(int statusCode, string contentType = "application/json")
+        where TBody : notnull;
+
+    /// <summary>Declares an additional <c>ProblemDetails</c> response, for OpenAPI.</summary>
+    /// <param name="statusCode">The status code.</param>
+    /// <returns>The builder, for chaining.</returns>
+    new IEndpointBuilder<TResponse> ProducesProblem(int statusCode);
+
+    /// <summary>
+    ///     Declares an additional <c>HttpValidationProblemDetails</c> response — a problem document
+    ///     plus its <c>errors</c> dictionary — for OpenAPI.
+    /// </summary>
+    /// <param name="statusCode">The status code.</param>
+    /// <returns>The builder, for chaining.</returns>
+    new IEndpointBuilder<TResponse> ProducesValidationProblem(int statusCode = 400);
+
     /// <summary>
     ///     Escape hatch onto the underlying <see cref="RouteHandlerBuilder" />, for endpoint
     ///     filters, rate limiting, output caching, versioning and anything else this surface does

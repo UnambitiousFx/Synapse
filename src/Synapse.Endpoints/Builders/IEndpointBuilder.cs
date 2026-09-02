@@ -77,6 +77,45 @@ public interface IEndpointBuilder
     /// <returns>The builder, for chaining.</returns>
     IEndpointBuilder StatusCode(int statusCode);
 
+    /// <summary>Declares an additional response with no body, for OpenAPI.</summary>
+    /// <param name="statusCode">The status code.</param>
+    /// <returns>The builder, for chaining.</returns>
+    /// <remarks>
+    ///     Only two outcomes are declared for you: the configured success status, and the <c>400</c>
+    ///     validation problem a binding failure sends. Every other status the endpoint really produces
+    ///     — the <c>401</c>, <c>404</c>, <c>409</c> or <c>500</c> the registered
+    ///     <c>IFailureHttpMapper</c> writes when the dispatched message returns a failed <c>Result</c>
+    ///     — cannot be inferred from anything the endpoint declares, so until it is named here the
+    ///     published document is not merely incomplete but wrong about what the endpoint can return,
+    ///     and a generated client has no error model at all.
+    /// </remarks>
+    IEndpointBuilder Produces(int statusCode);
+
+    /// <summary>Declares an additional response with a typed body, for OpenAPI.</summary>
+    /// <typeparam name="TBody">The response body type.</typeparam>
+    /// <param name="statusCode">The status code.</param>
+    /// <param name="contentType">The content type.</param>
+    /// <returns>The builder, for chaining.</returns>
+    IEndpointBuilder Produces<TBody>(int statusCode, string contentType = "application/json")
+        where TBody : notnull;
+
+    /// <summary>Declares an additional <c>ProblemDetails</c> response, for OpenAPI.</summary>
+    /// <param name="statusCode">The status code.</param>
+    /// <returns>The builder, for chaining.</returns>
+    IEndpointBuilder ProducesProblem(int statusCode);
+
+    /// <summary>
+    ///     Declares an additional <c>HttpValidationProblemDetails</c> response — a problem document
+    ///     plus its <c>errors</c> dictionary — for OpenAPI.
+    /// </summary>
+    /// <param name="statusCode">The status code.</param>
+    /// <returns>The builder, for chaining.</returns>
+    /// <remarks>
+    ///     The <c>400</c> the default declares is already emitted by every tier, so the useful call is
+    ///     a second validation status such as <c>422</c>.
+    /// </remarks>
+    IEndpointBuilder ProducesValidationProblem(int statusCode = 400);
+
     /// <summary>
     ///     Escape hatch onto the underlying <see cref="RouteHandlerBuilder" />, for endpoint
     ///     filters, rate limiting, output caching, versioning and anything else this surface does

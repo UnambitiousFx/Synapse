@@ -143,6 +143,17 @@ handler fails   → your IFailureHttpMapper decides
 handler returns → your success mapping decides
 ```
 
+The mapper's statuses reach the wire on their own, but they do not reach the OpenAPI document on
+their own: nothing about the endpoint's types says which failures its handler can reach, so declare
+the ones it can.
+
+```csharp
+public override void Configure(IEndpointBuilder<TaskDto> builder) =>
+    builder.ProducesProblem(StatusCodes.Status404NotFound);
+```
+
+See [OpenAPI: declaring the failures your handler produces](../reference/openapi#declaring-the-failures-your-handler-produces).
+
 ## Next
 
 - [Groups](./groups) — share a prefix, tag or policy across endpoints

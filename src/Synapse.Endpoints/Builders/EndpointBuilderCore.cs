@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
 using UnambitiousFx.Synapse.Endpoints.Internal;
 
 namespace UnambitiousFx.Synapse.Endpoints.Builders;
@@ -44,6 +45,54 @@ internal sealed class EndpointBuilderCore
     {
         ArgumentNullException.ThrowIfNull(configure);
         _metadata.Add(configure);
+    }
+
+    /// <summary>Declares a response with no body.</summary>
+    /// <param name="statusCode">The status code.</param>
+    /// <remarks>
+    ///     Goes through <see cref="ProducesResponseMetadata" /> rather than the framework's
+    ///     <c>Produces</c> extension so that a bodyless status is described as <c>void</c>:
+    ///     Microsoft.AspNetCore.OpenApi skips an <c>IProducesResponseTypeMetadata</c> whose <c>Type</c>
+    ///     is null outright, which would drop the declaration from the document entirely — see
+    ///     docs/known-issues/051.
+    /// </remarks>
+    internal void Produces(int statusCode)
+    {
+        AddMetadata(builder => builder.WithMetadata(new ProducesResponseMetadata(statusCode)));
+    }
+
+    /// <summary>Declares a response with a typed body.</summary>
+    /// <param name="statusCode">The status code.</param>
+    /// <param name="bodyType">The response body type.</param>
+    /// <param name="contentType">The content type.</param>
+    internal void Produces(int statusCode,
+        Type bodyType,
+        string contentType)
+    {
+        ArgumentNullException.ThrowIfNull(bodyType);
+        ArgumentException.ThrowIfNullOrWhiteSpace(contentType);
+
+        AddMetadata(builder => builder.WithMetadata(
+            new ProducesResponseMetadata(statusCode, bodyType, [contentType])));
+    }
+
+    /// <summary>Declares a <c>ProblemDetails</c> response.</summary>
+    /// <param name="statusCode">The status code.</param>
+    /// <remarks>
+    ///     The framework extension is used here, unlike for <see cref="Produces(int)" />: it declares a
+    ///     type, so nothing is skipped, and the entry is then structurally identical to the <c>400</c>
+    ///     each endpoint tier declares for itself.
+    /// </remarks>
+    internal void ProducesProblem(int statusCode)
+    {
+        AddMetadata(builder => builder.ProducesProblem(statusCode));
+    }
+
+    /// <summary>Declares an <c>HttpValidationProblemDetails</c> response.</summary>
+    /// <param name="statusCode">The status code.</param>
+    internal void ProducesValidationProblem(int statusCode)
+    {
+        AddMetadata(builder => builder.ProducesValidationProblem(statusCode));
     }
 
     /// <summary>Resolves the route, verbs and accumulated metadata.</summary>

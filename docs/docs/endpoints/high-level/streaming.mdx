@@ -98,7 +98,8 @@ public sealed class StreamTasksEndpoint : StreamEndpoint<StreamTasksQuery, TaskD
 ```
 
 It carries routing (`Route`, `Get`, `Post`), metadata (`Tag`, `Summary`, `Description`, `Name`),
-authorization (`RequireAuthorization`, `AllowAnonymous`) and `Raw`.
+authorization (`RequireAuthorization`, `AllowAnonymous`), the response declarations (`Produces`,
+`ProducesProblem`, `ProducesValidationProblem`) and `Raw`.
 
 What it deliberately **omits** is the success-mapping vocabulary — `NoContent()`, `StatusCode(int)`,
 `Ok()`, `Created(...)`, `Accepted(...)`. None of them can mean anything for a stream: the status line
@@ -107,8 +108,18 @@ value. Rather than accept those calls and ignore them, this tier does not offer 
 one is a compile error instead of a silent no-op.
 
 The response is declared from the type arguments — `200` with `IAsyncEnumerable<TItem>` for both
-`application/json` and `text/event-stream`, plus the `400` — and anything further goes through
-`Raw`, for example an extra `Produces` for a status your handler's failures map to.
+`application/json` and `text/event-stream`, plus the `400`. A stream can still fail *before* its
+first item, because the request is dispatched like any other, so declare the statuses your mapper can
+answer with:
+
+```csharp
+public override void Configure(IStreamEndpointBuilder builder) =>
+    builder.ProducesProblem(StatusCodes.Status404NotFound);
+```
+
+A failure *after* the first item is a different matter: the status line is already committed, so
+`IHttpInvoker.InvokeStreamAsync` skips the failed item and the rest keep arriving — there is no status
+to declare for that. Anything else goes through `Raw`.
 
 ## Deriving from the wrong base class
 

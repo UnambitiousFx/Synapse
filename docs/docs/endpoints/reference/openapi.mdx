@@ -26,6 +26,12 @@ handler can be inferred.
 The `400` is declared as `HttpValidationProblemDetails` — a problem document plus an `errors`
 dictionary — because that is what a bind failure actually sends. Not a plain `ProblemDetails`.
 
+That table is the whole of what is inferred, and it is worth reading as a list of what is *not*: the
+statuses the registered `IFailureHttpMapper` writes when a dispatched message returns a failed
+`Result` — the `401`, `404`, `409`, `422` or `500` — are not in it. Nothing about an endpoint's types
+or its configuration says which of them its handler can reach, so
+[you declare them](#declaring-the-failures-your-handler-produces).
+
 ## The declared status code follows `Configure`
 
 A declarative success method updates the metadata as well as the behaviour:
@@ -60,6 +66,58 @@ whatever the default (or the last declarative call) was. Prefer the
 `Raw` to correct the metadata when it does not.
 :::
 
+## Declaring the failures your handler produces
+
+`Produces`, `ProducesProblem` and `ProducesValidationProblem` are on every endpoint builder, at every
+tier, and each returns its own builder type so the chain does not widen:
+
+```csharp
+public override void Configure(IEndpointBuilder<TaskDto> builder)
+{
+    builder.ProducesProblem(StatusCodes.Status404NotFound)     // ProblemDetails
+        .ProducesProblem(StatusCodes.Status409Conflict)
+        .Produces<RateLimitDto>(StatusCodes.Status429TooManyRequests)  // status + your own body
+        .Produces(StatusCodes.Status304NotModified)            // status, no body
+        .ProducesValidationProblem(422)                        // HttpValidationProblemDetails
+        .Summary("Get a task");
+}
+```
+
+```json title="/openapi/v1.json"
+"get": {
+  "responses": {
+    "200": { "content": { "application/json": {
+               "schema": { "$ref": "#/components/schemas/TaskDto" } } } },
+    "400": { "content": { "application/problem+json": {
+               "schema": { "$ref": "#/components/schemas/HttpValidationProblemDetails" } } } },
+    "404": { "content": { "application/problem+json": {
+               "schema": { "$ref": "#/components/schemas/ProblemDetails" } } } }
+  }
+}
+```
+
+The arity with no response declares the same things through the non-generic `IEndpointBuilder`:
+
+```csharp
+public override void Configure(IEndpointBuilder builder) =>
+    builder.ProducesProblem(StatusCodes.Status404NotFound);
+```
+
+Three things worth knowing:
+
+- These are **additive**. They do not touch the success status, which stays whatever `Configure`'s
+  declarative response method set, and they do not replace the inferred `400`.
+- They **describe**, they do not enforce. Declaring a `409` does not make one happen; the handler's
+  `Result` and the registered `IFailureHttpMapper` decide that. Declare what your handler can
+  actually reach — a status listed here that never occurs is as wrong as one that occurs and is
+  missing.
+- `Produces(int)` with no body is declared as `void`, so it survives into the document rather than
+  being skipped for having no schema.
+
+There is no convention that declares the mapper's whole table for you. `IFailureHttpMapper` exposes
+the mapping, not the set of statuses it can produce, and it is replaceable — so any such shorthand
+would be a hardcoded guess about somebody else's type.
+
 ## Declaring it at the low level
 
 ```csharp
@@ -68,14 +126,17 @@ public override void Configure(IRawEndpointBuilder builder)
     builder.Accepts<WebhookPayload>()
         .Produces<HealthDto>()                                        // 200 + body
         .Produces(StatusCodes.Status304NotModified)                   // status, no body
-        .Produces<ProblemDetails>(StatusCodes.Status409Conflict)      // status + body
+        .ProducesProblem(StatusCodes.Status409Conflict)                // status + ProblemDetails
+        .ProducesValidationProblem()                                  // 400, errors dictionary
         .Tag("Ops")
         .Summary("Liveness, with an ETag");
 }
 ```
 
 Declaring nothing is valid and emits nothing — the route still works, it just has no documented
-contract.
+contract. Note `ProducesValidationProblem()`'s default of `400`: unlike the higher tiers this one
+declares no `400` of its own, because nothing binds, so the default is the useful call here rather
+than a duplicate.
 
 ## Adding anything else
 
@@ -84,6 +145,10 @@ contract.
 ```csharp
 builder.Raw(route => route.WithOpenApi());   // ⚠ not AOT-safe — see below
 ```
+
+It is no longer the way to declare a response, though. `Raw(route => route.ProducesProblem(404))` and
+`builder.ProducesProblem(404)` do the same thing, and the second says what it means without reaching
+past the surface.
 
 Under Native AOT, use a transformer instead. There are two, and which one you want depends on
 whether you are changing one route or the whole document:
