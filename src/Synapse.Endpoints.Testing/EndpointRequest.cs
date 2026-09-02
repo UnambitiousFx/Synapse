@@ -85,6 +85,7 @@ public sealed class EndpointRequest
     /// <summary>Sets the <c>Accept</c> header.</summary>
     /// <param name="mediaType">The media type to request, such as <c>text/event-stream</c>.</param>
     /// <returns>The request, for chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="mediaType" /> is <see langword="null" />.</exception>
     public EndpointRequest Accept(string mediaType)
     {
         return Header(HeaderNames.Accept, mediaType);
@@ -101,7 +102,7 @@ public sealed class EndpointRequest
     /// </remarks>
     public EndpointRequest JsonBody<TBody>(TBody body)
     {
-        var options = _provider.GetRequiredService<IOptions<JsonOptions>>().Value.SerializerOptions;
+        var options = ResolveJsonOptions();
         _body = JsonSerializer.SerializeToUtf8Bytes(body, options);
         _contentType = "application/json";
         return this;
@@ -177,6 +178,14 @@ public sealed class EndpointRequest
             context.Response.StatusCode,
             headers,
             context.Response.ContentType,
-            responseBody.ToArray());
+            responseBody.ToArray(),
+            ResolveJsonOptions());
+    }
+
+    // The endpoint serializes its response with these same options, so a reader that deserializes
+    // with anything else can silently disagree on naming policy or a source-generated context.
+    private JsonSerializerOptions ResolveJsonOptions()
+    {
+        return _provider.GetRequiredService<IOptions<JsonOptions>>().Value.SerializerOptions;
     }
 }

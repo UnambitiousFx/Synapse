@@ -14,10 +14,7 @@ namespace UnambitiousFx.Synapse.Endpoints.Testing;
 /// </remarks>
 public sealed class EndpointResponse
 {
-    // Case-insensitive because ASP.NET writes camelCase and a test's DTO is PascalCase; this reader
-    // is for assertions, not for reproducing the application's own serializer settings.
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
-
+    private readonly JsonSerializerOptions _jsonOptions;
     private readonly Lazy<string> _body;
 
     /// <summary>Initializes a new instance of the <see cref="EndpointResponse" /> class.</summary>
@@ -25,15 +22,20 @@ public sealed class EndpointResponse
     /// <param name="headers">The response headers.</param>
     /// <param name="contentType">The content type, if one was written.</param>
     /// <param name="bodyBytes">The response body.</param>
+    /// <param name="jsonOptions">
+    ///     The application's own JSON options — the same ones the endpoint serialized the body with.
+    /// </param>
     internal EndpointResponse(int statusCode,
         IHeaderDictionary headers,
         string? contentType,
-        byte[] bodyBytes)
+        byte[] bodyBytes,
+        JsonSerializerOptions jsonOptions)
     {
         StatusCode = statusCode;
         Headers = headers;
         ContentType = contentType;
         BodyBytes = bodyBytes;
+        _jsonOptions = jsonOptions;
         _body = new Lazy<string>(() => Encoding.UTF8.GetString(bodyBytes));
     }
 
@@ -55,12 +57,13 @@ public sealed class EndpointResponse
     /// <summary>Deserializes the response body as JSON.</summary>
     /// <typeparam name="TValue">The type to deserialize to.</typeparam>
     /// <returns>The deserialized value.</returns>
+    /// <remarks>Reads with the application's own JSON options, the same ones the endpoint serialized with.</remarks>
     /// <exception cref="InvalidOperationException">The body is not valid JSON for <typeparamref name="TValue" />.</exception>
     public TValue? ReadJson<TValue>()
     {
         try
         {
-            return JsonSerializer.Deserialize<TValue>(BodyBytes, JsonOptions);
+            return JsonSerializer.Deserialize<TValue>(BodyBytes, _jsonOptions);
         }
         catch (JsonException exception)
         {
@@ -73,6 +76,7 @@ public sealed class EndpointResponse
 
     /// <summary>Reads the body as the validation problem a binding failure produces.</summary>
     /// <returns>The problem details, including the per-field errors.</returns>
+    /// <remarks>Reads with the application's own JSON options, the same ones the endpoint serialized with.</remarks>
     /// <exception cref="InvalidOperationException">The body is not a validation problem.</exception>
     public HttpValidationProblemDetails ReadValidationProblem()
     {
@@ -84,6 +88,7 @@ public sealed class EndpointResponse
 
     /// <summary>Reads the body as problem details.</summary>
     /// <returns>The problem details.</returns>
+    /// <remarks>Reads with the application's own JSON options, the same ones the endpoint serialized with.</remarks>
     /// <exception cref="InvalidOperationException">The body is not problem details.</exception>
     public ProblemDetails ReadProblem()
     {

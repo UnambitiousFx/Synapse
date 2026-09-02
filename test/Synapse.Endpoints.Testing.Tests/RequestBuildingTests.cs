@@ -1,4 +1,6 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using UnambitiousFx.Synapse.Endpoints.Binding;
 
 namespace UnambitiousFx.Synapse.Endpoints.Testing.Tests;
@@ -77,11 +79,35 @@ public sealed class RequestBuildingTests
         Assert.Equal("application/xml|<xml/>", response.Body);
     }
 
+    [Fact]
+    public async Task ReadJson_WhenTheHarnessConfiguresACustomNamingPolicy_ReadsWithThoseSameOptions()
+    {
+        // Arrange: the endpoint serializes SearchTerm as "search_term" under this policy. A reader
+        // using different options (a hardcoded, default-cased JsonSerializerOptions, say) would not
+        // throw - System.Text.Json just leaves the unmatched property at its default, so the
+        // assertion below would see null instead of "widgets".
+        EndpointRegistry.RegisterMetadata<EchoSnakeCaseEndpoint>(new EndpointMetadata(["GET"], "/echo-snake"));
+        using var harness = EndpointHarness.Create<EchoSnakeCaseEndpoint>(options =>
+            options.Services.ConfigureHttpJsonOptions(json =>
+                json.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower));
+
+        // Act
+        var response = await harness.Get("/echo-snake").SendAsync(TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal("widgets", response.ReadJson<SnakeEcho>()!.SearchTerm);
+    }
+
     private sealed class Echo
     {
         public string? Search { get; set; }
 
         public string? Tenant { get; set; }
+    }
+
+    private sealed class SnakeEcho
+    {
+        public string? SearchTerm { get; set; }
     }
 
     private sealed class EchoInputEndpoint : RawEndpoint
@@ -94,6 +120,15 @@ public sealed class RequestBuildingTests
                 Search = context.Request.Query["search"],
                 Tenant = context.Request.Headers["X-Tenant"]
             }));
+        }
+    }
+
+    private sealed class EchoSnakeCaseEndpoint : RawEndpoint
+    {
+        public override ValueTask<IResult> HandleAsync(HttpContext context,
+            CancellationToken cancellationToken)
+        {
+            return ValueTask.FromResult<IResult>(TypedResults.Ok(new SnakeEcho { SearchTerm = "widgets" }));
         }
     }
 
