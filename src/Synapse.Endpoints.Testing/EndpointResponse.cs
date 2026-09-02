@@ -97,4 +97,12 @@ public sealed class EndpointResponse
                    $"The response body was null, so it is not problem details. The response was " +
                    $"{StatusCode} ({ContentType ?? "no content type"}).");
     }
+
+    /// <summary>Renders the status, content type and body, for assertion failure messages.</summary>
+    /// <returns>The description, appended to every <see cref="Assertions.EndpointAssertionException" /> message.</returns>
+    internal string Describe()
+    {
+        var body = Body.Length == 0 ? "(empty body)" : Body;
+        return $"The response was {StatusCode} ({ContentType ?? "no content type"}): {body}";
+    }
 }

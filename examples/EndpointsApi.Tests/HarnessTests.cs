@@ -96,14 +96,12 @@ public sealed class HarnessTests
         // Assert: the generated binder does not key this as "title" or "Title" — a required-property
         // gap surfaces as a JsonException from the source-generated deserializer, which the binder
         // reports as a single "body" error whose message names the missing property. Verified against
-        // the real generated binder (see task-8-report.md); the key genuinely is "body", not the
-        // field name.
-        response.ShouldBe()
+        // the generated binder for CreateTaskCommand; the key genuinely is "body", not the field name.
+        var problem = response.ShouldBe()
             .ValidationProblem()
-            .WithErrorFor("body");
-        Assert.Contains("title",
-            response.ShouldBe().Json<HttpValidationProblemDetails>().Errors["body"][0],
-            StringComparison.Ordinal);
+            .WithErrorFor("body")
+            .Problem;
+        Assert.Contains("title", problem.Errors["body"][0], StringComparison.Ordinal);
     }
 
     [Fact]

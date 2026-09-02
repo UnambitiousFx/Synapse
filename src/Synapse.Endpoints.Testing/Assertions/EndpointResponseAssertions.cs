@@ -21,6 +21,13 @@ public sealed class EndpointResponseAssertions
         _response = response;
     }
 
+    /// <summary>Gets the response these assertions were built over.</summary>
+    /// <remarks>
+    ///     For dropping out of the assertion chain into another assertion library, or for reading a
+    ///     value the chain does not have a shorthand for, without re-reading the body from scratch.
+    /// </remarks>
+    public EndpointResponse Response => _response;
+
     /// <summary>Asserts the status code.</summary>
     /// <param name="statusCode">The expected status.</param>
     /// <returns>The assertions, for chaining.</returns>
@@ -148,19 +155,12 @@ public sealed class EndpointResponseAssertions
     /// <returns>The exception to throw.</returns>
     internal EndpointAssertionException Failed(string message)
     {
-        return new EndpointAssertionException($"{message}. {Describe()}");
+        return new EndpointAssertionException($"{message}. {_response.Describe()}");
     }
 
     private EndpointAssertionException Failed(string message,
         Exception innerException)
     {
-        return new EndpointAssertionException($"{message}. {Describe()}", innerException);
-    }
-
-    private string Describe()
-    {
-        var body = _response.Body.Length == 0 ? "(empty body)" : _response.Body;
-        return $"The response was {_response.StatusCode} " +
-               $"({_response.ContentType ?? "no content type"}): {body}";
+        return new EndpointAssertionException($"{message}. {_response.Describe()}", innerException);
     }
 }

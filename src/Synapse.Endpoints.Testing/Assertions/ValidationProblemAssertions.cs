@@ -20,6 +20,15 @@ public sealed class ValidationProblemAssertions
         _problem = problem;
     }
 
+    /// <summary>Gets the parsed problem details these assertions were built over.</summary>
+    /// <remarks>
+    ///     Already deserialized by <see cref="EndpointResponseAssertions.ValidationProblem" />, so a
+    ///     test that needs to inspect a value beyond what <see cref="WithError" />/<see cref="WithErrorFor" />/
+    ///     <see cref="WithErrorCount" /> cover can read it here instead of re-reading the body with
+    ///     <see cref="EndpointResponseAssertions.Json{TValue}" />.
+    /// </remarks>
+    public HttpValidationProblemDetails Problem => _problem;
+
     /// <summary>Asserts that a field carries exactly <paramref name="message" />.</summary>
     /// <param name="field">The field name, as the binder reported it.</param>
     /// <param name="message">The expected message.</param>
@@ -80,6 +89,6 @@ public sealed class ValidationProblemAssertions
 
     private EndpointAssertionException Failed(string message)
     {
-        return new EndpointResponseAssertions(_response).Failed(message);
+        return new EndpointAssertionException($"{message}. {_response.Describe()}");
     }
 }
