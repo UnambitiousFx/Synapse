@@ -162,6 +162,19 @@ public sealed class EndpointRequest
 
         await _pipeline(context);
 
+        // A 404 with no endpoint means the request never reached the endpoint under test. Returning
+        // it would let a typo'd URL satisfy an assertion for the 404 the endpoint itself produces,
+        // so this is the one outcome the harness refuses to hand back.
+        if (context.Response.StatusCode == StatusCodes.Status404NotFound &&
+            context.GetEndpoint() is null)
+        {
+            throw new InvalidOperationException(
+                $"'{_path}{_query}' matched no route, so the request never reached the endpoint " +
+                $"under test, which is mapped at {_routeDescription}. Check the URL, and remember " +
+                "that a route constraint rejecting a value shows up here rather than as a binding " +
+                "failure.");
+        }
+
         return Capture(context, responseBody);
     }
 
