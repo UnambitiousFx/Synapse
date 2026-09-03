@@ -51,13 +51,29 @@ public abstract class RawEndpoint<TRequest> : BoundEndpoint<TRequest>
     }
 
     /// <inheritdoc />
+    /// <remarks>See <see cref="RawEndpoint{TRequest,TResponse}.HandleAsync" /> for the order.</remarks>
     public sealed override async ValueTask<IResult> HandleAsync(HttpContext context,
         CancellationToken cancellationToken)
     {
+        var processors = ResolvedProcessors;
+
+        var shortCircuit = await processors.RunPreAsync(context, cancellationToken);
+        if (shortCircuit is not null)
+        {
+            return await FinishAsync(shortCircuit, processors, context, cancellationToken);
+        }
+
         var bound = await BindAsync(context);
         if (!bound.IsSuccess)
         {
-            return bound.Problem();
+            var problem = await OnBindFailedAsync(bound, context, cancellationToken);
+            return await FinishAsync(problem, processors, context, cancellationToken);
+        }
+
+        var before = await OnBeforeHandleAsync(bound.Value!, context, cancellationToken);
+        if (before is not null)
+        {
+            return await FinishAsync(before, processors, context, cancellationToken);
         }
 
         var configuration = Mapped(_configuration);
@@ -65,12 +81,14 @@ public abstract class RawEndpoint<TRequest> : BoundEndpoint<TRequest>
 
         // The onSuccess factory is only invoked by the invoker when the dispatch actually
         // succeeds; a mapped failure is written as-is and never reaches it.
-        return await invoker.InvokeAsync(
+        var result = await invoker.InvokeAsync(
             bound.Value!,
             () => configuration.SuccessMapper is not null
                 ? configuration.SuccessMapper(default)
                 : OnSuccess(context),
             cancellationToken);
+
+        return await FinishAsync(result, processors, context, cancellationToken);
     }
 
     internal override RawEndpointPlan CreatePlan(EndpointMetadata metadata)

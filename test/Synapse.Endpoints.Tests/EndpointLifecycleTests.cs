@@ -186,6 +186,42 @@ public sealed class EndpointLifecycleTests
         Assert.Equal("tenant-1", context.Response.Headers["X-Tenant"]);
     }
 
+    [Fact]
+    public async Task HandleAsync_OnTheVoidTier_RunsTheHooksAndProcessorsInOrder()
+    {
+        // Arrange
+        Order.Clear();
+        EndpointRegistry.RegisterBinder(new VoidTracingBinder());
+        EndpointRegistry.RegisterMetadata<VoidTracingEndpoint>(
+            new EndpointMetadata(["POST"], "/void-trace"));
+
+        var invoker = Substitute.For<IHttpInvoker>();
+        invoker.InvokeAsync(Arg.Any<TraceCommand>(), Arg.Any<Func<IResult>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                Order.Add("dispatch");
+                return ValueTask.FromResult(call.Arg<Func<IResult>>()());
+            });
+
+        var context = ContextWith(services =>
+        {
+            services.AddScoped<TracingPreProcessor>();
+            services.AddScoped<TracingPostProcessor>();
+        }, invoker);
+
+        var descriptor = ((EndpointBase)new VoidTracingEndpoint())
+            .CreateDescriptor(EndpointRegistry.GetMetadata<VoidTracingEndpoint>());
+
+        // Act
+        await descriptor.InvokeAsync(context);
+
+        // Assert
+        Assert.Equal(
+            ["pre-processor", "bind", "before-hook", "dispatch", "after-hook", "post-processor"],
+            Order);
+    }
+
     /// <summary>An invoker that calls the success factory with a fixed response.</summary>
     private static IHttpInvoker Ok()
     {
@@ -319,6 +355,40 @@ public sealed class EndpointLifecycleTests
         public override void Configure(IEndpointBuilder<string> builder)
         {
             builder.PostProcessor<HeaderStampingPostProcessor>();
+        }
+    }
+
+    private sealed record TraceCommand : IRequest;
+
+    private sealed class VoidTracingBinder : IEndpointBinder<TraceCommand>
+    {
+        public ValueTask<BindResult<TraceCommand>> BindAsync(HttpContext context)
+        {
+            Order.Add("bind");
+            return ValueTask.FromResult(BindResult<TraceCommand>.Success(new TraceCommand()));
+        }
+    }
+
+    private sealed class VoidTracingEndpoint : Endpoint<TraceCommand>
+    {
+        public override void Configure(IEndpointBuilder builder)
+        {
+            builder.PreProcessor<TracingPreProcessor>()
+                   .PostProcessor<TracingPostProcessor>();
+        }
+
+        protected override ValueTask<IResult?> OnBeforeHandleAsync(TraceCommand request,
+            HttpContext context, CancellationToken cancellationToken)
+        {
+            Order.Add("before-hook");
+            return default;
+        }
+
+        protected override ValueTask<IResult> OnAfterHandleAsync(IResult result,
+            HttpContext context, CancellationToken cancellationToken)
+        {
+            Order.Add("after-hook");
+            return new ValueTask<IResult>(result);
         }
     }
 
