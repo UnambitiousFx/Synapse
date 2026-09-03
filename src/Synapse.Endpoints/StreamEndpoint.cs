@@ -28,7 +28,7 @@ namespace UnambitiousFx.Synapse.Endpoints;
 ///         single value to serialize.
 ///     </para>
 /// </remarks>
-public abstract class StreamEndpoint<TRequest, TItem> : RawEndpoint
+public abstract class StreamEndpoint<TRequest, TItem> : BoundEndpoint<TRequest>
     where TRequest : IStreamRequest<TItem>
     where TItem : notnull
 {
@@ -93,6 +93,7 @@ public abstract class StreamEndpoint<TRequest, TItem> : RawEndpoint
         Configure(builder);
         var plan = builder.Build();
         _binder = EndpointRegistry.GetBinder<TRequest>();
+        ConfiguredProcessors = plan.Processors;
 
         return new RawEndpointPlan
         {

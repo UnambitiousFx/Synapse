@@ -19,7 +19,7 @@ namespace UnambitiousFx.Synapse.Endpoints;
 ///     See <see cref="RawEndpoint{TRequest,TResponse}" />; this is the same level for the arity with no
 ///     response body.
 /// </remarks>
-public abstract class RawEndpoint<TRequest> : RawEndpoint
+public abstract class RawEndpoint<TRequest> : BoundEndpoint<TRequest>
     where TRequest : IRequest
 {
     private EndpointConfiguration<Unit>? _configuration;
@@ -79,6 +79,7 @@ public abstract class RawEndpoint<TRequest> : RawEndpoint
         Configure(builder);
         var configuration = builder.Build();
         _configuration = configuration;
+        ConfiguredProcessors = configuration.Processors;
 
         return new RawEndpointPlan
         {

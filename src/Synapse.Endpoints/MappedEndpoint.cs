@@ -29,7 +29,8 @@ namespace UnambitiousFx.Synapse.Endpoints;
 ///         cannot satisfy that level's <c>IRequest&lt;TResponse&gt;</c> constraint.
 ///     </para>
 /// </remarks>
-public abstract class MappedEndpoint<THttpRequest, TRequest, TResponse, THttpResponse> : RawEndpoint
+public abstract class MappedEndpoint<THttpRequest, TRequest, TResponse, THttpResponse>
+    : BoundEndpoint<THttpRequest>
     where TRequest : IRequest<TResponse>
     where TResponse : notnull
     where THttpResponse : notnull
@@ -110,6 +111,7 @@ public abstract class MappedEndpoint<THttpRequest, TRequest, TResponse, THttpRes
         Configure(builder);
         var configuration = builder.Build();
         _configuration = configuration;
+        ConfiguredProcessors = configuration.Processors;
         _binder = EndpointRegistry.GetBinder<THttpRequest>();
 
         return new RawEndpointPlan

@@ -37,7 +37,7 @@ namespace UnambitiousFx.Synapse.Endpoints;
 ///         <see cref="HttpContext" />.
 ///     </para>
 /// </remarks>
-public abstract class RawEndpoint<TRequest, TResponse> : RawEndpoint
+public abstract class RawEndpoint<TRequest, TResponse> : BoundEndpoint<TRequest>
     where TRequest : IRequest<TResponse>
     where TResponse : notnull
 {
@@ -116,6 +116,7 @@ public abstract class RawEndpoint<TRequest, TResponse> : RawEndpoint
         Configure(builder);
         var configuration = builder.Build();
         _configuration = configuration;
+        ConfiguredProcessors = configuration.Processors;
 
         return new RawEndpointPlan
         {
