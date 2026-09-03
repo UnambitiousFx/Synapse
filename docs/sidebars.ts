@@ -40,6 +40,7 @@ const sidebars: SidebarsConfig = {
             'endpoints/high-level/responses',
             'endpoints/high-level/groups',
             'endpoints/high-level/streaming',
+            'endpoints/high-level/self-handled',
           ],
         },
         {

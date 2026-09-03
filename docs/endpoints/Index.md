@@ -37,6 +37,7 @@ only; their user-facing documentation lives under [`../docs/endpoints/`](../docs
 | Escape hatches | ✅ | `Raw(Action<RouteHandlerBuilder>)` on every endpoint builder and `Raw(Action<RouteGroupBuilder>)` on groups. |
 | Endpoint test harness | ✅ | `EndpointHarness.Create<TEndpoint>()` maps one endpoint through the real routing stack — real constraints, real group prefixes, real `405` — with no host. Only `IInvoker` is faked, so the failure mapper stays under test. Ships as `UnambitiousFx.Synapse.Endpoints.Testing`. |
 | Lifecycle hooks | ✅ | `OnBeforeHandleAsync` / `OnAfterHandleAsync` / `OnBindFailedAsync` on every bound tier, plus `PreProcessor<T>()` / `PostProcessor<T>()` resolved from `HttpContext.RequestServices`. The exit steps run on the bind-failure path too, so a response-header processor does not skip `400`s. |
+| Self-handled endpoint tier | ✅ | `SelfHandledEndpoint<TRequest, TResponse>` and `SelfHandledEndpoint<TRequest>`: the generated binder, the declarative responses and the lifecycle hooks of the high level, with an `ExecuteAsync` returning `Result<T>` in place of dispatch. `TRequest` needs no `IRequest<…>`, and failures still go through the registered `IFailureHttpMapper`. No pipeline behaviour wraps it. |
 
 ## Gaps
 
@@ -44,7 +45,6 @@ Ordered by recommended implementation sequence.
 
 | # | Feature | Status | Priority | Description |
 |---|---|---|---|---|
-| [005](features/005-self-handled-endpoint-tier.md) | Self-handled endpoint tier | ❌ | High | Every bound tier requires `TRequest : IRequest<…>` and dispatches through the mediator. No "bind, run this, return that" tier — the classic REPR shape. |
 | [006](features/006-form-and-file-binding.md) | Form, multipart and file binding | ❌ | Med-High | No `IFormFile`, no form binding, no multipart. File uploads must drop to `RawEndpoint`. |
 | [007](features/007-collection-binding.md) | Collection binding | ❌ | Med-High | `?tag=a&tag=b` cannot bind to `string[]`; the property is rejected by `SYNE012` as unparsable. |
 | [008](features/008-additional-binding-sources.md) | Claims, cookies and services as sources | ❌ | Medium | Only four sources exist. No `[FromClaim]` — so the ergonomic path to a caller id is a client-controlled header. |
@@ -60,10 +60,11 @@ Ordered by recommended implementation sequence.
 
 ## Suggested sequencing
 
-1. **005–006** close the ergonomic gap with established REPR implementations.
+1. **006** closes the remaining ergonomic gap with established REPR implementations.
 2. **007–015** round out binding, routing and grouping.
 3. **016–017** are polish, and 017 may reasonably be closed as "working as intended".
 
-001–004 are shipped: the OpenAPI document no longer lies about what an endpoint can return, the most
+001–005 are shipped: the OpenAPI document no longer lies about what an endpoint can return, the most
 common optional parameter is expressible on the collector, an endpoint can be exercised without a
-host, and an endpoint has a seam on both sides of dispatch.
+host, an endpoint has a seam on both sides of dispatch, and a route with no domain message behind it
+no longer has to invent one.

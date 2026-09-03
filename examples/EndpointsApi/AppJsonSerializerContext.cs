@@ -40,6 +40,7 @@ namespace UnambitiousFx.Examples.EndpointsApi;
 [JsonSerializable(typeof(StreamTasksQuery))]
 [JsonSerializable(typeof(HealthDto))]
 [JsonSerializable(typeof(TagReportDto))]
+[JsonSerializable(typeof(ProbeDto))]
 [JsonSerializable(typeof(CreateTaskRequestV1))]
 [JsonSerializable(typeof(CreateTaskResponseV1))]
 [JsonSerializable(typeof(PatchTaskCommand))]

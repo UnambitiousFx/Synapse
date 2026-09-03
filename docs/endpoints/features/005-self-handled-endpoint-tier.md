@@ -2,10 +2,10 @@
 
 |  |  |
 |---|---|
-| **Status** | 🔴 Missing |
+| **Status** | ✅ Shipped |
 | **Priority** | High |
 | **Area** | Base classes |
-| **Tiers** | New tier |
+| **Tiers** | `SelfHandledEndpoint<TRequest, TResponse>`, `SelfHandledEndpoint<TRequest>` |
 | **Breaking** | No — additive base class |
 
 ## Problem
@@ -100,7 +100,7 @@ overridable handler:
 [Get("/tasks/{taskId:guid}")]
 public sealed class GetTaskEndpoint : SelfHandledEndpoint<GetTaskRequest, TaskDto>
 {
-    public override async ValueTask<Result<TaskDto>> HandleAsync(GetTaskRequest request, HttpContext context, CancellationToken ct)
+    public override async ValueTask<Result<TaskDto>> ExecuteAsync(GetTaskRequest request, HttpContext context, CancellationToken ct)
     {
         var repository = context.Service<ITaskRepository>();
         return await repository.FindAsync(request.TaskId, ct);
@@ -129,7 +129,7 @@ public sealed class ProbeEndpoint : SelfHandledEndpoint<ProbeQuery, ProbeDto>
         builder.Ok().ProducesProblem(StatusCodes.Status404NotFound);
     }
 
-    public override async ValueTask<Result<ProbeDto>> HandleAsync(ProbeQuery request,
+    public override async ValueTask<Result<ProbeDto>> ExecuteAsync(ProbeQuery request,
         HttpContext context, CancellationToken ct)
     {
         var probes = context.Service<IProbeRegistry>();
@@ -147,13 +147,13 @@ accumulated `400`, and `Result.FailNotFound` still goes through the registered `
 
 ## Acceptance criteria
 
-- [ ] Generated binder works for a `TRequest` that is not an `IRequest<T>` (verify the generator's
+- [x] Generated binder works for a `TRequest` that is not an `IRequest<T>` (verify the generator's
       discovery keys off the endpoint base type, not the message interface).
-- [ ] Failures map through `IFailureHttpMapper` exactly as dispatched failures do.
-- [ ] Declarative success mappers (`Ok`/`Created`/`Accepted`/`NoContent`/`StatusCode`) and
+- [x] Failures map through `IFailureHttpMapper` exactly as dispatched failures do.
+- [x] Declarative success mappers (`Ok`/`Created`/`Accepted`/`NoContent`/`StatusCode`) and
       `OnSuccess` behave as on `Endpoint<TRequest, TResponse>`.
-- [ ] A void arity (`SelfHandledEndpoint<TRequest>`) exists to match.
-- [ ] Documented alongside the tier table in `docs/docs/endpoints/reference/base-classes.mdx`, with
+- [x] A void arity (`SelfHandledEndpoint<TRequest>`) exists to match.
+- [x] Documented alongside the tier table in `docs/docs/endpoints/reference/base-classes.mdx`, with
       explicit guidance on when *not* to use it (anything a pipeline behaviour must wrap).
 
 ## Notes
@@ -161,3 +161,29 @@ accumulated `400`, and `Result.FailNotFound` still goes through the registered `
 The trade-off is real and should be stated in the docs rather than smoothed over: a self-handled
 endpoint gets no pipeline behaviours, so no validation stage, no retries, no CQRS boundary
 enforcement, no outbox. It is for endpoints that genuinely have no domain message.
+
+## Resolution
+
+Two base classes in `src/Synapse.Endpoints`, siblings of `MappedEndpoint<…>` under
+`BoundEndpoint<TBound>` — not under `RawEndpoint<TRequest, TResponse>`, whose `IRequest<TResponse>`
+constraint is the thing being dropped. Each supplies the same two seams every bound tier supplies:
+`BindBoundAsync` takes the generated binder from `EndpointRegistry`, and `ProduceResultAsync` runs
+`ExecuteAsync` and maps its `Result`. The lifecycle order, the hooks and the processors are inherited
+unchanged, so the new tier cannot drift from the others.
+
+The handler is named **`ExecuteAsync`**, not `HandleAsync` as proposed above:
+`HandleAsync(HttpContext, CancellationToken)` is already declared and sealed on `BoundEndpoint<TBound>`,
+so a three-argument `HandleAsync` would have compiled as an overload while offering an author two
+same-named members of which only one can be overridden.
+
+Failures are mapped by resolving `IFailureHttpMapper` from the request services and calling
+`AsHttpBuilder` — the same mapper instance and the same call `HttpInvoker` makes internally, rather
+than a new member on `IHttpInvoker`, which would have been a breaking change for implementers of a
+public interface. `SelfHandledEndpointTests.Invoke_WhenExecuteAsyncFails_AnswersIdenticallyToTheSameFailureDispatched`
+pins the parity by sending the same `NotFoundFailure` through both tiers and comparing status,
+content type and body.
+
+Generator side: two metadata names, two `EndpointKind` values, and the arms that follow from them.
+The `RawEndpointFree` arm had to move last in the base-chain switch — every tier derives from
+`RawEndpoint`, so a walk that reached it first classified the new tier as the free-form low level
+(mapped, but with no binder emitted).

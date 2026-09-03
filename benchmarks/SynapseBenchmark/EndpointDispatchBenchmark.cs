@@ -52,11 +52,13 @@ public class EndpointDispatchBenchmark
     private IHost _rawHost = null!;
     private IHost _hookedHost = null!;
     private IHost _processedHost = null!;
+    private IHost _selfHandledHost = null!;
     private HttpClient _handWritten = null!;
     private HttpClient _endpoint = null!;
     private HttpClient _raw = null!;
     private HttpClient _hooked = null!;
     private HttpClient _processed = null!;
+    private HttpClient _selfHandled = null!;
 
     [GlobalSetup]
     public void Setup()
@@ -113,11 +115,18 @@ public class EndpointDispatchBenchmark
                 services.AddScoped<BenchmarkPostProcessor>();
             });
 
+        _selfHandledHost = BuildHost(app =>
+        {
+            app.UseRouting();
+            app.UseEndpoints(endpoints => { endpoints.MapEndpoint<SelfHandledThingEndpoint>(); });
+        });
+
         _handWritten = _handWrittenHost.GetTestServer().CreateClient();
         _endpoint = _endpointHost.GetTestServer().CreateClient();
         _raw = _rawHost.GetTestServer().CreateClient();
         _hooked = _hookedHost.GetTestServer().CreateClient();
         _processed = _processedHost.GetTestServer().CreateClient();
+        _selfHandled = _selfHandledHost.GetTestServer().CreateClient();
     }
 
     [GlobalCleanup]
@@ -128,11 +137,13 @@ public class EndpointDispatchBenchmark
         _raw.Dispose();
         _hooked.Dispose();
         _processed.Dispose();
+        _selfHandled.Dispose();
         _handWrittenHost.Dispose();
         _endpointHost.Dispose();
         _rawHost.Dispose();
         _hookedHost.Dispose();
         _processedHost.Dispose();
+        _selfHandledHost.Dispose();
     }
 
     [Benchmark(Baseline = true)]
@@ -177,6 +188,18 @@ public class EndpointDispatchBenchmark
     public Task<HttpResponseMessage> SynapseEndpointWithProcessors()
     {
         return _processed.GetAsync(RequestPath);
+    }
+
+    /// <summary>
+    ///     The same request answered by the endpoint itself rather than dispatched. The delta against
+    ///     <see cref="SynapseEndpoint" /> is what the mediator round-trip costs, isolated: both arms
+    ///     bind <see cref="GetThingQuery" /> through the same generated binder and produce the same
+    ///     <see cref="ThingDto" />, so everything up to and including binding is identical.
+    /// </summary>
+    [Benchmark]
+    public Task<HttpResponseMessage> SynapseSelfHandledEndpoint()
+    {
+        return _selfHandled.GetAsync(RequestPath);
     }
 
     /// <summary>
@@ -283,6 +306,28 @@ public sealed class GetThingQueryHandler : IRequestHandler<GetThingQuery, ThingD
 /// <summary>The Synapse endpoint side of the comparison, mapped via <c>MapEndpoint&lt;GetThingEndpoint&gt;()</c>.</summary>
 [Get("/things/{id:guid}")]
 public sealed class GetThingEndpoint : Endpoint<GetThingQuery, ThingDto>;
+
+/// <summary>
+///     The self-handled tier answering the same request without the mediator. Deliberately reuses
+///     <see cref="GetThingQuery" /> — which it need not, since this tier requires no
+///     <c>IRequest&lt;T&gt;</c> — so that it shares <see cref="GetThingEndpoint" />'s generated binder
+///     exactly and the measured delta is dispatch alone.
+/// </summary>
+/// <remarks>
+///     Carries the same route attribute for the same reason <see cref="HookedThingEndpoint" /> does.
+/// </remarks>
+[Get("/things/{id:guid}")]
+public sealed class SelfHandledThingEndpoint : SelfHandledEndpoint<GetThingQuery, ThingDto>
+{
+    /// <inheritdoc />
+    public override ValueTask<Result<ThingDto>> ExecuteAsync(GetThingQuery request,
+        HttpContext context,
+        CancellationToken cancellationToken)
+    {
+        // The body of GetThingQueryHandler, inlined: the arms differ only in how it is reached.
+        return ValueTask.FromResult(Result.Success(new ThingDto { Id = request.Id, Name = "Widget" }));
+    }
+}
 
 /// <summary>
 ///     The same endpoint with both hooks overridden, so the cost of an endpoint that actually uses

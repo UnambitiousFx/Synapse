@@ -1,0 +1,131 @@
+---
+sidebar_position: 6
+title: Self-handled
+description: The tier for a route with no message behind it — the generated binder and the declarative responses, but the endpoint answers itself.
+---
+
+# Self-handled endpoints
+
+`SelfHandledEndpoint<TRequest, TResponse>` binds a request the same way `Endpoint<TRequest, TResponse>`
+does, and then **answers it itself** instead of dispatching a message.
+
+```csharp
+public sealed record ProbeQuery(string Probe);   // no IRequest<T>
+
+[Get("/health/{probe}")]
+public sealed class ProbeEndpoint : SelfHandledEndpoint<ProbeQuery, ProbeDto>
+{
+    public override void Configure(IEndpointBuilder<ProbeDto> builder) =>
+        builder.Ok().ProducesProblem(StatusCodes.Status404NotFound);
+
+    public override async ValueTask<Result<ProbeDto>> ExecuteAsync(ProbeQuery request,
+        HttpContext context,
+        CancellationToken cancellationToken)
+    {
+        var probes = context.Service<IProbeRegistry>();
+
+        return await probes.FindAsync(request.Probe, cancellationToken) is { } probe
+            ? Result.Success(new ProbeDto(probe.Name, probe.IsHealthy))
+            : Result.Failure<ProbeDto>(new NotFoundFailure("Probe", request.Probe));
+    }
+}
+```
+
+`Probe` still binds from the route through the generated binder, a bad request is still the same
+accumulated `400`, and the `NotFoundFailure` still goes through the registered `IFailureHttpMapper` —
+so this endpoint's `404` is the same `404` a dispatching endpoint sends.
+
+## When to reach for it
+
+When the route has **no domain message behind it**: a lookup, a health projection, a lightweight read
+model. On `Endpoint<…>` such a route costs four moving parts — a message, a handler, a DI
+registration and the endpoint — so that the mediator can hand back a value the endpoint could have
+computed itself.
+
+```csharp
+// Four parts, three of which exist only to satisfy the mediator.
+public sealed record ProbeQuery(string Probe) : IRequest<ProbeDto>;
+
+public sealed class ProbeQueryHandler : IRequestHandler<ProbeQuery, ProbeDto> { /* three lines */ }
+
+services.AddSynapse(cfg => cfg.RegisterRequestHandler<ProbeQueryHandler, ProbeQuery, ProbeDto>());
+
+[Get("/health/{probe}")]
+public sealed class ProbeEndpoint : Endpoint<ProbeQuery, ProbeDto>;
+```
+
+The alternative before this tier existed was dropping to [`RawEndpoint`](../low-level/overview), which
+trades the mediator for everything else: no generated binder, no declared success status, and every
+`Result` turned into an `IResult` by hand, consistently with every other endpoint in the app.
+
+## When *not* to
+
+:::warning Nothing wraps `ExecuteAsync`
+
+A self-handled endpoint does not go through the mediator, so **no pipeline behaviour runs**: no
+validation stage, no retries, no CQRS boundary enforcement, no outbox, no behaviour you register
+later.
+
+If any of those must apply to the work, the route has a domain message whether or not it looks like
+one. Use [`Endpoint<TRequest, TResponse>`](./overview) instead.
+:::
+
+The other rule of thumb: if `ExecuteAsync` grows past orchestrating a call or two, that logic wants a
+handler where it can be unit-tested without an `HttpContext`.
+
+## Why `Result<TResponse>` and not the value
+
+Returning `Result<TResponse>` is what keeps the two tiers answering identically. Failures are mapped by
+the registered `IFailureHttpMapper` — the same instance, applied the same way, that maps a handler's
+failure on the dispatching tiers. Returning the bare value instead would have left every self-handled
+endpoint inventing its own error responses.
+
+## Arities
+
+| Base class | Handler returns | Default response |
+|---|---|---|
+| `SelfHandledEndpoint<TRequest, TResponse>` | `ValueTask<Result<TResponse>>` | `200 OK` with the response body |
+| `SelfHandledEndpoint<TRequest>` | `ValueTask<Result>` | `204 No Content` |
+
+```csharp
+[Delete("/cache/{key}")]
+public sealed class PurgeEndpoint : SelfHandledEndpoint<PurgeRequest>
+{
+    public override ValueTask<Result> ExecuteAsync(PurgeRequest request,
+        HttpContext context,
+        CancellationToken cancellationToken)
+    {
+        context.Service<ICache>().Purge(request.Key);
+        return ValueTask.FromResult(Result.Success());
+    }
+}
+```
+
+## Everything else is unchanged
+
+`Configure`, the declarative success mappers (`Ok`, `Created`, `Accepted`, `NoContent`,
+`StatusCode`), an `OnSuccess` override, the [lifecycle hooks](../reference/lifecycle), pre- and
+post-processors and the generated OpenAPI metadata all behave exactly as they do on
+`Endpoint<TRequest, TResponse>` — see [Responses](./responses) and
+[Base classes](../reference/base-classes).
+
+Two names differ from what you might expect:
+
+- The handler is **`ExecuteAsync`**, not `HandleAsync`. `HandleAsync(HttpContext, CancellationToken)`
+  already exists and is sealed on every bound tier, so a second `HandleAsync` would have offered two
+  same-named members of which only one can be overridden.
+- Dependencies come from **`context.Service<T>()`**, not the constructor. Endpoints are stateless
+  startup singletons on every tier; see [Base classes](../reference/base-classes#stateless-singletons).
+
+## Testing
+
+The [test harness](../reference/testing) maps a self-handled endpoint like any other, and there is no
+handler to stub because there is no message:
+
+```csharp
+using var harness = EndpointHarness.Create<ProbeEndpoint>();
+
+var response = await harness.Get("/health/live").SendAsync(cancellationToken);
+
+response.ShouldBe().Ok();
+```

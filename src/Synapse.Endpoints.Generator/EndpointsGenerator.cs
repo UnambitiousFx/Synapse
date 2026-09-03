@@ -23,6 +23,8 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
     private const string EndpointValue = "UnambitiousFx.Synapse.Endpoints.Endpoint`2";
     private const string EndpointMapped = "UnambitiousFx.Synapse.Endpoints.MappedEndpoint`4";
     private const string EndpointStream = "UnambitiousFx.Synapse.Endpoints.StreamEndpoint`2";
+    private const string SelfHandledVoid = "UnambitiousFx.Synapse.Endpoints.SelfHandledEndpoint`1";
+    private const string SelfHandledValue = "UnambitiousFx.Synapse.Endpoints.SelfHandledEndpoint`2";
     private const string RawEndpointFree = "UnambitiousFx.Synapse.Endpoints.RawEndpoint";
     private const string RawEndpointVoid = "UnambitiousFx.Synapse.Endpoints.RawEndpoint`1";
     private const string RawEndpointValue = "UnambitiousFx.Synapse.Endpoints.RawEndpoint`2";
@@ -97,6 +99,10 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
                 EndpointValue => EndpointKind.Value,
                 EndpointMapped => EndpointKind.Mapped,
                 EndpointStream => EndpointKind.Stream,
+                SelfHandledVoid => EndpointKind.SelfHandledVoid,
+                SelfHandledValue => EndpointKind.SelfHandled,
+                // Last, and it matters: every tier above derives from RawEndpoint, so a chain walk
+                // that reached this arm first would classify all of them as the free-form low level.
                 RawEndpointFree => EndpointKind.Raw,
                 RawEndpointVoid => EndpointKind.RawVoid,
                 RawEndpointValue => EndpointKind.RawValue,
@@ -124,7 +130,8 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
             // build stays warning-free, /openapi/v1.json 500s at runtime for real).
             ITypeSymbol? responseType = kind switch
             {
-                EndpointKind.Value or EndpointKind.RawValue => baseType.TypeArguments[1],
+                EndpointKind.Value or EndpointKind.RawValue or EndpointKind.SelfHandled =>
+                    baseType.TypeArguments[1],
                 EndpointKind.Mapped => baseType.TypeArguments[3],
                 EndpointKind.Stream => WrapInAsyncEnumerable(context.SemanticModel.Compilation, baseType.TypeArguments[1]),
                 _ => null

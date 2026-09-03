@@ -192,6 +192,57 @@ public sealed class OpenApiMetadataTests
         Assert.Empty(single.ContentTypes);
     }
 
+
+    [Fact]
+    public void CreateDescriptor_ForSelfHandledEndpoint_DeclaresTheSameMetadataAsTheDispatchingTier()
+    {
+        // Arrange
+        EndpointRegistry.RegisterBinder(new SelfHandledMetaBinder());
+        EndpointRegistry.RegisterMetadata<SelfHandledMetaEndpoint>(
+            new EndpointMetadata(["POST"], "/meta-self-handled"));
+        var app = WebApplication.CreateSlimBuilder().Build();
+
+        // Act
+        app.MapEndpoint<SelfHandledMetaEndpoint>();
+
+        // Assert
+        var endpoint = ((IEndpointRouteBuilder)app).DataSources
+            .SelectMany(source => source.Endpoints)
+            .Single();
+        var produces = endpoint.Metadata.OfType<IProducesResponseTypeMetadata>().ToArray();
+        Assert.Contains(produces, metadata => metadata.StatusCode == StatusCodes.Status200OK &&
+                                              metadata.Type == typeof(string));
+
+        // The 400 is guaranteed for the same reason it is on Endpoint<…>: something binds, so a bad
+        // request answers with a validation problem rather than reaching the handler.
+        Assert.Contains(produces, metadata => metadata.StatusCode == StatusCodes.Status400BadRequest);
+
+        var accepts = endpoint.Metadata.GetMetadata<IAcceptsMetadata>();
+        Assert.NotNull(accepts);
+        Assert.Equal(typeof(SelfHandledMetaRequest), accepts!.RequestType);
+    }
+
+    [Fact]
+    public void CreateDescriptor_ForSelfHandledEndpointWithNoResponse_Declares204NotDefault200()
+    {
+        // Arrange
+        EndpointRegistry.RegisterBinder(new SelfHandledVoidMetaBinder());
+        EndpointRegistry.RegisterMetadata<SelfHandledVoidMetaEndpoint>(
+            new EndpointMetadata(["POST"], "/meta-self-handled-void"));
+        var app = WebApplication.CreateSlimBuilder().Build();
+
+        // Act
+        app.MapEndpoint<SelfHandledVoidMetaEndpoint>();
+
+        // Assert
+        var endpoint = ((IEndpointRouteBuilder)app).DataSources
+            .SelectMany(source => source.Endpoints)
+            .Single();
+        var single = Assert.Single(endpoint.Metadata.OfType<ProducesResponseMetadata>());
+        Assert.Equal(StatusCodes.Status204NoContent, single.StatusCode);
+        Assert.Equal(typeof(void), single.Type);
+    }
+
     [Fact]
     public void CreateDescriptor_ForStreamEndpoint_DeclaresJsonAndEventStreamProduces()
     {
@@ -909,6 +960,50 @@ public sealed class OpenApiMetadataTests
             CancellationToken cancellationToken)
         {
             return ValueTask.FromResult(TypedResults.NoContent() as IResult);
+        }
+    }
+
+    private sealed record SelfHandledMetaRequest(string Name);
+
+    private sealed class SelfHandledMetaEndpoint : SelfHandledEndpoint<SelfHandledMetaRequest, string>
+    {
+        public override ValueTask<UnambitiousFx.Functional.Result<string>> ExecuteAsync(
+            SelfHandledMetaRequest request,
+            HttpContext context,
+            CancellationToken cancellationToken)
+        {
+            return ValueTask.FromResult(UnambitiousFx.Functional.Result.Success(request.Name));
+        }
+    }
+
+    private sealed class SelfHandledMetaBinder : IEndpointBinder<SelfHandledMetaRequest>
+    {
+        public ValueTask<BindResult<SelfHandledMetaRequest>> BindAsync(HttpContext context)
+        {
+            return ValueTask.FromResult(
+                BindResult<SelfHandledMetaRequest>.Success(new SelfHandledMetaRequest("thing")));
+        }
+    }
+
+    private sealed record SelfHandledVoidMetaRequest(string Name);
+
+    private sealed class SelfHandledVoidMetaEndpoint : SelfHandledEndpoint<SelfHandledVoidMetaRequest>
+    {
+        public override ValueTask<UnambitiousFx.Functional.Result> ExecuteAsync(
+            SelfHandledVoidMetaRequest request,
+            HttpContext context,
+            CancellationToken cancellationToken)
+        {
+            return ValueTask.FromResult(UnambitiousFx.Functional.Result.Success());
+        }
+    }
+
+    private sealed class SelfHandledVoidMetaBinder : IEndpointBinder<SelfHandledVoidMetaRequest>
+    {
+        public ValueTask<BindResult<SelfHandledVoidMetaRequest>> BindAsync(HttpContext context)
+        {
+            return ValueTask.FromResult(
+                BindResult<SelfHandledVoidMetaRequest>.Success(new SelfHandledVoidMetaRequest("thing")));
         }
     }
 }

@@ -32,7 +32,7 @@ route value becomes `TaskId`, the query goes to its handler, and the handler's `
 | `200 OK` + JSON body | The default success mapping — [changeable](./responses) |
 | OpenAPI metadata | `Accepts`/`Produces` derived from the type arguments |
 
-## The four shapes
+## The shapes
 
 Which base class you derive from follows from the message, not from taste:
 
@@ -52,12 +52,16 @@ public sealed class StreamTasksEndpoint : StreamEndpoint<StreamTasksQuery, TaskD
 // The wire contract must differ from the internal message.
 public sealed class CreateThingEndpoint
     : MappedEndpoint<CreateThingRequestDto, CreateThingCommand, int, CreateThingResponseDto>;
+
+// No message at all — the endpoint answers itself. See Self-handled.
+[Get("/health/{probe}")]
+public sealed class ProbeEndpoint : SelfHandledEndpoint<ProbeQuery, ProbeDto>;
 ```
 
 Deriving from `Endpoint<…>` for a message that implements `IStreamRequest<T>` is reported as
 [`SYNE005`](../reference/diagnostics) rather than misbehaving at runtime.
 
-See [Base classes](../reference/base-classes) for all six side by side, including the low-level ones.
+See [Base classes](../reference/base-classes) for all eight side by side, including the low-level ones.
 
 ### `MappedEndpoint` is a deliberate opt-in
 
