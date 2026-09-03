@@ -114,3 +114,14 @@ public sealed class HeadTasksEndpoint : Endpoint<ListTasksQuery, IReadOnlyList<T
 
 An endpoint may also declare its route in `Configure` instead of by attribute — see
 [escape hatches](./escape-hatches#a-computed-route). Doing both is [`SYNE009`](./diagnostics).
+
+## `BoundEndpoint<TBound>`
+
+Not a tier. It is the shared base every bound tier inherits its
+[lifecycle hooks](./lifecycle.mdx) from, and its constructor is `private protected`, so it cannot be
+derived from outside the library.
+
+It declares the three hooks once, and owns the exit step every tier shares — the after-hook followed
+by the post-processors. What it does not own is the entry sequence: each tier reads its processors,
+runs them, binds and calls the before-hook in its own `HandleAsync`, because each binds and
+dispatches differently.

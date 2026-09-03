@@ -22,10 +22,13 @@ namespace UnambitiousFx.Synapse.Endpoints;
 ///         <see cref="Endpoint{TRequest,TResponse}" /> or one of its siblings instead.
 ///     </para>
 ///     <para>
-///         It exists so the ordering contract is written once. The four sealed tiers each have their
-///         own <c>HandleAsync</c>, so declaring the hooks per tier would put four copies of that
-///         contract in the codebase — the drift <see cref="EndpointBuilderCore" /> and
-///         <see cref="RawEndpointPlan" /> already exist to prevent.
+///         Declaring the three hooks per tier would put four copies of those declarations in the
+///         codebase, so they live here instead, alongside the exit step every tier shares — the
+///         after-hook followed by the post-processors. The four sealed tiers still each write their
+///         own entry sequence in their own <c>HandleAsync</c>, because each binds and dispatches
+///         differently; factoring shared concerns onto one type this way is the same device
+///         <see cref="EndpointBuilderCore" /> and <see cref="RawEndpointPlan" /> use elsewhere in
+///         the library.
 ///     </para>
 ///     <para>
 ///         The documented order is: pre-processors, <c>BindAsync</c>,

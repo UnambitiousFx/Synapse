@@ -1,0 +1,146 @@
+---
+sidebar_position: 7
+title: Lifecycle hooks
+description: Wrap the HTTP exchange around an endpoint — before binding, before dispatch, and on the way out.
+---
+
+# Lifecycle hooks
+
+Every tier that binds something gives you a seam on both sides of dispatch. There are two ways in,
+and which one you want depends on whether the code needs the bound message.
+
+| | Sees | Scope | Use for |
+|---|---|---|---|
+| **Hooks** — `OnBeforeHandleAsync`, `OnAfterHandleAsync`, `OnBindFailedAsync` | The typed bound request | One endpoint, as an `override` | Logic specific to this endpoint |
+| **Processors** — `IEndpointPreProcessor`, `IEndpointPostProcessor` | The `HttpContext` and the outgoing `IResult` | Registered per endpoint, resolved from DI | Cross-cutting code shared across endpoints |
+
+## Order
+
+1. Pre-processors, in registration order. Returning a result skips to step 6.
+2. `BindAsync`.
+3. `OnBindFailedAsync` — only when binding failed. Skips to step 6.
+4. `OnBeforeHandleAsync` — only when binding succeeded. Returning a result skips to step 6.
+5. Dispatch, then success or failure mapping.
+6. `OnAfterHandleAsync`.
+7. Post-processors, in registration order.
+8. The result is written.
+
+Steps 6 and 7 run on **every** path — a pre-processor's short circuit, a binding failure's `400`, a
+mapped dispatch failure, and the success mapper alike. That is deliberate: a correlation header that
+skipped every `400` would be a bug. Nothing has executed the result by then, so writing to
+`context.Response.Headers` in either step still reaches the wire.
+
+Note that pre-processors run *before* binding while `OnBeforeHandleAsync` runs *after* it. A
+processor cannot see the message — that is what the hook is for — and running first is what lets a
+rejection avoid deserializing a body it is about to discard.
+
+## Hooks
+
+```csharp
+[Post("/tasks")]
+public sealed class CreateTaskEndpoint : Endpoint<CreateTaskCommand, TaskCreated>
+{
+    protected override ValueTask<IResult?> OnBeforeHandleAsync(CreateTaskCommand request,
+        HttpContext context, CancellationToken cancellationToken)
+    {
+        // The bound message is here, typed, before anything is dispatched.
+        var tenant = context.Service<ITenantResolver>().Resolve(context);
+
+        return ValueTask.FromResult<IResult?>(tenant is null
+            ? TypedResults.Problem(statusCode: StatusCodes.Status409Conflict)   // short-circuits
+            : null);                                                            // carry on
+    }
+
+    protected override ValueTask<IResult> OnAfterHandleAsync(IResult result,
+        HttpContext context, CancellationToken cancellationToken)
+    {
+        // Runs for the 201 and for the 404 the failure mapper wrote, which is the point.
+        context.Response.Headers["X-Tenant"] = context.Service<ITenantResolver>().Resolve(context)?.Id;
+        return ValueTask.FromResult(result);
+    }
+}
+```
+
+`OnBindFailedAsync` receives the failed `BindResult<T>` with every collected error, and returns the
+result to write. Its default is the `400` binding already produces, so overriding it replaces that
+response rather than adding to it.
+
+## Processors
+
+A processor is an ordinary class resolved from `HttpContext.RequestServices` on every request, so
+unlike the endpoint — which is a singleton — it may take scoped dependencies through its
+constructor.
+
+```csharp
+public sealed class StampCorrelationHeader : IEndpointPostProcessor
+{
+    private readonly ICorrelationAccessor _correlation;
+
+    public StampCorrelationHeader(ICorrelationAccessor correlation)
+    {
+        _correlation = correlation;
+    }
+
+    public ValueTask<IResult> ProcessAsync(IResult result, HttpContext context,
+        CancellationToken cancellationToken)
+    {
+        context.Response.Headers["X-Correlation-Id"] = _correlation.Current;
+        return ValueTask.FromResult(result);
+    }
+}
+```
+
+Register it on the endpoint, and in the container:
+
+```csharp
+public override void Configure(IEndpointBuilder<TaskCreated> builder)
+{
+    builder.PreProcessor<ResolveTenant>()
+           .PostProcessor<StampCorrelationHeader>()
+           .Created(created => $"/tasks/{created.TaskId}");
+}
+```
+
+```csharp
+builder.Services.AddScoped<ResolveTenant>();
+builder.Services.AddScoped<StampCorrelationHeader>();
+```
+
+A processor that is not registered throws on the first request, naming the type.
+
+## These are not pipeline behaviours
+
+They look similar and they are not interchangeable.
+
+A Synapse **pipeline behaviour** wraps *message dispatch*. It sees the message and the `Result`, runs
+for every dispatch of that message wherever it came from — an endpoint, a background job, a test —
+and has no `HttpContext` at all.
+
+A **hook or processor** wraps *the HTTP exchange*. It sees the `HttpContext` and the outgoing
+`IResult`, and runs only for requests to that endpoint. Nothing here can be expressed as a behaviour:
+a behaviour cannot set a response header, cannot short-circuit with a status code, and never runs for
+a request that failed to bind — because nothing was dispatched.
+
+Put transaction scope, retries and message-level validation in a behaviour. Put anything that reads
+or writes HTTP here.
+
+## Cost when unused
+
+An endpoint that overrides no hook and registers no processor pays nothing measurable: the default
+hook bodies allocate nothing, and the processor runner returns without starting a state machine when
+its arrays are empty. See the `EndpointDispatchBenchmark` arms in
+[Benchmarks](../../benchmarks.mdx).
+
+## Which tiers
+
+All four bound tiers: `Endpoint<TRequest>`, `Endpoint<TRequest, TResponse>` (and their
+`RawEndpoint<…>` bases), `MappedEndpoint<…>` and `StreamEndpoint<…>`.
+
+`MappedEndpoint<…>`'s hooks are typed on the **wire DTO**, not the message — they run around
+binding, and binding is what produces a DTO.
+
+`StreamEndpoint<…>` runs steps 6 and 7 before the first item is produced, because its result *is*
+the negotiated writer. A post-processor there can set headers; it cannot see the items.
+
+Bare `RawEndpoint` has neither, by design: its `HandleAsync` is abstract, so you already own the
+whole seam.

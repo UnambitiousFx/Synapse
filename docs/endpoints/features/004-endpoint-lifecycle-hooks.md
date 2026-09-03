@@ -2,10 +2,10 @@
 
 |  |  |
 |---|---|
-| **Status** | 🔴 Missing |
+| **Status** | ✅ Shipped |
 | **Priority** | High |
 | **Area** | Endpoint pipeline |
-| **Tiers** | `Endpoint<…>`, `RawEndpoint<…>`, `MappedEndpoint<…>` |
+| **Tiers** | `Endpoint<…>`, `RawEndpoint<…>`, `MappedEndpoint<…>`, `StreamEndpoint<…>` |
 | **Breaking** | No — additive virtual members |
 
 ## Problem
@@ -167,3 +167,19 @@ public override void Configure(IEndpointBuilder<TaskCreated> builder)
 Decide deliberately whether these overlap with Synapse pipeline behaviours. They do not: a behaviour
 wraps *message dispatch* and has no `HttpContext`; these wrap *the HTTP exchange* and cannot be
 expressed as behaviours. Say so in the docs, or users will ask.
+
+## As shipped
+
+Two things differ from the proposal above, both deliberate:
+
+- **Pre-processors run before binding**, not after it. They are `HttpContext`-shaped, so they have no
+  use for the bound message, and running first lets a rejection avoid deserializing a body it is
+  about to discard. The typed `OnBeforeHandleAsync` still runs after binding, as proposed.
+- **`OnAfterHandleAsync` and post-processors run on the bind-failure path too**, not only "after
+  dispatch". A correlation-header processor that silently skipped every `400` would be a bug.
+
+Processors are shaped on the `HttpContext` rather than on `TRequest` because `IEndpointBuilder<TResponse>`
+is typed on the response: a typed processor would have needed a new builder interface threaded
+through every bound tier's `Configure`, which is a breaking change, to buy something the hooks
+already provide. `StreamEndpoint<…>` was added to the tier list for consistency — leaving it out
+would have made it the one tier where a registered processor silently did nothing.
