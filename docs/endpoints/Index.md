@@ -35,6 +35,7 @@ only; their user-facing documentation lives under [`../docs/endpoints/`](../docs
 | Duplicate-route detection | ✅ | Startup check over Synapse-marked endpoints only, after group prefixes are applied. |
 | Optional readers for reference types | ✅ | Each `…Optional<T>` on `BindingValidator` is a `struct`- and a `class`-constrained overload pair, so `QueryOptional<string>` and `QueryOptional<CallbackUrl>` go through the collector. Mirrored as `TryGet…Optional<T>` on `HttpContextBindingExtensions`. |
 | Escape hatches | ✅ | `Raw(Action<RouteHandlerBuilder>)` on every endpoint builder and `Raw(Action<RouteGroupBuilder>)` on groups. |
+| Endpoint test harness | ✅ | `EndpointHarness.Create<TEndpoint>()` maps one endpoint through the real routing stack — real constraints, real group prefixes, real `405` — with no host. Only `IInvoker` is faked, so the failure mapper stays under test. Ships as `UnambitiousFx.Synapse.Endpoints.Testing`. |
 
 ## Gaps
 
@@ -42,7 +43,6 @@ Ordered by recommended implementation sequence.
 
 | # | Feature | Status | Priority | Description |
 |---|---|---|---|---|
-| [003](features/003-endpoint-test-harness.md) | Endpoint test harness | ❌ | High | Endpoints cannot be exercised without a host; calling `HandleAsync` directly throws by design. No shipped way to test one in isolation. |
 | [004](features/004-endpoint-lifecycle-hooks.md) | Lifecycle hooks (pre/post processors) | ❌ | High | No seam between bind, dispatch and respond. `HandleAsync` is sealed on every bound tier; nothing runs on the failure path. |
 | [005](features/005-self-handled-endpoint-tier.md) | Self-handled endpoint tier | ❌ | High | Every bound tier requires `TRequest : IRequest<…>` and dispatches through the mediator. No "bind, run this, return that" tier — the classic REPR shape. |
 | [006](features/006-form-and-file-binding.md) | Form, multipart and file binding | ❌ | Med-High | No `IFormFile`, no form binding, no multipart. File uploads must drop to `RawEndpoint`. |
@@ -60,9 +60,10 @@ Ordered by recommended implementation sequence.
 
 ## Suggested sequencing
 
-1. **003** makes the package usable: endpoints become testable. (001 and 002 are shipped — the
-   OpenAPI document no longer lies about what an endpoint can return, and the most common optional
-   parameter is expressible on the collector.)
-2. **004–006** close the ergonomic gap with established REPR implementations.
-3. **007–015** round out binding, routing and grouping.
-4. **016–017** are polish, and 017 may reasonably be closed as "working as intended".
+1. **004–006** close the ergonomic gap with established REPR implementations.
+2. **007–015** round out binding, routing and grouping.
+3. **016–017** are polish, and 017 may reasonably be closed as "working as intended".
+
+001–003 are shipped: the OpenAPI document no longer lies about what an endpoint can return, the most
+common optional parameter is expressible on the collector, and an endpoint can be exercised without
+a host.
