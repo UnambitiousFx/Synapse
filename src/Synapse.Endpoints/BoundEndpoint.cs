@@ -34,7 +34,10 @@ namespace UnambitiousFx.Synapse.Endpoints;
 ///         The documented order is: pre-processors, <c>BindAsync</c>,
 ///         <see cref="OnBindFailedAsync" /> when it failed, <see cref="OnBeforeHandleAsync" /> when it
 ///         did not, dispatch and mapping, <see cref="OnAfterHandleAsync" />, post-processors, then the
-///         result is written. Steps from <see cref="OnAfterHandleAsync" /> onwards run on every path.
+///         result is written. Steps from <see cref="OnAfterHandleAsync" /> onwards run on every path
+///         <em>that produces a result</em> — an unhandled exception from dispatch, a mapper, a hook, or
+///         a processor bypasses them entirely and is the ASP.NET exception handler's business, not
+///         this type's.
 ///     </para>
 /// </remarks>
 public abstract class BoundEndpoint<TBound> : RawEndpoint
@@ -85,9 +88,20 @@ public abstract class BoundEndpoint<TBound> : RawEndpoint
     /// <param name="cancellationToken">Cancellation token, tied to the request.</param>
     /// <returns>The result to write. Return <paramref name="result" /> to leave it unchanged.</returns>
     /// <remarks>
-    ///     Runs whatever produced the result: a pre-processor's short circuit, a binding failure's
-    ///     <c>400</c>, a mapped dispatch failure, or the success mapper. Nothing has executed the
-    ///     result yet, so writing to <c>context.Response.Headers</c> here still reaches the wire.
+    ///     <para>
+    ///         Runs whatever produced a result: a pre-processor's short circuit, a binding failure's
+    ///         <c>400</c>, a mapped dispatch failure, or the success mapper. It does not run when
+    ///         dispatch, a mapper, or an earlier hook throws — that exception bypasses this hook, the
+    ///         post-processors, and the write, and reaches the ASP.NET exception handler instead.
+    ///     </para>
+    ///     <para>
+    ///         Nothing has executed <paramref name="result" /> yet, so writing to
+    ///         <c>context.Response.Headers</c> here still reaches the wire — but
+    ///         <c>context.Response.StatusCode</c> is still whatever it defaulted to, because the result
+    ///         has not run yet either. Pattern-match <paramref name="result" /> against
+    ///         <see cref="IStatusCodeHttpResult" /> to read the status it is about to write; that fails
+    ///         for a result that does not implement it, including the stream tier's negotiated writer.
+    ///     </para>
     /// </remarks>
     protected virtual ValueTask<IResult> OnAfterHandleAsync(IResult result,
         HttpContext context,

@@ -25,10 +25,26 @@ and which one you want depends on whether the code needs the bound message.
 7. Post-processors, in registration order.
 8. The result is written.
 
-Steps 6 and 7 run on **every** path — a pre-processor's short circuit, a binding failure's `400`, a
-mapped dispatch failure, and the success mapper alike. That is deliberate: a correlation header that
-skipped every `400` would be a bug. Nothing has executed the result by then, so writing to
-`context.Response.Headers` in either step still reaches the wire.
+Steps 6 and 7 run on **every path that produces a result** — a pre-processor's short circuit, a
+binding failure's `400`, a mapped dispatch failure, and the success mapper alike. That is deliberate:
+a correlation header that skipped every `400` would be a bug. Nothing has executed the result by
+then, so writing to `context.Response.Headers` in either step still reaches the wire — but
+`context.Response.StatusCode` is still whatever it defaulted to, since nothing has executed the
+result yet either. To read the status a result is about to write, pattern-match it against
+`IStatusCodeHttpResult`:
+
+```csharp
+var status = result is IStatusCodeHttpResult withStatus ? withStatus.StatusCode : null;
+```
+
+That fails for a result that does not implement it, including the stream tier's negotiated writer —
+see [Which tiers](#which-tiers) below.
+
+An unhandled exception is not a path that produces a result: `HandleAsync` is a straight sequence of
+awaits with no `try`/`finally`, so a throw from dispatch, a mapper, a hook, or a processor bypasses
+steps 6 through 8 entirely and reaches the ASP.NET exception handler instead. That is deliberate too
+— there is no result to hand a hook or processor, and swallowing the exception to keep them running
+would hide the failure rather than report it.
 
 Note that pre-processors run *before* binding while `OnBeforeHandleAsync` runs *after* it. A
 processor cannot see the message — that is what the hook is for — and running first is what lets a
@@ -128,8 +144,8 @@ or writes HTTP here.
 
 An endpoint that overrides no hook and registers no processor pays nothing measurable: the default
 hook bodies allocate nothing, and the processor runner returns without starting a state machine when
-its arrays are empty. See the `EndpointDispatchBenchmark` arms in
-[Benchmarks](../../benchmarks.mdx).
+its arrays are empty. See the `SynapseEndpointWithHooks` and `SynapseEndpointWithProcessors` arms in
+`benchmarks/SynapseBenchmark/EndpointDispatchBenchmark.cs`.
 
 ## Which tiers
 
