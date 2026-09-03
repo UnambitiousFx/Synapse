@@ -251,6 +251,43 @@ public sealed class EndpointLifecycleTests
             Order);
     }
 
+    [Fact]
+    public async Task HandleAsync_OnTheStreamTier_RunsTheExitStepsBeforeTheFirstItem()
+    {
+        // Arrange: a stream's result is the negotiated writer, so a post-processor can still set a
+        // header — it runs before the writer executes.
+        Order.Clear();
+        EndpointRegistry.RegisterBinder(new StreamTracingBinder());
+        EndpointRegistry.RegisterMetadata<StreamTracingEndpoint>(
+            new EndpointMetadata(["GET"], "/stream-trace"));
+
+        var invoker = Substitute.For<IHttpInvoker>();
+        invoker.InvokeStreamAsync(Arg.Any<IStreamRequest<string>>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Items());
+
+        var context = ContextWith(services =>
+        {
+            services.AddScoped<TracingPreProcessor>();
+            services.AddScoped<HeaderStampingPostProcessor>();
+        }, invoker);
+
+        var descriptor = ((EndpointBase)new StreamTracingEndpoint())
+            .CreateDescriptor(EndpointRegistry.GetMetadata<StreamTracingEndpoint>());
+
+        // Act
+        await descriptor.InvokeAsync(context);
+
+        // Assert
+        Assert.Equal(["pre-processor", "bind", "before-hook", "after-hook"], Order);
+        Assert.Equal("tenant-1", context.Response.Headers["X-Tenant"]);
+
+        static async IAsyncEnumerable<string> Items()
+        {
+            await Task.Yield();
+            yield return "one";
+        }
+    }
+
     /// <summary>An invoker that calls the success factory with a fixed response.</summary>
     private static IHttpInvoker Ok()
     {
@@ -458,6 +495,40 @@ public sealed class EndpointLifecycleTests
             HttpContext context, CancellationToken cancellationToken)
         {
             Order.Add($"before-hook:{request.Id}");
+            return default;
+        }
+
+        protected override ValueTask<IResult> OnAfterHandleAsync(IResult result,
+            HttpContext context, CancellationToken cancellationToken)
+        {
+            Order.Add("after-hook");
+            return new ValueTask<IResult>(result);
+        }
+    }
+
+    private sealed record TraceStream : IStreamRequest<string>;
+
+    private sealed class StreamTracingBinder : IEndpointBinder<TraceStream>
+    {
+        public ValueTask<BindResult<TraceStream>> BindAsync(HttpContext context)
+        {
+            Order.Add("bind");
+            return ValueTask.FromResult(BindResult<TraceStream>.Success(new TraceStream()));
+        }
+    }
+
+    private sealed class StreamTracingEndpoint : StreamEndpoint<TraceStream, string>
+    {
+        public override void Configure(IStreamEndpointBuilder builder)
+        {
+            builder.PreProcessor<TracingPreProcessor>()
+                   .PostProcessor<HeaderStampingPostProcessor>();
+        }
+
+        protected override ValueTask<IResult?> OnBeforeHandleAsync(TraceStream request,
+            HttpContext context, CancellationToken cancellationToken)
+        {
+            Order.Add("before-hook");
             return default;
         }
 

@@ -57,24 +57,43 @@ public abstract class StreamEndpoint<TRequest, TItem> : BoundEndpoint<TRequest>
     /// <inheritdoc />
     /// <remarks>
     ///     The negotiated writer runs inside the returned result rather than here, so the body is
-    ///     written at the same point in the pipeline as any other endpoint's result.
+    ///     written at the same point in the pipeline as any other endpoint's result — which is also
+    ///     why the exit steps run before the first item is produced. A post-processor here can set
+    ///     response headers; it cannot see or change the items.
     /// </remarks>
     public sealed override async ValueTask<IResult> HandleAsync(HttpContext context,
         CancellationToken cancellationToken)
     {
+        var processors = ResolvedProcessors;
+
+        var shortCircuit = await processors.RunPreAsync(context, cancellationToken);
+        if (shortCircuit is not null)
+        {
+            return await FinishAsync(shortCircuit, processors, context, cancellationToken);
+        }
+
         var bound = await Mapped(_binder).BindAsync(context);
         if (!bound.IsSuccess)
         {
-            return bound.Problem();
+            var problem = await OnBindFailedAsync(bound, context, cancellationToken);
+            return await FinishAsync(problem, processors, context, cancellationToken);
+        }
+
+        var before = await OnBeforeHandleAsync(bound.Value!, context, cancellationToken);
+        if (before is not null)
+        {
+            return await FinishAsync(before, processors, context, cancellationToken);
         }
 
         var invoker = context.RequestServices.GetRequiredService<IHttpInvoker>();
         var items = invoker.InvokeStreamAsync(bound.Value!, cancellationToken);
         var typeInfo = _itemJson.Get(context);
 
-        return WantsServerSentEvents(context)
+        IResult result = WantsServerSentEvents(context)
             ? new ServerSentEventsStreamResult<TItem>(items, typeInfo)
             : new JsonArrayStreamResult<TItem>(items, typeInfo);
+
+        return await FinishAsync(result, processors, context, cancellationToken);
     }
 
     /// <inheritdoc />
