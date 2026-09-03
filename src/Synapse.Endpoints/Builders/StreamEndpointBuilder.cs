@@ -130,6 +130,22 @@ internal sealed class StreamEndpointBuilder : IStreamEndpointBuilder
         return this;
     }
 
+    /// <inheritdoc />
+    public IStreamEndpointBuilder PreProcessor<TProcessor>()
+        where TProcessor : class, IEndpointPreProcessor
+    {
+        _core.PreProcessor<TProcessor>();
+        return this;
+    }
+
+    /// <inheritdoc />
+    public IStreamEndpointBuilder PostProcessor<TProcessor>()
+        where TProcessor : class, IEndpointPostProcessor
+    {
+        _core.PostProcessor<TProcessor>();
+        return this;
+    }
+
     internal RawEndpointPlan Build()
     {
         return _core.Resolve();

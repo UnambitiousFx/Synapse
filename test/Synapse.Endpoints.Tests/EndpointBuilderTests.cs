@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using UnambitiousFx.Synapse.Endpoints.Builders;
+using UnambitiousFx.Synapse.Endpoints.Internal;
 
 namespace UnambitiousFx.Synapse.Endpoints.Tests;
 
@@ -157,5 +159,70 @@ public sealed class EndpointBuilderTests
 
         // Assert
         Assert.Equal(StatusCodes.Status418ImATeapot, configuration.DeclaredSuccessStatusCode);
+    }
+
+    [Fact]
+    public void Build_WithNoProcessors_UsesTheSharedEmptyInstance()
+    {
+        // Arrange
+        var builder = new EndpointBuilder<string>(new EndpointMetadata(["GET"], "/things"));
+
+        // Act
+        var configuration = builder.Build();
+
+        // Assert
+        Assert.Same(EndpointProcessors.Empty, configuration.Processors);
+    }
+
+    [Fact]
+    public async Task Build_WithRegisteredProcessors_ResolvesThemFromRequestServices()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddScoped<CountingPreProcessor>();
+        var context = new DefaultHttpContext { RequestServices = services.BuildServiceProvider() };
+
+        var builder = new EndpointBuilder<string>(new EndpointMetadata(["GET"], "/things"));
+        builder.PreProcessor<CountingPreProcessor>();
+
+        // Act
+        var configuration = builder.Build();
+        var result = await configuration.Processors.RunPreAsync(context, CancellationToken.None);
+
+        // Assert
+        Assert.Null(result);
+        Assert.Equal(1, context.RequestServices.GetRequiredService<CountingPreProcessor>().Calls);
+    }
+
+    [Fact]
+    public async Task Build_WithAnUnregisteredProcessor_ThrowsNamingTheType()
+    {
+        // Arrange
+        var context = new DefaultHttpContext
+        {
+            RequestServices = new ServiceCollection().BuildServiceProvider()
+        };
+
+        var builder = new EndpointBuilder<string>(new EndpointMetadata(["GET"], "/things"));
+        builder.PreProcessor<CountingPreProcessor>();
+        var configuration = builder.Build();
+
+        // Act
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            async () => await configuration.Processors.RunPreAsync(context, CancellationToken.None));
+
+        // Assert
+        Assert.Contains(nameof(CountingPreProcessor), exception.Message);
+    }
+
+    private sealed class CountingPreProcessor : IEndpointPreProcessor
+    {
+        internal int Calls { get; private set; }
+
+        public ValueTask<IResult?> ProcessAsync(HttpContext context, CancellationToken cancellationToken)
+        {
+            Calls++;
+            return default;
+        }
     }
 }

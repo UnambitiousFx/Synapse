@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using UnambitiousFx.Synapse.Endpoints.Internal;
 
 namespace UnambitiousFx.Synapse.Endpoints.Builders;
 
@@ -12,6 +13,9 @@ internal sealed class EndpointConfiguration<TResponse>
 
     /// <summary>Gets the resolved HTTP methods.</summary>
     public required string[] HttpMethods { get; init; }
+
+    /// <summary>Gets the pre- and post-processors this endpoint registered.</summary>
+    public required EndpointProcessors Processors { get; init; }
 
     /// <summary>Gets the declarative success mapper, or null to fall through to <c>OnSuccess</c>.</summary>
     public Func<TResponse, IResult>? SuccessMapper { get; init; }

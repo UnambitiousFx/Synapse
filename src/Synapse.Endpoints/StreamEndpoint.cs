@@ -98,6 +98,7 @@ public abstract class StreamEndpoint<TRequest, TItem> : RawEndpoint
         {
             Route = plan.Route,
             HttpMethods = plan.HttpMethods,
+            Processors = plan.Processors,
             ApplyMetadata = handlerBuilder =>
             {
                 // Declared explicitly because a RequestDelegate-shaped endpoint infers nothing, and

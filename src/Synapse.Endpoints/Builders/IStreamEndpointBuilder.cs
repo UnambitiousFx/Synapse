@@ -101,6 +101,24 @@ public interface IStreamEndpointBuilder
     /// <returns>The builder, for chaining.</returns>
     IStreamEndpointBuilder ProducesValidationProblem(int statusCode = 400);
 
+    /// <summary>Registers a pre-processor. See <see cref="IEndpointBuilder.PreProcessor{TProcessor}" />.</summary>
+    /// <typeparam name="TProcessor">The processor type.</typeparam>
+    /// <returns>The builder, for chaining.</returns>
+    IStreamEndpointBuilder PreProcessor<TProcessor>()
+        where TProcessor : class, IEndpointPreProcessor;
+
+    /// <summary>
+    ///     Registers a post-processor. See <see cref="IEndpointBuilder.PostProcessor{TProcessor}" />.
+    /// </summary>
+    /// <typeparam name="TProcessor">The processor type.</typeparam>
+    /// <returns>The builder, for chaining.</returns>
+    /// <remarks>
+    ///     A streaming endpoint's result is the negotiated writer, so this runs before the first item
+    ///     is produced: it can set response headers, but it cannot see or change the items.
+    /// </remarks>
+    IStreamEndpointBuilder PostProcessor<TProcessor>()
+        where TProcessor : class, IEndpointPostProcessor;
+
     /// <summary>
     ///     Escape hatch onto the underlying <see cref="RouteHandlerBuilder" />, for filters, caching,
     ///     rate limiting, additional <c>Produces</c> declarations, or anything else not wrapped here.

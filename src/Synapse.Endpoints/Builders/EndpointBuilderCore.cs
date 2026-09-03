@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using UnambitiousFx.Synapse.Endpoints.Internal;
 
 namespace UnambitiousFx.Synapse.Endpoints.Builders;
@@ -20,6 +21,8 @@ internal sealed class EndpointBuilderCore
     private readonly EndpointMetadata _declared;
     private string? _route;
     private string[]? _httpMethods;
+    private List<Func<HttpContext, IEndpointPreProcessor>>? _preProcessors;
+    private List<Func<HttpContext, IEndpointPostProcessor>>? _postProcessors;
 
     internal EndpointBuilderCore(EndpointMetadata declared)
     {
@@ -45,6 +48,26 @@ internal sealed class EndpointBuilderCore
     {
         ArgumentNullException.ThrowIfNull(configure);
         _metadata.Add(configure);
+    }
+
+    /// <summary>Registers a pre-processor, resolved from the request's services on each request.</summary>
+    /// <typeparam name="TProcessor">The processor type.</typeparam>
+    internal void PreProcessor<TProcessor>()
+        where TProcessor : class, IEndpointPreProcessor
+    {
+        // A static lambda: the closure would otherwise capture nothing but still allocate per
+        // registration, and the resolver is stored for the lifetime of the application anyway.
+        (_preProcessors ??= []).Add(
+            static context => context.RequestServices.GetRequiredService<TProcessor>());
+    }
+
+    /// <summary>Registers a post-processor, resolved from the request's services on each request.</summary>
+    /// <typeparam name="TProcessor">The processor type.</typeparam>
+    internal void PostProcessor<TProcessor>()
+        where TProcessor : class, IEndpointPostProcessor
+    {
+        (_postProcessors ??= []).Add(
+            static context => context.RequestServices.GetRequiredService<TProcessor>());
     }
 
     /// <summary>Declares a response with no body.</summary>
@@ -114,6 +137,12 @@ internal sealed class EndpointBuilderCore
 
         var metadata = _metadata.ToArray();
 
+        var processors = _preProcessors is null && _postProcessors is null
+            ? EndpointProcessors.Empty
+            : new EndpointProcessors(
+                _preProcessors?.ToArray() ?? [],
+                _postProcessors?.ToArray() ?? []);
+
         return new RawEndpointPlan
         {
             Route = route,
@@ -124,7 +153,8 @@ internal sealed class EndpointBuilderCore
                 {
                     action(builder);
                 }
-            }
+            },
+            Processors = processors
         };
     }
 }

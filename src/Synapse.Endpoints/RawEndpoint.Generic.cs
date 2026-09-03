@@ -121,6 +121,7 @@ public abstract class RawEndpoint<TRequest, TResponse> : RawEndpoint
         {
             Route = configuration.Route,
             HttpMethods = configuration.HttpMethods,
+            Processors = configuration.Processors,
             ApplyMetadata = handlerBuilder =>
             {
                 // Declared explicitly because a RequestDelegate-shaped endpoint infers nothing.

@@ -163,6 +163,22 @@ internal sealed class EndpointBuilder<TResponse> : IEndpointBuilder<TResponse>
         return this;
     }
 
+    /// <inheritdoc cref="IEndpointBuilder{TResponse}.PreProcessor{TProcessor}" />
+    public IEndpointBuilder<TResponse> PreProcessor<TProcessor>()
+        where TProcessor : class, IEndpointPreProcessor
+    {
+        _core.PreProcessor<TProcessor>();
+        return this;
+    }
+
+    /// <inheritdoc cref="IEndpointBuilder{TResponse}.PostProcessor{TProcessor}" />
+    public IEndpointBuilder<TResponse> PostProcessor<TProcessor>()
+        where TProcessor : class, IEndpointPostProcessor
+    {
+        _core.PostProcessor<TProcessor>();
+        return this;
+    }
+
     /// <inheritdoc />
     public IEndpointBuilder<TResponse> Ok()
     {
@@ -290,6 +306,16 @@ internal sealed class EndpointBuilder<TResponse> : IEndpointBuilder<TResponse>
         return Raw(configure);
     }
 
+    IEndpointBuilder IEndpointBuilder.PreProcessor<TProcessor>()
+    {
+        return PreProcessor<TProcessor>();
+    }
+
+    IEndpointBuilder IEndpointBuilder.PostProcessor<TProcessor>()
+    {
+        return PostProcessor<TProcessor>();
+    }
+
     internal EndpointConfiguration<TResponse> Build()
     {
         var plan = _core.Resolve();
@@ -298,6 +324,7 @@ internal sealed class EndpointBuilder<TResponse> : IEndpointBuilder<TResponse>
         {
             Route = plan.Route,
             HttpMethods = plan.HttpMethods,
+            Processors = plan.Processors,
             SuccessMapper = _successMapper,
             DeclaredSuccessStatusCode = _declaredSuccessStatusCode,
             SuccessResponseHasBody = _successResponseHasBody,

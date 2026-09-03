@@ -107,6 +107,18 @@ public interface IEndpointBuilder<TResponse> : IEndpointBuilder
     /// <returns>The builder, for chaining.</returns>
     new IEndpointBuilder<TResponse> ProducesValidationProblem(int statusCode = 400);
 
+    /// <summary>Registers a pre-processor. See <see cref="IEndpointBuilder.PreProcessor{TProcessor}" />.</summary>
+    /// <typeparam name="TProcessor">The processor type.</typeparam>
+    /// <returns>The builder, for chaining.</returns>
+    new IEndpointBuilder<TResponse> PreProcessor<TProcessor>()
+        where TProcessor : class, IEndpointPreProcessor;
+
+    /// <summary>Registers a post-processor. See <see cref="IEndpointBuilder.PostProcessor{TProcessor}" />.</summary>
+    /// <typeparam name="TProcessor">The processor type.</typeparam>
+    /// <returns>The builder, for chaining.</returns>
+    new IEndpointBuilder<TResponse> PostProcessor<TProcessor>()
+        where TProcessor : class, IEndpointPostProcessor;
+
     /// <summary>
     ///     Escape hatch onto the underlying <see cref="RouteHandlerBuilder" />, for endpoint
     ///     filters, rate limiting, output caching, versioning and anything else this surface does

@@ -117,6 +117,30 @@ public interface IEndpointBuilder
     IEndpointBuilder ProducesValidationProblem(int statusCode = 400);
 
     /// <summary>
+    ///     Registers a pre-processor, which runs before this endpoint binds its request and may
+    ///     answer the request itself.
+    /// </summary>
+    /// <typeparam name="TProcessor">
+    ///     The processor type, resolved from <c>HttpContext.RequestServices</c> on each request. It
+    ///     must be registered in the container.
+    /// </typeparam>
+    /// <returns>The builder, for chaining.</returns>
+    IEndpointBuilder PreProcessor<TProcessor>()
+        where TProcessor : class, IEndpointPreProcessor;
+
+    /// <summary>
+    ///     Registers a post-processor, which runs after this endpoint produces a result and before
+    ///     it is written — including for a binding failure's <c>400</c> and a mapped failure.
+    /// </summary>
+    /// <typeparam name="TProcessor">
+    ///     The processor type, resolved from <c>HttpContext.RequestServices</c> on each request. It
+    ///     must be registered in the container.
+    /// </typeparam>
+    /// <returns>The builder, for chaining.</returns>
+    IEndpointBuilder PostProcessor<TProcessor>()
+        where TProcessor : class, IEndpointPostProcessor;
+
+    /// <summary>
     ///     Escape hatch onto the underlying <see cref="RouteHandlerBuilder" />, for endpoint
     ///     filters, rate limiting, output caching, versioning and anything else this surface does
     ///     not wrap.

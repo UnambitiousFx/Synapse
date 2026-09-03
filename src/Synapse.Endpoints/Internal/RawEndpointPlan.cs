@@ -18,5 +18,13 @@ internal sealed class RawEndpointPlan
 
     public required string[] HttpMethods { get; init; }
 
+    /// <summary>The pre- and post-processors this endpoint registered.</summary>
+    /// <remarks>
+    ///     <c>required</c> so that a new endpoint shape cannot construct a plan without deciding what
+    ///     to do with them: silently dropping the registrations would make
+    ///     <c>PreProcessor&lt;T&gt;()</c> compile and do nothing on that tier.
+    /// </remarks>
+    public required EndpointProcessors Processors { get; init; }
+
     public required Action<RouteHandlerBuilder> ApplyMetadata { get; init; }
 }
