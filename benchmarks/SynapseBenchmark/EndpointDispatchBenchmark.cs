@@ -23,17 +23,20 @@ namespace UnambitiousFx.Benchmarks.SynapseBenchmark;
 ///     equivalent Synapse endpoint, so the adapter's overhead stays visible.
 /// </summary>
 /// <remarks>
-///     Both hosts share the exact same <see cref="BuildHost" /> service configuration — same
-///     <see cref="GetThingQueryHandler" />, same <c>ConfigureHttpJsonOptions</c> call with the same
-///     source-generated <see cref="BenchmarkJsonSerializerContext" />, same <c>AddSynapseAspNetCore</c>
-///     / <c>AddSynapse</c> wiring — so the only thing that differs between
-///     <see cref="HandWrittenLambda" /> and <see cref="SynapseEndpoint" /> is how the route is mapped:
-///     a hand-rolled <c>MapGet</c> lambda with typed parameters versus <c>MapEndpoint&lt;GetThingEndpoint&gt;()</c>,
-///     which goes through the generated route binder and <c>Endpoint&lt;TRequest,TResponse&gt;</c>'s
-///     descriptor. Both call sides use the identical three-argument
+///     Every arm's host is built through the same <see cref="BuildHost" /> service configuration —
+///     same <see cref="GetThingQueryHandler" />, same <c>ConfigureHttpJsonOptions</c> call with the
+///     same source-generated <see cref="BenchmarkJsonSerializerContext" />, same
+///     <c>AddSynapseAspNetCore</c> / <c>AddSynapse</c> wiring — so the arms differ only in how the
+///     route is mapped, except <see cref="SynapseEndpointWithProcessors" />'s host, which
+///     additionally registers its two processors. In particular, the only thing that differs
+///     between <see cref="HandWrittenLambda" /> and <see cref="SynapseEndpoint" /> is how the route
+///     is mapped: a hand-rolled <c>MapGet</c> lambda with typed parameters versus
+///     <c>MapEndpoint&lt;GetThingEndpoint&gt;()</c>, which goes through the generated route binder
+///     and <c>Endpoint&lt;TRequest,TResponse&gt;</c>'s descriptor. Both call sides use the identical
+///     three-argument
 ///     <c>IHttpInvoker.InvokeAsync(request, response =&gt; TypedResults.Ok(response), cancellationToken)</c>
 ///     overload with an equivalent success mapper, matching what <c>Endpoint&lt;TRequest,TResponse&gt;</c>'s
-///     default <c>OnSuccess</c> does, so no part of the delta is attributable to calling a different
+///     default <c>OnSuccess</c> does, so no part of that delta is attributable to calling a different
 ///     <see cref="IHttpInvoker" /> member.
 /// </remarks>
 [MemoryDiagnoser]
@@ -204,10 +207,12 @@ public class EndpointDispatchBenchmark
     }
 
     /// <summary>
-    ///     Builds and starts one in-memory host. Both benchmarked hosts call this same method, so the
-    ///     DI wiring — JSON options, <c>AddSynapseAspNetCore</c>, <c>AddSynapse</c>, the registered
-    ///     handler — is not just equivalent between them, it is the identical code path. Only the
-    ///     <paramref name="configureApp" /> delegate (how the route is mapped) differs.
+    ///     Builds and starts one in-memory host. Every benchmarked host calls this same method, so
+    ///     the DI wiring — JSON options, <c>AddSynapseAspNetCore</c>, <c>AddSynapse</c>, the
+    ///     registered handler — is not just equivalent between them, it is the identical code path.
+    ///     The <paramref name="configureApp" /> delegate (how the route is mapped) differs for every
+    ///     arm; <paramref name="configureServices" /> differs only for the processor arm, which
+    ///     additionally registers its two processors.
     /// </summary>
     private static IHost BuildHost(Action<IApplicationBuilder> configureApp,
         Action<IServiceCollection>? configureServices = null)
