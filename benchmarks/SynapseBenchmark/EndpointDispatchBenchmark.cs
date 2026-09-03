@@ -14,6 +14,7 @@ using UnambitiousFx.Synapse.AspNetCore;
 using UnambitiousFx.Synapse.AspNetCore.Http;
 using UnambitiousFx.Synapse.Endpoints;
 using UnambitiousFx.Synapse.Endpoints.Binding;
+using UnambitiousFx.Synapse.Endpoints.Builders;
 
 namespace UnambitiousFx.Benchmarks.SynapseBenchmark;
 
@@ -45,9 +46,13 @@ public class EndpointDispatchBenchmark
     private IHost _handWrittenHost = null!;
     private IHost _endpointHost = null!;
     private IHost _rawHost = null!;
+    private IHost _hookedHost = null!;
+    private IHost _processedHost = null!;
     private HttpClient _handWritten = null!;
     private HttpClient _endpoint = null!;
     private HttpClient _raw = null!;
+    private HttpClient _hooked = null!;
+    private HttpClient _processed = null!;
 
     [GlobalSetup]
     public void Setup()
@@ -86,9 +91,29 @@ public class EndpointDispatchBenchmark
             app.UseEndpoints(endpoints => { endpoints.MapEndpoint<RawGetThingEndpoint>(); });
         });
 
+        _hookedHost = BuildHost(app =>
+        {
+            app.UseRouting();
+            app.UseEndpoints(endpoints => { endpoints.MapEndpoint<HookedThingEndpoint>(); });
+        });
+
+        _processedHost = BuildHost(
+            app =>
+            {
+                app.UseRouting();
+                app.UseEndpoints(endpoints => { endpoints.MapEndpoint<ProcessedThingEndpoint>(); });
+            },
+            services =>
+            {
+                services.AddScoped<BenchmarkPreProcessor>();
+                services.AddScoped<BenchmarkPostProcessor>();
+            });
+
         _handWritten = _handWrittenHost.GetTestServer().CreateClient();
         _endpoint = _endpointHost.GetTestServer().CreateClient();
         _raw = _rawHost.GetTestServer().CreateClient();
+        _hooked = _hookedHost.GetTestServer().CreateClient();
+        _processed = _processedHost.GetTestServer().CreateClient();
     }
 
     [GlobalCleanup]
@@ -97,9 +122,13 @@ public class EndpointDispatchBenchmark
         _handWritten.Dispose();
         _endpoint.Dispose();
         _raw.Dispose();
+        _hooked.Dispose();
+        _processed.Dispose();
         _handWrittenHost.Dispose();
         _endpointHost.Dispose();
         _rawHost.Dispose();
+        _hookedHost.Dispose();
+        _processedHost.Dispose();
     }
 
     [Benchmark(Baseline = true)]
@@ -124,6 +153,26 @@ public class EndpointDispatchBenchmark
     public Task<HttpResponseMessage> RawEndpointHandWrittenBinding()
     {
         return _raw.GetAsync(RequestPath);
+    }
+
+    /// <summary>
+    ///     The same dispatch with both lifecycle hooks overridden. The delta against
+    ///     <see cref="SynapseEndpoint" /> is what the seam costs an endpoint that uses it.
+    /// </summary>
+    [Benchmark]
+    public Task<HttpResponseMessage> SynapseEndpointWithHooks()
+    {
+        return _hooked.GetAsync(RequestPath);
+    }
+
+    /// <summary>
+    ///     The same dispatch with one pre- and one post-processor registered, each resolved from the
+    ///     request's services.
+    /// </summary>
+    [Benchmark]
+    public Task<HttpResponseMessage> SynapseEndpointWithProcessors()
+    {
+        return _processed.GetAsync(RequestPath);
     }
 
     /// <summary>
@@ -160,7 +209,8 @@ public class EndpointDispatchBenchmark
     ///     handler — is not just equivalent between them, it is the identical code path. Only the
     ///     <paramref name="configureApp" /> delegate (how the route is mapped) differs.
     /// </summary>
-    private static IHost BuildHost(Action<IApplicationBuilder> configureApp)
+    private static IHost BuildHost(Action<IApplicationBuilder> configureApp,
+        Action<IServiceCollection>? configureServices = null)
     {
         return new HostBuilder()
             .ConfigureWebHost(webBuilder => webBuilder
@@ -178,6 +228,10 @@ public class EndpointDispatchBenchmark
                         cfg.RegisterRequestHandler<GetThingQueryHandler, GetThingQuery, ThingDto>();
                         cfg.RegisterRequestHandler<CreateThingCommandHandler, CreateThingCommand, ThingDto>();
                     });
+
+                    // Only the processor arm registers anything beyond the shared wiring, so every
+                    // other arm's container is byte-for-byte what it was before this feature.
+                    configureServices?.Invoke(services);
                 })
                 .Configure(configureApp))
             .Start();
@@ -223,6 +277,76 @@ public sealed class GetThingQueryHandler : IRequestHandler<GetThingQuery, ThingD
 /// <summary>The Synapse endpoint side of the comparison, mapped via <c>MapEndpoint&lt;GetThingEndpoint&gt;()</c>.</summary>
 [Get("/things/{id:guid}")]
 public sealed class GetThingEndpoint : Endpoint<GetThingQuery, ThingDto>;
+
+/// <summary>
+///     The same endpoint with both hooks overridden, so the cost of an endpoint that actually uses
+///     the seam is visible next to one that does not.
+/// </summary>
+/// <remarks>
+///     Carries the same route attribute as <see cref="GetThingEndpoint" />: with no attribute at all,
+///     the generator has no verb to resolve <see cref="GetThingQuery" />'s binding sources from (SYNE014),
+///     and a mismatched resolution against <see cref="GetThingEndpoint" />'s would trip SYNE013 — both
+///     warnings, and this repo builds with warnings as errors.
+/// </remarks>
+[Get("/things/{id:guid}")]
+public sealed class HookedThingEndpoint : Endpoint<GetThingQuery, ThingDto>
+{
+    /// <inheritdoc />
+    protected override ValueTask<Microsoft.AspNetCore.Http.IResult?> OnBeforeHandleAsync(GetThingQuery request,
+        HttpContext context,
+        CancellationToken cancellationToken)
+    {
+        context.Items["thing-id"] = request.Id;
+        return default;
+    }
+
+    /// <inheritdoc />
+    protected override ValueTask<Microsoft.AspNetCore.Http.IResult> OnAfterHandleAsync(Microsoft.AspNetCore.Http.IResult result,
+        HttpContext context,
+        CancellationToken cancellationToken)
+    {
+        context.Response.Headers["X-Thing"] = "1";
+        return new ValueTask<Microsoft.AspNetCore.Http.IResult>(result);
+    }
+}
+
+/// <summary>The same endpoint with one pre- and one post-processor registered.</summary>
+/// <remarks>Same route attribute as <see cref="HookedThingEndpoint" />, for the same reason.</remarks>
+[Get("/things/{id:guid}")]
+public sealed class ProcessedThingEndpoint : Endpoint<GetThingQuery, ThingDto>
+{
+    /// <inheritdoc />
+    public override void Configure(IEndpointBuilder<ThingDto> builder)
+    {
+        builder.PreProcessor<BenchmarkPreProcessor>()
+               .PostProcessor<BenchmarkPostProcessor>();
+    }
+}
+
+/// <summary>A pre-processor that does the least possible work and never short-circuits.</summary>
+public sealed class BenchmarkPreProcessor : IEndpointPreProcessor
+{
+    /// <inheritdoc />
+    public ValueTask<Microsoft.AspNetCore.Http.IResult?> ProcessAsync(HttpContext context,
+        CancellationToken cancellationToken)
+    {
+        context.Items["pre"] = true;
+        return default;
+    }
+}
+
+/// <summary>A post-processor that does the least possible work and never replaces the result.</summary>
+public sealed class BenchmarkPostProcessor : IEndpointPostProcessor
+{
+    /// <inheritdoc />
+    public ValueTask<Microsoft.AspNetCore.Http.IResult> ProcessAsync(Microsoft.AspNetCore.Http.IResult result,
+        HttpContext context,
+        CancellationToken cancellationToken)
+    {
+        context.Response.Headers["X-Post"] = "1";
+        return new ValueTask<Microsoft.AspNetCore.Http.IResult>(result);
+    }
+}
 
 /// <summary>
 ///     The low-level counterpart of <see cref="GetThingEndpoint" />: the same route, message, handler
