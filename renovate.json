@@ -13,6 +13,10 @@
       "automerge": true
     },
     {
+      "matchUpdateTypes": ["major"],
+      "reviewers": ["Oleexo"]
+    },
+    {
       "matchManagers": ["nuget"],
       "matchPackageNames": ["Microsoft.**"],
       "groupName": "microsoft"
