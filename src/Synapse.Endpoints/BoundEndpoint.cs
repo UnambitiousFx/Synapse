@@ -137,7 +137,34 @@ public abstract class BoundEndpoint<TBound> : RawEndpoint
         HttpContext context,
         CancellationToken cancellationToken)
     {
-        var mapped = await OnAfterHandleAsync(result, context, cancellationToken);
+        // Named here, not left to the null guard in RawEndpoint.CreateDescriptor: that one reports
+        // "HandleAsync", a sealed method the user cannot have broken, and would otherwise pass null
+        // into a post-processor's non-nullable parameter before any guard fires.
+        var mapped = await OnAfterHandleAsync(result, context, cancellationToken)
+                     ?? throw new InvalidOperationException(
+                         $"Endpoint '{GetType()}' returned a null result from OnAfterHandleAsync. " +
+                         "Return the result it was given to leave the response unchanged, or a " +
+                         "replacement to change it.");
+
         return await processors.RunPostAsync(mapped, context, cancellationToken);
+    }
+
+    /// <summary>
+    ///     Runs <see cref="OnBindFailedAsync" /> and guards its result, naming that hook rather than
+    ///     <c>HandleAsync</c> if it returns null.
+    /// </summary>
+    /// <param name="bound">The failed bind result, carrying every collected error.</param>
+    /// <param name="context">The HTTP context.</param>
+    /// <param name="cancellationToken">Cancellation token, tied to the request.</param>
+    /// <returns>The result to write.</returns>
+    private protected async ValueTask<IResult> BindFailedResultAsync(BindResult<TBound> bound,
+        HttpContext context,
+        CancellationToken cancellationToken)
+    {
+        return await OnBindFailedAsync(bound, context, cancellationToken)
+               ?? throw new InvalidOperationException(
+                   $"Endpoint '{GetType()}' returned a null result from OnBindFailedAsync. Return " +
+                   "the failed bind's 400 to leave the response unchanged, or a replacement to " +
+                   "change it.");
     }
 }

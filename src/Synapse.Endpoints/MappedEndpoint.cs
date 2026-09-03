@@ -90,7 +90,7 @@ public abstract class MappedEndpoint<THttpRequest, TRequest, TResponse, THttpRes
         var bound = await Mapped(_binder).BindAsync(context);
         if (!bound.IsSuccess)
         {
-            var problem = await OnBindFailedAsync(bound, context, cancellationToken);
+            var problem = await BindFailedResultAsync(bound, context, cancellationToken);
             return await FinishAsync(problem, processors, context, cancellationToken);
         }
 

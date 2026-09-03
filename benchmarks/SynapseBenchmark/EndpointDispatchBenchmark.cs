@@ -15,6 +15,7 @@ using UnambitiousFx.Synapse.AspNetCore.Http;
 using UnambitiousFx.Synapse.Endpoints;
 using UnambitiousFx.Synapse.Endpoints.Binding;
 using UnambitiousFx.Synapse.Endpoints.Builders;
+using IResult = Microsoft.AspNetCore.Http.IResult;
 
 namespace UnambitiousFx.Benchmarks.SynapseBenchmark;
 
@@ -297,7 +298,7 @@ public sealed class GetThingEndpoint : Endpoint<GetThingQuery, ThingDto>;
 public sealed class HookedThingEndpoint : Endpoint<GetThingQuery, ThingDto>
 {
     /// <inheritdoc />
-    protected override ValueTask<Microsoft.AspNetCore.Http.IResult?> OnBeforeHandleAsync(GetThingQuery request,
+    protected override ValueTask<IResult?> OnBeforeHandleAsync(GetThingQuery request,
         HttpContext context,
         CancellationToken cancellationToken)
     {
@@ -306,12 +307,12 @@ public sealed class HookedThingEndpoint : Endpoint<GetThingQuery, ThingDto>
     }
 
     /// <inheritdoc />
-    protected override ValueTask<Microsoft.AspNetCore.Http.IResult> OnAfterHandleAsync(Microsoft.AspNetCore.Http.IResult result,
+    protected override ValueTask<IResult> OnAfterHandleAsync(IResult result,
         HttpContext context,
         CancellationToken cancellationToken)
     {
         context.Response.Headers["X-Thing"] = "1";
-        return new ValueTask<Microsoft.AspNetCore.Http.IResult>(result);
+        return new ValueTask<IResult>(result);
     }
 }
 
@@ -332,7 +333,7 @@ public sealed class ProcessedThingEndpoint : Endpoint<GetThingQuery, ThingDto>
 public sealed class BenchmarkPreProcessor : IEndpointPreProcessor
 {
     /// <inheritdoc />
-    public ValueTask<Microsoft.AspNetCore.Http.IResult?> ProcessAsync(HttpContext context,
+    public ValueTask<IResult?> ProcessAsync(HttpContext context,
         CancellationToken cancellationToken)
     {
         context.Items["pre"] = true;
@@ -344,12 +345,12 @@ public sealed class BenchmarkPreProcessor : IEndpointPreProcessor
 public sealed class BenchmarkPostProcessor : IEndpointPostProcessor
 {
     /// <inheritdoc />
-    public ValueTask<Microsoft.AspNetCore.Http.IResult> ProcessAsync(Microsoft.AspNetCore.Http.IResult result,
+    public ValueTask<IResult> ProcessAsync(IResult result,
         HttpContext context,
         CancellationToken cancellationToken)
     {
         context.Response.Headers["X-Post"] = "1";
-        return new ValueTask<Microsoft.AspNetCore.Http.IResult>(result);
+        return new ValueTask<IResult>(result);
     }
 }
 

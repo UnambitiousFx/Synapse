@@ -55,8 +55,10 @@ internal sealed class EndpointBuilderCore
     internal void PreProcessor<TProcessor>()
         where TProcessor : class, IEndpointPreProcessor
     {
-        // A static lambda: the closure would otherwise capture nothing but still allocate per
-        // registration, and the resolver is stored for the lifetime of the application anyway.
+        // A static lambda: Roslyn already caches a non-capturing lambda in a static field whether or
+        // not `static` is written, so this keyword doesn't buy the caching — it enforces the property
+        // that earns it, turning a future edit that closes over instance state into a compile error
+        // instead of a silent per-registration allocation.
         (_preProcessors ??= []).Add(
             static context => context.RequestServices.GetRequiredService<TProcessor>());
     }

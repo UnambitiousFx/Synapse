@@ -20,6 +20,9 @@ internal sealed class EndpointProcessors
     private readonly Func<HttpContext, IEndpointPreProcessor>[] _pre;
     private readonly Func<HttpContext, IEndpointPostProcessor>[] _post;
 
+    /// <summary>Wraps the pre- and post-processor resolvers one endpoint's builder collected.</summary>
+    /// <param name="pre">The pre-processor resolvers, in registration order.</param>
+    /// <param name="post">The post-processor resolvers, in registration order.</param>
     internal EndpointProcessors(Func<HttpContext, IEndpointPreProcessor>[] pre,
         Func<HttpContext, IEndpointPostProcessor>[] post)
     {

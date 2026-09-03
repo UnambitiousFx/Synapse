@@ -108,7 +108,7 @@ public abstract class RawEndpoint<TRequest, TResponse> : BoundEndpoint<TRequest>
         var bound = await BindAsync(context);
         if (!bound.IsSuccess)
         {
-            var problem = await OnBindFailedAsync(bound, context, cancellationToken);
+            var problem = await BindFailedResultAsync(bound, context, cancellationToken);
             return await FinishAsync(problem, processors, context, cancellationToken);
         }
 
