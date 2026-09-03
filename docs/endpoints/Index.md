@@ -25,7 +25,7 @@ only; their user-facing documentation lives under [`../docs/endpoints/`](../docs
 | Declarative responses | ✅ | `Ok` / `Created` / `Accepted` / `NoContent` / `StatusCode` on the builder, or an `OnSuccess` override. |
 | Failure mapping | ✅ | Dispatch failures flow through the registered `IFailureHttpMapper` unchanged. |
 | Endpoint groups | ✅ | `[InGroup<TGroup>]` plus a group `Configure` contributing prefix, tags and authorization. One `MapGroup` per group, cached. |
-| Authorization | ✅ | `RequireAuthorization(params string[])` and `AllowAnonymous()` at endpoint and group level. |
+| Authorization | ✅ | `RequireAuthorization(params string[])` at endpoint and group level; `AllowAnonymous()` at endpoint level only, so an endpoint can opt out of its group's policy. |
 | Streaming | ✅ | `StreamEndpoint<TRequest, TItem>` negotiating SSE vs an incrementally written JSON array on the `Accept` header. |
 | Separate wire contract | ✅ | `MappedEndpoint<THttpRequest, TRequest, TResponse, THttpResponse>` when the HTTP shape must evolve independently of the message. |
 | OpenAPI: request and success response | ✅ | `Accepts` declared only when a body is actually read; success status and body type declared from the resolved configuration. |
