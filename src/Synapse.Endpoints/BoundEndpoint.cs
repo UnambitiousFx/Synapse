@@ -23,12 +23,11 @@ namespace UnambitiousFx.Synapse.Endpoints;
 ///     </para>
 ///     <para>
 ///         Declaring the three hooks per tier would put four copies of those declarations in the
-///         codebase, so they live here instead, alongside the exit step every tier shares — the
-///         after-hook followed by the post-processors. The four sealed tiers still each write their
-///         own entry sequence in their own <c>HandleAsync</c>, because each binds and dispatches
-///         differently; factoring shared concerns onto one type this way is the same device
-///         <see cref="EndpointBuilderCore" /> and <see cref="RawEndpointPlan" /> use elsewhere in
-///         the library.
+///         codebase, so they live here instead, alongside the whole documented order, in this type's
+///         <c>HandleAsync</c>. A tier contributes only <see cref="BindBoundAsync" /> and
+///         <see cref="ProduceResultAsync" />; factoring shared concerns onto one type this way is the
+///         same device <see cref="EndpointBuilderCore" /> and <see cref="RawEndpointPlan" /> use
+///         elsewhere in the library.
 ///     </para>
 ///     <para>
 ///         The documented order is: pre-processors, <c>BindAsync</c>,
@@ -51,10 +50,10 @@ public abstract class BoundEndpoint<TBound> : RawEndpoint
 
     /// <summary>The registered processors, failing with an explanation when unmapped.</summary>
     /// <remarks>
-    ///     Read at the very top of every tier's <c>HandleAsync</c>, which is now before the first
-    ///     <c>Mapped(_configuration)</c> call. Going through <c>Mapped</c> is what keeps an unmapped
-    ///     endpoint answering with the message that names <c>EndpointHarness</c> rather than a bare
-    ///     <see cref="NullReferenceException" /> — see docs/known-issues/056.
+    ///     Read at the very top of <c>HandleAsync</c>, before the first <c>Mapped(_configuration)</c>
+    ///     call a tier's <see cref="ProduceResultAsync" /> makes. Going through <c>Mapped</c> is what
+    ///     keeps an unmapped endpoint answering with the message that names <c>EndpointHarness</c>
+    ///     rather than a bare <see cref="NullReferenceException" /> — see docs/known-issues/056.
     /// </remarks>
     private protected EndpointProcessors ResolvedProcessors => Mapped(ConfiguredProcessors);
 
@@ -125,31 +124,6 @@ public abstract class BoundEndpoint<TBound> : RawEndpoint
     }
 
     /// <summary>
-    ///     Runs the two exit steps every path shares: the after-hook, then the post-processors.
-    /// </summary>
-    /// <param name="result">The result the endpoint produced.</param>
-    /// <param name="processors">The resolved processors, read once by the caller.</param>
-    /// <param name="context">The HTTP context.</param>
-    /// <param name="cancellationToken">Cancellation token, tied to the request.</param>
-    /// <returns>The result to write.</returns>
-    private protected async ValueTask<IResult> FinishAsync(IResult result,
-        EndpointProcessors processors,
-        HttpContext context,
-        CancellationToken cancellationToken)
-    {
-        // Named here, not left to the null guard in RawEndpoint.CreateDescriptor: that one reports
-        // "HandleAsync", a sealed method the user cannot have broken, and would otherwise pass null
-        // into a post-processor's non-nullable parameter before any guard fires.
-        var mapped = await OnAfterHandleAsync(result, context, cancellationToken)
-                     ?? throw new InvalidOperationException(
-                         $"Endpoint '{GetType()}' returned a null result from OnAfterHandleAsync. " +
-                         "Return the result it was given to leave the response unchanged, or a " +
-                         "replacement to change it.");
-
-        return await processors.RunPostAsync(mapped, context, cancellationToken);
-    }
-
-    /// <summary>
     ///     Runs <see cref="OnBindFailedAsync" /> and guards its result, naming that hook rather than
     ///     <c>HandleAsync</c> if it returns null.
     /// </summary>
@@ -166,5 +140,86 @@ public abstract class BoundEndpoint<TBound> : RawEndpoint
                    $"Endpoint '{GetType()}' returned a null result from OnBindFailedAsync. Return " +
                    "the failed bind's 400 to leave the response unchanged, or a replacement to " +
                    "change it.");
+    }
+
+    /// <summary>Binds the request, using whatever binder this tier supplies.</summary>
+    /// <param name="context">The HTTP context.</param>
+    /// <returns>The bound value, or the failures preventing it.</returns>
+    /// <remarks>
+    ///     The one step of the entry sequence that genuinely differs per tier: the two
+    ///     <c>RawEndpoint&lt;…&gt;</c> tiers expose <c>BindAsync</c> for the author to write, while
+    ///     <see cref="MappedEndpoint{THttpRequest,TRequest,TResponse,THttpResponse}" /> and
+    ///     <see cref="StreamEndpoint{TRequest,TItem}" /> take a generated binder from the registry.
+    /// </remarks>
+    private protected abstract ValueTask<BindResult<TBound>> BindBoundAsync(HttpContext context);
+
+    /// <summary>Dispatches the bound value and maps the outcome to a result.</summary>
+    /// <param name="bound">The bound value.</param>
+    /// <param name="context">The HTTP context.</param>
+    /// <param name="cancellationToken">Cancellation token, tied to the request.</param>
+    /// <returns>The result the endpoint produced.</returns>
+    /// <remarks>
+    ///     Everything a tier does that is its own: which invoker overload it calls, how it maps a
+    ///     success, and — for the streaming tier — building the negotiated writer rather than
+    ///     dispatching for a single value at all, which is why this is not called <c>DispatchAsync</c>.
+    /// </remarks>
+    private protected abstract ValueTask<IResult> ProduceResultAsync(TBound bound,
+        HttpContext context,
+        CancellationToken cancellationToken);
+
+    /// <inheritdoc />
+    /// <remarks>
+    ///     Sealed here rather than on each tier, so the documented order exists in one place. A tier
+    ///     contributes only <see cref="BindBoundAsync" /> and <see cref="ProduceResultAsync" />; it
+    ///     cannot reorder the lifecycle or skip the exit steps, because it never writes them.
+    /// </remarks>
+    public sealed override async ValueTask<IResult> HandleAsync(HttpContext context,
+        CancellationToken cancellationToken)
+    {
+        // Read before anything else so an unmapped endpoint reports that, rather than failing later
+        // and less clearly.
+        var processors = ResolvedProcessors;
+
+        var result = await RunLifecycleAsync(processors, context, cancellationToken);
+
+        // Unconditional, and that is the point: every path that produced a result above arrives
+        // here, so the exit steps cannot be skipped by a tier forgetting to call them.
+        var mapped = await OnAfterHandleAsync(result, context, cancellationToken)
+                     ?? throw new InvalidOperationException(
+                         $"Endpoint '{GetType()}' returned a null result from OnAfterHandleAsync. " +
+                         "Return the result it was given to leave the response unchanged, or a " +
+                         "replacement to change it.");
+
+        return await processors.RunPostAsync(mapped, context, cancellationToken);
+    }
+
+    /// <summary>Runs steps 1 to 5 and returns whichever of them produced the result.</summary>
+    /// <param name="processors">The resolved processors, read once by the caller.</param>
+    /// <param name="context">The HTTP context.</param>
+    /// <param name="cancellationToken">Cancellation token, tied to the request.</param>
+    /// <returns>The result to hand to the exit steps.</returns>
+    private async ValueTask<IResult> RunLifecycleAsync(EndpointProcessors processors,
+        HttpContext context,
+        CancellationToken cancellationToken)
+    {
+        var shortCircuit = await processors.RunPreAsync(context, cancellationToken);
+        if (shortCircuit is not null)
+        {
+            return shortCircuit;
+        }
+
+        var bound = await BindBoundAsync(context);
+        if (!bound.IsSuccess)
+        {
+            return await BindFailedResultAsync(bound, context, cancellationToken);
+        }
+
+        var before = await OnBeforeHandleAsync(bound.Value!, context, cancellationToken);
+        if (before is not null)
+        {
+            return before;
+        }
+
+        return await ProduceResultAsync(bound.Value!, context, cancellationToken);
     }
 }

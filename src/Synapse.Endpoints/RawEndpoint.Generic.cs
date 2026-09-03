@@ -85,51 +85,26 @@ public abstract class RawEndpoint<TRequest, TResponse> : BoundEndpoint<TRequest>
     }
 
     /// <inheritdoc />
-    /// <remarks>
-    ///     Sealed: bind, dispatch and map is the contract of this level. Change the binding through
-    ///     <see cref="BindAsync" />, the response through <see cref="OnSuccess" /> or the builder, and
-    ///     wrap the exchange through <see cref="BoundEndpoint{TBound}.OnBeforeHandleAsync" />,
-    ///     <see cref="BoundEndpoint{TBound}.OnAfterHandleAsync" />,
-    ///     <see cref="BoundEndpoint{TBound}.OnBindFailedAsync" /> or a registered processor.
-    /// </remarks>
-    public sealed override async ValueTask<IResult> HandleAsync(HttpContext context,
+    private protected sealed override ValueTask<BindResult<TRequest>> BindBoundAsync(HttpContext context)
+    {
+        return BindAsync(context);
+    }
+
+    /// <inheritdoc />
+    private protected sealed override ValueTask<IResult> ProduceResultAsync(TRequest bound,
+        HttpContext context,
         CancellationToken cancellationToken)
     {
-        // Read before anything else so an unmapped endpoint reports that, rather than failing later
-        // and less clearly. Held in a local because every exit path needs it.
-        var processors = ResolvedProcessors;
-
-        var shortCircuit = await processors.RunPreAsync(context, cancellationToken);
-        if (shortCircuit is not null)
-        {
-            return await FinishAsync(shortCircuit, processors, context, cancellationToken);
-        }
-
-        var bound = await BindAsync(context);
-        if (!bound.IsSuccess)
-        {
-            var problem = await BindFailedResultAsync(bound, context, cancellationToken);
-            return await FinishAsync(problem, processors, context, cancellationToken);
-        }
-
-        var before = await OnBeforeHandleAsync(bound.Value!, context, cancellationToken);
-        if (before is not null)
-        {
-            return await FinishAsync(before, processors, context, cancellationToken);
-        }
-
         var configuration = Mapped(_configuration);
         var invoker = context.RequestServices.GetRequiredService<IHttpInvoker>();
 
         // Failures flow through the registered IFailureHttpMapper, unchanged.
-        var result = await invoker.InvokeAsync(
-            bound.Value!,
+        return invoker.InvokeAsync(
+            bound,
             response => configuration.SuccessMapper is not null
                 ? configuration.SuccessMapper(response)
                 : OnSuccess(response, context),
             cancellationToken);
-
-        return await FinishAsync(result, processors, context, cancellationToken);
     }
 
     internal override RawEndpointPlan CreatePlan(EndpointMetadata metadata)
