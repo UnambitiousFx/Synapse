@@ -222,6 +222,35 @@ public sealed class EndpointLifecycleTests
             Order);
     }
 
+    [Fact]
+    public async Task HandleAsync_OnTheMappedTier_HandsTheBeforeHookTheWireDto()
+    {
+        // Arrange: the hook runs around binding, and binding is what produces a DTO — so it sees
+        // THttpRequest, not the message ToRequest maps it onto.
+        Order.Clear();
+        EndpointRegistry.RegisterBinder(new MappedTracingBinder());
+        EndpointRegistry.RegisterMetadata<MappedTracingEndpoint>(
+            new EndpointMetadata(["POST"], "/mapped-trace"));
+
+        var context = ContextWith(services =>
+        {
+            services.AddScoped<TracingPreProcessor>();
+            services.AddScoped<TracingPostProcessor>();
+        }, Ok());
+
+        var descriptor = ((EndpointBase)new MappedTracingEndpoint())
+            .CreateDescriptor(EndpointRegistry.GetMetadata<MappedTracingEndpoint>());
+
+        // Act
+        await descriptor.InvokeAsync(context);
+
+        // Assert
+        Assert.Equal(
+            ["pre-processor", "bind", "before-hook:wire-1", "dispatch", "after-hook",
+             "post-processor"],
+            Order);
+    }
+
     /// <summary>An invoker that calls the success factory with a fixed response.</summary>
     private static IHttpInvoker Ok()
     {
@@ -381,6 +410,54 @@ public sealed class EndpointLifecycleTests
             HttpContext context, CancellationToken cancellationToken)
         {
             Order.Add("before-hook");
+            return default;
+        }
+
+        protected override ValueTask<IResult> OnAfterHandleAsync(IResult result,
+            HttpContext context, CancellationToken cancellationToken)
+        {
+            Order.Add("after-hook");
+            return new ValueTask<IResult>(result);
+        }
+    }
+
+    private sealed record TraceWireRequest
+    {
+        public string Id { get; init; } = "wire-1";
+    }
+
+    private sealed class MappedTracingBinder : IEndpointBinder<TraceWireRequest>
+    {
+        public ValueTask<BindResult<TraceWireRequest>> BindAsync(HttpContext context)
+        {
+            Order.Add("bind");
+            return ValueTask.FromResult(BindResult<TraceWireRequest>.Success(new TraceWireRequest()));
+        }
+    }
+
+    private sealed class MappedTracingEndpoint
+        : MappedEndpoint<TraceWireRequest, TraceQuery, string, string>
+    {
+        public override void Configure(IEndpointBuilder<string> builder)
+        {
+            builder.PreProcessor<TracingPreProcessor>()
+                   .PostProcessor<TracingPostProcessor>();
+        }
+
+        public override TraceQuery ToRequest(TraceWireRequest request)
+        {
+            return new TraceQuery();
+        }
+
+        public override string ToResponse(string response)
+        {
+            return response;
+        }
+
+        protected override ValueTask<IResult?> OnBeforeHandleAsync(TraceWireRequest request,
+            HttpContext context, CancellationToken cancellationToken)
+        {
+            Order.Add($"before-hook:{request.Id}");
             return default;
         }
 

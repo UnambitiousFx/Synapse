@@ -71,19 +71,39 @@ public abstract class MappedEndpoint<THttpRequest, TRequest, TResponse, THttpRes
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    ///     See <see cref="RawEndpoint{TRequest,TResponse}.HandleAsync" /> for the order. The hooks are
+    ///     typed on <typeparamref name="THttpRequest" />, the thing this tier binds, not on the
+    ///     message it maps that onto.
+    /// </remarks>
     public sealed override async ValueTask<IResult> HandleAsync(HttpContext context,
         CancellationToken cancellationToken)
     {
+        var processors = ResolvedProcessors;
+
+        var shortCircuit = await processors.RunPreAsync(context, cancellationToken);
+        if (shortCircuit is not null)
+        {
+            return await FinishAsync(shortCircuit, processors, context, cancellationToken);
+        }
+
         var bound = await Mapped(_binder).BindAsync(context);
         if (!bound.IsSuccess)
         {
-            return bound.Problem();
+            var problem = await OnBindFailedAsync(bound, context, cancellationToken);
+            return await FinishAsync(problem, processors, context, cancellationToken);
+        }
+
+        var before = await OnBeforeHandleAsync(bound.Value!, context, cancellationToken);
+        if (before is not null)
+        {
+            return await FinishAsync(before, processors, context, cancellationToken);
         }
 
         var configuration = Mapped(_configuration);
         var invoker = context.RequestServices.GetRequiredService<IHttpInvoker>();
 
-        return await invoker.InvokeAsync(
+        var result = await invoker.InvokeAsync(
             ToRequest(bound.Value!),
             response =>
             {
@@ -93,6 +113,8 @@ public abstract class MappedEndpoint<THttpRequest, TRequest, TResponse, THttpRes
                     : OnSuccess(httpResponse, context);
             },
             cancellationToken);
+
+        return await FinishAsync(result, processors, context, cancellationToken);
     }
 
     /// <inheritdoc />
