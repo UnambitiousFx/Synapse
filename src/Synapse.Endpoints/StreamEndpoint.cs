@@ -22,7 +22,7 @@ namespace UnambitiousFx.Synapse.Endpoints;
 ///         matching <see cref="IHttpInvoker.InvokeStreamAsync{TItem}" />.
 ///     </para>
 ///     <para>
-///         Derives from <see cref="RawEndpoint" /> rather than
+///         Derives from <see cref="BoundEndpoint{TBound}" /> rather than
 ///         <see cref="RawEndpoint{TRequest,TResponse}" /> because it dispatches an
 ///         <see cref="IStreamRequest{TResponse}" /> and writes the body itself rather than returning a
 ///         single value to serialize.

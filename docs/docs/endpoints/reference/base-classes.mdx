@@ -19,13 +19,18 @@ description: All six base classes side by side, plus the rules every endpoint ob
 
 ```
 EndpointBase
- └── RawEndpoint                              HandleAsync(HttpContext, CancellationToken) → IResult
-     ├── RawEndpoint<TRequest>                + BindAsync, dispatch, 204 default
-     ├── RawEndpoint<TRequest, TResponse>     + BindAsync, dispatch, 200 default
-     │    └── Endpoint<TRequest, TResponse>   + BindAsync from the generated registry
-     ├── StreamEndpoint<TRequest, TItem>
-     └── MappedEndpoint<...>
+ └── RawEndpoint                                  HandleAsync(HttpContext, CancellationToken) → IResult
+     └── BoundEndpoint<TBound>                    sealed HandleAsync — the eight-step order
+         ├── RawEndpoint<TRequest>                + BindAsync, dispatch, 204 default
+         │    └── Endpoint<TRequest>              + BindAsync from the generated registry
+         ├── RawEndpoint<TRequest, TResponse>     + BindAsync, dispatch, 200 default
+         │    └── Endpoint<TRequest, TResponse>   + BindAsync from the generated registry
+         ├── StreamEndpoint<TRequest, TItem>
+         └── MappedEndpoint<...>
 ```
+
+`BoundEndpoint<TBound>` is not a tier — see [below](#boundendpointtbound). A low-level `RawEndpoint`
+you write yourself sits directly under `RawEndpoint` and has no lifecycle hooks, by design.
 
 Every shape reaches the route table through one `HandleAsync`, because `CreateDescriptor` is sealed on
 `RawEndpoint` and is the only place in the library a route descriptor is constructed. The two levels

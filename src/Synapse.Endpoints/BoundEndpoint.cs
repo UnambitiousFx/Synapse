@@ -169,9 +169,11 @@ public abstract class BoundEndpoint<TBound> : RawEndpoint
 
     /// <inheritdoc />
     /// <remarks>
-    ///     Sealed here rather than on each tier, so the documented order exists in one place. A tier
-    ///     contributes only <see cref="BindBoundAsync" /> and <see cref="ProduceResultAsync" />; it
-    ///     cannot reorder the lifecycle or skip the exit steps, because it never writes them.
+    ///     Sealed, and sealed here rather than on each tier so the documented order exists in one
+    ///     place. Change the binding through <c>BindAsync</c>, the response through <c>OnSuccess</c>
+    ///     or the builder, and wrap the exchange through <see cref="OnBeforeHandleAsync" />,
+    ///     <see cref="OnAfterHandleAsync" />, <see cref="OnBindFailedAsync" /> or a registered
+    ///     <see cref="IEndpointPreProcessor" /> / <see cref="IEndpointPostProcessor" />.
     /// </remarks>
     public sealed override async ValueTask<IResult> HandleAsync(HttpContext context,
         CancellationToken cancellationToken)

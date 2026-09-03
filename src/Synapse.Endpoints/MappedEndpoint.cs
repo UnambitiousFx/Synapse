@@ -23,10 +23,11 @@ namespace UnambitiousFx.Synapse.Endpoints;
 ///         differ from the message; this variant costs two mapping methods per endpoint.
 ///     </para>
 ///     <para>
-///         Derives from <see cref="RawEndpoint" /> rather than
+///         Derives from <see cref="BoundEndpoint{TBound}" /> rather than
 ///         <see cref="RawEndpoint{TRequest,TResponse}" /> because the type it binds is
 ///         <typeparamref name="THttpRequest" />, a wire DTO which is not a message at all and so
-///         cannot satisfy that level's <c>IRequest&lt;TResponse&gt;</c> constraint.
+///         cannot satisfy that level's <c>IRequest&lt;TResponse&gt;</c> constraint. Its hooks are
+///         therefore typed on the wire DTO, not on the message it maps that onto.
 ///     </para>
 /// </remarks>
 public abstract class MappedEndpoint<THttpRequest, TRequest, TResponse, THttpResponse>
