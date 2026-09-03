@@ -187,6 +187,44 @@ public sealed class EndpointLifecycleTests
     }
 
     [Fact]
+    public async Task PreProcessor_ResolvingAScopedDependency_ResolvesFromTheRequestsScope()
+    {
+        // Arrange: BuildServiceProvider() alone lets a scoped dependency resolve silently from the
+        // root provider and hand back a root-lifetime instance, so that would pass whether the
+        // resolver reads context.RequestServices or a captured root container. Creating a real scope
+        // and assigning ITS provider to RequestServices is the only way to tell the two apart.
+        Order.Clear();
+        ScopeCapturingPreProcessor.Reset();
+        EndpointRegistry.RegisterBinder(new TracingBinder());
+        EndpointRegistry.RegisterMetadata<ScopeCapturingEndpoint>(new EndpointMetadata(["GET"], "/scope"));
+
+        var services = new ServiceCollection();
+        services.AddSingleton(Ok());
+        services.AddLogging();
+        services.AddScoped<ScopeMarker>();
+        services.AddScoped<ScopeCapturingPreProcessor>();
+        var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var expectedMarker = scope.ServiceProvider.GetRequiredService<ScopeMarker>();
+
+        var context = new DefaultHttpContext
+        {
+            RequestServices = scope.ServiceProvider,
+            Response = { Body = new MemoryStream() }
+        };
+
+        var descriptor = ((EndpointBase)new ScopeCapturingEndpoint())
+            .CreateDescriptor(EndpointRegistry.GetMetadata<ScopeCapturingEndpoint>());
+
+        // Act
+        await descriptor.InvokeAsync(context);
+
+        // Assert
+        Assert.Same(context, ScopeCapturingPreProcessor.CapturedContext);
+        Assert.Same(expectedMarker, ScopeCapturingPreProcessor.CapturedMarker);
+    }
+
+    [Fact]
     public async Task HandleAsync_OnTheVoidTier_RunsTheHooksAndProcessorsInOrder()
     {
         // Arrange
@@ -223,6 +261,60 @@ public sealed class EndpointLifecycleTests
     }
 
     [Fact]
+    public async Task HandleAsync_OnTheVoidTier_RunsTheExitStepsOnABindFailure()
+    {
+        // Arrange: a hand-edit that dropped FinishAsync from this tier's bind-failure branch would
+        // be a silent behaviour change with nothing else to catch it.
+        Order.Clear();
+        EndpointRegistry.RegisterBinder(new FailingVoidTracingBinder());
+        EndpointRegistry.RegisterMetadata<VoidBindFailingEndpoint>(
+            new EndpointMetadata(["POST"], "/void-bind-fail"));
+
+        var context = ContextWith(services => services.AddScoped<TracingPostProcessor>(),
+            Substitute.For<IHttpInvoker>());
+
+        var descriptor = ((EndpointBase)new VoidBindFailingEndpoint())
+            .CreateDescriptor(EndpointRegistry.GetMetadata<VoidBindFailingEndpoint>());
+
+        // Act
+        await descriptor.InvokeAsync(context);
+
+        // Assert
+        Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
+        Assert.Contains("bind-failed-hook", Order);
+        Assert.Contains("after-hook:400", Order);
+        Assert.Contains("post-processor", Order);
+    }
+
+    [Fact]
+    public async Task HandleAsync_OnTheVoidTier_RunsTheExitStepsOnAPreProcessorShortCircuit()
+    {
+        // Arrange
+        Order.Clear();
+        EndpointRegistry.RegisterBinder(new VoidTracingBinder());
+        EndpointRegistry.RegisterMetadata<VoidRejectingEndpoint>(
+            new EndpointMetadata(["POST"], "/void-reject"));
+
+        var context = ContextWith(services =>
+        {
+            services.AddScoped<RejectingPreProcessor>();
+            services.AddScoped<TracingPostProcessor>();
+        }, Substitute.For<IHttpInvoker>());
+
+        var descriptor = ((EndpointBase)new VoidRejectingEndpoint())
+            .CreateDescriptor(EndpointRegistry.GetMetadata<VoidRejectingEndpoint>());
+
+        // Act
+        await descriptor.InvokeAsync(context);
+
+        // Assert
+        Assert.Equal(StatusCodes.Status403Forbidden, context.Response.StatusCode);
+        Assert.DoesNotContain("bind", Order);
+        Assert.Contains("after-hook", Order);
+        Assert.Contains("post-processor", Order);
+    }
+
+    [Fact]
     public async Task HandleAsync_OnTheMappedTier_HandsTheBeforeHookTheWireDto()
     {
         // Arrange: the hook runs around binding, and binding is what produces a DTO — so it sees
@@ -249,6 +341,59 @@ public sealed class EndpointLifecycleTests
             ["pre-processor", "bind", "before-hook:wire-1", "dispatch", "after-hook",
              "post-processor"],
             Order);
+    }
+
+    [Fact]
+    public async Task HandleAsync_OnTheMappedTier_RunsTheExitStepsOnABindFailure()
+    {
+        // Arrange: same regression guard as the void tier, for the tier whose bound type is the
+        // wire DTO rather than the message.
+        Order.Clear();
+        EndpointRegistry.RegisterBinder(new FailingMappedTracingBinder());
+        EndpointRegistry.RegisterMetadata<MappedBindFailingEndpoint>(
+            new EndpointMetadata(["POST"], "/mapped-bind-fail"));
+
+        var context = ContextWith(services => services.AddScoped<TracingPostProcessor>(), Ok());
+
+        var descriptor = ((EndpointBase)new MappedBindFailingEndpoint())
+            .CreateDescriptor(EndpointRegistry.GetMetadata<MappedBindFailingEndpoint>());
+
+        // Act
+        await descriptor.InvokeAsync(context);
+
+        // Assert
+        Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
+        Assert.Contains("bind-failed-hook", Order);
+        Assert.Contains("after-hook:400", Order);
+        Assert.Contains("post-processor", Order);
+    }
+
+    [Fact]
+    public async Task HandleAsync_OnTheMappedTier_RunsTheExitStepsOnAPreProcessorShortCircuit()
+    {
+        // Arrange
+        Order.Clear();
+        EndpointRegistry.RegisterBinder(new MappedTracingBinder());
+        EndpointRegistry.RegisterMetadata<MappedRejectingEndpoint>(
+            new EndpointMetadata(["POST"], "/mapped-reject"));
+
+        var context = ContextWith(services =>
+        {
+            services.AddScoped<RejectingPreProcessor>();
+            services.AddScoped<TracingPostProcessor>();
+        }, Ok());
+
+        var descriptor = ((EndpointBase)new MappedRejectingEndpoint())
+            .CreateDescriptor(EndpointRegistry.GetMetadata<MappedRejectingEndpoint>());
+
+        // Act
+        await descriptor.InvokeAsync(context);
+
+        // Assert
+        Assert.Equal(StatusCodes.Status403Forbidden, context.Response.StatusCode);
+        Assert.DoesNotContain("bind", Order);
+        Assert.Contains("after-hook", Order);
+        Assert.Contains("post-processor", Order);
     }
 
     [Fact]
@@ -286,6 +431,60 @@ public sealed class EndpointLifecycleTests
             await Task.Yield();
             yield return "one";
         }
+    }
+
+    [Fact]
+    public async Task HandleAsync_OnTheStreamTier_RunsTheExitStepsOnABindFailure()
+    {
+        // Arrange: same regression guard as the other tiers, for the tier whose result is the
+        // negotiated writer rather than a value FinishAsync's post-processors can inspect further.
+        Order.Clear();
+        EndpointRegistry.RegisterBinder(new FailingStreamTracingBinder());
+        EndpointRegistry.RegisterMetadata<StreamBindFailingEndpoint>(
+            new EndpointMetadata(["GET"], "/stream-bind-fail"));
+
+        var context = ContextWith(services => services.AddScoped<TracingPostProcessor>(),
+            Substitute.For<IHttpInvoker>());
+
+        var descriptor = ((EndpointBase)new StreamBindFailingEndpoint())
+            .CreateDescriptor(EndpointRegistry.GetMetadata<StreamBindFailingEndpoint>());
+
+        // Act
+        await descriptor.InvokeAsync(context);
+
+        // Assert
+        Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
+        Assert.Contains("bind-failed-hook", Order);
+        Assert.Contains("after-hook:400", Order);
+        Assert.Contains("post-processor", Order);
+    }
+
+    [Fact]
+    public async Task HandleAsync_OnTheStreamTier_RunsTheExitStepsOnAPreProcessorShortCircuit()
+    {
+        // Arrange
+        Order.Clear();
+        EndpointRegistry.RegisterBinder(new StreamTracingBinder());
+        EndpointRegistry.RegisterMetadata<StreamRejectingEndpoint>(
+            new EndpointMetadata(["GET"], "/stream-reject"));
+
+        var context = ContextWith(services =>
+        {
+            services.AddScoped<RejectingPreProcessor>();
+            services.AddScoped<TracingPostProcessor>();
+        }, Substitute.For<IHttpInvoker>());
+
+        var descriptor = ((EndpointBase)new StreamRejectingEndpoint())
+            .CreateDescriptor(EndpointRegistry.GetMetadata<StreamRejectingEndpoint>());
+
+        // Act
+        await descriptor.InvokeAsync(context);
+
+        // Assert
+        Assert.Equal(StatusCodes.Status403Forbidden, context.Response.StatusCode);
+        Assert.DoesNotContain("bind", Order);
+        Assert.Contains("after-hook", Order);
+        Assert.Contains("post-processor", Order);
     }
 
     /// <summary>An invoker that calls the success factory with a fixed response.</summary>
@@ -359,6 +558,42 @@ public sealed class EndpointLifecycleTests
             // failure reaches this hook.
             Order.Add($"after-hook:{StatusOf(result)}");
             return new ValueTask<IResult>(result);
+        }
+    }
+
+    private sealed class ScopeMarker;
+
+    private sealed class ScopeCapturingPreProcessor : IEndpointPreProcessor
+    {
+        private readonly ScopeMarker _marker;
+
+        public ScopeCapturingPreProcessor(ScopeMarker marker)
+        {
+            _marker = marker;
+        }
+
+        internal static HttpContext? CapturedContext { get; private set; }
+        internal static ScopeMarker? CapturedMarker { get; private set; }
+
+        public ValueTask<IResult?> ProcessAsync(HttpContext context, CancellationToken cancellationToken)
+        {
+            CapturedContext = context;
+            CapturedMarker = _marker;
+            return default;
+        }
+
+        internal static void Reset()
+        {
+            CapturedContext = null;
+            CapturedMarker = null;
+        }
+    }
+
+    private sealed class ScopeCapturingEndpoint : Endpoint<TraceQuery, string>
+    {
+        public override void Configure(IEndpointBuilder<string> builder)
+        {
+            builder.PreProcessor<ScopeCapturingPreProcessor>();
         }
     }
 
@@ -458,6 +693,53 @@ public sealed class EndpointLifecycleTests
         }
     }
 
+    private sealed class FailingVoidTracingBinder : IEndpointBinder<TraceCommand>
+    {
+        public ValueTask<BindResult<TraceCommand>> BindAsync(HttpContext context)
+        {
+            Order.Add("bind");
+            return ValueTask.FromResult(BindResult<TraceCommand>.Failure("id", "is not a valid Guid."));
+        }
+    }
+
+    private sealed class VoidBindFailingEndpoint : Endpoint<TraceCommand>
+    {
+        public override void Configure(IEndpointBuilder builder)
+        {
+            builder.PostProcessor<TracingPostProcessor>();
+        }
+
+        protected override ValueTask<IResult> OnBindFailedAsync(BindResult<TraceCommand> bound,
+            HttpContext context, CancellationToken cancellationToken)
+        {
+            Order.Add("bind-failed-hook");
+            return base.OnBindFailedAsync(bound, context, cancellationToken);
+        }
+
+        protected override ValueTask<IResult> OnAfterHandleAsync(IResult result,
+            HttpContext context, CancellationToken cancellationToken)
+        {
+            Order.Add($"after-hook:{StatusOf(result)}");
+            return new ValueTask<IResult>(result);
+        }
+    }
+
+    private sealed class VoidRejectingEndpoint : Endpoint<TraceCommand>
+    {
+        public override void Configure(IEndpointBuilder builder)
+        {
+            builder.PreProcessor<RejectingPreProcessor>()
+                   .PostProcessor<TracingPostProcessor>();
+        }
+
+        protected override ValueTask<IResult> OnAfterHandleAsync(IResult result,
+            HttpContext context, CancellationToken cancellationToken)
+        {
+            Order.Add("after-hook");
+            return new ValueTask<IResult>(result);
+        }
+    }
+
     private sealed record TraceWireRequest
     {
         public string Id { get; init; } = "wire-1";
@@ -506,6 +788,76 @@ public sealed class EndpointLifecycleTests
         }
     }
 
+    private sealed class FailingMappedTracingBinder : IEndpointBinder<TraceWireRequest>
+    {
+        public ValueTask<BindResult<TraceWireRequest>> BindAsync(HttpContext context)
+        {
+            Order.Add("bind");
+            return ValueTask.FromResult(
+                BindResult<TraceWireRequest>.Failure("id", "is not a valid Guid."));
+        }
+    }
+
+    private sealed class MappedBindFailingEndpoint
+        : MappedEndpoint<TraceWireRequest, TraceQuery, string, string>
+    {
+        public override void Configure(IEndpointBuilder<string> builder)
+        {
+            builder.PostProcessor<TracingPostProcessor>();
+        }
+
+        public override TraceQuery ToRequest(TraceWireRequest request)
+        {
+            return new TraceQuery();
+        }
+
+        public override string ToResponse(string response)
+        {
+            return response;
+        }
+
+        protected override ValueTask<IResult> OnBindFailedAsync(BindResult<TraceWireRequest> bound,
+            HttpContext context, CancellationToken cancellationToken)
+        {
+            Order.Add("bind-failed-hook");
+            return base.OnBindFailedAsync(bound, context, cancellationToken);
+        }
+
+        protected override ValueTask<IResult> OnAfterHandleAsync(IResult result,
+            HttpContext context, CancellationToken cancellationToken)
+        {
+            Order.Add($"after-hook:{StatusOf(result)}");
+            return new ValueTask<IResult>(result);
+        }
+    }
+
+    private sealed class MappedRejectingEndpoint
+        : MappedEndpoint<TraceWireRequest, TraceQuery, string, string>
+    {
+        public override void Configure(IEndpointBuilder<string> builder)
+        {
+            builder.PreProcessor<RejectingPreProcessor>()
+                   .PostProcessor<TracingPostProcessor>();
+        }
+
+        public override TraceQuery ToRequest(TraceWireRequest request)
+        {
+            return new TraceQuery();
+        }
+
+        public override string ToResponse(string response)
+        {
+            return response;
+        }
+
+        protected override ValueTask<IResult> OnAfterHandleAsync(IResult result,
+            HttpContext context, CancellationToken cancellationToken)
+        {
+            Order.Add("after-hook");
+            return new ValueTask<IResult>(result);
+        }
+    }
+
     private sealed record TraceStream : IStreamRequest<string>;
 
     private sealed class StreamTracingBinder : IEndpointBinder<TraceStream>
@@ -530,6 +882,53 @@ public sealed class EndpointLifecycleTests
         {
             Order.Add("before-hook");
             return default;
+        }
+
+        protected override ValueTask<IResult> OnAfterHandleAsync(IResult result,
+            HttpContext context, CancellationToken cancellationToken)
+        {
+            Order.Add("after-hook");
+            return new ValueTask<IResult>(result);
+        }
+    }
+
+    private sealed class FailingStreamTracingBinder : IEndpointBinder<TraceStream>
+    {
+        public ValueTask<BindResult<TraceStream>> BindAsync(HttpContext context)
+        {
+            Order.Add("bind");
+            return ValueTask.FromResult(BindResult<TraceStream>.Failure("id", "is not a valid Guid."));
+        }
+    }
+
+    private sealed class StreamBindFailingEndpoint : StreamEndpoint<TraceStream, string>
+    {
+        public override void Configure(IStreamEndpointBuilder builder)
+        {
+            builder.PostProcessor<TracingPostProcessor>();
+        }
+
+        protected override ValueTask<IResult> OnBindFailedAsync(BindResult<TraceStream> bound,
+            HttpContext context, CancellationToken cancellationToken)
+        {
+            Order.Add("bind-failed-hook");
+            return base.OnBindFailedAsync(bound, context, cancellationToken);
+        }
+
+        protected override ValueTask<IResult> OnAfterHandleAsync(IResult result,
+            HttpContext context, CancellationToken cancellationToken)
+        {
+            Order.Add($"after-hook:{StatusOf(result)}");
+            return new ValueTask<IResult>(result);
+        }
+    }
+
+    private sealed class StreamRejectingEndpoint : StreamEndpoint<TraceStream, string>
+    {
+        public override void Configure(IStreamEndpointBuilder builder)
+        {
+            builder.PreProcessor<RejectingPreProcessor>()
+                   .PostProcessor<TracingPostProcessor>();
         }
 
         protected override ValueTask<IResult> OnAfterHandleAsync(IResult result,
