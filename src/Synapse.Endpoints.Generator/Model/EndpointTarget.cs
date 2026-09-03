@@ -30,7 +30,7 @@ internal static class EndpointKindExtensions
 {
     /// <summary>
     ///     Whether the analyzer generates a binder for this kind, and therefore whether the
-    ///     binding diagnostics (SYNE001, SYNE002, SYNE007, SYNE011–SYNE014) have anything to say
+    ///     binding diagnostics (SYNE001, SYNE002, SYNE007, SYNE011–SYNE015) have anything to say
     ///     about it.
     /// </summary>
     /// <remarks>
