@@ -22,6 +22,8 @@ internal static class ValueReadEmitter
         return context.Property.Shape switch
         {
             BindingValueShape.Collection => CollectionValueReadEmitter.Emit(context),
+            BindingValueShape.FormFile => FormFileValueReadEmitter.Emit(context),
+            BindingValueShape.FormFileCollection => FormFileCollectionValueReadEmitter.Emit(context),
             _ => ScalarValueReadEmitter.Emit(context)
         };
     }

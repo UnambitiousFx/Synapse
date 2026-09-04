@@ -19,6 +19,9 @@ namespace UnambitiousFx.Synapse.Endpoints.Generator;
 [Generator]
 public sealed class EndpointsGenerator : IIncrementalGenerator
 {
+    private const string FormFileTypeName = "Microsoft.AspNetCore.Http.IFormFile";
+    private const string FormFileCollectionTypeName = "Microsoft.AspNetCore.Http.IFormFileCollection";
+
     private const string EndpointVoid = "UnambitiousFx.Synapse.Endpoints.Endpoint`1";
     private const string EndpointValue = "UnambitiousFx.Synapse.Endpoints.Endpoint`2";
     private const string EndpointMapped = "UnambitiousFx.Synapse.Endpoints.MappedEndpoint`4";
@@ -669,12 +672,17 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
             }
         }
 
-        // SYNE015 — mirrors BinderEmitter's own condition for emitting a body read: the message is
-        // deserialized unless the verb is bodyless *and* nothing resolved to Body. Kept in step with
-        // that emitter by hand; the two must agree, since this warning is about exactly the code it
-        // emits.
+        // SYNE015 — mirrors BinderEmitter's own hasJsonBodyProperty exactly: the message is
+        // JSON-deserialized if and only if some property actually resolved to BindingSource.Body, full
+        // stop. Deliberately not "the verb carries a body" — a form-bound message on a POST carries a
+        // body too, but rule 6 sends every one of its properties to Form instead of Body (see
+        // ResolveSource), so hasJsonBodyProperty is false for it and no JSON read is ever emitted.
+        // Keying this on "!isBodylessVerb" as well as "resolved to Body" (rather than on the resolved
+        // Body properties alone) previously made this warning fire for exactly that case — a
+        // form-bound POST message with a [NotBound] property — even though nothing there is ever
+        // JSON-deserialized.
         if (unprotectedNotBoundProperties.Count > 0 &&
-            (!isBodylessVerb || models.Any(static m => m.Source == BindingSource.Body)))
+            models.Any(static m => m.Source == BindingSource.Body))
         {
             foreach (var (name, propertyLocation) in unprotectedNotBoundProperties)
             {
@@ -749,7 +757,11 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
 
     /// <summary>
     ///     Whether any property of <paramref name="boundType" /> pins itself to the form, which makes the
-    ///     whole message form-bound (rule 6).
+    ///     whole message form-bound (rule 6). A file-typed property counts too — rule 3 pins it to the
+    ///     form just as surely as an explicit <c>[FromForm]</c> would, and an unattributed
+    ///     <c>IFormFile</c> property sitting beside a plain <c>string</c> property must still drag the
+    ///     rest of the message onto the form (see
+    ///     <c>Generate_ForAnIFormFileProperty_BindsItFromTheFormWithNoAttribute</c>).
     /// </summary>
     private static bool HasFormPinnedProperty(INamedTypeSymbol boundType)
     {
@@ -775,6 +787,11 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
                 if (HasNotBoundAttribute(property))
                 {
                     continue;
+                }
+
+                if (IsFileTyped(property.Type))
+                {
+                    return true;
                 }
 
                 foreach (var attribute in property.GetAttributes())
@@ -1084,6 +1101,32 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
         var shape = BindingValueShape.Scalar;
         var materialization = Materialization.None;
 
+        // A file has no parse step and no JSON representation, so SYNE011 still applies (the value
+        // must be assignable) but SYNE012 does not — there is nothing to TryParse from a stream. This
+        // sits ahead of the collection-shape check below because a file collection (IFormFile[], say)
+        // would otherwise resolve as an ordinary Collection shape with an element type this project's
+        // generator cannot parse either, and fail with the wrong diagnostic (SYNE012) instead of
+        // reading as files.
+        if (TryResolveFileShape(underlying, out var fileShape, out var fileMaterialization))
+        {
+            var (canAssignFile, isRecordWithFile) = ResolveAssignmentStrategy(property);
+            if (!canAssignFile)
+            {
+                diagnostics.Add(new DiagnosticInfo(
+                    EndpointDiagnostics.UnassignableBoundProperty, location,
+                    new EquatableArray<string>([property.Name, property.ContainingType.ToDisplayString()])));
+                return null;
+            }
+
+            isConventionBound = fromConvention;
+
+            return new BindablePropertyModel(
+                property.Name, underlying.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                source.Value, sourceKey!, isNullable, isString: false, isEnum: false,
+                isRecordWithFile, parsesWithFormatProvider: false, isReferenceType: true,
+                property.IsRequired, fileShape, fileMaterialization);
+        }
+
         // Parseability is tested before collection-ness, so a type that is both enumerable and parsable
         // keeps binding as the scalar it has always been. Reordering these two silently changes that.
         //
@@ -1104,11 +1147,16 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
         var isString = underlying.SpecialType == SpecialType.System_String;
         var isEnum = underlying.TypeKind == TypeKind.Enum;
 
-        // SYNE011/SYNE012 (Task 17) apply only to route/query/header-bound properties. A
-        // [FromBody]-sourced property is never assigned or parsed by generated code at all — the
-        // whole message is populated in one shot by JSON-deserializing the request body (see
-        // BinderEmitter) — so neither an accessible setter nor a TryParse method is required for it,
-        // and reporting either diagnostic for one would be a false positive.
+        // SYNE011/SYNE012 (Task 17) apply to every source except Body — which, deliberately, still
+        // includes Form: a form *field* needs an accessible setter and a parse path exactly like a
+        // query or header value does, unlike a body property. Only a [FromBody]-sourced property is
+        // never assigned or parsed by generated code at all — the whole message is populated in one
+        // shot by JSON-deserializing the request body (see BinderEmitter) — so neither an accessible
+        // setter nor a TryParse method is required for it, and reporting either diagnostic for one
+        // would be a false positive. Do not narrow this guard to "Route or Query or Header": that
+        // would silently stop reporting SYNE011/SYNE012 for an unassignable or unparsable form field.
+        // (A form *file* is exempt from SYNE012 only — see the file-shape branch above, which returns
+        // before this check is ever reached for one, having already applied SYNE011 itself.)
         var isRecordWith = false;
         if (source.Value != BindingSource.Body)
         {
@@ -1250,6 +1298,16 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
             }
         }
 
+        // Rule 3: a file has exactly one source it could possibly come from, so inferring it from the
+        // type alone is safe in a way it is not for `string` — unlike a route/query/header ambiguity,
+        // there is no other plausible place a file could be read from. Sits ahead of the
+        // route-parameter match (an unnamed route segment cannot carry a file anyway) but behind every
+        // explicit [From*] attribute above, so an explicit [FromQuery] still wins over it.
+        if (IsFileTyped(property.Type))
+        {
+            return (BindingSource.Form, property.Name, false);
+        }
+
         if (routeParameters.TryGetValue(property.Name, out var routeName))
         {
             return (BindingSource.Route, routeName, false);
@@ -1364,6 +1422,59 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
         }
 
         return false;
+    }
+
+    /// <summary>
+    ///     Whether <paramref name="type" /> is a file shape, and if so which one, with what
+    ///     materialization.
+    /// </summary>
+    /// <remarks>
+    ///     <c>IFormFileCollection</c> is every file on the request; <c>IFormFile[]</c> and the other three
+    ///     collection shapes are the files under one field name. That is what ASP.NET Core's own binder
+    ///     does, and the distinction belongs here rather than in the emitter.
+    /// </remarks>
+    private static bool TryResolveFileShape(ITypeSymbol type,
+        out BindingValueShape shape,
+        out Materialization materialization)
+    {
+        shape = BindingValueShape.Scalar;
+        materialization = Materialization.None;
+
+        var displayName = type.ToDisplayString();
+
+        if (displayName == FormFileTypeName)
+        {
+            shape = BindingValueShape.FormFile;
+            return true;
+        }
+
+        if (displayName == FormFileCollectionTypeName)
+        {
+            shape = BindingValueShape.FormFileCollection;
+            materialization = Materialization.Native;
+            return true;
+        }
+
+        if (TryResolveCollectionShape(type, out var element, out var elementMaterialization) &&
+            element.ToDisplayString() == FormFileTypeName)
+        {
+            shape = BindingValueShape.FormFileCollection;
+            materialization = elementMaterialization;
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    ///     Rule 3: whether <paramref name="type" /> is one of the file shapes at all, discarding
+    ///     <see cref="TryResolveFileShape" />'s other outputs. A nullable reference (<c>IFormFile?</c>)
+    ///     is unwrapped first, the same as every other type this generator inspects for shape.
+    /// </summary>
+    private static bool IsFileTyped(ITypeSymbol type)
+    {
+        var (underlying, _) = UnwrapNullable(type);
+        return TryResolveFileShape(underlying, out _, out _);
     }
 
     /// <summary>
