@@ -2,9 +2,9 @@ using System.Text;
 using System.Text.Json.Serialization;
 using BenchmarkDotNet.Attributes;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -54,6 +54,7 @@ public class EndpointDispatchBenchmark
     private IHost _hookedHost = null!;
     private IHost _processedHost = null!;
     private IHost _selfHandledHost = null!;
+    private IHost _scalarQueryHost = null!;
     private IHost _collectionHost = null!;
     private HttpClient _handWritten = null!;
     private HttpClient _endpoint = null!;
@@ -61,6 +62,7 @@ public class EndpointDispatchBenchmark
     private HttpClient _hooked = null!;
     private HttpClient _processed = null!;
     private HttpClient _selfHandled = null!;
+    private HttpClient _scalarQuery = null!;
     private HttpClient _collection = null!;
 
     [GlobalSetup]
@@ -124,6 +126,12 @@ public class EndpointDispatchBenchmark
             app.UseEndpoints(endpoints => { endpoints.MapEndpoint<SelfHandledThingEndpoint>(); });
         });
 
+        _scalarQueryHost = BuildHost(app =>
+        {
+            app.UseRouting();
+            app.UseEndpoints(endpoints => { endpoints.MapEndpoint<SearchThingEndpoint>(); });
+        });
+
         _collectionHost = BuildHost(app =>
         {
             app.UseRouting();
@@ -136,6 +144,7 @@ public class EndpointDispatchBenchmark
         _hooked = _hookedHost.GetTestServer().CreateClient();
         _processed = _processedHost.GetTestServer().CreateClient();
         _selfHandled = _selfHandledHost.GetTestServer().CreateClient();
+        _scalarQuery = _scalarQueryHost.GetTestServer().CreateClient();
         _collection = _collectionHost.GetTestServer().CreateClient();
     }
 
@@ -148,6 +157,7 @@ public class EndpointDispatchBenchmark
         _hooked.Dispose();
         _processed.Dispose();
         _selfHandled.Dispose();
+        _scalarQuery.Dispose();
         _collection.Dispose();
         _handWrittenHost.Dispose();
         _endpointHost.Dispose();
@@ -155,6 +165,7 @@ public class EndpointDispatchBenchmark
         _hookedHost.Dispose();
         _processedHost.Dispose();
         _selfHandledHost.Dispose();
+        _scalarQueryHost.Dispose();
         _collectionHost.Dispose();
     }
 
@@ -215,10 +226,25 @@ public class EndpointDispatchBenchmark
     }
 
     /// <summary>
+    ///     Dispatches a request bound from a single query value — no accumulation. <see cref="SynapseEndpoint" />
+    ///     binds from the route and carries no query string at all, so it cannot isolate what parsing
+    ///     the query string itself costs (splitting <c>tag=a</c>, populating <c>StringValues</c>) from
+    ///     what accumulating repeated values costs. This arm holds the query-parsing cost fixed so
+    ///     <see cref="SynapseEndpointWithCollectionQuery" /> can be compared against it instead of
+    ///     against <see cref="SynapseEndpoint" />.
+    /// </summary>
+    [Benchmark]
+    public Task<HttpResponseMessage> SynapseEndpointWithScalarQuery()
+    {
+        return _scalarQuery.GetAsync("/things?tag=a");
+    }
+
+    /// <summary>
     ///     Dispatches a request bound entirely from a repeated query key. The generated binder for
-    ///     this shape accumulates into a <c>List&lt;T&gt;</c> and calls <c>.ToArray()</c> — new
-    ///     allocations that <see cref="SynapseEndpoint" />'s single route scalar never makes — so the
-    ///     pair is the regression check for the collection binder's cost.
+    ///     this shape accumulates into a <c>List&lt;T&gt;</c> and calls <c>.ToArray()</c>. The delta
+    ///     against <see cref="SynapseEndpointWithScalarQuery" /> — not against <see cref="SynapseEndpoint" />,
+    ///     which differs in two dimensions at once (no query string at all, plus no accumulation) — is
+    ///     what that loop and its allocations cost on their own.
     /// </summary>
     [Benchmark]
     public Task<HttpResponseMessage> SynapseEndpointWithCollectionQuery()
@@ -280,6 +306,7 @@ public class EndpointDispatchBenchmark
                     {
                         cfg.RegisterRequestHandler<GetThingQueryHandler, GetThingQuery, ThingDto>();
                         cfg.RegisterRequestHandler<CreateThingCommandHandler, CreateThingCommand, ThingDto>();
+                        cfg.RegisterRequestHandler<SearchThingQueryHandler, SearchThingQuery, ThingDto>();
                         cfg.RegisterRequestHandler<SearchThingsQueryHandler, SearchThingsQuery, ThingDto>();
                     });
 
@@ -423,6 +450,32 @@ public sealed class BenchmarkPostProcessor : IEndpointPostProcessor
         return new ValueTask<IResult>(result);
     }
 }
+
+/// <summary>
+///     A query bound from a single query value — the scalar counterpart of <see cref="SearchThingsQuery" />,
+///     used to isolate query-string parsing cost from accumulation cost.
+/// </summary>
+public sealed record SearchThingQuery : IRequest<ThingDto>
+{
+    /// <summary>The tag to search by, bound from a single <c>tag</c> query value.</summary>
+    [FromQuery(Name = "tag")]
+    public string? Tag { get; init; }
+}
+
+/// <summary>Handles <see cref="SearchThingQuery" />. Never touches <see cref="SearchThingQuery.Tag" /> beyond binding it — this arm measures binding, not handling.</summary>
+public sealed class SearchThingQueryHandler : IRequestHandler<SearchThingQuery, ThingDto>
+{
+    /// <inheritdoc />
+    public ValueTask<Result<ThingDto>> HandleAsync(SearchThingQuery request,
+        CancellationToken cancellationToken = default)
+    {
+        return ValueTask.FromResult(Result.Success(new ThingDto { Id = Guid.Empty, Name = "Widget" }));
+    }
+}
+
+/// <summary>The Synapse endpoint whose generated binder reads a single query value into <c>string?</c>.</summary>
+[Get("/things")]
+public sealed class SearchThingEndpoint : Endpoint<SearchThingQuery, ThingDto>;
 
 /// <summary>
 ///     A query bound entirely from a repeated query key, exercising the generated collection binder
