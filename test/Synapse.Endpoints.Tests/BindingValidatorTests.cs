@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Primitives;
 using UnambitiousFx.Synapse.Endpoints.Binding;
 
 namespace UnambitiousFx.Synapse.Endpoints.Tests;
@@ -230,5 +231,107 @@ public sealed class BindingValidatorTests
 
         // Assert
         Assert.Contains("Check IsValid", exception.Message);
+    }
+
+    [Fact]
+    public void QueryValues_WithARepeatedKey_ParsesEveryElement()
+    {
+        // Arrange
+        var context = new DefaultHttpContext();
+        context.Request.QueryString = new QueryString("?size=1&size=2&size=3");
+
+        // Act
+        var validation = context.Validate();
+        var read = validation.QueryValues<int>("size", out var sizes);
+
+        // Assert
+        Assert.True(read);
+        Assert.Equal([1, 2, 3], sizes);
+        Assert.True(validation.IsValid);
+        Assert.Null(validation.Errors);
+    }
+
+    [Fact]
+    public void QueryValues_WithAnAbsentKey_YieldsAnEmptyArrayAndReportsNothing()
+    {
+        // Arrange — HTTP cannot express an empty repeated key, so demanding presence would ask the
+        // caller for something they have no way to send. Absent is empty, never a failure.
+        var context = new DefaultHttpContext();
+
+        // Act
+        var validation = context.Validate();
+        var read = validation.QueryValues<int>("size", out var sizes);
+
+        // Assert
+        Assert.True(read);
+        Assert.Empty(sizes);
+        Assert.True(validation.IsValid);
+    }
+
+    [Fact]
+    public void QueryValues_WithOneUnparsableElement_ReportsItsIndexAndKeepsTheRest()
+    {
+        // Arrange
+        var context = new DefaultHttpContext();
+        context.Request.QueryString = new QueryString("?size=1&size=nope&size=3");
+
+        // Act
+        var validation = context.Validate();
+        var read = validation.QueryValues<int>("size", out var sizes);
+
+        // Assert — binding continues past a bad element so several bad ones report together.
+        Assert.False(read);
+        Assert.Equal([1, 3], sizes);
+        Assert.NotNull(validation.Errors);
+        Assert.Contains("at index 1", Assert.Single(validation.Errors["size"]));
+    }
+
+    [Fact]
+    public void QueryValues_WithTwoUnparsableElements_ReportsBoth()
+    {
+        // Arrange
+        var context = new DefaultHttpContext();
+        context.Request.QueryString = new QueryString("?size=nope&size=2&size=nah");
+
+        // Act
+        var validation = context.Validate();
+        validation.QueryValues<int>("size", out var sizes);
+
+        // Assert
+        Assert.Equal([2], sizes);
+        Assert.NotNull(validation.Errors);
+        Assert.Equal(2, validation.Errors["size"].Length);
+    }
+
+    [Fact]
+    public void QueryValuesEnum_WithARepeatedKey_ParsesEveryElement()
+    {
+        // Arrange
+        var context = new DefaultHttpContext();
+        context.Request.QueryString = new QueryString("?day=Monday&day=Friday");
+
+        // Act
+        var validation = context.Validate();
+        var read = validation.QueryValuesEnum<DayOfWeek>("day", out var days);
+
+        // Assert
+        Assert.True(read);
+        Assert.Equal([DayOfWeek.Monday, DayOfWeek.Friday], days);
+    }
+
+    [Fact]
+    public void HeaderValues_WithARepeatedHeader_ParsesEveryElement()
+    {
+        // Arrange
+        var context = new DefaultHttpContext();
+        context.Request.Headers["X-Size"] = new StringValues(["4", "5"]);
+
+        // Act
+        var validation = context.Validate();
+        var read = validation.HeaderValues<int>("X-Size", out var sizes);
+
+        // Assert
+        Assert.True(read);
+        Assert.Equal([4, 5], sizes);
     }
 }

@@ -1,5 +1,6 @@
 using System.Globalization;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Primitives;
 
 namespace UnambitiousFx.Synapse.Endpoints.Binding;
 
@@ -228,6 +229,64 @@ public struct BindingValidator
         return RequiredEnum(BindingSourceKind.Header, name, out value);
     }
 
+    /// <summary>Reads every value of a repeated query key, parsing each one.</summary>
+    /// <typeparam name="T">The element type.</typeparam>
+    /// <param name="name">The query key.</param>
+    /// <param name="values">Every element that parsed, in request order.</param>
+    /// <returns><see langword="true" /> when every present element parsed.</returns>
+    /// <remarks>
+    ///     An absent key is an empty array and reports nothing: HTTP has no way to send zero values
+    ///     under a key, so treating absence as a failure would demand something unsendable. A caller
+    ///     that genuinely requires one writes <c>v.Check(values.Length > 0, name, "…")</c>.
+    /// </remarks>
+    public bool QueryValues<T>(string name,
+        out T[] values)
+        where T : IParsable<T>
+    {
+        return ReadValues(BindingSourceKind.Query, name, out values);
+    }
+
+    /// <summary>Reads every value of a repeated header, parsing each one.</summary>
+    /// <typeparam name="T">The element type.</typeparam>
+    /// <param name="name">The header name.</param>
+    /// <param name="values">Every element that parsed, in request order.</param>
+    /// <returns><see langword="true" /> when every present element parsed.</returns>
+    public bool HeaderValues<T>(string name,
+        out T[] values)
+        where T : IParsable<T>
+    {
+        return ReadValues(BindingSourceKind.Header, name, out values);
+    }
+
+    /// <summary>Reads every value of a repeated query key as an enum, by name or numeric value.</summary>
+    /// <typeparam name="TEnum">The enum element type.</typeparam>
+    /// <param name="name">The query key.</param>
+    /// <param name="values">Every element that parsed, in request order.</param>
+    /// <returns><see langword="true" /> when every present element parsed.</returns>
+    /// <remarks>
+    ///     Named apart from <see cref="QueryValues{T}" /> for the same reason
+    ///     <see cref="QueryEnum{TEnum}" /> is named apart from <see cref="Query{T}" />: an enum does not
+    ///     implement <see cref="IParsable{TSelf}" />, so it cannot satisfy that constraint.
+    /// </remarks>
+    public bool QueryValuesEnum<TEnum>(string name,
+        out TEnum[] values)
+        where TEnum : struct, Enum
+    {
+        return ReadEnumValues(BindingSourceKind.Query, name, out values);
+    }
+
+    /// <summary>Reads every value of a repeated header as an enum, by name or numeric value.</summary>
+    /// <typeparam name="TEnum">The enum element type.</typeparam>
+    /// <param name="name">The header name.</param>
+    /// <param name="values">Every element that parsed, in request order.</param>
+    /// <returns><see langword="true" /> when every present element parsed.</returns>
+    public bool HeaderValuesEnum<TEnum>(string name,
+        out TEnum[] values)
+        where TEnum : struct, Enum
+    {
+        return ReadEnumValues(BindingSourceKind.Header, name, out values);
+    }
+
     /// <summary>Reports <paramref name="message" /> against <paramref name="field" /> when the condition is false.</summary>
     /// <param name="condition">The condition that must hold.</param>
     /// <param name="field">The field the message is about.</param>
@@ -301,6 +360,79 @@ public struct BindingValidator
             BindingSourceKind.Query => BindingHelpers.TryGetQuery(_context, name, out raw),
             _ => BindingHelpers.TryGetHeader(_context, name, out raw)
         };
+    }
+
+    private bool TryReadValues(BindingSourceKind source,
+        string name,
+        out StringValues values)
+    {
+        return source switch
+        {
+            BindingSourceKind.Query => BindingHelpers.TryGetQueryValues(_context, name, out values),
+            _ => BindingHelpers.TryGetHeaderValues(_context, name, out values)
+        };
+    }
+
+    private bool ReadValues<T>(BindingSourceKind source,
+        string name,
+        out T[] values)
+        where T : IParsable<T>
+    {
+        if (!TryReadValues(source, name, out var raw) || raw.Count == 0)
+        {
+            values = [];
+            return true;
+        }
+
+        var parsed = new List<T>(raw.Count);
+        var complete = true;
+
+        for (var index = 0; index < raw.Count; index++)
+        {
+            if (T.TryParse(raw[index], CultureInfo.InvariantCulture, out var value))
+            {
+                parsed.Add(value);
+                continue;
+            }
+
+            // Reported and skipped rather than returned on: a request with several bad elements
+            // should answer with all of them, which is the whole point of this collector.
+            AddError(name, $"The {Describe(source)} at index {index} is not a valid {typeof(T)}.");
+            complete = false;
+        }
+
+        values = parsed.ToArray();
+        return complete;
+    }
+
+    private bool ReadEnumValues<TEnum>(BindingSourceKind source,
+        string name,
+        out TEnum[] values)
+        where TEnum : struct, Enum
+    {
+        if (!TryReadValues(source, name, out var raw) || raw.Count == 0)
+        {
+            values = [];
+            return true;
+        }
+
+        var parsed = new List<TEnum>(raw.Count);
+        var complete = true;
+
+        for (var index = 0; index < raw.Count; index++)
+        {
+            if (Enum.TryParse<TEnum>(raw[index], out var value))
+            {
+                parsed.Add(value);
+                continue;
+            }
+
+            AddError(name, $"The {Describe(source)} at index {index} is not a valid {typeof(TEnum)}.");
+            complete = false;
+        }
+
+        values = parsed.ToArray();
+        return complete;
     }
 
     private bool Required<T>(BindingSourceKind source,
