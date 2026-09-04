@@ -413,14 +413,27 @@ internal static class EndpointDiagnostics
         isEnabledByDefault: true);
 
     /// <summary>
-    ///     SYNE017: a <c>[FromForm]</c> property on a verb that never carries a request body. The exact
-    ///     mirror of <see cref="BodyOnlyPropertyOnBodylessVerb" />, and gated the same way — on the
-    ///     *declared* verb, so it never names a verb nobody wrote.
+    ///     SYNE017: a property binds from the request form on a verb that never carries a request
+    ///     body. Gated on the *declared* verb, the same way as <see cref="BodyOnlyPropertyOnBodylessVerb" />,
+    ///     so it never names a verb nobody wrote — but it is <em>not</em> otherwise that diagnostic's
+    ///     exact mirror.
     /// </summary>
+    /// <remarks>
+    ///     <see cref="BodyOnlyPropertyOnBodylessVerb" /> only ever fires for an explicit
+    ///     <c>[FromBody]</c>, because <c>ResolveSource</c>'s verb-dependent convention never resolves
+    ///     to <c>Body</c> on a bodyless verb. This diagnostic has no such guarantee: rule 3 resolves a
+    ///     file-typed property (<c>IFormFile</c>, <c>IFormFileCollection</c>, …) to <c>Form</c>
+    ///     regardless of the verb and with no attribute in sight, ahead of the bodyless-verb check. So
+    ///     this fires on two distinct shapes — an explicit <c>[FromForm]</c>, and a bare file-typed
+    ///     property — and both are real: a bodyless verb carries no multipart data either way, so
+    ///     the property can never bind regardless of which shape produced it. Do not narrow the
+    ///     condition to require an explicit attribute; that would silently stop reporting a genuinely
+    ///     broken endpoint. The message is written to offer a remedy for either shape instead.
+    /// </remarks>
     internal static readonly DiagnosticDescriptor FormPropertyOnBodylessVerb = new(
         "SYNE017",
         "Form-bound property on a bodyless verb",
-        "Property '{0}' on '{1}' binds from the request form, but '{2}' requests never carry a body, so it can never bind. Remove [FromForm], or change the verb.",
+        "Property '{0}' on '{1}' binds from the request form — via [FromForm], or because its type is a file — but '{2}' requests never carry a body, so it can never bind. Remove [FromForm] or the file typing, change the verb, or accept that '{0}' will always be missing.",
         Category,
         DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
