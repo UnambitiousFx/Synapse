@@ -91,7 +91,7 @@ public sealed record UploadAttachmentCommand : IRequest<AttachmentCreated>
 
 Both content types are correctly declared — the point features 006 and 007 actually needed, and the
 reason neither is blocked on this doc — but a client generator sees an empty schema for each: nothing
-says a `file` part and a `caption` field belong in this request. There is no way, at any tier, to add
+says a `File` part and a `Caption` field belong in this request. There is no way, at any tier, to add
 that description yourself; `Raw`'s `AddOpenApiOperationTransformer` (see
 [OpenAPI → Adding anything else](../../docs/endpoints/reference/openapi.mdx#adding-anything-else))
 can mutate an already-generated operation by hand, but nothing in the pipeline computes the parameter
@@ -154,9 +154,9 @@ The same `UploadAttachmentCommand` endpoint, unchanged:
     "content": {
       "multipart/form-data": {
         "schema": { "type": "object", "properties": {
-          "file": { "type": "string", "format": "binary" },
-          "caption": { "type": "string" }
-        }, "required": ["file", "caption"] } }
+          "File": { "type": "string", "format": "binary" },
+          "Caption": { "type": "string" }
+        }, "required": ["File", "Caption"] } }
     }
   }
 }

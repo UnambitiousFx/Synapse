@@ -47,6 +47,12 @@ This is the same collector the high level's generated binders use, so both level
 | `RouteEnum<T>` / `QueryEnum<T>` / `HeaderEnum<T>` | Required, by enum name or numeric value |
 | `QueryValues<T>` / `HeaderValues<T>` | Every value of a repeated key, parsed. Absent reports nothing and yields `[]`; a bad element reports its index and the rest still bind |
 | `QueryValuesEnum<TEnum>` / `HeaderValuesEnum<TEnum>` | Same, for an enum element — named apart for the same reason `QueryEnum` sits beside `Query<T>` |
+| `Form<T>` | Required, the same contract as `Route<T>`/`Query<T>`/`Header<T>`. Requires the form has already been read — [see below](#reading-a-form) |
+| `FormOptional<T>` | Absent is fine (`null`); present-but-unparsable still reports. Value **and** reference types. Same precondition |
+| `FormEnum<TEnum>` | Required, by enum name or numeric value. Same precondition |
+| `FormValues<T>` / `FormValuesEnum<TEnum>` | Every value of a repeated form field, parsed — the same absent-is-empty rule as `QueryValues<T>`. Same precondition |
+| `FormFile` | Required uploaded file. No parse step — reports `"The form file is required."` when absent |
+| `FormFileOptional` | Optional uploaded file — always returns `true`; `null` when absent is not a failure |
 | `Check(condition, field, message)` | Reports `message` against `field` when the condition is false; returns the condition |
 | `AddError(field, message)` | Reports directly |
 | `IsValid` | `true` while nothing has been reported |
@@ -166,6 +172,38 @@ belongs in `IRequestValidator` and the Synapse pipeline, exactly as the next sec
 needs something binding itself has no hook for — normalising or deduplicating the parsed elements,
 gating one field's read on another, or folding a collection read into a `BindAsync` that also reads
 the body. [Mediator-bound](./mediator-bound) works through exactly that case.
+
+## Reading a form
+
+`Form<T>`, `FormOptional<T>`, `FormEnum<TEnum>`, `FormValues<T>`/`FormValuesEnum<TEnum>`, `FormFile`
+and `FormFileOptional` have the same required/optional/enum/repeated contract as their `Route`/`Query`/`Header`
+counterparts, with one precondition none of those have: **the form must already be read**. They sit on
+top of `HttpContext.Request.Form`, which only has values once `FormAsync` has populated its cache —
+see [Reading the request → Reading a form](./reading-the-request#reading-a-form).
+
+The same hand-written binder [Reading the request](./reading-the-request#reading-a-form) shows at the
+`HttpContext` level, through the collector instead:
+
+```csharp
+var form = await context.FormAsync(ct);
+if (!form.IsSuccess)
+{
+    return form.Problem();              // 400 under "body" — not readable as a form at all
+}
+
+var v = context.Validate();
+v.FormFile("file", out var file);              // required — "The form file is required." when absent
+v.Form<string>("caption", out var caption);    // required — the same "is required"/"is not a valid T" pair
+
+if (!v.IsValid)
+{
+    return v.Problem();                 // one 400 naming every missing or invalid field
+}
+```
+
+`FormFile` has no parse step — a file is a stream, not a wire-format string — so it reports presence
+only, unlike every other reader on this page. `FormFileOptional` mirrors it for an optional upload:
+always `true`, `null` when absent is not a failure.
 
 ## What belongs here, and what does not
 

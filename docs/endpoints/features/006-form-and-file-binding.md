@@ -30,6 +30,10 @@ losing binding, error accumulation and OpenAPI metadata in one step.
 
 ## What you cannot write today
 
+*(This section narrates the pre-shipped state, including the old five-rule numbering, as a historical
+record of the problem — not the situation today. See [Messages & binding → Forms and files](../../docs/endpoints/high-level/messages.mdx#forms-and-files)
+for what actually shipped, against the current six rules.)*
+
 Attach a file to a task — one route, one file, one field:
 
 ```csharp
@@ -153,11 +157,16 @@ public sealed class UploadAttachmentEndpoint : Endpoint<UploadAttachmentCommand,
 {
   "status": 400,
   "errors": {
-    "file":    ["The form value is required."],
+    "File":    ["The form file is required."],
     "caption": ["The form value is required."]
   }
 }
 ```
+
+(`File` carries no name argument on its `[FromForm]`, so it falls back to the property name, capital
+`F`; `Caption`'s `[FromForm("caption")]` sets its key explicitly, lowercase, as written. A file has no
+parse step, so its message is `"…is required."` only — never `"…is not a valid T."` — which is why it
+reads "form file" rather than "form value".)
 
 And if the feature is deliberately deferred instead, the low tier at least stops being hand-rolled:
 
