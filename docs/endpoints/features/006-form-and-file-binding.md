@@ -2,7 +2,7 @@
 
 |  |  |
 |---|---|
-| **Status** | 🔴 Missing |
+| **Status** | ✅ Shipped |
 | **Priority** | Medium-High |
 | **Area** | Binding / Generator |
 | **Tiers** | All bound tiers |
@@ -173,17 +173,17 @@ if (!v.IsValid) { return v.Problem(); }
 
 ## Acceptance criteria
 
-- [ ] `multipart/form-data` and `application/x-www-form-urlencoded` both bind.
-- [ ] Content type is declared correctly so the consumes matcher policy answers `415`, not `400`.
-- [ ] Form binding participates in error accumulation like every other source.
-- [ ] A new diagnostic reports `[FromForm]` on a bodyless verb (mirrors `SYNE007`).
-- [ ] `[FromForm]` and `[FromBody]` on the same message is a diagnostic, not a runtime surprise.
-- [ ] OpenAPI declares the multipart schema.
-- [ ] Native AOT path verified — form reading is reflection-free, but the analyzer's `SYNE008`
-      JSON-context check must not fire for a type that is never JSON-deserialized.
-
-## Notes
-
-Deliberate deferral is a legitimate outcome here: file upload is a large surface and arguably belongs
-at the low tier. If so, say it explicitly in the docs and ship the `FormAsync`/`TryGetFormFile`
-helpers (a much smaller change) so the low tier is at least pleasant.
+- [x] `multipart/form-data` and `application/x-www-form-urlencoded` both bind.
+- [x] Content type is declared correctly so the consumes matcher policy answers `415`, not `400`.
+- [x] Form binding participates in error accumulation like every other source.
+- [x] A new diagnostic reports `[FromForm]` on a bodyless verb (mirrors `SYNE007`) — shipped as
+      `SYNE017`, and fires equally for a bare file-typed property, since rule 3 infers the source
+      from the type the same way an explicit `[FromForm]` states it.
+- [x] `[FromForm]` and `[FromBody]` on the same message is a diagnostic, not a runtime surprise —
+      shipped as `SYNE018`.
+- [ ] OpenAPI declares the multipart schema — tracked separately as feature 018 (OpenAPI parameter
+      metadata), not part of this feature's scope. What ships here declares the correct content
+      types and no schema, which is what the criterion above actually needs.
+- [x] Native AOT path verified — form reading is reflection-free, and `SYNE008`/`SYNE015` are scoped
+      to messages that are actually JSON-deserialized, so neither fires for a form-bound one. See
+      [Native AOT](../../docs/endpoints/reference/native-aot.mdx#form-binding-needs-no-registration-at-all).

@@ -66,6 +66,19 @@ For a **low-level** endpoint there is no base-class type argument to read, so it
 own code instead: the type argument of each `context.BodyAsync<T>()` read, and of each `Accepts<T>()` /
 `Produces<T>()` declaration in `Configure`. The diagnostic points at the call rather than at the class.
 
+## Form binding needs no registration at all
+
+A [form-bound message](../high-level/messages#forms-and-files) is read field by field off
+`IFormCollection` — the same string-in, `TryParse`-out path as a route or query value — and never
+reaches `System.Text.Json`. There is no type to add to `JsonSerializerContext` for it, `IFormFile`
+included: an interface over a buffered stream is not JSON-serializable in the first place, which is
+exactly why this design exists rather than trying to make it one.
+
+`SYNE008` stays silent for a form-bound message for the same reason it stays silent on a bodyless
+verb — nothing about the message is ever handed to the JSON serializer, so there is nothing for the
+diagnostic to check a registration for. That is a real exemption, not a blind spot: unlike the four
+below, there is no runtime failure hiding behind it.
+
 ## Its four blind spots
 
 These are deliberate, and they are yours to cover:
@@ -145,6 +158,8 @@ necessarily returns.
 
 ## Related
 
+- [Messages & binding → Forms and files](../high-level/messages#forms-and-files) — why a form-bound message needs no JSON registration
+- [OpenAPI → A form-bound message declares content types, and no schema](./openapi#a-form-bound-message-declares-content-types-and-no-schema)
 - [OpenAPI → APIs this library steers you away from](./openapi#apis-this-library-steers-you-away-from) — `WithOpenApi`, `CreatedAtRoute`
 - [Diagnostics](./diagnostics) — `SYNE008` in the full table
 - [Streaming](../high-level/streaming#native-aot-register-iasyncenumerabletitem) — the registration that nothing warns about

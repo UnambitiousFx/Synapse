@@ -141,7 +141,7 @@ public sealed class UpsertTaskEndpoint : Endpoint<UpsertTaskCommand>;
 ```
 
 Both verbs carry a body, so `Accepts` is declared for both. Mix a bodyless verb in —
-`[Get]` + `[Post]` on one class — and `DeclaresRequestBody` must answer per verb, or the `GET`
+`[Get]` + `[Post]` on one class — and `DeclaredRequestBody` must answer per verb, or the `GET`
 operation declares a request body it will never read (`docs/known-issues/067`).
 
 ## Acceptance criteria
@@ -150,12 +150,12 @@ operation declares a request body it will never read (`docs/known-issues/067`).
 - [ ] The duplicate-route check in `MapSynapseEndpoints` still catches genuine collisions across
       endpoints without reporting an endpoint's own aliases.
 - [ ] `SYNE009` (route declared both by attribute and in `Configure`) still fires correctly.
-- [ ] `DeclaresRequestBody` is evaluated per verb — a `GET`+`POST` endpoint must not declare a body
+- [ ] `DeclaredRequestBody` is evaluated per verb — a `GET`+`POST` endpoint must not declare a body
       for the `GET` (`docs/known-issues/067`).
 - [ ] OpenAPI emits one operation per route/verb pair.
 
 ## Notes
 
-The last acceptance criterion is the sharp one. `DeclaresRequestBody(string[] httpMethods)` currently
+The last acceptance criterion is the sharp one. `DeclaredRequestBody(string[] httpMethods)` currently
 takes the whole set and answers once via `HttpMethodHelpers.AllVerbsAreBodyless`. A mixed set needs a
 per-verb answer, or the `Accepts` declaration will be wrong for half the routes.

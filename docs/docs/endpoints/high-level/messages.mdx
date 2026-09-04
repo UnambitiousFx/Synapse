@@ -1,7 +1,7 @@
 ---
 sidebar_position: 2
 title: Messages & binding
-description: How route, query, header and body values reach your message — the five rules, optionality, required members, and why a positional record is better.
+description: How route, query, header, form and body values reach your message — the six rules, optionality, required members, and why a positional record is better.
 ---
 
 # Messages & binding
@@ -9,18 +9,23 @@ description: How route, query, header and body values reach your message — the
 Binding is the whole job of the high level: getting values off the request and into your message. It
 is decided entirely by the message's shape, at compile time.
 
-## The five binding rules
+## The six binding rules
 
-Each property of the message is matched against the route, the query string, headers and the body by
-five rules, applied in order. **The first rule that applies wins.**
+Each property of the message is matched against the route, the query string, headers, the form and the
+body by six rules, applied in order. **The first rule that applies wins.**
 
 | # | Rule |
 |---|---|
 | 1 | `[NotBound]` excludes the property from the generated bindings, regardless of anything else |
-| 2 | `[FromRoute]` / `[FromQuery]` / `[FromHeader]` / `[FromBody]` pins the source explicitly, with the key taken from the attribute's name or else the property name |
-| 3 | A name matching a route template parameter (case-insensitively) binds from the route |
-| 4 | On a bodyless verb (`GET` / `DELETE` / `HEAD` / `OPTIONS` / `TRACE`), an unmatched property binds from the query string |
-| 5 | Otherwise, the property binds from the request body |
+| 2 | `[FromRoute]` / `[FromQuery]` / `[FromHeader]` / `[FromForm]` / `[FromBody]` pins the source explicitly, with the key taken from the attribute's name or else the property name |
+| 3 | A property typed `IFormFile`, `IFormFileCollection`, or a supported collection of `IFormFile`, binds from the form — no attribute needed |
+| 4 | A name matching a route template parameter (case-insensitively) binds from the route |
+| 5 | On a bodyless verb (`GET` / `DELETE` / `HEAD` / `OPTIONS` / `TRACE`), an unmatched property binds from the query string |
+| 6 | Otherwise: the form, if anything on the message is already form-bound (rule 2 or rule 3) — otherwise the request body |
+
+Rule 4 still runs ahead of the form: a route-named property binds from the route on a multipart
+request exactly as it does on a JSON one. Rule 6 is the only one that looks at the *rest* of the
+message rather than at the property in front of it — see [Forms and files](#forms-and-files) below.
 
 Worked through one message:
 
@@ -30,10 +35,11 @@ public sealed class UpdateTaskEndpoint : Endpoint<UpdateTaskCommand>;
 
 public sealed record UpdateTaskCommand : IRequest
 {
-    // Rule 3: the name matches {taskId} in the route template.
+    // Rule 4: the name matches {taskId} in the route template.
     public Guid TaskId { get; init; }
 
-    // Rule 5: PUT carries a body, and nothing else claimed this property.
+    // Rule 6: PUT carries a body, nothing else claimed this property, and nothing on the
+    // message is form-bound, so it falls through to the body.
     public required string Title { get; init; }
 
     // Rule 2: headers are never bound by convention, so this attribute is the only way.
@@ -59,17 +65,121 @@ whatever owns the value keeps that from reaching the handler -- so assign it unc
 than only when it is still at its default.
 
 `SYNE015` reports the shape that needs this -- see [Diagnostics](../reference/diagnostics). On a
-bodyless verb nothing deserializes the message, and `[NotBound]` alone is sufficient.
+bodyless verb, or on a message that is [form-bound](#forms-and-files) rather than JSON-bound, nothing
+deserializes the message, and `[NotBound]` alone is sufficient.
 :::
 
 :::note Headers are never bound by convention
-Rule 3 matches only route parameters, and rule 5 falls through to the body — never to a header.
-`[FromHeader]` is the only way to read one.
+Rule 4 matches only route parameters, and rule 6 falls through to the body (or the form) — never to a
+header. `[FromHeader]` is the only way to read one.
 
 Both `UnambitiousFx.Synapse.Endpoints.FromHeaderAttribute` (whose name is a constructor argument,
 `[FromHeader("If-Match")]`) and `Microsoft.AspNetCore.Mvc.FromHeaderAttribute` (whose name is a
 property, `[FromHeader(Name = "If-Match")]`) are honoured. Importing both namespaces in one file makes
 the bare name ambiguous — see [attribute collisions](../reference/escape-hatches#attribute-collisions).
+:::
+
+## Forms and files
+
+A request is a form or it is JSON, never both. Both `multipart/form-data` and
+`application/x-www-form-urlencoded` bind, and either one turns the *whole message* form-bound, not
+just the property that triggered it — rule 6 sends every property that would otherwise have fallen
+through to the JSON body to the form instead, so a form message does not need `[FromForm]` spelled
+out on every field.
+
+Two rules decide whether a message is form-bound at all:
+
+- **Rule 2 — `[FromForm]`, explicitly.** `UnambitiousFx.Synapse.Endpoints.FromFormAttribute` takes
+  the field name as a constructor argument (`[FromForm("caption")]`), the same shape as this
+  project's own `[FromHeader]`. `Microsoft.AspNetCore.Mvc.FromFormAttribute` is honoured too, with
+  its name as a property (`[FromForm(Name = "caption")]`) — the same MVC/Synapse pairing as every
+  other `[From*]` attribute on this page.
+- **Rule 3 — a file-typed property, with no attribute at all.** `IFormFile`, `IFormFileCollection`,
+  or a supported collection of `IFormFile` (`IFormFile[]`, `List<IFormFile>`, `IReadOnlyList<IFormFile>`,
+  `IEnumerable<IFormFile>`) binds from the form unattributed. A file has exactly one place it could
+  come from, unlike a `string`, so there is nothing ambiguous to pin down. `IFormFileCollection` means
+  *every* file on the request; the four collection shapes mean the files uploaded under **one** field
+  name — the same distinction ASP.NET Core's own model binder draws.
+
+A route-bound property is unaffected by any of this: rule 4 (the route-name match) is checked before
+rule 6's form fallback, so a property that names a route parameter binds from the route whether or
+not the rest of the message is form-bound — see the worked example below.
+
+:::info Why this flips silently instead of erroring
+Without rule 6, every field of a form message would need `[FromForm]` written out by hand, which
+defeats the point of the file inference in rule 3: a message with one bare `IFormFile` property and
+three ordinary strings should not force four attributes just because one property happened to be a
+file. [`SYNE019`](../reference/diagnostics) (Info) reports the case where this happens *purely* by
+inference — a file-typed property with no `[FromForm]` anywhere on the message — so the relocation is
+visible rather than silent. Add `[FromForm]` to the file property to state the intent explicitly and
+silence it.
+:::
+
+Mixing an explicit `[FromBody]` into an otherwise form-bound message is [`SYNE018`](../reference/diagnostics)
+(Error): a request is one or the other, so whichever the binder does not read can never populate its
+properties. A form-bound property on a bodyless verb is [`SYNE017`](../reference/diagnostics)
+(Warning), the exact mirror of `SYNE007` for the body.
+
+`[NotBound]`'s [`SYNE015`](../reference/diagnostics) exemption and file-shaped properties' `SYNE012`
+exemption both follow from the same fact: a form-bound message is never JSON-deserialized, so nothing
+reads `[NotBound]` and a file has no string to parse from. [`SYNE011`](../reference/diagnostics) still
+applies to a form field or a form file — both need an accessible setter or a record `with` expression
+[the same as any other bound property](#the-record-or-setter-rule).
+
+006's headline example, written against the shipped API:
+
+```csharp
+public sealed record UploadAttachmentCommand : IRequest<AttachmentCreated>
+{
+    // Rule 4: matches {taskId} — unaffected by anything else on this message being form-bound.
+    public required Guid TaskId { get; init; }
+
+    // Rule 3: file-typed, no attribute — this is what pins the whole message to the form.
+    public required IFormFile File { get; init; }
+
+    // Rule 6: nothing else claimed "Caption", and the message is already form-bound, so it reads
+    // from the form under the property name rather than falling through to a JSON body.
+    public required string Caption { get; init; }
+}
+
+[Post("/tasks/{taskId:guid}/attachments")]
+public sealed class UploadAttachmentEndpoint : Endpoint<UploadAttachmentCommand, AttachmentCreated>
+{
+    public override void Configure(IEndpointBuilder<AttachmentCreated> builder) =>
+        builder.Created(created => $"/tasks/{created.TaskId}/attachments/{created.AttachmentId}");
+}
+```
+
+```bash
+$ curl -s -F "caption=hello" -F "file=@note.txt" \
+    http://localhost:5000/tasks/11111111-1111-1111-1111-111111111111/attachments
+# 201, Location: /tasks/11111111-1111-1111-1111-111111111111/attachments/{attachmentId}
+
+$ curl -s -F "caption=hello" \
+    http://localhost:5000/tasks/11111111-1111-1111-1111-111111111111/attachments
+{"status":400,"errors":{"file":["The form file is required."]}}
+
+$ curl -s -X POST -H 'Content-Type: application/json' -d '{}' \
+    http://localhost:5000/tasks/11111111-1111-1111-1111-111111111111/attachments
+# 415 Unsupported Media Type — the consumes matcher policy rejects it before the binder ever runs
+```
+
+The endpoint declares both `multipart/form-data` and `application/x-www-form-urlencoded`, and
+**no request schema**: a message holding an `IFormFile` is not describable as one, and pretending
+otherwise would be a wrong document rather than an honest gap. See [OpenAPI](../reference/openapi#what-is-declared-for-you)
+for what a form-bound endpoint declares, and feature doc 018 (OpenAPI parameter metadata, under
+`docs/endpoints/features/`) for the schema work this defers.
+
+:::warning `[FromForm]` collides with `Microsoft.AspNetCore.Mvc`, the same as `[FromHeader]`
+`Microsoft.AspNetCore.Mvc` declares its own `FromFormAttribute`. Importing both
+`UnambitiousFx.Synapse.Endpoints` and `Microsoft.AspNetCore.Mvc` in one file makes the bare
+`[FromForm]` ambiguous (`CS0104`) — nothing warns you before the compiler does. Fully qualify the one
+you mean, or alias it the same way [attribute collisions](../reference/escape-hatches#attribute-collisions)
+shows for `[FromHeader]`:
+
+```csharp
+using FromFormAttribute = UnambitiousFx.Synapse.Endpoints.FromFormAttribute;
+```
 :::
 
 ## Is a missing value an error?
@@ -325,5 +435,7 @@ type.
 ## Next
 
 - [Responses](./responses) — what comes back, including the shape of that `400`
-- [Low level: mediator-bound](../low-level/mediator-bound) — when the five rules cannot express your binding
+- [Low level: mediator-bound](../low-level/mediator-bound) — when the six rules cannot express your binding
+- [Reading the request](../low-level/reading-the-request) — the form readers by hand, `FormAsync` and friends
+- [OpenAPI](../reference/openapi) — what a form-bound endpoint declares, and what it does not
 - [Diagnostics](../reference/diagnostics) — every `SYNE` code referenced above

@@ -48,8 +48,8 @@ Declaring the route both ways — a route attribute **and** a verb call on the b
 
 :::warning The verb is invisible to the generator
 The route is a runtime value, so the generator cannot see the verb — and it needs one to decide whether
-an unannotated property binds from the query string ([rule 4](../high-level/messages#the-five-binding-rules))
-or from the request body (rule 5).
+an unannotated property binds from the query string ([rule 5](../high-level/messages#the-six-binding-rules))
+or from the request body (rule 6).
 
 It **assumes a bodyless verb**, which is right for the computed `GET` this hatch is nearly always used
 for, and wrong for a computed `POST`, where properties would bind from the query string instead of the
@@ -118,5 +118,5 @@ public sealed class HeadTasksEndpoint : Endpoint<ListTasksQuery, IReadOnlyList<T
 ```
 
 All of `GET`, `DELETE`, `HEAD`, `OPTIONS` and `TRACE` count as bodyless for
-[binding rule 4](../high-level/messages#the-five-binding-rules), so an unannotated property on any of
+[binding rule 5](../high-level/messages#the-six-binding-rules), so an unannotated property on any of
 them binds from the query string rather than the body.

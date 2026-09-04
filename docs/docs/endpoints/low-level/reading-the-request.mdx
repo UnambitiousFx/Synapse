@@ -1,7 +1,7 @@
 ---
 sidebar_position: 2
 title: Reading the request
-description: The HttpContext helper surface — typed route, query and header readers, the body, services, and the validator.
+description: The HttpContext helper surface — typed route, query, header and form readers, the body, services, and the validator.
 ---
 
 # Reading the request
@@ -37,6 +37,11 @@ means anything the generated binder can read, you can read the same way.
 | `QueryValues(name)` | `StringValues` | **Every** value of a repeated key |
 | `HeaderValues(name)` | `StringValues` | **Every** value of a repeated header |
 | `BodyAsync<T>(ct)` | `ValueTask<BindResult<T>>` | JSON body; never throws for a client mistake |
+| `FormAsync(ct)` | `ValueTask<BindResult<IFormCollection>>` | Reads the form so the synchronous readers below can serve from its cache — call this first |
+| `TryGetForm(name, out string?)` | `bool` | Raw string; first value wins when a field repeats. Requires `FormAsync` first |
+| `TryGetFormFile(name, out IFormFile?)` | `bool` | One uploaded file. Requires `FormAsync` first |
+| `FormValues(name)` | `StringValues` | **Every** value of a repeated form field. Requires `FormAsync` first |
+| `FormFiles(name)` | `IReadOnlyList<IFormFile>` | **Every** file uploaded under one field name — not every file on the request, see below. Requires `FormAsync` first |
 | `Service<T>()` | `T` | `RequestServices.GetRequiredService<T>()` |
 | `Validate()` | `BindingValidator` | [The accumulating collector](./validating) |
 
@@ -147,6 +152,69 @@ to turn a failure straight into the `400`. The `ct` you pass is linked with
 `T` must be registered on a `JsonSerializerContext`. `SYNE008` scans `BodyAsync<T>` call sites written
 lexically inside the endpoint class and warns if it is missing — but it cannot follow a body read into
 a helper on another type. See [Native AOT](../reference/native-aot).
+:::
+
+## Reading a form
+
+`FormAsync` reads `multipart/form-data` or `application/x-www-form-urlencoded` into a cached
+`IFormCollection`, the same way `BodyAsync<T>` reads JSON: every way the body can be unusable — no
+`Content-Type`, or a malformed multipart body — comes back as a `body`-keyed failure rather than an
+exception.
+
+:::warning Read the form first
+`TryGetForm`, `TryGetFormFile`, `FormValues` and `FormFiles` are synchronous readers over
+`HttpContext.Request.Form`, which only exists once `FormAsync` has populated its cache. Call
+`FormAsync` before any of them — skipping it does not throw, it reads an empty form, which is a
+quieter failure than an exception and easy to mistake for "the caller sent nothing".
+:::
+
+```csharp
+[Post("/tasks/{taskId:guid}/attachments")]
+public sealed class UploadAttachmentEndpoint : RawEndpoint
+{
+    public override void Configure(IRawEndpointBuilder builder)
+    {
+        builder.Produces<AttachmentCreated>(StatusCodes.Status201Created)
+            .ProducesValidationProblem();
+    }
+
+    public override async ValueTask<IResult> HandleAsync(HttpContext context, CancellationToken ct)
+    {
+        if (!context.TryGetRoute<Guid>("taskId", out var taskId))
+        {
+            return TypedResults.BadRequest("taskId must be a GUID");
+        }
+
+        var form = await context.FormAsync(ct);
+        if (!form.IsSuccess)
+        {
+            return form.Problem();          // 400 under "body" — not readable as a form at all
+        }
+
+        var v = context.Validate();
+        v.FormFile("file", out var file);
+        v.Form<string>("caption", out var caption);
+        if (!v.IsValid)
+        {
+            return v.Problem();             // one 400 naming every missing field and file
+        }
+
+        …
+    }
+}
+```
+
+`FormFiles(name)` reads the files under **one** field name; `context.Request.Form.Files` (an
+`IFormFileCollection`) is every file on the request, the same distinction the high level's
+`IFormFile[]`/`List<IFormFile>` versus `IFormFileCollection` shapes draw — see
+[Messages & binding → Forms and files](../high-level/messages#forms-and-files). Reach for `FormFiles`
+when one field can carry several files; reach for the whole collection when the endpoint accepts an
+open-ended set of fields.
+
+:::note Declaring the content type is a separate step
+None of this declares what the endpoint accepts — that is `Configure`'s job. See
+[OpenAPI → Declaring it at the low level](../reference/openapi#declaring-it-at-the-low-level). The
+high level does this automatically the moment any message property is form-bound.
 :::
 
 ## Reaching services

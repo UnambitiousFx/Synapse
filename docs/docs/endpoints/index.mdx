@@ -87,14 +87,14 @@ RawEndpoint                              ← low level:  context in, result out
 mapping and the OpenAPI metadata are all inherited unchanged from the tier below.
 
 That gives you a middle level worth knowing about: when the request *does* map onto a message but
-not by any of the [five binding rules](./high-level/messages.mdx#the-five-binding-rules) — a header that
+not by any of the [six binding rules](./high-level/messages.mdx#the-six-binding-rules) — a header that
 must be split, one repeated query key becoming a collection — you replace `BindAsync` and keep
 everything else.
 
 | Level | What you write | Reach for it when |
 |---|---|---|
 | `Endpoint<…>` | A class declaration and an attribute | Almost always |
-| `RawEndpoint<…>` | `BindAsync` | The request maps onto a message, but not by the five rules |
+| `RawEndpoint<…>` | `BindAsync` | The request maps onto a message, but not by the six rules |
 | `RawEndpoint` | `HandleAsync` | There is no message — the endpoint is about the HTTP exchange |
 
 ---

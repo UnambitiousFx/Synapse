@@ -89,8 +89,8 @@ message property, which is what these are built from:
 ```csharp
 var v = context.Validate();
 
-v.QueryValues<string>("tag", out var tags);            // string[] — absent → [], never an error
-v.HeaderValuesEnum<TaskStatus>("X-Status", out var st); // TaskStatus[] — a bad element reports its index
+v.QueryValues<string>("tag", out var tags);           // string[] — absent → [], never an error
+v.QueryValuesEnum<TaskStatus>("status", out var st);  // TaskStatus[] — a bad element reports its index
 ```
 
 ```json title="GET /reports?status=Open&status=Nope"
@@ -126,7 +126,7 @@ elements alike — so there is nothing left for an "optional" variant to add.
 ## A message the high level now handles
 
 `?tag=a&tag=b` becoming a collection used to need a hand-written `BindAsync` here — nothing on the
-five binding rules could express it. Since [repeated keys](../high-level/messages#repeated-keys)
+six binding rules could express it. Since [repeated keys](../high-level/messages#repeated-keys)
 shipped, a property typed `IReadOnlyList<string>` binds it directly, so the message needs no
 `BindAsync` at all:
 
@@ -150,11 +150,16 @@ $ curl -s 'localhost:5000/reports?page=2'
 {"page":2,"matched":0,"tags":[]}
 
 $ curl -s 'localhost:5000/reports?tag=docs'
-{"status":400,"errors":{"page":["The query value is required."]}}
+{"status":400,"errors":{"Page":["The query value is required."]}}
 ```
 
+Note the error key: `Page` is unattributed, so it resolves under the property's own name — capital `P`
+— not the lowercase `page` the query string happens to use above. Query matching is
+case-insensitive, so `?page=2` still binds it; only an explicit `[FromQuery(Name = "...")]`, like
+`Tags` has, changes what a *failure* is reported under.
+
 A rule like "page must be at least 1" or "at least one tag is required" is a business rule, not a
-presence/parseability one — the five rules and the generated binder do not run `Check`. That still
+presence/parseability one — the six rules and the generated binder do not run `Check`. That still
 belongs in `IRequestValidator` and the Synapse pipeline, exactly as the next section describes.
 
 **The low-tier readers above have not gone anywhere.** They remain the right tool once a handler

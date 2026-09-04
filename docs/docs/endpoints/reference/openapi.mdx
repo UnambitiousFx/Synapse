@@ -14,14 +14,47 @@ handler can be inferred.
 
 | Shape | Declared automatically |
 |---|---|
-| `Endpoint<TRequest, TResponse>` | `Accepts<TRequest>` on body-carrying verbs; `200` (or the declared status) with `TResponse`; `400` validation problem |
-| `Endpoint<TRequest>` | `Accepts<TRequest>` on body-carrying verbs; `204` (or the declared status), no body; `400` validation problem |
-| `StreamEndpoint<TRequest, TItem>` | `200` with `IAsyncEnumerable<TItem>` for both `application/json` and `text/event-stream`; `400` validation problem |
+| `Endpoint<TRequest, TResponse>` | `Accepts<TRequest>`; `200` (or the declared status) with `TResponse`; `400` validation problem |
+| `Endpoint<TRequest>` | `Accepts<TRequest>`; `204` (or the declared status), no body; `400` validation problem |
+| `StreamEndpoint<TRequest, TItem>` | `Accepts<TRequest>`; `200` with `IAsyncEnumerable<TItem>` for both `application/json` and `text/event-stream`; `400` validation problem |
 | `MappedEndpoint<…>` | `Accepts<THttpRequest>`; `200` (or the declared status) with `THttpResponse`; `400` validation problem |
 | `RawEndpoint` | **Nothing.** Declare it yourself |
 
 `Accepts` is skipped on verbs that carry no body (`GET`, `DELETE`, `HEAD`, `OPTIONS`, `TRACE`), so a
 `GET` endpoint does not advertise a request body no such request can send.
+
+Every one of these four tiers resolves `Accepts` from its **generated binder**, not from the tier
+itself — `Endpoint<TRequest, TResponse>`, `Endpoint<TRequest>`, `StreamEndpoint<TRequest, TItem>` and
+`MappedEndpoint<THttpRequest, …>` all ask their binder's `BodyKind` the same way, through the same
+`DeclaredRequestBody` hook. So the row above is the JSON case; the moment the bound type is
+[form-bound](../high-level/messages#forms-and-files) — on any of the four — the endpoint declares the
+form content types instead, described next.
+
+### A form-bound message declares content types, and no schema
+
+A message with a form-bound property — [`[FromForm]`, or a file-typed property](../high-level/messages#forms-and-files)
+— does not get an `Accepts<TRequest>`. It gets both form content types with no request schema at all:
+
+```json title="/openapi/v1.json — a form-bound POST"
+"post": {
+  "requestBody": {
+    "content": {
+      "multipart/form-data": {},
+      "application/x-www-form-urlencoded": {}
+    }
+  }
+}
+```
+
+That is deliberate, not a gap the generator failed to close: a message holding an `IFormFile` has no
+JSON schema to describe, so `Accepts(typeof(TRequest), …)` would hand the schema generator a type it
+cannot render. Declaring the two content types with no schema is what `ConsumesMatcherPolicy` needs
+to answer `415` for a JSON request rather than letting it through to a `400` — content-type
+negotiation and schema description are two different jobs, and only the first one is met today. The
+second — a request-body schema for a form-bound message, and a declared parameter for a query or
+header value at all, scalar or array — is unmet by anything in this package right now, and is
+feature doc 018 (OpenAPI parameter metadata, under `docs/endpoints/features/`), not silently dropped
+scope.
 
 The `400` is declared as `HttpValidationProblemDetails` — a problem document plus an `errors`
 dictionary — because that is what a bind failure actually sends. Not a plain `ProblemDetails`.

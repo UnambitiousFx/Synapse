@@ -23,7 +23,7 @@
 name".
 
 The promise does not hold on any verb that carries a body. `[NotBound]` is honoured where the
-generator emits assignments — rule 1 of the five binding rules, applied in `ResolveBindableProperty` —
+generator emits assignments — rule 1 of the six binding rules, applied in `ResolveBindableProperty` —
 but a body-carrying verb is not bound property-by-property. The emitted binder populates the message in
 one shot:
 

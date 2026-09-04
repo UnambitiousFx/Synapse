@@ -317,9 +317,59 @@ A URL can also carry its own query string — `harness.Get("/echo?search=gadgets
 Events — see [Streaming](#streaming) below.
 
 **`JsonBody`** serializes a value with the harness's own `JsonOptions`, shown above in
-`CreateTask_WithABody_Returns201WithTheConfiguredLocation`. For a body that must be sent verbatim —
-malformed JSON, or a non-JSON content type — **`Body`** sends the bytes and content type exactly as
-given, from `test/Synapse.Endpoints.Testing.Tests/RequestBuildingTests.cs`:
+`CreateTask_WithABody_Returns201WithTheConfiguredLocation`. For a form-bound endpoint, **`FormBody`**
+and **`MultipartBody`** build the other two request shapes:
+
+```csharp
+// application/x-www-form-urlencoded
+harness.Post("/captions").FormBody(("caption", "hello"));
+
+// multipart/form-data — fields and files
+harness.Post($"/tasks/{taskId}/uploads")
+    .MultipartBody([("caption", "hello")], [("file", "note.txt", "hi")]);
+```
+
+`FormBody(params (string Name, string Value)[])` URL-encodes each pair and joins them with `&`.
+`MultipartBody(IEnumerable<(string Name, string Value)> fields, IEnumerable<(string Name, string FileName, string Content)> files)`
+writes a real multipart body — a fixed boundary rather than a random one, so a test asserting on a
+malformed body has something stable to reason about — with each field and each file's name and file
+name escaped per RFC 2183/6266 quoted-string rules. Both exist side by side because a form binder
+must read either content type identically: `FormBody` is what exercises the request shape
+`MultipartBody` does not need a file to demonstrate.
+
+```csharp
+[Fact]
+public async Task SendAsync_WithAMultipartUpload_BindsTheFileAndTheFieldAndTheRouteValue()
+{
+    // Arrange
+    EndpointRegistry.RegisterBinder(new UploadBinder());
+    EndpointRegistry.RegisterMetadata<UploadEndpoint>(
+        new EndpointMetadata(["POST"], "/tasks/{taskId}/uploads"));
+    using var harness = EndpointHarness.Create<UploadEndpoint>(options =>
+        options.Handle<UploadCommand, string>(command =>
+            Result.Success($"{command.TaskId}:{command.File.FileName}:{command.Caption}")));
+    var taskId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+
+    // Act
+    var response = await harness.Post($"/tasks/{taskId}/uploads")
+        .MultipartBody([("caption", "hello")], [("file", "note.txt", "hi")])
+        .SendAsync(TestContext.Current.CancellationToken);
+
+    // Assert
+    Assert.Equal(StatusCodes.Status200OK, response.StatusCode);
+    Assert.Equal($"{taskId}:note.txt:hello", response.ReadJson<string>());
+}
+```
+
+A JSON body sent to a form-bound endpoint is rejected before either method's shape matters —
+`test/Synapse.Endpoints.Testing.Tests/FormBindingHarnessTests.cs`'s
+`SendAsync_WithAJsonBodyToAFormEndpoint_Answers415BeforeTheBinderRuns` sends `.Body("{}", "application/json")`
+against the same route and asserts `415`, not a bind failure: the consumes matcher policy rejects it
+before the endpoint's `BindAsync` ever runs, exactly as it does outside the harness.
+
+For a body that must be sent verbatim otherwise — malformed JSON, or a content type neither `JsonBody`
+nor the two form builders produce — **`Body`** sends the bytes and content type exactly as given,
+from `test/Synapse.Endpoints.Testing.Tests/RequestBuildingTests.cs`:
 
 ```csharp
 [Fact]

@@ -25,7 +25,7 @@ route value becomes `TaskId`, the query goes to its handler, and the handler's `
 | | Where it comes from |
 |---|---|
 | Route and verb | The `[Get]` attribute |
-| Binding | Generated from the message's properties — [five rules](./messages#the-five-binding-rules) |
+| Binding | Generated from the message's properties — [six rules](./messages#the-six-binding-rules) |
 | `400` on bad input | Generated: every bad value in [one response](./responses#failures) |
 | Dispatch | `IHttpInvoker`, unchanged |
 | Failure mapping | The registered `IFailureHttpMapper`, unchanged |
@@ -114,5 +114,5 @@ supported pattern.
 | How do I return `201`, or a different body? | [Responses](./responses) |
 | How do I share a prefix or a policy? | [Groups](./groups) |
 | How do I stream many items? | [Streaming](./streaming) |
-| The five rules cannot express my binding | [Low level: mediator-bound](../low-level/mediator-bound) |
+| The six rules cannot express my binding | [Low level: mediator-bound](../low-level/mediator-bound) |
 | What does this warning mean? | [Diagnostics](../reference/diagnostics) |
