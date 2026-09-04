@@ -92,6 +92,110 @@ public sealed class FormBinderEmissionTests
     }
 
     [Fact]
+    public void Generate_ForAPrivateFromFormProperty_StillResolvesUnannotatedPropertiesToJson()
+    {
+        // Arrange — the trap: a private [FromForm] property is invisible to the main binding pass
+        // (accessibility excludes it from ever becoming a bound property), so it must be equally
+        // invisible to the rule-6 pre-pass that decides whether the rest of the message flips to
+        // the form. A pre-pass with a looser filter than the main pass would flip Title to Form
+        // even though nothing the main pass can see is actually form-bound.
+        const string source = """
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+
+                              namespace TestNs;
+
+                              public sealed record CreateCommand : IRequest
+                              {
+                                  [FromForm] private string Secret { get; init; } = "";
+                                  public string Title { get; init; } = "";
+                              }
+
+                              [Post("/things")]
+                              public sealed class CreateEndpoint : Endpoint<CreateCommand>;
+                              """;
+
+        // Act
+        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+
+        // Assert — still a plain JSON message.
+        Assert.Contains("ReadJsonBodyAsync", generated);
+        Assert.Contains("RequestBodyKind.Json;", generated);
+        Assert.DoesNotContain("ReadFormAsync", generated);
+        GeneratorHarness.AssertGeneratedCompiles(source);
+    }
+
+    [Fact]
+    public void Generate_ForAFromFormAttributeWithACustomName_ReadsUnderThatName()
+    {
+        // Arrange — the project's own [FromForm] is positional: the name comes off
+        // ConstructorArguments, not NamedArguments. A reader mismatch would silently return null,
+        // fall back to the property name, and every default-name test would still pass.
+        const string source = """
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+
+                              namespace TestNs;
+
+                              public sealed record UploadCommand : IRequest
+                              {
+                                  [FromForm("photo")] public string Image { get; init; } = "";
+                              }
+
+                              [Post("/uploads")]
+                              public sealed class UploadEndpoint : Endpoint<UploadCommand>;
+                              """;
+
+        // Act
+        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+
+        // Assert
+        Assert.Contains("TryGetForm(context, \"photo\", out var rawImage)", generated);
+        GeneratorHarness.AssertGeneratedCompiles(source);
+    }
+
+    [Fact]
+    public void Generate_ForAnMvcFromFormAttributeWithACustomName_ReadsUnderThatName()
+    {
+        // Arrange — MVC's [FromForm] is named-property: the name comes off NamedArguments, not
+        // ConstructorArguments (it has no positional constructor at all). A reader mismatch would
+        // silently return null, fall back to the property name, and every default-name test would
+        // still pass. Split into two namespaces (mirroring
+        // Generate_ForTheMvcFromHeaderAttribute_ReadsTheHeaderAndNotTheQueryString in
+        // BinderEmissionEdgeCaseTests): the message's own namespace imports MVC but not
+        // UnambitiousFx.Synapse.Endpoints, so [FromForm] resolves to MVC's with no CS0104 ambiguity
+        // against our own [FromForm] — exactly the using set a message file that does not declare
+        // its own endpoint would have.
+        const string source = """
+                              namespace TestNs
+                              {
+                                  using Microsoft.AspNetCore.Mvc;
+                                  using UnambitiousFx.Synapse.Abstractions;
+
+                                  public sealed record UploadCommand : IRequest
+                                  {
+                                      [FromForm(Name = "photo")] public string Image { get; init; } = "";
+                                  }
+                              }
+
+                              namespace TestNs2
+                              {
+                                  using UnambitiousFx.Synapse.Endpoints;
+
+                                  [Post("/uploads")]
+                                  public sealed class UploadEndpoint : Endpoint<TestNs.UploadCommand>;
+                              }
+                              """;
+
+        // Act
+        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+
+        // Assert
+        Assert.Contains("TryGetForm(context, \"photo\", out var rawImage)", generated);
+        GeneratorHarness.AssertGeneratedCompiles(source);
+    }
+
+    [Fact]
     public void Generate_ForAJsonMessage_StillDeclaresAJsonBodyKind()
     {
         // Arrange

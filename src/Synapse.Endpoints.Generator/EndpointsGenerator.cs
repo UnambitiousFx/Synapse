@@ -609,11 +609,7 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
         {
             foreach (var member in type.GetMembers())
             {
-                if (member is not IPropertySymbol
-                    {
-                        IsStatic: false, IsIndexer: false,
-                        DeclaredAccessibility: Accessibility.Public or Accessibility.Internal
-                    } property)
+                if (member is not IPropertySymbol property || !IsBindableCandidateProperty(property))
                 {
                     continue;
                 }
@@ -757,12 +753,26 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
     /// </summary>
     private static bool HasFormPinnedProperty(INamedTypeSymbol boundType)
     {
+        // Same base-chain walk, same shadowing rule as the main pass: a base-type property
+        // redeclared (shadowed) by a derived one must not be counted twice, and must defer to the
+        // derived declaration exactly as CollectBindableProperties does.
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
         for (var type = boundType; type is not null; type = type.BaseType)
         {
             foreach (var member in type.GetMembers())
             {
-                if (member is not IPropertySymbol { IsStatic: false, IsIndexer: false } property ||
-                    HasNotBoundAttribute(property))
+                if (member is not IPropertySymbol property || !IsBindableCandidateProperty(property))
+                {
+                    continue;
+                }
+
+                if (!seen.Add(property.Name))
+                {
+                    continue;
+                }
+
+                if (HasNotBoundAttribute(property))
                 {
                     continue;
                 }
@@ -780,6 +790,23 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
         }
 
         return false;
+    }
+
+    /// <summary>
+    ///     Whether <paramref name="property" /> is a candidate this generator considers for binding
+    ///     at all. Deliberately shared by the main property-collection pass
+    ///     (<see cref="CollectBindableProperties" />) and its <see cref="HasFormPinnedProperty" />
+    ///     pre-pass, rather than each keeping its own copy of the same three checks: a property this
+    ///     rejects (static, an indexer, or neither public nor internal) never becomes a bound
+    ///     property and never itself resolves to <see cref="BindingSource.Form" />, so it must be
+    ///     equally invisible to the rule-6 pre-check that decides whether the *rest* of the message
+    ///     flips to the form — otherwise a private <c>[FromForm]</c> property could flip every other
+    ///     property on the message to the form while the main pass never saw it at all.
+    /// </summary>
+    private static bool IsBindableCandidateProperty(IPropertySymbol property)
+    {
+        return property is { IsStatic: false, IsIndexer: false } &&
+               property.DeclaredAccessibility is Accessibility.Public or Accessibility.Internal;
     }
 
     /// <summary>
