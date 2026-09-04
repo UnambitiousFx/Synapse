@@ -442,10 +442,23 @@ internal static class EndpointDiagnostics
     ///     SYNE018: one message binds from both the form and the JSON body. A request carries one or the
     ///     other, never both, so whichever the binder reads, the other property can never bind.
     /// </summary>
+    /// <remarks>
+    ///     Reaching <c>Source == Body</c> while the message is form-bound requires an explicit
+    ///     <c>[FromBody]</c>: <c>ResolveSource</c>'s convention fallback only ever returns
+    ///     <c>Body</c> when <c>isFormBound</c> is <see langword="false" />; once the message is
+    ///     form-bound, every unattributed property that would otherwise have fallen to <c>Body</c>
+    ///     is sent to <c>Form</c> instead (rule 6). So this diagnostic can only fire when an explicit
+    ///     <c>[FromBody]</c> overrides that convention on an otherwise form-bound message — it never
+    ///     misfires on a message that rule 6 simply flipped to the form in its entirety, which is the
+    ///     overwhelmingly common case and must stay silent. The message becomes form-bound in the
+    ///     first place through either cause <see cref="InferredFormBinding" /> distinguishes — a
+    ///     file-typed property (rule 3) or an explicit <c>[FromForm]</c> — and both reach this
+    ///     diagnostic identically, so its remedy must not presume a file is involved.
+    /// </remarks>
     internal static readonly DiagnosticDescriptor FormAndBodyOnOneMessage = new(
         "SYNE018",
         "Message binds from both the form and the JSON body",
-        "'{0}' has form-bound properties ({1}) and body-bound properties ({2}). A request is either a form or JSON, never both, so one of these groups can never bind. Move the JSON properties to [FromForm], or send the file separately.",
+        "'{0}' has form-bound properties ({1}) and body-bound properties ({2}). A request is either a form or JSON, never both, so one of these groups can never bind. Move the body-bound properties to [FromForm], or split them onto a request that does not also bind from the form.",
         Category,
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
@@ -465,7 +478,7 @@ internal static class EndpointDiagnostics
     internal static readonly DiagnosticDescriptor InferredFormBinding = new(
         "SYNE019",
         "Message is form-bound by inference",
-        "'{0}' is form-bound because '{1}' is a file, and {2} therefore bind from the form rather than from a JSON body. Add [FromForm] to '{1}' to say so explicitly, or annotate the moved properties.",
+        "'{0}' is form-bound because '{1}' is a file, so the following properties bind from the form rather than from a JSON body: {2}. Add [FromForm] to '{1}' to say so explicitly, or annotate the moved properties.",
         Category,
         DiagnosticSeverity.Info,
         isEnabledByDefault: true);
