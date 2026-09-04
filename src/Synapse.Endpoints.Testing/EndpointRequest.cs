@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
@@ -13,6 +14,11 @@ namespace UnambitiousFx.Synapse.Endpoints.Testing;
 /// </summary>
 public sealed class EndpointRequest
 {
+    // The boundary as declared in the Content-Type header; the delimiter lines written into the body
+    // are "--" plus this value, per RFC 2046. Fixed rather than random so a failing multipart test
+    // shows a stable, reviewable body instead of a boundary that differs on every run.
+    private const string MultipartBoundaryValue = "------------------------synapse";
+
     private readonly IServiceProvider _provider;
     private readonly RequestDelegate _pipeline;
     private readonly string _routeDescription;
@@ -122,6 +128,68 @@ public sealed class EndpointRequest
         _body = Encoding.UTF8.GetBytes(content);
         _contentType = contentType;
         return this;
+    }
+
+    /// <summary>Sends <paramref name="fields" /> as an <c>application/x-www-form-urlencoded</c> body.</summary>
+    /// <param name="fields">The field names and values to encode.</param>
+    /// <returns>The request, for chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="fields" /> is <see langword="null" />.</exception>
+    /// <remarks>
+    ///     Exists alongside <see cref="MultipartBody" /> because a form binder must read both content
+    ///     types identically — this is what exercises the one a test does not use a file in.
+    /// </remarks>
+    public EndpointRequest FormBody(params (string Name, string Value)[] fields)
+    {
+        ArgumentNullException.ThrowIfNull(fields);
+
+        var content = string.Join(
+            '&',
+            fields.Select(field =>
+                $"{WebUtility.UrlEncode(field.Name)}={WebUtility.UrlEncode(field.Value)}"));
+
+        return Body(content, "application/x-www-form-urlencoded");
+    }
+
+    /// <summary>Sends <paramref name="fields" /> and <paramref name="files" /> as a <c>multipart/form-data</c> body.</summary>
+    /// <param name="fields">The field names and values to include as form parts.</param>
+    /// <param name="files">The field name, file name and content of each uploaded file part.</param>
+    /// <returns>The request, for chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="fields" /> or <paramref name="files" /> is <see langword="null" />.</exception>
+    /// <remarks>
+    ///     A fixed boundary rather than a random one, so a test asserting on a malformed body has a
+    ///     stable value to reason about. The boundary declared in the <c>Content-Type</c> header and
+    ///     the one written into the body's delimiter lines must agree — a mismatch there does not fail
+    ///     to parse, it silently produces an empty form, which would make a "missing field" assertion
+    ///     pass for the wrong reason.
+    /// </remarks>
+    public EndpointRequest MultipartBody(
+        IEnumerable<(string Name, string Value)> fields,
+        IEnumerable<(string Name, string FileName, string Content)> files)
+    {
+        ArgumentNullException.ThrowIfNull(fields);
+        ArgumentNullException.ThrowIfNull(files);
+
+        var builder = new StringBuilder();
+
+        foreach (var field in fields)
+        {
+            builder.Append("--").Append(MultipartBoundaryValue).Append("\r\n");
+            builder.Append("Content-Disposition: form-data; name=\"").Append(field.Name).Append("\"\r\n\r\n");
+            builder.Append(field.Value).Append("\r\n");
+        }
+
+        foreach (var file in files)
+        {
+            builder.Append("--").Append(MultipartBoundaryValue).Append("\r\n");
+            builder.Append("Content-Disposition: form-data; name=\"").Append(file.Name)
+                   .Append("\"; filename=\"").Append(file.FileName).Append("\"\r\n");
+            builder.Append("Content-Type: application/octet-stream\r\n\r\n");
+            builder.Append(file.Content).Append("\r\n");
+        }
+
+        builder.Append("--").Append(MultipartBoundaryValue).Append("--\r\n");
+
+        return Body(builder.ToString(), $"multipart/form-data; boundary={MultipartBoundaryValue}");
     }
 
     /// <summary>Sends the request through the endpoint.</summary>
