@@ -1008,6 +1008,27 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
         }
 
         var (underlying, isNullable) = UnwrapNullable(property.Type);
+
+        var shape = BindingValueShape.Scalar;
+        var materialization = Materialization.None;
+
+        // Parseability is tested before collection-ness, so a type that is both enumerable and parsable
+        // keeps binding as the scalar it has always been. Reordering these two silently changes that.
+        //
+        // Route and Body are both excluded: a route segment cannot repeat, so a collection-typed route
+        // property has no reader to call (CollectionValueReadEmitter.GetTryGetValuesMethod has no Route
+        // arm), and the whole body is already bound by System.Text.Json in one shot. Excluding only Body
+        // here left a [FromRoute] collection property resolved as BindingValueShape.Collection, which
+        // then threw out of the emitter instead of falling through to SYNE012 below.
+        if (!HasViableParsePath(underlying) &&
+            source.Value is not (BindingSource.Route or BindingSource.Body) &&
+            TryResolveCollectionShape(underlying, out var element, out var resolvedMaterialization))
+        {
+            shape = BindingValueShape.Collection;
+            materialization = resolvedMaterialization;
+            underlying = element;
+        }
+
         var isString = underlying.SpecialType == SpecialType.System_String;
         var isEnum = underlying.TypeKind == TypeKind.Enum;
 
@@ -1069,7 +1090,9 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
             isRecordWith,
             HasFormatProviderTryParse(underlying),
             underlying.IsReferenceType,
-            property.IsRequired);
+            property.IsRequired,
+            shape,
+            materialization);
     }
 
     /// <summary>
@@ -1173,6 +1196,61 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
         }
 
         return (type, type.NullableAnnotation == NullableAnnotation.Annotated);
+    }
+
+    /// <summary>
+    ///     Whether <paramref name="type" /> is one of the four supported collection shapes, and if so
+    ///     over which element and with what materialization.
+    /// </summary>
+    /// <remarks>
+    ///     <c>string</c> is rejected first and explicitly. It is an <c>IEnumerable&lt;char&gt;</c>, so
+    ///     without this guard every string property would become a collection of <c>char</c>. The caller
+    ///     also tests parseability before calling this (see <see cref="ResolveBindableProperty" />), but
+    ///     relying on that ordering alone would make a later reordering silently catastrophic.
+    /// </remarks>
+    private static bool TryResolveCollectionShape(ITypeSymbol type,
+        out ITypeSymbol element,
+        out Materialization materialization)
+    {
+        element = type;
+        materialization = Materialization.None;
+
+        if (type.SpecialType == SpecialType.System_String)
+        {
+            return false;
+        }
+
+        if (type is IArrayTypeSymbol { Rank: 1 } array)
+        {
+            element = array.ElementType;
+            materialization = Materialization.Array;
+            return true;
+        }
+
+        if (type is INamedTypeSymbol { IsGenericType: true } named &&
+            named.TypeArguments.Length == 1)
+        {
+            var definition = named.OriginalDefinition.ToDisplayString();
+            if (definition is "System.Collections.Generic.List<T>"
+                or "System.Collections.Generic.IReadOnlyList<T>"
+                or "System.Collections.Generic.IEnumerable<T>")
+            {
+                element = named.TypeArguments[0];
+                materialization = Materialization.List;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>Whether a value of <paramref name="type" /> can be produced from a raw string.</summary>
+    private static bool HasViableParsePath(ITypeSymbol type)
+    {
+        return type.SpecialType == SpecialType.System_String ||
+               type.TypeKind == TypeKind.Enum ||
+               HasTwoArgumentTryParse(type) ||
+               HasFormatProviderTryParse(type);
     }
 
     /// <summary>

@@ -9,6 +9,29 @@ internal enum BindingSource
     Body
 }
 
+/// <summary>How many values one property takes, and what kind.</summary>
+internal enum BindingValueShape
+{
+    Scalar,
+    Collection,
+    FormFile,
+    FormFileCollection
+}
+
+/// <summary>What the emitter does with the accumulated <c>List&lt;TElement&gt;</c>.</summary>
+/// <remarks>
+///     <see cref="List" /> covers <c>List&lt;T&gt;</c>, <c>IReadOnlyList&lt;T&gt;</c> and
+///     <c>IEnumerable&lt;T&gt;</c> alike: all three take a <c>List&lt;T&gt;</c> by implicit
+///     conversion, so four supported shapes cost two branches rather than four.
+/// </remarks>
+internal enum Materialization
+{
+    None,
+    Array,
+    List,
+    Native
+}
+
 /// <summary>
 ///     Equatable description of one bindable property, produced by applying the five binding-source
 ///     resolution rules (spec section 4) to a message's properties.
@@ -33,7 +56,9 @@ internal sealed record BindablePropertyModel
         bool isRecordWith,
         bool parsesWithFormatProvider,
         bool isReferenceType,
-        bool isRequired)
+        bool isRequired,
+        BindingValueShape shape,
+        Materialization materialization)
     {
         Name = name;
         TypeFullName = typeFullName;
@@ -46,6 +71,8 @@ internal sealed record BindablePropertyModel
         ParsesWithFormatProvider = parsesWithFormatProvider;
         IsReferenceType = isReferenceType;
         IsRequired = isRequired;
+        Shape = shape;
+        Materialization = materialization;
     }
 
     /// <summary>The property's name on the bound type.</summary>
@@ -110,4 +137,10 @@ internal sealed record BindablePropertyModel
     ///     parameter covers. See docs/known-issues/061.
     /// </remarks>
     public bool IsRequired { get; }
+
+    /// <summary>How many values this property takes, and what kind — which emitter writes its read.</summary>
+    public BindingValueShape Shape { get; }
+
+    /// <summary>What the emitter does with the accumulated list. <see cref="Materialization.None" /> for a scalar.</summary>
+    public Materialization Materialization { get; }
 }

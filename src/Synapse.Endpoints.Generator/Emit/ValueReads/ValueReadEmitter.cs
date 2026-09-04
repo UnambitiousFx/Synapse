@@ -19,7 +19,11 @@ internal static class ValueReadEmitter
 
     internal static ValueRead Emit(ValueReadContext context)
     {
-        return ScalarValueReadEmitter.Emit(context);
+        return context.Property.Shape switch
+        {
+            BindingValueShape.Collection => CollectionValueReadEmitter.Emit(context),
+            _ => ScalarValueReadEmitter.Emit(context)
+        };
     }
 
     internal static string ValueLocal(BindablePropertyModel property)
