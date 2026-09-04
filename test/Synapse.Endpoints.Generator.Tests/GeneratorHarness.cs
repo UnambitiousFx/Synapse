@@ -211,6 +211,20 @@ internal static class GeneratorHarness
     }
 
     /// <summary>
+    ///     The framework reference set, built once per process.
+    /// </summary>
+    /// <remarks>
+    ///     Built once, not per compilation. <see cref="MetadataReference.CreateFromFile(string, MetadataReferenceProperties, DocumentationProvider)" />
+    ///     has no cache: every call re-reads the file and builds a fresh <c>AssemblyMetadata</c> holding a
+    ///     memory-mapped image of it. TRUSTED_PLATFORM_ASSEMBLIES here is 313 assemblies and 94 MB, and
+    ///     this harness compiles once per test, so rebuilding the list per call cost tens of thousands of
+    ///     mapped images per run and exhausted system memory — it OOM-killed the host twice. Roslyn's
+    ///     reference objects are immutable and designed to be shared across compilations, so one list
+    ///     serves every test.
+    /// </remarks>
+    private static readonly ImmutableArray<MetadataReference> SharedMetadataReferences = BuildMetadataReferences();
+
+    /// <summary>
     ///     Copied from <c>Synapse.Generator.Tests.GeneratorBehaviorTests.GetMetadataReferences()</c> and
     ///     extended with the Synapse.Endpoints assembly and the ASP.NET Core reference assemblies:
     ///     discovered endpoint types derive from the four endpoint base classes (Synapse.Endpoints), and the
@@ -220,6 +234,11 @@ internal static class GeneratorHarness
     ///     separate reference-assembly lookup is needed here.
     /// </summary>
     private static IEnumerable<MetadataReference> GetMetadataReferences()
+    {
+        return SharedMetadataReferences;
+    }
+
+    private static ImmutableArray<MetadataReference> BuildMetadataReferences()
     {
         // Load all trusted platform assemblies (covers System.Runtime, System.Collections, the ASP.NET Core
         // shared framework, etc. — the latter is present because this test project declares a
@@ -241,7 +260,7 @@ internal static class GeneratorHarness
         // Add Synapse.Endpoints (Endpoint<>, MappedEndpoint<>, StreamEndpoint<>, IEndpointGroup, EndpointMetadata, …)
         refs.Add(MetadataReference.CreateFromFile(typeof(EndpointBase).Assembly.Location));
 
-        return refs;
+        return refs.ToImmutableArray();
     }
 
     /// <summary>
