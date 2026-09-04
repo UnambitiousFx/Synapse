@@ -1107,6 +1107,21 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
         // would otherwise resolve as an ordinary Collection shape with an element type this project's
         // generator cannot parse either, and fail with the wrong diagnostic (SYNE012) instead of
         // reading as files.
+        //
+        // Source is hardcoded to Form here rather than passed through as `source.Value`, and that is
+        // deliberate, not an oversight: an explicit `[FromBody] IFormFile Foo` resolves Source = Body
+        // through the attribute switch above, before rule 3 (IsFileTyped) is ever consulted. If that
+        // Body source were recorded on the model, BinderEmitter would see hasJsonBodyProperty = true,
+        // switch the whole message to JSON-body construction, drop this property from `bindable`
+        // (BinderEmitter only reads non-Body properties there) so FormFileValueReadEmitter is never
+        // invoked for it at all, and ResolveJsonRequestTypeName would then demand a
+        // [JsonSerializable] registration (SYNE008) for a message containing a raw IFormFile — which
+        // can never be satisfied and is exactly the Native-AOT violation this feature exists to avoid.
+        // The file emitters are selected purely by Shape and never consult Source, so forcing Form
+        // costs nothing and keeps "a file-shaped property's Source is never Body" true unconditionally,
+        // whatever attribute someone writes on it. (An explicit [FromQuery]/[FromRoute]/[FromHeader]
+        // on a file is harmlessly overridden the same way today, and is not a case this needs to
+        // preserve.) See Generate_ForAFromBodyIFormFileProperty_StillBindsAsFormNotJson.
         if (TryResolveFileShape(underlying, out var fileShape, out var fileMaterialization))
         {
             var (canAssignFile, isRecordWithFile) = ResolveAssignmentStrategy(property);
@@ -1122,7 +1137,7 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
 
             return new BindablePropertyModel(
                 property.Name, underlying.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
-                source.Value, sourceKey!, isNullable, isString: false, isEnum: false,
+                BindingSource.Form, sourceKey!, isNullable, isString: false, isEnum: false,
                 isRecordWithFile, parsesWithFormatProvider: false, isReferenceType: true,
                 property.IsRequired, fileShape, fileMaterialization);
         }

@@ -372,6 +372,48 @@ public sealed class FormBinderEmissionTests
     }
 
     [Fact]
+    public void Generate_ForAFromBodyIFormFileProperty_StillBindsAsFormNotJson()
+    {
+        // Arrange — the trap: [FromBody] resolves Source = Body through the attribute switch before
+        // rule 3 (the file-type check) is ever consulted, so a naive implementation that records
+        // whatever ResolveSource actually returned would flip the whole message onto the JSON path —
+        // dropping the file from `bindable` in BinderEmitter (which only reads non-Body properties),
+        // never calling FormFileValueReadEmitter for it, and demanding a [JsonSerializable]
+        // registration (SYNE008) for a message containing a raw IFormFile, which can never be
+        // satisfied. The model's Source must be hardcoded to Form for a file-shaped property
+        // regardless of what attribute is written on it, so this stays a form read no matter what.
+        const string source = """
+                              using Microsoft.AspNetCore.Http;
+                              using Microsoft.AspNetCore.Mvc;
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+
+                              namespace TestNs;
+
+                              public sealed record UploadCommand : IRequest
+                              {
+                                  [FromBody] public IFormFile File { get; init; } = null!;
+                                  public string Caption { get; init; } = "";
+                              }
+
+                              [Post("/uploads")]
+                              public sealed class UploadEndpoint : Endpoint<UploadCommand>;
+                              """;
+
+        // Act
+        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var diagnostics = GeneratorHarness.GetDiagnostics(source);
+
+        // Assert
+        Assert.Contains("BindingHelpers.ReadFormAsync(context)", generated);
+        Assert.DoesNotContain("ReadJsonBodyAsync", generated);
+        Assert.Contains("BodyKind => global::UnambitiousFx.Synapse.Endpoints.Binding.RequestBodyKind.Form;", generated);
+        Assert.Contains("TryGetFormFile(context, \"File\", out var rawFile)", generated);
+        Assert.DoesNotContain(diagnostics, d => d.Id == "SYNE008");
+        GeneratorHarness.AssertGeneratedCompiles(source);
+    }
+
+    [Fact]
     public void Generate_ForAnUnassignableIFormFileProperty_ReportsSyne011NotSyne012()
     {
         // Arrange — a file has no parse step, so SYNE012 (no viable TryParse) never applies to it, but
