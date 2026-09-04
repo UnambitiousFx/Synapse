@@ -70,7 +70,9 @@ internal static class GeneratorHarness
     {
         var compilation = CreateCompilation(source).AddReferences(extraReferences);
         var driver = CSharpGeneratorDriver.Create(new EndpointsGenerator());
-        driver.RunGeneratorsAndUpdateCompilation(compilation, out var updated, out _);
+        driver.RunGeneratorsAndUpdateCompilation(compilation, out var updated, out var generatorDiagnostics);
+
+        AssertNoGeneratorErrors(generatorDiagnostics);
 
         var errors = updated.GetDiagnostics()
             .Where(d => d.Severity == DiagnosticSeverity.Error)
@@ -134,7 +136,36 @@ internal static class GeneratorHarness
 
     internal static void AssertGeneratedCompiles(string source)
     {
-        AssertGeneratedCompiles(source, optionsProvider: null);
+        AssertGeneratedCompiles(source, optionsProvider: null, allowGeneratorErrors: false);
+    }
+
+    /// <summary>
+    ///     Same as <see cref="AssertGeneratedCompiles(string)" />, but tolerating the generator's own
+    ///     Error-severity diagnostics — for the tests whose subject <em>is</em> a SYNEnnn error and
+    ///     which additionally want to pin that what is still emitted around the omitted property
+    ///     compiles. Named so the exemption is visible at the call site, because it is exactly the
+    ///     exemption that let a build-breaking SYNE012 ship unnoticed.
+    /// </summary>
+    internal static void AssertGeneratedCompilesDespiteDiagnostics(string source)
+    {
+        AssertGeneratedCompiles(source, optionsProvider: null, allowGeneratorErrors: true);
+    }
+
+    /// <summary>
+    ///     The generator's own diagnostics, which <c>Compilation.GetDiagnostics()</c> never sees: it
+    ///     reports C# diagnostics about the updated compilation, not what the driver reported while
+    ///     producing it. Discarding the driver's <c>out</c> parameter therefore let a test assert
+    ///     "the generated code compiles" about a source the generator had refused to bind a property
+    ///     of, reporting a build-breaking Error as it did so.
+    /// </summary>
+    private static void AssertNoGeneratorErrors(ImmutableArray<Diagnostic> generatorDiagnostics)
+    {
+        var reported = generatorDiagnostics
+            .Where(d => d.Severity == DiagnosticSeverity.Error)
+            .ToArray();
+
+        Assert.True(reported.Length == 0,
+            "The generator reported errors: " + string.Join("; ", reported.Select(e => e.ToString())));
     }
 
     /// <summary>
@@ -153,10 +184,13 @@ internal static class GeneratorHarness
     {
         AssertGeneratedCompiles(source,
             new TestAnalyzerConfigOptionsProvider(
-                new Dictionary<string, string> { ["build_property.RootNamespace"] = rootNamespace }));
+                new Dictionary<string, string> { ["build_property.RootNamespace"] = rootNamespace }),
+            allowGeneratorErrors: false);
     }
 
-    private static void AssertGeneratedCompiles(string source, AnalyzerConfigOptionsProvider? optionsProvider)
+    private static void AssertGeneratedCompiles(string source,
+        AnalyzerConfigOptionsProvider? optionsProvider,
+        bool allowGeneratorErrors)
     {
         var compilation = CreateCompilation(source);
         var driver = optionsProvider is null
@@ -174,6 +208,11 @@ internal static class GeneratorHarness
 
         Assert.True(generatorFailures.Length == 0,
             "The generator itself threw: " + string.Join("; ", generatorFailures.Select(e => e.ToString())));
+
+        if (!allowGeneratorErrors)
+        {
+            AssertNoGeneratorErrors(generatorDiagnostics);
+        }
 
         var errors = updated.GetDiagnostics()
             .Where(d => d.Severity == DiagnosticSeverity.Error)

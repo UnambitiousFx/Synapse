@@ -212,4 +212,158 @@ public sealed class CollectionBinderEmissionTests
         Assert.Contains("TryGetHeaderValues(context, \"X-Tag\", out var rawTags)", generated);
         GeneratorHarness.AssertGeneratedCompiles(source);
     }
+
+    [Fact]
+    public void Generate_ForAFormSourcedCollection_ReadsItThroughTryGetFormValues()
+    {
+        // Arrange — a form field repeats exactly as a query key does, so the third source the
+        // cardinality axis supports is the form. This is the seam between the two slices this branch
+        // shipped: collections were built over query and header, the form source arrived afterwards,
+        // and their product went untested until now.
+        const string source = """
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+
+                              namespace TestNs;
+
+                              public sealed record TagCommand : IRequest
+                              {
+                                  [FromForm] public string[] Tags { get; init; } = [];
+                              }
+
+                              [Post("/tags")]
+                              public sealed class TagEndpoint : Endpoint<TagCommand>;
+                              """;
+
+        // Act
+        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+
+        // Assert — and the form is read first, because the field readers serve from its cache.
+        Assert.Contains("BindingHelpers.ReadFormAsync(context)", generated);
+        Assert.Contains("TryGetFormValues(context, \"Tags\", out var rawTags)", generated);
+        Assert.DoesNotContain("TryGetQueryValues", generated);
+        GeneratorHarness.AssertGeneratedCompiles(source);
+    }
+
+    [Fact]
+    public void Generate_ForAFormSourcedEnumCollection_ReportsABadElementUnderTheFieldName()
+    {
+        // Arrange
+        const string source = """
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+
+                              namespace TestNs;
+
+                              public enum TaskStatus { Open, Done }
+
+                              public sealed record StatusCommand : IRequest
+                              {
+                                  [FromForm("status")] public TaskStatus[] Statuses { get; init; } = [];
+                              }
+
+                              [Post("/statuses")]
+                              public sealed class StatusEndpoint : Endpoint<StatusCommand>;
+                              """;
+
+        // Act
+        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+
+        // Assert — "form value", not "query value": the message names the source it actually read.
+        Assert.Contains("TryGetFormValues(context, \"status\", out var rawStatuses)", generated);
+        Assert.Contains("The form value at index ", generated);
+        Assert.Contains("validation.AddError(\"status\"", generated);
+        GeneratorHarness.AssertGeneratedCompiles(source);
+    }
+
+    [Fact]
+    public void Generate_ForANullableCollectionInAPrimaryConstructor_BindsNullWhenTheKeyIsAbsent()
+    {
+        // Arrange — a constructor argument is applied unconditionally, so there is no assignment for a
+        // presence flag to guard: the null has to live in the local itself. Without that, an absent
+        // key handed the constructor an empty array and "nullable distinguishes absent from empty"
+        // held only for a plain settable property.
+        const string source = """
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+
+                              namespace TestNs;
+
+                              public sealed record SearchQuery(string[]? Tags) : IRequest<int>;
+
+                              [Get("/search")]
+                              public sealed class SearchEndpoint : Endpoint<SearchQuery, int>;
+                              """;
+
+        // Act
+        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+
+        // Assert
+        Assert.Contains("string[]? valueTags = default;", generated);
+        Assert.DoesNotContain("var valueTags = listTags.ToArray();", generated);
+        Assert.Contains("new global::TestNs.SearchQuery(valueTags)", generated);
+        GeneratorHarness.AssertGeneratedCompiles(source);
+    }
+
+    [Fact]
+    public void Generate_ForARequiredNullableCollectionInAnObjectInitializer_BindsNullWhenTheKeyIsAbsent()
+    {
+        // Arrange — a `required` member must be set in the object initializer (CS9035), which is the
+        // second shape that applies the value unconditionally.
+        const string source = """
+                              using System.Collections.Generic;
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+
+                              namespace TestNs;
+
+                              public sealed record SearchQuery : IRequest<int>
+                              {
+                                  public required List<int>? Ids { get; set; }
+                              }
+
+                              [Get("/search")]
+                              public sealed class SearchEndpoint : Endpoint<SearchQuery, int>;
+                              """;
+
+        // Act
+        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+
+        // Assert
+        Assert.Contains("global::System.Collections.Generic.List<int>? valueIds = default;", generated);
+        Assert.Contains("{ Ids = valueIds }", generated);
+        Assert.DoesNotContain("var valueIds = listIds;", generated);
+        GeneratorHarness.AssertGeneratedCompiles(source);
+    }
+
+    [Fact]
+    public void Generate_ForANullableCollectionOnASettableProperty_StillGuardsWithAPresenceFlag()
+    {
+        // Arrange — the one shape that already worked, kept as a regression guard: here the presence
+        // flag is what makes an absent key leave the property's own initializer alone, so the local
+        // stays non-nullable and the assignment is what is conditional.
+        const string source = """
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+
+                              namespace TestNs;
+
+                              public sealed class SearchQuery : IRequest<int>
+                              {
+                                  public string[]? Tags { get; set; }
+                              }
+
+                              [Get("/search")]
+                              public sealed class SearchEndpoint : Endpoint<SearchQuery, int>;
+                              """;
+
+        // Act
+        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+
+        // Assert
+        Assert.Contains("var hasTags = false;", generated);
+        Assert.Contains("var valueTags = listTags.ToArray();", generated);
+        Assert.Contains("if (hasTags)", generated);
+        GeneratorHarness.AssertGeneratedCompiles(source);
+    }
 }

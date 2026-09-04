@@ -1825,8 +1825,8 @@ public sealed class GeneratorBehaviorTests
     /// <remarks>
     ///     Built once, not per compilation. <see cref="MetadataReference.CreateFromFile(string, MetadataReferenceProperties, DocumentationProvider)" />
     ///     has no cache: every call re-reads the file and builds a fresh <c>AssemblyMetadata</c> holding a
-    ///     memory-mapped image of it. TRUSTED_PLATFORM_ASSEMBLIES here is 313 assemblies and 94 MB, and
-    ///     this harness compiles once per test, so rebuilding the list per call cost tens of thousands of
+    ///     memory-mapped image of it. TRUSTED_PLATFORM_ASSEMBLIES is the whole shared framework, and this
+    ///     harness compiles once per test, so rebuilding the list per call cost tens of thousands of
     ///     mapped images per run and exhausted system memory — it OOM-killed the host twice. Roslyn's
     ///     reference objects are immutable and designed to be shared across compilations, so one list
     ///     serves every test.

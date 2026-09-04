@@ -307,6 +307,132 @@ public sealed class BindingHelpersTests
         Assert.False(result.IsSuccess);
     }
 
+    /// <summary>
+    ///     A context whose body is <paramref name="body" /> verbatim under <paramref name="contentType" />,
+    ///     so <c>ReadFormAsync</c> actually parses it rather than being handed a pre-built
+    ///     <see cref="FormCollection" />. The malformed-body paths only exist on the real parse.
+    /// </summary>
+    private static DefaultHttpContext RawBodyContext(string body, string contentType)
+    {
+        var bytes = Encoding.UTF8.GetBytes(body);
+        return new DefaultHttpContext
+        {
+            Request =
+            {
+                Body = new MemoryStream(bytes),
+                ContentLength = bytes.Length,
+                ContentType = contentType
+            }
+        };
+    }
+
+    [Theory]
+    // No closing delimiter: what a client disconnecting mid-upload sends. ASP.NET Core throws
+    // IOException ("Unexpected end of Stream") for this and for non-multipart bytes under a multipart
+    // content type, so catching InvalidDataException alone left the commonest malformed body a 500.
+    [InlineData("--B\r\nContent-Disposition: form-data; name=\"a\"\r\n\r\nvalue\r\n")]
+    [InlineData("not multipart at all")]
+    // These two already threw InvalidDataException; kept beside the others so the catch covers both.
+    [InlineData("--B\r\nContent-Disp")]
+    public async Task ReadFormAsync_WithAMalformedMultipartBody_FailsUnderBodyRatherThanThrowing(string body)
+    {
+        // Arrange
+        var context = RawBodyContext(body, "multipart/form-data; boundary=B");
+
+        // Act
+        var result = await BindingHelpers.ReadFormAsync(context, TestContext.Current.CancellationToken);
+
+        // Assert — a 400 under `body`, which is what turns it into a ValidationProblem rather than an
+        // unhandled exception and a log line per request.
+        Assert.False(result.IsSuccess);
+        Assert.Contains("The request body is not a valid form", BodyError(result));
+        Assert.Equal([BindingHelpers.BodyField], result.Errors!.Keys.ToArray());
+    }
+
+    [Fact]
+    public async Task ReadFormAsync_WithAMissingBoundary_FailsUnderBody()
+    {
+        // Arrange
+        var context = RawBodyContext("whatever", "multipart/form-data");
+
+        // Act
+        var result = await BindingHelpers.ReadFormAsync(context, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.False(result.IsSuccess);
+        Assert.Equal([BindingHelpers.BodyField], result.Errors!.Keys.ToArray());
+    }
+
+    [Fact]
+    public async Task ReadFormAsync_WithABadHttpRequestException_LetsItEscapeWithItsOwnStatusCode()
+    {
+        // Arrange — BadHttpRequestException derives from IOException, so a catch widened to bare
+        // IOException would swallow it and flatten its status code (413 for a body-size limit) into a
+        // 400. Thrown from the body stream, which is where the real one comes from.
+        var context = new DefaultHttpContext();
+        context.Request.ContentType = "multipart/form-data; boundary=B";
+        context.Request.Body = new ThrowingStream(
+            new BadHttpRequestException("Request body too large.", StatusCodes.Status413PayloadTooLarge));
+
+        // Act
+        var thrown = await Assert.ThrowsAsync<BadHttpRequestException>(
+            async () => await BindingHelpers.ReadFormAsync(context, TestContext.Current.CancellationToken));
+
+        // Assert
+        Assert.Equal(StatusCodes.Status413PayloadTooLarge, thrown.StatusCode);
+    }
+
+    private sealed class ThrowingStream(Exception exception) : Stream
+    {
+        public override bool CanRead => true;
+
+        public override bool CanSeek => false;
+
+        public override bool CanWrite => false;
+
+        public override long Length => throw new NotSupportedException();
+
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            throw exception;
+        }
+
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            throw exception;
+        }
+
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+        {
+            throw exception;
+        }
+
+        public override void Flush()
+        {
+        }
+
+        public override long Seek(long offset, SeekOrigin origin)
+        {
+            throw new NotSupportedException();
+        }
+
+        public override void SetLength(long value)
+        {
+            throw new NotSupportedException();
+        }
+
+        public override void Write(byte[] buffer, int offset, int count)
+        {
+            throw new NotSupportedException();
+        }
+    }
+
     [Fact]
     public void TryGetFormFile_WithAnUploadedFile_ReturnsIt()
     {

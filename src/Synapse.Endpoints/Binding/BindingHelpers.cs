@@ -216,8 +216,19 @@ public static class BindingHelpers
     ///     The mirror image of <see cref="ReadJsonBodyAsync{T}" />, including the two shapes that would
     ///     otherwise become a 500 for what is a client mistake. A request with no <c>Content-Type</c> at
     ///     all matches an endpoint regardless of what it declares it accepts, so the content type is
-    ///     checked here rather than left to the matcher; and a malformed multipart body or an exceeded
-    ///     form limit throws <see cref="InvalidDataException" />, which is caught rather than escaping.
+    ///     checked here rather than left to the matcher; and a body ASP.NET Core cannot read as a form
+    ///     is turned into a failure rather than allowed to escape.
+    ///     <para>
+    ///         A malformed body arrives as one of two exception types, and catching only the obvious one
+    ///         left the commonest case a 500. A missing <c>boundary=</c>, a body cut mid-header and an
+    ///         exceeded form limit throw <see cref="InvalidDataException" />; a multipart body with no
+    ///         closing delimiter — which is what a client disconnecting mid-upload sends — and
+    ///         non-multipart bytes under a multipart content type throw <see cref="IOException" />
+    ///         ("Unexpected end of Stream"). <see cref="BadHttpRequestException" /> is deliberately
+    ///         excluded even though it derives from <see cref="IOException" />: it carries its own status
+    ///         code (a request-body size limit reports 413), and swallowing it here would flatten that
+    ///         into a 400.
+    ///     </para>
     /// </remarks>
     public static async ValueTask<BindResult<IFormCollection>> ReadFormAsync(HttpContext context,
         CancellationToken cancellationToken = default)
@@ -246,8 +257,12 @@ public static class BindingHelpers
         {
             return BindResult<IFormCollection>.Success(await context.Request.ReadFormAsync(effective));
         }
-        catch (InvalidDataException exception)
+        catch (Exception exception) when (exception is InvalidDataException ||
+                                          (exception is IOException && exception is not BadHttpRequestException))
         {
+            // Spelled out rather than written as a combined `is InvalidDataException or IOException and
+            // not BadHttpRequestException` pattern: that parses correctly, but the reader has to know
+            // that `and` binds tighter than `or` to see that it does.
             return BindResult<IFormCollection>.Failure(
                 BodyField, $"The request body is not a valid form: {exception.Message}");
         }

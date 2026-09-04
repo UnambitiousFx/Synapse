@@ -406,4 +406,164 @@ public sealed class BindingValidatorTests
             ["caption", "file", "taskId"],
             validation.Errors!.Keys.OrderBy(key => key, StringComparer.Ordinal).ToArray());
     }
+
+    /// <summary>
+    ///     A form-carrying context. The form is set directly rather than read from a body: every form
+    ///     reader on <see cref="BindingValidator" /> is synchronous and documents "the form has already
+    ///     been read" as its precondition, which is what a generated binder's ReadFormAsync call
+    ///     establishes.
+    /// </summary>
+    private static DefaultHttpContext FormContext(Dictionary<string, StringValues> fields,
+        IFormFileCollection? files = null)
+    {
+        var context = new DefaultHttpContext();
+        context.Request.ContentType = "multipart/form-data; boundary=x";
+        context.Request.Form = new FormCollection(fields, files);
+        return context;
+    }
+
+    [Fact]
+    public void FormValues_WithARepeatedField_ParsesEveryElementFromTheFormNotTheQuery()
+    {
+        // Arrange — the query carries a decoy under the same name, so a reader that passed the wrong
+        // BindingSourceKind would still return values and pass a weaker assertion.
+        var context = FormContext(new Dictionary<string, StringValues> { ["size"] = new(["1", "2", "3"]) });
+        context.Request.QueryString = new QueryString("?size=99");
+
+        // Act
+        var validation = context.Validate();
+        var read = validation.FormValues<int>("size", out var sizes);
+
+        // Assert
+        Assert.True(read);
+        Assert.Equal((int[])[1, 2, 3], sizes);
+        Assert.True(validation.IsValid);
+    }
+
+    [Fact]
+    public void FormValues_WithOneUnparsableElement_ReportsItsIndexNamingTheFormValue()
+    {
+        // Arrange
+        var context = FormContext(new Dictionary<string, StringValues> { ["size"] = new(["1", "nope"]) });
+
+        // Act
+        var validation = context.Validate();
+        var read = validation.FormValues<int>("size", out var sizes);
+
+        // Assert
+        Assert.False(read);
+        Assert.Equal((int[])[1], sizes);
+        Assert.Contains("form value at index 1", Assert.Single(validation.Errors!["size"]));
+    }
+
+    [Fact]
+    public void FormValuesEnum_WithARepeatedField_ParsesEveryElement()
+    {
+        // Arrange
+        var context = FormContext(new Dictionary<string, StringValues> { ["day"] = new(["Monday", "3"]) });
+
+        // Act
+        var validation = context.Validate();
+        var read = validation.FormValuesEnum<DayOfWeek>("day", out var days);
+
+        // Assert
+        Assert.True(read);
+        Assert.Equal((DayOfWeek[])[DayOfWeek.Monday, DayOfWeek.Wednesday], days);
+    }
+
+    [Fact]
+    public void HeaderValuesEnum_WithARepeatedHeader_ParsesEveryElement()
+    {
+        // Arrange
+        var context = new DefaultHttpContext();
+        context.Request.Headers["X-Day"] = new StringValues(["Monday", "Friday"]);
+
+        // Act
+        var validation = context.Validate();
+        var read = validation.HeaderValuesEnum<DayOfWeek>("X-Day", out var days);
+
+        // Assert
+        Assert.True(read);
+        Assert.Equal((DayOfWeek[])[DayOfWeek.Monday, DayOfWeek.Friday], days);
+    }
+
+    [Fact]
+    public void FormOptional_ForAValueType_YieldsNullAndReportsNothingWhenAbsent()
+    {
+        // Arrange
+        var context = FormContext(new Dictionary<string, StringValues>());
+
+        // Act
+        var validation = context.Validate();
+        var read = validation.FormOptional<int>("size", out var size);
+
+        // Assert
+        Assert.True(read);
+        Assert.Null(size);
+        Assert.True(validation.IsValid);
+    }
+
+    [Fact]
+    public void FormOptional_ForAReferenceType_ParsesThePresentValueFromTheForm()
+    {
+        // Arrange — the class-constrained overload of the pair. A decoy in the query again pins that
+        // the form is what is read.
+        var context = FormContext(new Dictionary<string, StringValues> { ["home"] = "https://example.test/hook" });
+        context.Request.QueryString = new QueryString("?home=https://decoy.test/hook");
+
+        // Act
+        var validation = context.Validate();
+        var read = validation.FormOptional<CallbackUrl>("home", out var home);
+
+        // Assert
+        Assert.True(read);
+        Assert.Equal("https://example.test/hook", home!.Value.ToString());
+    }
+
+    [Fact]
+    public void FormEnum_WithAnUnparsableValue_ReportsItNamingTheFormValue()
+    {
+        // Arrange
+        var context = FormContext(new Dictionary<string, StringValues> { ["day"] = "Nope" });
+
+        // Act
+        var validation = context.Validate();
+        var read = validation.FormEnum<DayOfWeek>("day", out _);
+
+        // Assert
+        Assert.False(read);
+        Assert.Contains("form value", Assert.Single(validation.Errors!["day"]));
+    }
+
+    [Fact]
+    public void FormFileOptional_WithAnAbsentFile_YieldsNullAndReportsNothing()
+    {
+        // Arrange
+        var context = FormContext(new Dictionary<string, StringValues>());
+
+        // Act
+        var validation = context.Validate();
+        var read = validation.FormFileOptional("file", out var file);
+
+        // Assert — an absent optional file is not a failure, so this reader always returns true.
+        Assert.True(read);
+        Assert.Null(file);
+        Assert.True(validation.IsValid);
+    }
+
+    [Fact]
+    public void FormFileOptional_WithAnUploadedFile_ReturnsIt()
+    {
+        // Arrange
+        var upload = new FormFile(new MemoryStream("hi"u8.ToArray()), 0, 2, "file", "note.txt");
+        var context = FormContext(new Dictionary<string, StringValues>(), new FormFileCollection { upload });
+
+        // Act
+        var validation = context.Validate();
+        var read = validation.FormFileOptional("file", out var file);
+
+        // Assert
+        Assert.True(read);
+        Assert.Same(upload, file);
+    }
 }

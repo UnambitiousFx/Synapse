@@ -62,6 +62,37 @@ public readonly struct BindResult<T>
             new Dictionary<string, string[]>(StringComparer.Ordinal) { [field] = [message] });
     }
 
+    /// <summary>Creates a failed result carrying another result's failures, retyped.</summary>
+    /// <typeparam name="TSource">The type the failure was originally produced for.</typeparam>
+    /// <param name="source">The failed result to carry over; it must actually be a failure.</param>
+    /// <returns>A failed <see cref="BindResult{T}" /> with <paramref name="source" />'s errors.</returns>
+    /// <exception cref="ArgumentException"><paramref name="source" /> succeeded, so it describes no failure.</exception>
+    /// <remarks>
+    ///     A generated form binder reads the body as <see cref="BindResult{T}" /> of
+    ///     <c>IFormCollection</c> and must return one of the message type. Without this the emitter had
+    ///     to substitute a constant message, which made every reason <see cref="BindingHelpers.ReadFormAsync" />
+    ///     builds — the content-type guidance, the malformed-body detail — unreachable from generated
+    ///     code. The JSON path never needed it because <c>ReadJsonBodyAsync&lt;TRequest&gt;</c> already
+    ///     returns the right closed type.
+    /// </remarks>
+    public static BindResult<T> Failure<TSource>(BindResult<TSource> source)
+    {
+        if (source._errors is null)
+        {
+            throw new ArgumentException(
+                "The source result succeeded, so it does not describe a failure.",
+                nameof(source));
+        }
+
+        // The dictionary is copied rather than shared: BindResult is a struct handed around by value,
+        // and two results aliasing one mutable dictionary would make either one's Problem() depend on
+        // what happened to the other.
+        return new BindResult<T>(
+            false,
+            default,
+            new Dictionary<string, string[]>(source._errors, StringComparer.Ordinal));
+    }
+
     /// <summary>Creates a failed result carrying everything a validator collected.</summary>
     /// <param name="validator">The validator, which must have collected at least one error.</param>
     /// <returns>A failed <see cref="BindResult{T}" />.</returns>

@@ -254,9 +254,13 @@ public sealed class FormBinderEmissionTests
     }
 
     [Fact]
-    public void Generate_ForANullableIFormFile_DoesNotReportItAsRequired()
+    public void Generate_ForANullableIFormFile_BindsItOptionallyRatherThanDroppingIt()
     {
-        // Arrange
+        // Arrange — asserting only the absence of the required message would pass for the wrong
+        // reason: a property the generator refuses to bind at all also emits no message. The read has
+        // to be present too. Nullable file shapes were invisible to rule 3 because the file-shape
+        // check compared the annotated display name ("IFormFile?"), so this reported SYNE012 advising
+        // the author to implement IParsable<IFormFile?>.
         const string source = """
                               using Microsoft.AspNetCore.Http;
                               using UnambitiousFx.Synapse.Abstractions;
@@ -277,8 +281,127 @@ public sealed class FormBinderEmissionTests
         var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
 
         // Assert
+        Assert.Contains("TryGetFormFile(context, \"File\", out var rawFile)", generated);
+        Assert.Contains("var hasFile = false;", generated);
         Assert.DoesNotContain("The form file is required.", generated);
+        Assert.Empty(GeneratorHarness.GetDiagnostics(source)
+            .Where(d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error));
         GeneratorHarness.AssertGeneratedCompiles(source);
+    }
+
+    [Fact]
+    public void Generate_ForANullableIFormFileCollection_TakesEveryFileRatherThanReportingSyne016()
+    {
+        // Arrange — SYNE016 told the author to use IFormFile[] instead, which per D19 means something
+        // different: the files under one field name, not every file on the request.
+        const string source = """
+                              using Microsoft.AspNetCore.Http;
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+
+                              namespace TestNs;
+
+                              public sealed record UploadCommand : IRequest
+                              {
+                                  public IFormFileCollection? All { get; set; }
+                              }
+
+                              [Post("/uploads")]
+                              public sealed class UploadEndpoint : Endpoint<UploadCommand>;
+                              """;
+
+        // Act
+        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+
+        // Assert
+        Assert.Contains("context.Request.Form.Files", generated);
+        Assert.DoesNotContain(GeneratorHarness.GetDiagnostics(source), d => d.Id == "SYNE016");
+        GeneratorHarness.AssertGeneratedCompiles(source);
+    }
+
+    [Theory]
+    [InlineData("IFormFile[]?", "GetFormFiles")]
+    [InlineData("IFormFile?[]", "GetFormFiles")]
+    [InlineData("System.Collections.Generic.List<IFormFile?>", "GetFormFiles")]
+    public void Generate_ForANullableCollectionOfFiles_StillBindsThemAsFiles(string propertyType, string expected)
+    {
+        // Arrange — the annotation can sit on the collection or on its element, and neither is a
+        // different kind of thing to bind.
+        var source = $$"""
+                       using Microsoft.AspNetCore.Http;
+                       using UnambitiousFx.Synapse.Abstractions;
+                       using UnambitiousFx.Synapse.Endpoints;
+
+                       namespace TestNs;
+
+                       public sealed class UploadCommand : IRequest
+                       {
+                           public {{propertyType}} Files { get; set; } = default!;
+                       }
+
+                       [Post("/uploads")]
+                       public sealed class UploadEndpoint : Endpoint<UploadCommand>;
+                       """;
+
+        // Act
+        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+
+        // Assert
+        Assert.Contains(expected + "(context, \"Files\")", generated);
+        Assert.Empty(GeneratorHarness.GetDiagnostics(source)
+            .Where(d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error));
+    }
+
+    [Fact]
+    public void Generate_ForABareNullableIFormFile_ReadsTheFormRatherThanJsonDeserializingTheMessage()
+    {
+        // Arrange — rule 3 with no attribute anywhere. When the nullable file was invisible to it,
+        // nothing pinned the message to the form, rule 6 sent every property to the body, and the
+        // binder emitted ReadJsonBodyAsync on a message holding an IFormFile — declaring
+        // application/json, so a real multipart upload was answered 415, and JSON-deserializing a
+        // type the Native-AOT criterion says is never deserialized.
+        const string source = """
+                              using Microsoft.AspNetCore.Http;
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+
+                              namespace TestNs;
+
+                              public sealed class UploadCommand : IRequest
+                              {
+                                  public IFormFile? One { get; set; }
+                                  public string Caption { get; set; } = "";
+                              }
+
+                              [Post("/uploads")]
+                              public sealed class UploadEndpoint : Endpoint<UploadCommand>;
+                              """;
+
+        // Act
+        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+
+        // Assert
+        Assert.Contains("BindingHelpers.ReadFormAsync(context)", generated);
+        Assert.DoesNotContain("ReadJsonBodyAsync", generated);
+        Assert.Contains("RequestBodyKind.Form;", generated);
+        Assert.Contains("TryGetForm(context, \"Caption\", out var rawCaption)", generated);
+        GeneratorHarness.AssertGeneratedCompiles(source);
+    }
+
+    [Fact]
+    public void Generate_ForAFormBoundMessage_ForwardsTheFormReadFailureRatherThanRestatingIt()
+    {
+        // Arrange — ReadFormAsync's own reason names the content type that was sent, or what was
+        // wrong with the body. A constant message here made all of that unreachable from generated
+        // code, while the JSON path returned its failure unchanged.
+        // Act
+        var generated = GeneratorHarness.GetFile(FormMessage, "SynapseEndpointBinders.g.cs");
+
+        // Assert
+        Assert.DoesNotContain("The request body could not be read as a form.", generated);
+        Assert.Contains(
+            "BindResult<global::TestNs.UploadCommand>.Failure(form);", generated);
+        GeneratorHarness.AssertGeneratedCompiles(FormMessage);
     }
 
     [Fact]

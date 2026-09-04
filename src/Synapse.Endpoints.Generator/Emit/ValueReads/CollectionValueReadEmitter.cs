@@ -9,9 +9,11 @@ namespace UnambitiousFx.Synapse.Endpoints.Generator.Emit.ValueReads;
 /// <remarks>
 ///     An absent key yields an empty collection and reports nothing: HTTP cannot express zero values
 ///     under a key, so treating absence as a failure would demand something unsendable. A nullable
-///     collection additionally records presence, so a caller that needs to tell "absent" from "empty"
-///     still can. A bad element is reported at its index and the loop continues, so a request with
-///     several bad elements answers with all of them.
+///     collection binds null instead, so a caller that needs to tell "absent" from "empty" still can —
+///     recorded as a presence flag where the binder assigns the property afterwards, and as a
+///     pre-declared null local where construction applies the value unconditionally and there is no
+///     assignment to guard. A bad element is reported at its index and the loop continues, so a
+///     request with several bad elements answers with all of them.
 /// </remarks>
 internal static class CollectionValueReadEmitter
 {
@@ -40,6 +42,22 @@ internal static class CollectionValueReadEmitter
         if (presenceLocal is not null)
         {
             builder.AppendLine($"        var {presenceLocal} = false;");
+        }
+
+        // A nullable collection whose value is applied unconditionally — a primary-constructor
+        // argument, or the object initializer a `required` member needs — has no presence flag to
+        // guard the assignment with, so the null has to live in the local itself: it is pre-declared
+        // null and only overwritten once the key is seen. Without this the emitter assigned the
+        // materialised (empty) list whatever happened, and "absent binds null" held for the plain
+        // settable property alone, which is one of the three shapes a message can be built in.
+        var nullWhenAbsent = property.IsNullable && context.AppliedUnconditionally;
+        var collectionType = property.Materialization == Materialization.Array
+            ? $"{elementType}[]"
+            : listType;
+
+        if (nullWhenAbsent)
+        {
+            builder.AppendLine($"        {collectionType}? {valueLocal} = default;");
         }
 
         builder.AppendLine($"        var {listLocal} = new {listType}();");
@@ -79,13 +97,22 @@ internal static class CollectionValueReadEmitter
         }
 
         builder.AppendLine("            }");
-        builder.AppendLine("        }");
 
         var assigned = property.Materialization == Materialization.Array
             ? $"{listLocal}.ToArray()"
             : listLocal;
 
-        builder.AppendLine($"        var {valueLocal} = {assigned};");
+        if (nullWhenAbsent)
+        {
+            builder.AppendLine($"            {valueLocal} = {assigned};");
+        }
+
+        builder.AppendLine("        }");
+
+        if (!nullWhenAbsent)
+        {
+            builder.AppendLine($"        var {valueLocal} = {assigned};");
+        }
 
         return new ValueRead(property, valueLocal, presenceLocal,
             context.ConsumedByConstructor, context.SetInInitializer);

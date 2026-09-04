@@ -1576,7 +1576,7 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
         shape = BindingValueShape.Scalar;
         materialization = Materialization.None;
 
-        var displayName = type.ToDisplayString();
+        var displayName = UnannotatedDisplayString(type);
 
         if (displayName == FormFileTypeName)
         {
@@ -1592,7 +1592,7 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
         }
 
         if (TryResolveCollectionShape(type, out var element, out var elementMaterialization) &&
-            element.ToDisplayString() == FormFileTypeName)
+            UnannotatedDisplayString(element) == FormFileTypeName)
         {
             shape = BindingValueShape.FormFileCollection;
             materialization = elementMaterialization;
@@ -1603,9 +1603,30 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
     }
 
     /// <summary>
+    ///     <paramref name="type" />'s display name with any nullable-reference annotation removed, so a
+    ///     name comparison answers a question about the type rather than about how it was declared.
+    /// </summary>
+    /// <remarks>
+    ///     <see cref="ISymbol.ToDisplayString(SymbolDisplayFormat)" />'s default format includes
+    ///     <c>IncludeNullableReferenceTypeModifier</c>, so <c>IFormFile?</c> renders as
+    ///     <c>"Microsoft.AspNetCore.Http.IFormFile?"</c> and never matches a bare interface name.
+    ///     <see cref="UnwrapNullable" /> does not help: a nullable *reference* type is the same symbol
+    ///     as its non-nullable form and it returns that symbol with the annotation intact. Comparing
+    ///     the annotated name is why <c>[FromForm] IFormFile? File</c> reported SYNE012 advising the
+    ///     author to implement <c>IParsable&lt;IFormFile?&gt;</c>, and why a bare <c>IFormFile?</c>
+    ///     with no attribute fell through rule 6 to the JSON body.
+    /// </remarks>
+    private static string UnannotatedDisplayString(ITypeSymbol type)
+    {
+        return type.WithNullableAnnotation(NullableAnnotation.None).ToDisplayString();
+    }
+
+    /// <summary>
     ///     Rule 3: whether <paramref name="type" /> is one of the file shapes at all, discarding
     ///     <see cref="TryResolveFileShape" />'s other outputs. A nullable reference (<c>IFormFile?</c>)
-    ///     is unwrapped first, the same as every other type this generator inspects for shape.
+    ///     is recognised because <see cref="TryResolveFileShape" /> compares unannotated names — see
+    ///     <see cref="UnannotatedDisplayString" />; <see cref="UnwrapNullable" /> alone cannot strip a
+    ///     reference type's annotation.
     /// </summary>
     private static bool IsFileTyped(ITypeSymbol type)
     {

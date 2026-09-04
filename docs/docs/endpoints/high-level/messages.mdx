@@ -275,7 +275,9 @@ $ curl -s 'localhost:5000/tasks/search?tag=docs&tag=ship&status=Open'
 # Tags = ["docs","ship"], Statuses = [Open]
 ```
 
-Only a **query key or a header** can repeat, so only those two sources support this. A route
+A **query key, a header or a form field** can repeat, so those three sources support this — a
+`[FromForm] string[] Tags` on a `multipart/form-data` or `application/x-www-form-urlencoded` POST
+collects every `Tags` field the request carries, exactly as `?tag=a&tag=b` does. A route
 segment cannot appear twice in one URL, and a collection-shaped route-bound property is reported as
 [`SYNE012`](../reference/diagnostics) — the ordinary "unparsable" diagnostic, not a collection one. A
 `[FromBody]` collection is untouched by any of this: `System.Text.Json` already binds a JSON array,

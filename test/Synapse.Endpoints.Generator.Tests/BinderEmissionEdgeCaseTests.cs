@@ -300,7 +300,8 @@ public sealed class BinderEmissionEdgeCaseTests
 
         // Assert
         Assert.Contains("new global::TestNs.HandWrittenQuery(default)", generated);
-        GeneratorHarness.AssertGeneratedCompiles(source);
+        // SYNE011: 'ComputedOnly' is get-only on a non-record, so it is omitted and reported. Expected here; the subject is the constructor default the binder falls back to.
+        GeneratorHarness.AssertGeneratedCompilesDespiteDiagnostics(source);
     }
 
     [Fact]
@@ -337,7 +338,8 @@ public sealed class BinderEmissionEdgeCaseTests
         // Assert — the emitted text itself is the assertion that matters here: a compile check alone
         // would not catch a regression back to bare `default`, since that still compiles cleanly.
         Assert.Contains("new global::TestNs.HandWrittenQuery(default!)", generated);
-        GeneratorHarness.AssertGeneratedCompiles(source);
+        // SYNE011: 'Id' is init-only on a non-record, so it is omitted and reported. That omission is not what this test is about — the constructor default is — but it is an Error, so the compile check has to be told to expect it.
+        GeneratorHarness.AssertGeneratedCompilesDespiteDiagnostics(source);
     }
 
     [Fact]
@@ -425,7 +427,8 @@ public sealed class BinderEmissionEdgeCaseTests
         Assert.Contains(
             "int.TryParse(rawId, global::System.Globalization.CultureInfo.InvariantCulture, out valueId)",
             generated);
-        GeneratorHarness.AssertGeneratedCompiles(source);
+        // SYNE012 for 'Thing' is the premise of this test, not a surprise: what is being pinned is that 'Id' still binds around the omission.
+        GeneratorHarness.AssertGeneratedCompilesDespiteDiagnostics(source);
     }
 
     // A whole-branch review found this shape broken end to end: with no route attribute the

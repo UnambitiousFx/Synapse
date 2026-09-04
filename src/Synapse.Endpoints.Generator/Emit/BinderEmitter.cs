@@ -126,8 +126,11 @@ internal static class BinderEmitter
             builder.AppendLine("        {");
             builder.AppendLine("            // The synchronous field readers below serve from the form's cache,");
             builder.AppendLine("            // so a body that could not be parsed at all is reported on its own.");
+            builder.AppendLine("            // Retyped rather than restated: ReadFormAsync's own reason names the");
+            builder.AppendLine("            // content type sent or what was wrong with the body, and a constant here");
+            builder.AppendLine("            // would throw all of that away.");
             builder.AppendLine(
-                $"            return {BindingNamespace}.BindResult<{typeFullName}>.Failure({BindingNamespace}.BindingHelpers.BodyField, \"The request body could not be read as a form.\");");
+                $"            return {BindingNamespace}.BindResult<{typeFullName}>.Failure(form);");
             builder.AppendLine("        }");
             builder.AppendLine();
         }

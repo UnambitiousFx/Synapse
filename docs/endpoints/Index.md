@@ -38,7 +38,7 @@ only; their user-facing documentation lives under [`../docs/endpoints/`](../docs
 | Endpoint test harness | ✅ | `EndpointHarness.Create<TEndpoint>()` maps one endpoint through the real routing stack — real constraints, real group prefixes, real `405` — with no host. Only `IInvoker` is faked, so the failure mapper stays under test. Ships as `UnambitiousFx.Synapse.Endpoints.Testing`. |
 | Lifecycle hooks | ✅ | `OnBeforeHandleAsync` / `OnAfterHandleAsync` / `OnBindFailedAsync` on every bound tier, plus `PreProcessor<T>()` / `PostProcessor<T>()` resolved from `HttpContext.RequestServices`. The exit steps run on the bind-failure path too, so a response-header processor does not skip `400`s. |
 | Self-handled endpoint tier | ✅ | `SelfHandledEndpoint<TRequest, TResponse>` and `SelfHandledEndpoint<TRequest>`: the generated binder, the declarative responses and the lifecycle hooks of the high level, with an `ExecuteAsync` returning `Result<T>` in place of dispatch. `TRequest` needs no `IRequest<…>`, and failures still go through the registered `IFailureHttpMapper`. No pipeline behaviour wraps it. |
-| Collection binding | ✅ | `?tag=a&tag=b&tag=c` binds a `T[]`, `List<T>`, `IReadOnlyList<T>` or `IEnumerable<T>` property from a repeated query key or header — see [007](features/007-collection-binding.md) and [Repeated keys](../docs/endpoints/high-level/messages.mdx#repeated-keys). |
+| Collection binding | ✅ | `?tag=a&tag=b&tag=c` binds a `T[]`, `List<T>`, `IReadOnlyList<T>` or `IEnumerable<T>` property from a repeated query key, header or form field — see [007](features/007-collection-binding.md) and [Repeated keys](../docs/endpoints/high-level/messages.mdx#repeated-keys). |
 | Form, multipart and file binding | ✅ | `[FromForm]`, or a bare `IFormFile`/`IFormFileCollection`/collection-of-`IFormFile` property, binds a message from `multipart/form-data` or `application/x-www-form-urlencoded` — the whole message, not just that property, since a request is a form or JSON, never both. No schema is declared for it yet; see [018](features/018-openapi-parameter-metadata.md). See [006](features/006-form-and-file-binding.md) and [Forms and files](../docs/endpoints/high-level/messages.mdx#forms-and-files). |
 
 ## Gaps
@@ -71,5 +71,5 @@ common optional parameter is expressible on the collector, an endpoint can be ex
 host, an endpoint has a seam on both sides of dispatch, a route with no domain message behind it no
 longer has to invent one, a form or multipart request binds straight into a message — a file
 included — with the same error accumulation, declarative responses and honest, schema-free OpenAPI
-declaration every other endpoint gets, and a repeated query key or header binds directly to a
-collection-shaped property instead of being rejected as unparsable.
+declaration every other endpoint gets, and a repeated query key, header or form field binds directly
+to a collection-shaped property instead of being rejected as unparsable.

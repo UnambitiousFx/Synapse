@@ -162,6 +162,49 @@ public sealed class FormBindingHarnessTests
         Assert.Equal(0, response.ReadJson<int>());
     }
 
+    [Fact]
+    public async Task SendAsync_WithATruncatedMultipartBody_Answers400CarryingTheRealReason()
+    {
+        // Arrange — a client that disconnects mid-upload sends exactly this: a multipart body with no
+        // closing delimiter. ASP.NET Core throws IOException for it, which used to escape the binder
+        // as a 500. And the reason the form read builds has to survive being retyped onto the message
+        // type, or the response says nothing a caller can act on.
+        EndpointRegistry.RegisterBinder(new CaptionOnlyBinder());
+        EndpointRegistry.RegisterMetadata<CaptionEndpoint>(new EndpointMetadata(["POST"], "/captions"));
+        using var harness = EndpointHarness.Create<CaptionEndpoint>();
+
+        // Act
+        var response = await harness.Post("/captions")
+            .Body("--B\r\nContent-Disposition: form-data; name=\"caption\"\r\n\r\nhello\r\n",
+                "multipart/form-data; boundary=B")
+            .SendAsync(TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal(StatusCodes.Status400BadRequest, response.StatusCode);
+        var message = Assert.Single(response.ReadValidationProblem().Errors[BindingHelpers.BodyField]);
+        Assert.Contains("The request body is not a valid form", message);
+    }
+
+    [Fact]
+    public async Task SendAsync_WithNoContentTypeAtAll_Answers400NamingWhatToSendInstead()
+    {
+        // Arrange — a request with no Content-Type matches whatever the endpoint accepts, so this is
+        // the one malformed shape the consumes matcher hands to the binder. ReadFormAsync's guidance
+        // is the whole value of the response, and a constant "could not be read as a form" threw it
+        // away.
+        EndpointRegistry.RegisterBinder(new CaptionOnlyBinder());
+        EndpointRegistry.RegisterMetadata<CaptionEndpoint>(new EndpointMetadata(["POST"], "/captions"));
+        using var harness = EndpointHarness.Create<CaptionEndpoint>();
+
+        // Act
+        var response = await harness.Post("/captions").SendAsync(TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal(StatusCodes.Status400BadRequest, response.StatusCode);
+        var message = Assert.Single(response.ReadValidationProblem().Errors[BindingHelpers.BodyField]);
+        Assert.Contains("multipart/form-data", message);
+    }
+
     private sealed class ProbeAcceptsMetadata : IAcceptsMetadata
     {
         public Type? RequestType => null;
@@ -206,8 +249,8 @@ public sealed class FormBindingHarnessTests
             var form = await context.FormAsync();
             if (!form.IsSuccess)
             {
-                return BindResult<UploadCommand>.Failure(
-                    BindingHelpers.BodyField, "The request body could not be read as a form.");
+                // Retyped, not restated — the shape a generated form binder emits.
+                return BindResult<UploadCommand>.Failure(form);
             }
 
             var validation = context.Validate();
@@ -243,8 +286,7 @@ public sealed class FormBindingHarnessTests
             var form = await context.FormAsync();
             if (!form.IsSuccess)
             {
-                return BindResult<CaptionCommand>.Failure(
-                    BindingHelpers.BodyField, "The request body could not be read as a form.");
+                return BindResult<CaptionCommand>.Failure(form);
             }
 
             var validation = context.Validate();
