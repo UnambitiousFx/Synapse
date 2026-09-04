@@ -80,6 +80,53 @@ public sealed class RequestBuildingTests
     }
 
     [Fact]
+    public async Task FormBody_WhenAValueContainsReservedCharacters_ProducesTheExactUrlEncodedBody()
+    {
+        // Arrange — every FormBindingHarnessTests case uses "hello", a value needing no encoding at
+        // all, so a broken encoder would pass every one of them. This reads the raw request instead
+        // of going through a form binder: the point is to test the builder, not the parser.
+        EndpointRegistry.RegisterMetadata<EchoRawBodyEndpoint>(new EndpointMetadata(["POST"], "/echo-raw"));
+        using var harness = EndpointHarness.Create<EchoRawBodyEndpoint>();
+
+        // Act
+        var response = await harness.Post("/echo-raw")
+            .FormBody(("q", "a&b=c+d e"))
+            .SendAsync(TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal("application/x-www-form-urlencoded|q=a%26b%3Dc%2Bd+e", response.Body);
+    }
+
+    [Fact]
+    public async Task MultipartBody_WhenAFileNameNeedsEscaping_ProducesAnEscapedContentDisposition()
+    {
+        // Arrange — an unescaped quote in "filename" terminates the Content-Disposition quoted
+        // string early, which corrupts the header rather than merely the file name. This reads the
+        // raw request instead of going through a form binder: the point is to test the builder, not
+        // the parser.
+        EndpointRegistry.RegisterMetadata<EchoRawBodyEndpoint>(new EndpointMetadata(["POST"], "/echo-raw"));
+        using var harness = EndpointHarness.Create<EchoRawBodyEndpoint>();
+
+        // MultipartBody's boundary is a fixed, undocumented implementation detail, duplicated here
+        // only to spell out the expected wire bytes precisely.
+        const string boundary = "------------------------synapse";
+        var expectedBody =
+            $"--{boundary}\r\n" +
+            "Content-Disposition: form-data; name=\"file\"; filename=\"my\\\"file.txt\"\r\n" +
+            "Content-Type: application/octet-stream\r\n\r\n" +
+            "hi\r\n" +
+            $"--{boundary}--\r\n";
+
+        // Act
+        var response = await harness.Post("/echo-raw")
+            .MultipartBody([], [("file", "my\"file.txt", "hi")])
+            .SendAsync(TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal($"multipart/form-data; boundary={boundary}|{expectedBody}", response.Body);
+    }
+
+    [Fact]
     public async Task ReadJson_WhenTheHarnessConfiguresACustomNamingPolicy_ReadsWithThoseSameOptions()
     {
         // Arrange: the endpoint serializes SearchTerm as "search_term" under this policy. A reader

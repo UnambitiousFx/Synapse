@@ -45,23 +45,26 @@ public sealed class FormBindingHarnessTests
     }
 
     [Fact]
-    public async Task SendAsync_WithAMultipartUpload_BindsTheFileAndTheField()
+    public async Task SendAsync_WithAMultipartUpload_BindsTheFileAndTheFieldAndTheRouteValue()
     {
-        // Arrange
+        // Arrange — spec §6 case 1 is a file plus a field plus a route value; routing and multipart
+        // parsing coexisting on one live request is a runtime property no emission test can assert.
         EndpointRegistry.RegisterBinder(new UploadBinder());
-        EndpointRegistry.RegisterMetadata<UploadEndpoint>(new EndpointMetadata(["POST"], "/uploads"));
+        EndpointRegistry.RegisterMetadata<UploadEndpoint>(
+            new EndpointMetadata(["POST"], "/tasks/{taskId}/uploads"));
         using var harness = EndpointHarness.Create<UploadEndpoint>(options =>
             options.Handle<UploadCommand, string>(command =>
-                Result.Success($"{command.File.FileName}:{command.Caption}")));
+                Result.Success($"{command.TaskId}:{command.File.FileName}:{command.Caption}")));
+        var taskId = Guid.Parse("11111111-1111-1111-1111-111111111111");
 
         // Act
-        var response = await harness.Post("/uploads")
+        var response = await harness.Post($"/tasks/{taskId}/uploads")
             .MultipartBody([("caption", "hello")], [("file", "note.txt", "hi")])
             .SendAsync(TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(StatusCodes.Status200OK, response.StatusCode);
-        Assert.Equal("note.txt:hello", response.ReadJson<string>());
+        Assert.Equal($"{taskId}:note.txt:hello", response.ReadJson<string>());
     }
 
     [Fact]
@@ -88,11 +91,13 @@ public sealed class FormBindingHarnessTests
     {
         // Arrange
         EndpointRegistry.RegisterBinder(new UploadBinder());
-        EndpointRegistry.RegisterMetadata<UploadEndpoint>(new EndpointMetadata(["POST"], "/uploads"));
+        EndpointRegistry.RegisterMetadata<UploadEndpoint>(
+            new EndpointMetadata(["POST"], "/tasks/{taskId}/uploads"));
         using var harness = EndpointHarness.Create<UploadEndpoint>();
+        var taskId = Guid.Parse("11111111-1111-1111-1111-111111111111");
 
-        // Act
-        var response = await harness.Post("/uploads")
+        // Act — taskId is present and valid, so it must not appear among the reported failures.
+        var response = await harness.Post($"/tasks/{taskId}/uploads")
             .MultipartBody([], [])
             .SendAsync(TestContext.Current.CancellationToken);
 
@@ -109,11 +114,13 @@ public sealed class FormBindingHarnessTests
     {
         // Arrange
         EndpointRegistry.RegisterBinder(new UploadBinder());
-        EndpointRegistry.RegisterMetadata<UploadEndpoint>(new EndpointMetadata(["POST"], "/uploads"));
+        EndpointRegistry.RegisterMetadata<UploadEndpoint>(
+            new EndpointMetadata(["POST"], "/tasks/{taskId}/uploads"));
         using var harness = EndpointHarness.Create<UploadEndpoint>();
+        var taskId = Guid.Parse("11111111-1111-1111-1111-111111111111");
 
         // Act
-        var response = await harness.Post("/uploads")
+        var response = await harness.Post($"/tasks/{taskId}/uploads")
             .Body("{}", "application/json")
             .SendAsync(TestContext.Current.CancellationToken);
 
@@ -181,6 +188,8 @@ public sealed class FormBindingHarnessTests
 
     public sealed record UploadCommand : IRequest<string>
     {
+        public required Guid TaskId { get; init; }
+
         public required IFormFile File { get; init; }
 
         public required string Caption { get; init; }
@@ -202,11 +211,13 @@ public sealed class FormBindingHarnessTests
             }
 
             var validation = context.Validate();
+            validation.Route<Guid>("taskId", out var taskId);
             validation.FormFile("file", out var file);
             validation.Form<string>("caption", out var caption);
 
             return validation.IsValid
-                ? BindResult<UploadCommand>.Success(new UploadCommand { File = file, Caption = caption })
+                ? BindResult<UploadCommand>.Success(
+                    new UploadCommand { TaskId = taskId, File = file, Caption = caption })
                 : BindResult<UploadCommand>.Failure(validation);
         }
     }
@@ -260,6 +271,12 @@ public sealed class FormBindingHarnessTests
 
     private sealed class SearchBinder : IEndpointBinder<SearchQuery>
     {
+        // Explicit rather than relying on the interface defaults (true / Json), matching what a
+        // generated binder for a query-only message would emit: nothing here reads the body.
+        public bool ReadsRequestBody => false;
+
+        public RequestBodyKind BodyKind => RequestBodyKind.None;
+
         public ValueTask<BindResult<SearchQuery>> BindAsync(HttpContext context)
         {
             var validation = context.Validate();

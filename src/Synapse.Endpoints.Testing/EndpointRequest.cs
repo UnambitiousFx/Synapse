@@ -174,15 +174,15 @@ public sealed class EndpointRequest
         foreach (var field in fields)
         {
             builder.Append("--").Append(MultipartBoundaryValue).Append("\r\n");
-            builder.Append("Content-Disposition: form-data; name=\"").Append(field.Name).Append("\"\r\n\r\n");
+            builder.Append("Content-Disposition: form-data; name=\"").Append(EscapeQuotedString(field.Name)).Append("\"\r\n\r\n");
             builder.Append(field.Value).Append("\r\n");
         }
 
         foreach (var file in files)
         {
             builder.Append("--").Append(MultipartBoundaryValue).Append("\r\n");
-            builder.Append("Content-Disposition: form-data; name=\"").Append(file.Name)
-                   .Append("\"; filename=\"").Append(file.FileName).Append("\"\r\n");
+            builder.Append("Content-Disposition: form-data; name=\"").Append(EscapeQuotedString(file.Name))
+                   .Append("\"; filename=\"").Append(EscapeQuotedString(file.FileName)).Append("\"\r\n");
             builder.Append("Content-Type: application/octet-stream\r\n\r\n");
             builder.Append(file.Content).Append("\r\n");
         }
@@ -190,6 +190,15 @@ public sealed class EndpointRequest
         builder.Append("--").Append(MultipartBoundaryValue).Append("--\r\n");
 
         return Body(builder.ToString(), $"multipart/form-data; boundary={MultipartBoundaryValue}");
+    }
+
+    // RFC 2183/6266 quoted-string escaping for a Content-Disposition parameter value: a literal
+    // backslash or double quote inside "name" or "filename" would otherwise terminate the quoted
+    // string early and corrupt the header. The backslash must be escaped first, or escaping the
+    // quote afterward would double-escape it.
+    private static string EscapeQuotedString(string value)
+    {
+        return value.Replace("\\", "\\\\").Replace("\"", "\\\"");
     }
 
     /// <summary>Sends the request through the endpoint.</summary>
