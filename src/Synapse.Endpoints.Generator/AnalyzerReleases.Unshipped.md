@@ -17,3 +17,4 @@ SYNE004 | Synapse.Endpoints | Warning | OnSuccess override conflicts with a decl
 SYNE008 | Synapse.Endpoints | Warning | Type used by an endpoint is missing from every JsonSerializerContext
 SYNE014 | Synapse.Endpoints | Warning | Route declared in Configure on a message with convention-bound properties
 SYNE015 | Synapse.Endpoints | Warning | [NotBound] property is still populated from the request body
+SYNE016 | Synapse.Endpoints | Error | Bound property's collection type is not supported

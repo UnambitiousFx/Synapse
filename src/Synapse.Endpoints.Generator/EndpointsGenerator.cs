@@ -1058,16 +1058,46 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
                 !HasTwoArgumentTryParse(underlying) &&
                 !HasFormatProviderTryParse(underlying))
             {
-                // SYNE012: no viable parse path for this type. Omit rather than emit a `TryParse`
-                // call that will not compile. Reported at the exact condition that already decides
-                // the omission, rather than a separately-maintained list of "known good" types, so
-                // the diagnostic can never disagree with what the emitter actually does.
+                // No viable parse path for this type. Omit rather than emit a `TryParse` call that
+                // will not compile. Reported at the exact condition that already decides the
+                // omission, rather than a separately-maintained list of "known good" types, so the
+                // diagnostic can never disagree with what the emitter actually does.
                 //
                 // Both TryParse shapes are accepted because the emitter emits both: a type that
                 // implements IParsable<T> — the canonical way to write a strongly-typed id, and what
                 // ASP.NET Core's own binder looks for — supplies only the three-argument overload.
                 // Gating on the two-argument form alone rejected such a type, which cascaded into
                 // SYNE001 and suppressed the whole endpoint. See docs/known-issues/057.
+                //
+                // From here the omission is one of two different stories, and only one of them is
+                // followable: an unsupported collection shape (SYNE016), whose fix is to change the
+                // shape, or an unparsable value (SYNE012), whose fix is to add a TryParse. Route is
+                // excluded from the SYNE016 test for the same reason it is excluded from the
+                // collection-shape resolution above: a route segment cannot repeat, so a route-bound
+                // string[] is not an *unsupported* shape (T[] binds fine over query/header) — it is a
+                // supported shape that this source can never read, and telling the author to switch
+                // to a shape they are already using would be wrong. Body never reaches this branch at
+                // all (the enclosing "if" is scoped to non-Body sources), but is named for the same
+                // reason.
+                var enumerableElement = shape == BindingValueShape.Scalar &&
+                    source.Value is not (BindingSource.Route or BindingSource.Body)
+                        ? GetEnumerableElement(underlying)
+                        : null;
+
+                if (enumerableElement is not null)
+                {
+                    diagnostics.Add(new DiagnosticInfo(
+                        EndpointDiagnostics.UnsupportedCollectionType,
+                        location,
+                        new EquatableArray<string>([
+                            property.Name,
+                            property.ContainingType.ToDisplayString(),
+                            underlying.ToDisplayString(),
+                            enumerableElement.ToDisplayString()
+                        ])));
+                    return null;
+                }
+
                 diagnostics.Add(new DiagnosticInfo(
                     EndpointDiagnostics.UnparsableBoundPropertyType,
                     location,
@@ -1242,6 +1272,28 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
         }
 
         return false;
+    }
+
+    /// <summary>
+    ///     The element type of <paramref name="type" />'s <c>IEnumerable&lt;T&gt;</c> implementation, or
+    ///     <see langword="null" /> when it implements none. Used only to name the element in SYNE016.
+    /// </summary>
+    private static ITypeSymbol? GetEnumerableElement(ITypeSymbol type)
+    {
+        if (type.SpecialType == SpecialType.System_String)
+        {
+            return null;
+        }
+
+        foreach (var candidate in type.AllInterfaces)
+        {
+            if (candidate.OriginalDefinition.ToDisplayString() == "System.Collections.Generic.IEnumerable<T>")
+            {
+                return candidate.TypeArguments[0];
+            }
+        }
+
+        return null;
     }
 
     /// <summary>Whether a value of <paramref name="type" /> can be produced from a raw string.</summary>

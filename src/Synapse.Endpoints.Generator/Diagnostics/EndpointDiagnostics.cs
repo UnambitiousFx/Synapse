@@ -133,10 +133,19 @@ internal static class EndpointDiagnostics
     ///     <see cref="UnassignableBoundProperty" /> — a <c>[FromBody]</c>-sourced property is parsed
     ///     by the JSON deserializer, not by a generated <c>TryParse</c> call.
     /// </summary>
+    /// <remarks>
+    ///     The message says the property "binds a value of type '{2}'" rather than "has type '{2}'"
+    ///     so the same wording is true whether '{2}' is the property's own type (the scalar case) or
+    ///     the element type of a supported collection shape (<c>T[]</c>, <c>List&lt;T&gt;</c>,
+    ///     <c>IReadOnlyList&lt;T&gt;</c>, <c>IEnumerable&lt;T&gt;</c>) — a collection whose shape is
+    ///     itself unsupported is reported as <see cref="UnsupportedCollectionType" /> instead, so by
+    ///     the time this descriptor fires, '{2}' is always the type that actually needs a
+    ///     <c>TryParse</c>.
+    /// </remarks>
     internal static readonly DiagnosticDescriptor UnparsableBoundPropertyType = new(
         "SYNE012",
         "Bound property type cannot be parsed from a string",
-        "Property '{0}' on '{1}' has type '{2}', which is not string, not an enum, and has no public static TryParse(string, out {2}) or TryParse(string, IFormatProvider, out {2}) method, so its bound value cannot be parsed. Add either overload to '{2}' — implementing IParsable<{2}> supplies the second — or change the type of '{0}'.",
+        "Property '{0}' on '{1}' binds a value of type '{2}', which is not string, not an enum, and has no public static TryParse(string, out {2}) or TryParse(string, IFormatProvider, out {2}) method, so its bound value cannot be parsed. Add either overload to '{2}' — implementing IParsable<{2}> supplies the second — or change the type of '{0}'.",
         Category,
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
@@ -382,4 +391,24 @@ internal static class EndpointDiagnostics
         "for that separate obligation. A custom TypeInfoResolverChain entry that is not a " +
         "JsonSerializerContext is invisible to this check, which is why this is a Warning rather " +
         "than an Error.");
+
+    /// <summary>
+    ///     SYNE016: a bound property is a collection of a shape the binder does not support. Repeated
+    ///     keys bind to <c>T[]</c>, <c>List&lt;T&gt;</c>, <c>IReadOnlyList&lt;T&gt;</c> and
+    ///     <c>IEnumerable&lt;T&gt;</c>; anything else enumerable is reported here rather than through
+    ///     <see cref="UnparsableBoundPropertyType" />.
+    /// </summary>
+    /// <remarks>
+    ///     Separated from SYNE012 because the two say different things and only one of them is
+    ///     followable. The shape being rejected here is not unparsable — it is unsupported — and
+    ///     "add a public static TryParse to HashSet&lt;string&gt;" is advice nobody can act on. A
+    ///     <c>DiagnosticDescriptor</c> carries one message format, so telling both stories needs two IDs.
+    /// </remarks>
+    internal static readonly DiagnosticDescriptor UnsupportedCollectionType = new(
+        "SYNE016",
+        "Bound property's collection type is not supported",
+        "Property '{0}' on '{1}' has type '{2}', which is a collection shape the binder does not support. Repeated keys bind to {3}[], List<{3}>, IReadOnlyList<{3}> or IEnumerable<{3}> — use one of those, or change the type of '{0}'.",
+        Category,
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
 }

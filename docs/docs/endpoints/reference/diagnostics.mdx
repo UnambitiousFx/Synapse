@@ -1,7 +1,7 @@
 ---
 sidebar_position: 4
 title: Diagnostics
-description: SYNE001-SYNE015 - what each one means, why it fires, and what to do about it.
+description: SYNE001-SYNE016 - what each one means, why it fires, and what to do about it.
 ---
 
 # Diagnostics
@@ -21,10 +21,11 @@ The bundled analyzer reports these at build time. Errors stop the build; warning
 | `SYNE009` | Error | A route is declared both by attribute and by a verb call in `Configure` | Remove one — only one may declare the route |
 | `SYNE010` | Error | The endpoint class is generic, nested inside a generic type, or has no public parameterless constructor | Make it a top-level, non-generic class with a public parameterless constructor — `MapEndpoint<TEndpoint>()` requires `TEndpoint : EndpointBase, new()`. An `abstract` endpoint class never fires this: discovery skips abstract classes outright, so an abstract intermediate base shared by several endpoints is a supported pattern |
 | `SYNE011` | Error | A route/query/header-bound property has no accessible setter and its type is not a record | Add a setter, or make the type a record so the value can be applied through `with` |
-| `SYNE012` | Error | A non-string, non-enum route/query/header-bound property's type has neither public static `TryParse(string, out T)` nor `TryParse(string, IFormatProvider, out T)` | Add either overload — implementing `IParsable<T>` supplies the second — or change the property's type |
+| `SYNE012` | Error | A non-string, non-enum route/query/header-bound property binds a value of a type with neither public static `TryParse(string, out T)` nor `TryParse(string, IFormatProvider, out T)` — for a supported collection shape (`T[]`, `List<T>`, `IReadOnlyList<T>`, `IEnumerable<T>`), this names the *element* type `T`, not the collection type | Add either overload to that type — implementing `IParsable<T>` supplies the second — or change the property's (or element's) type |
 | `SYNE013` | Warning | A message type is bound by two or more endpoints whose *resolved* bindings differ (different route/verb produced different bindable properties) | Give each endpoint its own message type — only one endpoint's binding resolution is baked into the single shared binder; **this diagnostic warns, it does not fix anything** — every other endpoint sharing the type keeps binding incorrectly at runtime |
 | `SYNE014` | Warning | An endpoint declares its route in `Configure` (so no verb is visible at compile time) and at least one property's binding source came from convention rather than an explicit `[From*]` attribute | Annotate those properties with `[FromRoute]`/`[FromQuery]`/`[FromHeader]`/`[FromBody]`, or declare the route with a route attribute — see [Escape hatches](./escape-hatches). Harmless for a computed `GET`; a real bug for a computed `POST` |
 | `SYNE015` | Warning | A `[NotBound]` property sits on a message the binder deserializes from the request body (a body-carrying verb, or an explicit `[FromBody]` on a bodyless one), so a caller can still set it by naming it in the payload | Add `[JsonIgnore]` beside `[NotBound]`, and have whatever owns the value assign it unconditionally rather than only when it is still at its default — see [Messages & binding](../high-level/messages). `[NotBound]` alone is sufficient on a bodyless verb |
+| `SYNE016` | Error | A route/query/header-bound property is enumerable but not one of the four collection shapes the binder supports (`HashSet<T>`, `Dictionary<K,V>`, a jagged array, etc.) | Change the property's type to `T[]`, `List<T>`, `IReadOnlyList<T>`, or `IEnumerable<T>` |
 
 ## `SYNE013` is a standing limitation
 
@@ -37,7 +38,7 @@ is correct.
 
 ## Grouped by what they are about
 
-**Binding** — `SYNE001`, `SYNE002`, `SYNE007`, `SYNE011`, `SYNE012`, `SYNE013`, `SYNE014`, `SYNE015`
+**Binding** — `SYNE001`, `SYNE002`, `SYNE007`, `SYNE011`, `SYNE012`, `SYNE013`, `SYNE014`, `SYNE015`, `SYNE016`
 See [Messages & binding](../high-level/messages).
 
 **Responses** — `SYNE003`, `SYNE004`
@@ -67,5 +68,5 @@ suppressed by kind rather than reported and ignored:
 | Level | Applies | Suppressed |
 |---|---|---|
 | `Endpoint<…>`, `StreamEndpoint<…>`, `MappedEndpoint<…>` | All of them | — |
-| `RawEndpoint<TRequest>` / `RawEndpoint<TRequest, TResponse>` | `SYNE003`, `SYNE004`, `SYNE005`, `SYNE008`, `SYNE009`, `SYNE010` | `SYNE001`, `SYNE002`, `SYNE007`, `SYNE011`, `SYNE012`, `SYNE013`, `SYNE014`, `SYNE015` |
+| `RawEndpoint<TRequest>` / `RawEndpoint<TRequest, TResponse>` | `SYNE003`, `SYNE004`, `SYNE005`, `SYNE008`, `SYNE009`, `SYNE010` | `SYNE001`, `SYNE002`, `SYNE007`, `SYNE011`, `SYNE012`, `SYNE013`, `SYNE014`, `SYNE015`, `SYNE016` |
 | `RawEndpoint` | `SYNE008` (call sites), `SYNE009`, `SYNE010` | Everything else |
