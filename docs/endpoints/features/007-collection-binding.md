@@ -34,8 +34,8 @@ rather than reported as an unsupported shape.
 ```csharp
 public sealed record SearchTasksQuery : IRequest<IReadOnlyList<TaskDto>>
 {
-    [FromQuery] public string[] Tags { get; init; } = [];
-    [FromQuery] public List<TaskStatus> Statuses { get; init; } = [];
+    [FromQuery(Name = "tag")] public string[] Tags { get; init; } = [];
+    [FromQuery(Name = "status")] public List<TaskStatus> Statuses { get; init; } = [];
 }
 ```
 
@@ -121,8 +121,8 @@ The message from the top of this file, unchanged, with no `BindAsync` at all:
 ```csharp
 public sealed record SearchTasksQuery : IRequest<IReadOnlyList<TaskDto>>
 {
-    [FromQuery] public string[] Tags { get; init; } = [];
-    [FromQuery] public List<TaskStatus> Statuses { get; init; } = [];
+    [FromQuery(Name = "tag")] public string[] Tags { get; init; } = [];
+    [FromQuery(Name = "status")] public List<TaskStatus> Statuses { get; init; } = [];
 }
 
 [Get("/tasks/search")]

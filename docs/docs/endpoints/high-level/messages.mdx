@@ -142,12 +142,17 @@ means one and a half on every host, not "1.5 or 15 depending on the server's loc
 value under the key, in request order, instead of the single value the scalar rule above takes:
 
 ```csharp
-public sealed record SearchTasksQuery : IRequest<IReadOnlyList<TaskDto>>
+public sealed record FilterTasksQuery : IRequest<IReadOnlyList<TaskDto>>
 {
-    [FromQuery] public string[] Tags { get; init; } = [];
-    [FromQuery] public List<TaskStatus> Statuses { get; init; } = [];
+    [FromQuery(Name = "tag")] public string[] Tags { get; init; } = [];
+    [FromQuery(Name = "status")] public List<TaskStatus> Statuses { get; init; } = [];
 }
 ```
+
+Without an explicit `Name`, `[FromQuery]` resolves the key from the property name — `Tags`, not
+`tag`. Matching is case-insensitive, but not pluralization-insensitive, and a repeated key is
+conventionally singular (`?tag=a&tag=b`, not `?tags=a&tags=b`) while the property holding all of
+them is conventionally plural. `Name` is what reconciles the two:
 
 ```bash
 $ curl -s 'localhost:5000/tasks/search?tag=docs&tag=ship&status=Open'
@@ -176,9 +181,9 @@ to draw. A handler that genuinely requires at least one value enforces that as a
 non-empty" is not a presence-of-the-key question, and binding's job stops at presence:
 
 ```csharp
-public sealed record SearchTasksQuery : IRequest<IReadOnlyList<TaskDto>>
+public sealed record FilterTasksQuery : IRequest<IReadOnlyList<TaskDto>>
 {
-    [FromQuery] public string[]? Tags { get; init; }   // null when ?tag is never sent
+    [FromQuery(Name = "tag")] public string[]? Tags { get; init; }   // null when ?tag is never sent
 }
 ```
 :::

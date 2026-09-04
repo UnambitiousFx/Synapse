@@ -131,8 +131,12 @@ shipped, a property typed `IReadOnlyList<string>` binds it directly, so the mess
 `BindAsync` at all:
 
 ```csharp
-public sealed record TagReportQuery(int Page, IReadOnlyList<string> Tags, int Size = 20)
-    : IRequest<TagReportDto>;
+public sealed record TagReportQuery(int Page, int Size = 20) : IRequest<TagReportDto>
+{
+    // Without an explicit Name, [FromQuery] would resolve the key as "Tags" — the property
+    // name — not the singular "tag" the repeated key actually uses on the wire.
+    [FromQuery(Name = "tag")] public IReadOnlyList<string> Tags { get; init; } = [];
+}
 
 [Get("/reports")]
 public sealed class TagReportEndpoint : Endpoint<TagReportQuery, TagReportDto>;
