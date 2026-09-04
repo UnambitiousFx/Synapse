@@ -69,6 +69,41 @@ public sealed class CollectionDiagnosticTests
     }
 
     [Fact]
+    public void Generate_ForAJaggedArray_ReportsSyne012NamingTheInnerArrayNotSyne016()
+    {
+        // Arrange — pinned deliberately, not a bug: IArrayTypeSymbol.Rank reflects only the
+        // outermost dimension, so string[][] matches TryResolveCollectionShape's `Rank: 1` check for
+        // the supported T[] shape, with element type string[]. It never reaches the SYNE016 branch;
+        // it falls through as a supported shape over an unparsable element (string[] has no
+        // TryParse), so it reports SYNE012 naming string[] — not SYNE016, which would have to name
+        // string[][] as the "unsupported" collection and string[] as one of the shapes to switch to,
+        // which is nonsensical since string[][] already IS almost that shape.
+        const string source = """
+                              using Microsoft.AspNetCore.Mvc;
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+
+                              namespace TestNs;
+
+                              public sealed record SearchQuery : IRequest<int>
+                              {
+                                  [FromQuery] public string[][] Pages { get; init; } = [];
+                              }
+
+                              [Get("/search")]
+                              public sealed class SearchEndpoint : Endpoint<SearchQuery, int>;
+                              """;
+
+        // Act
+        var diagnostics = GeneratorHarness.GetDiagnostics(source);
+
+        // Assert
+        var reported = Assert.Single(diagnostics, d => d.Id == "SYNE012");
+        Assert.Contains("string[]", reported.GetMessage());
+        Assert.DoesNotContain(diagnostics, d => d.Id == "SYNE016");
+    }
+
+    [Fact]
     public void Generate_ForAParsableEnumerableType_StillBindsAsAScalar()
     {
         // Arrange — a type that is both enumerable and parsable keeps binding as the scalar it has

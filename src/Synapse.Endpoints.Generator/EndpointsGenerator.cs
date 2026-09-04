@@ -1280,6 +1280,9 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
     /// </summary>
     private static ITypeSymbol? GetEnumerableElement(ITypeSymbol type)
     {
+        // Defence-in-depth, not load-bearing: the only call site already sits inside an `!isString`
+        // branch, so `type` is never actually System_String here. Kept so this method stays correct
+        // in isolation if a future caller reuses it without that guard.
         if (type.SpecialType == SpecialType.System_String)
         {
             return null;
