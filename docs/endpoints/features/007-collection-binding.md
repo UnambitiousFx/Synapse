@@ -2,7 +2,7 @@
 
 |  |  |
 |---|---|
-| **Status** | 🔴 Missing |
+| **Status** | ✅ Shipped |
 | **Priority** | Medium-High |
 | **Area** | Binding / Generator |
 | **Tiers** | All bound tiers |
@@ -105,7 +105,10 @@ public bool HeaderValues<T>(string name, out T[] values) where T : IParsable<T>;
 
 Semantics to pin down and document:
 
-- Absent key on a required collection → one "is required" error; on an optional one → empty array.
+- Absent key → empty; nullable → `null`. A non-nullable collection binds to an empty array/list and
+  reports nothing when the key is absent — HTTP cannot express zero values under a key, so demanding
+  presence would ask for something unsendable. A **nullable** collection (`string[]?`) binds `null`
+  instead, which is how "absent" and "empty" stay distinguishable.
 - One unparsable element → one error naming the index, and binding continues so the rest still
   accumulate.
 - Comma-separated single values (`?tag=a,b`) are **not** split. Repeated keys only. Splitting is a
@@ -140,16 +143,21 @@ $ curl -s 'localhost:5000/tasks/search?status=Open&status=Nope'
 Note the last one: index `0` still bound, so a request with several bad elements reports all of
 them. And `?tag=a,b` is one tag named `a,b` — repeated keys only, no silent splitting.
 
-At the low level, the same loop becomes one call:
+At the low level, the same loop becomes one call — named `QueryValuesEnum`, not `QueryValues`,
+because an enum cannot satisfy `where T : IParsable<T>` (the same reason `QueryEnum` sits beside
+`Query<T>`):
 
 ```csharp
 var v = context.Validate();
-v.QueryValues<TaskStatus>("status", out var statuses);   // per-element errors, accumulated
+v.QueryValuesEnum<TaskStatus>("status", out var statuses);   // per-element errors, accumulated
 ```
 
 ## Acceptance criteria
 
-- [ ] `SYNE012` reports the element type, not the collection type, when the element is unparsable.
-- [ ] Empty vs absent is distinguishable and documented.
-- [ ] OpenAPI declares an array parameter with the right element schema.
-- [ ] Tests in `test/Synapse.Endpoints.Generator.Tests/BinderEmissionTests.cs`.
+- [x] `SYNE012` reports the element type, not the collection type, when the element is unparsable.
+- [x] Empty vs absent is distinguishable and documented — a non-nullable collection is empty and
+      silent, a nullable one is `null`. See [Repeated keys](../../docs/endpoints/high-level/messages.mdx#repeated-keys).
+- [ ] OpenAPI declares an array parameter with the right element schema — tracked separately as
+      feature 018 (OpenAPI parameter metadata), not part of this feature's scope.
+- [x] Tests in `test/Synapse.Endpoints.Generator.Tests/CollectionBinderEmissionTests.cs` and
+      `CollectionDiagnosticTests.cs`.

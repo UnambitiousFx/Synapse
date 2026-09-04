@@ -45,6 +45,8 @@ This is the same collector the high level's generated binders use, so both level
 | `Route<T>` / `Query<T>` / `Header<T>` | Required. Reports "is required" when absent, "is not a valid T" when unparsable |
 | `RouteOptional<T>` / `QueryOptional<T>` / `HeaderOptional<T>` | Absent is fine (`null`); present-but-unparsable still reports. Value **and** reference types |
 | `RouteEnum<T>` / `QueryEnum<T>` / `HeaderEnum<T>` | Required, by enum name or numeric value |
+| `QueryValues<T>` / `HeaderValues<T>` | Every value of a repeated key, parsed. Absent reports nothing and yields `[]`; a bad element reports its index and the rest still bind |
+| `QueryValuesEnum<TEnum>` / `HeaderValuesEnum<TEnum>` | Same, for an enum element — named apart for the same reason `QueryEnum` sits beside `Query<T>` |
 | `Check(condition, field, message)` | Reports `message` against `field` when the condition is false; returns the condition |
 | `AddError(field, message)` | Reports directly |
 | `IsValid` | `true` while nothing has been reported |
@@ -78,59 +80,83 @@ if (v.Query<int>("page", out var page))
 ```
 :::
 
-## A complete BindAsync
+## Reading every value of a repeated key
 
-Putting the pieces together — the binding that the [five rules](../high-level/messages#the-five-binding-rules)
-cannot express, because one repeated query key has to become a collection:
+`QueryValues<T>` and `HeaderValues<T>` read and parse every value under a repeated key — the same
+loop [the generated binder emits](../high-level/messages#repeated-keys) for a collection-shaped
+message property, which is what these are built from:
 
 ```csharp
-public sealed record TagReportQuery(int Page, int Size, IReadOnlyList<string> Tags)
+var v = context.Validate();
+
+v.QueryValues<string>("tag", out var tags);            // string[] — absent → [], never an error
+v.HeaderValuesEnum<TaskStatus>("X-Status", out var st); // TaskStatus[] — a bad element reports its index
+```
+
+```json title="GET /reports?status=Open&status=Nope"
+{"status":400,"errors":{"status":["The query value at index 1 is not a valid TaskStatus."]}}
+```
+
+An absent key answers `true` with an empty array and reports nothing — the same "absent is empty,
+not an error" rule the high level follows, and for the same reason: HTTP has no way to send zero
+values under a key, so demanding presence would ask the caller for something unsendable. A caller
+who genuinely requires at least one value checks the length itself, guarded like any other rule:
+
+```csharp
+if (v.QueryValues<string>("tag", out var tags))
+{
+    v.Check(tags.Length > 0, "tag", "at least one tag is required");
+}
+```
+
+The guard here is about **parse success**, not presence: `tags.Length > 0` already answers "was
+anything sent". Guarding avoids reporting the length check a second time against a value that failed
+to parse in the first place — the same reason every other guarded `Check` in this file exists.
+
+An enum element cannot satisfy `where T : IParsable<T>`, so it gets the same `…Enum` split as the
+single-value readers: `QueryValuesEnum<TEnum>` / `HeaderValuesEnum<TEnum>` beside `QueryValues<T>` /
+`HeaderValues<T>`, for the same reason `QueryEnum` sits beside `Query<T>`.
+
+:::note No `…ValuesOptional` pair
+`QueryOptional<T>` exists to tell "absent" from "present but invalid" for a single value. A
+collection already treats absence as empty rather than as a failure — for value and reference
+elements alike — so there is nothing left for an "optional" variant to add.
+:::
+
+## A message the high level now handles
+
+`?tag=a&tag=b` becoming a collection used to need a hand-written `BindAsync` here — nothing on the
+five binding rules could express it. Since [repeated keys](../high-level/messages#repeated-keys)
+shipped, a property typed `IReadOnlyList<string>` binds it directly, so the message needs no
+`BindAsync` at all:
+
+```csharp
+public sealed record TagReportQuery(int Page, IReadOnlyList<string> Tags, int Size = 20)
     : IRequest<TagReportDto>;
 
 [Get("/reports")]
-public sealed class TagReportEndpoint : RawEndpoint<TagReportQuery, TagReportDto>
-{
-    public override ValueTask<BindResult<TagReportQuery>> BindAsync(HttpContext context)
-    {
-        var v = context.Validate();
-
-        // Every value is read before anything is rejected, so a caller who got two of them
-        // wrong learns about both from one response.
-        v.QueryOptional<int>("size", out var size);
-
-        if (v.Query<int>("page", out var page))
-        {
-            v.Check(page >= 1, "page", "must be at least 1");
-        }
-
-        var tags = context.QueryValues("tag")
-            .Where(static tag => !string.IsNullOrWhiteSpace(tag))
-            .Select(static tag => tag!)
-            .ToArray();
-
-        v.Check(tags.Length > 0, "tag", "at least one tag is required");
-
-        return ValueTask.FromResult(v.IsValid
-            ? BindResult<TagReportQuery>.Success(new TagReportQuery(page, size ?? 20, tags))
-            : BindResult<TagReportQuery>.Failure(v));
-    }
-}
+public sealed class TagReportEndpoint : Endpoint<TagReportQuery, TagReportDto>;
 ```
 
 ```bash
 $ curl -s 'localhost:5000/reports?page=2&tag=docs&tag=ship'
 {"page":2,"matched":2,"tags":["docs","ship"]}
 
-$ curl -s 'localhost:5000/reports?page=0'
-{"status":400,"errors":{"page":["must be at least 1"],
-                        "tag":["at least one tag is required"]}}
+$ curl -s 'localhost:5000/reports?page=2'
+{"page":2,"matched":0,"tags":[]}
 
 $ curl -s 'localhost:5000/reports?tag=docs'
 {"status":400,"errors":{"page":["The query value is required."]}}
 ```
 
-Note the last one: because the check is guarded, a missing `page` says only that it is required. It
-does not also claim the value is too small.
+A rule like "page must be at least 1" or "at least one tag is required" is a business rule, not a
+presence/parseability one — the five rules and the generated binder do not run `Check`. That still
+belongs in `IRequestValidator` and the Synapse pipeline, exactly as the next section describes.
+
+**The low-tier readers above have not gone anywhere.** They remain the right tool once a handler
+needs something binding itself has no hook for — normalising or deduplicating the parsed elements,
+gating one field's read on another, or folding a collection read into a `BindAsync` that also reads
+the body. [Mediator-bound](./mediator-bound) works through exactly that case.
 
 ## What belongs here, and what does not
 
@@ -200,5 +226,5 @@ calls, which a `ref struct` local forbids.
 
 ## Next
 
-- [Mediator-bound](./mediator-bound) — the tier this `BindAsync` belongs to
+- [Mediator-bound](./mediator-bound) — where a hand-written `BindAsync` lives
 - [Validation](../../validation) — where business rules go

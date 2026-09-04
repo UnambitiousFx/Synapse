@@ -48,16 +48,22 @@ binding, and nothing else about the endpoint's behaviour moves.
 
 | Situation | Why the five rules cannot do it |
 |---|---|
-| `?tag=a&tag=b` becoming a collection | Convention binding takes the first value of a repeated key |
 | A header that must be split or parsed further | The value reaches you as one string |
 | A legacy query-string shape (`filter=name:asc,age:desc`) | No rule maps one key onto several properties |
 | A value that needs normalising before it is part of the message | Binding has no hook between read and construct |
 | The message must come partly from a claim or the connection | Not part of the request's route/query/header/body at all |
 
+:::note `?tag=a&tag=b` no longer belongs on this list
+A property typed `T[]`, `List<T>`, `IReadOnlyList<T>` or `IEnumerable<T>` binds a repeated query key
+or header directly — see [Repeated keys](../high-level/messages#repeated-keys). What still needs
+this tier is anything binding itself has no hook for, such as the normalising step below.
+:::
+
 ## A worked example
 
-`?tag=a&tag=b` becoming an `IReadOnlyList<string>` — none of the five rules can express it, and
-nothing else about the endpoint needs to change:
+Deduplicating the repeated `tag` values case-insensitively before they reach the message — the
+repeated key itself binds automatically now, but binding still has no hook between reading a value
+and constructing the message, so normalising still needs `BindAsync`:
 
 ```csharp title="The message and its handler are completely ordinary"
 public sealed record TagReportQuery(int Page, int Size, IReadOnlyList<string> Tags)
@@ -111,12 +117,18 @@ public sealed class TagReportEndpoint : RawEndpoint<TagReportQuery, TagReportDto
             v.Check(page >= 1, "page", "must be at least 1");
         }
 
-        var tags = context.QueryValues("tag")
-            .Where(static tag => !string.IsNullOrWhiteSpace(tag))
-            .Select(static tag => tag!)
-            .ToArray();
+        // QueryValues<T> reads and parses the repeated key — the same read the generated binder
+        // would emit for this property. What still needs BindAsync is what happens next: binding
+        // has no hook to deduplicate case-insensitively before the message is constructed.
+        if (v.QueryValues<string>("tag", out var rawTags))
+        {
+            v.Check(rawTags.Length > 0, "tag", "at least one tag is required");
+        }
 
-        v.Check(tags.Length > 0, "tag", "at least one tag is required");
+        var tags = rawTags
+            .Select(static tag => tag.Trim().ToLowerInvariant())
+            .Distinct()
+            .ToArray();
 
         return ValueTask.FromResult(v.IsValid
             ? BindResult<TagReportQuery>.Success(new TagReportQuery(page, size ?? 20, tags))

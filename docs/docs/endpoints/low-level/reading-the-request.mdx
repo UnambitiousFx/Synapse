@@ -35,6 +35,7 @@ means anything the generated binder can read, you can read the same way.
 | `TryGetHeaderEnum<T>(name, out T)` | `bool` | |
 | `Header(name)` | `string?` | The first value, or `null` |
 | `QueryValues(name)` | `StringValues` | **Every** value of a repeated key |
+| `HeaderValues(name)` | `StringValues` | **Every** value of a repeated header |
 | `BodyAsync<T>(ct)` | `ValueTask<BindResult<T>>` | JSON body; never throws for a client mistake |
 | `Service<T>()` | `T` | `RequestServices.GetRequiredService<T>()` |
 | `Validate()` | `BindingValidator` | [The accumulating collector](./validating) |
@@ -76,13 +77,19 @@ public override ValueTask<IResult> HandleAsync(HttpContext context, Cancellation
     // Every value of a repeated key: ?tag=a&tag=b
     var tags = context.QueryValues("tag").Where(t => !string.IsNullOrWhiteSpace(t)).ToArray();
 
+    // Same, for a repeated header.
+    var accepted = context.HeaderValues("X-Accept-Version");
+
     …
 }
 ```
 
-`QueryValues` is the one that has no equivalent at the high level: the single-value readers take the
-first value when a key repeats, which is what convention binding needs, and a hand-written handler
-frequently wants all of them.
+`QueryValues` and `HeaderValues` are the two that have no direct equivalent at the high level: the
+single-value readers take the first value when a key repeats, which is what convention binding
+needs, and a hand-written handler frequently wants all of them. A message property typed `T[]`,
+`List<T>`, `IReadOnlyList<T>` or `IEnumerable<T>` binds the same repeated values through the high
+level — see [Repeated keys](../high-level/messages#repeated-keys) — so a raw `StringValues` loop is
+now only needed when the elements need something other than an ordinary parse.
 
 :::note Invariant culture, always
 The typed readers pin `CultureInfo.InvariantCulture`, matching ASP.NET Core's own parameter binding. A

@@ -135,6 +135,67 @@ Parsing always pins the **invariant culture** where the type offers the `IFormat
 matching ASP.NET Core's own parameter binding. A route or query value is a wire format: `?amount=1.5`
 means one and a half on every host, not "1.5 or 15 depending on the server's locale".
 
+## Repeated keys
+
+`?tag=a&tag=b&tag=c` binds to a property typed `T[]`, `List<T>`, `IReadOnlyList<T>` or
+`IEnumerable<T>`, where `T` itself satisfies the parseability rule above. The binder reads every
+value under the key, in request order, instead of the single value the scalar rule above takes:
+
+```csharp
+public sealed record SearchTasksQuery : IRequest<IReadOnlyList<TaskDto>>
+{
+    [FromQuery] public string[] Tags { get; init; } = [];
+    [FromQuery] public List<TaskStatus> Statuses { get; init; } = [];
+}
+```
+
+```bash
+$ curl -s 'localhost:5000/tasks/search?tag=docs&tag=ship&status=Open'
+# Tags = ["docs","ship"], Statuses = [Open]
+```
+
+Only a **query key or a header** can repeat, so only those two sources support this. A route
+segment cannot appear twice in one URL, and a collection-shaped route-bound property is reported as
+[`SYNE012`](../reference/diagnostics) — the ordinary "unparsable" diagnostic, not a collection one. A
+`[FromBody]` collection is untouched by any of this: `System.Text.Json` already binds a JSON array,
+and nothing here changes that path. Anything enumerable that is not one of the four shapes above —
+`HashSet<T>`, `Dictionary<K,V>` — is reported as [`SYNE016`](../reference/diagnostics), which names
+the four shapes that do work.
+
+:::note Absent is empty, not an error — and that is a deliberate, distinguishable choice
+HTTP cannot express "zero values under this key": a caller who has no tags to send simply omits
+`tag` altogether. Demanding presence would ask for something unsendable, so a **non-nullable**
+collection binds to an empty array or list when the key is absent, and reports nothing — a request
+with no `?tag=` at all is a `200`, not a `400`.
+
+If you need to tell "the caller sent no tags" apart from "the caller didn't mention tags", make the
+property **nullable** (`string[]?`). An absent key then binds `null`; a present-but-empty-key case
+does not exist over HTTP, so `null` versus a populated collection is the only distinction there is
+to draw. A handler that genuinely requires at least one value enforces that as a business rule, in
+`IRequestValidator` rather than in binding — see [Validation](../../validation) — because "must be
+non-empty" is not a presence-of-the-key question, and binding's job stops at presence:
+
+```csharp
+public sealed record SearchTasksQuery : IRequest<IReadOnlyList<TaskDto>>
+{
+    [FromQuery] public string[]? Tags { get; init; }   // null when ?tag is never sent
+}
+```
+:::
+
+Two more rules, both there to keep the wire format unambiguous:
+
+- **No comma splitting.** `?tag=a,b` is one tag named `a,b`, not two. Splitting on a delimiter is a
+  convention this binder does not pick for you — silently splitting is how a tag that legitimately
+  contains a comma turns into a bug report.
+- **A bad element reports its index and binding continues.** `?status=Open&status=Nope` binds index
+  `0` and reports index `1`, so a request with several bad elements gets all of them in one `400`
+  rather than the first:
+
+```json title="GET /tasks/search?status=Open&status=Nope"
+{"status":400,"errors":{"status":["The query value at index 1 is not a valid TaskStatus."]}}
+```
+
 ## The record-or-setter rule
 
 A property bound from the route, query string or a header must be assignable after the message already
