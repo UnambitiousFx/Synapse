@@ -313,6 +313,86 @@ public static class HttpContextBindingExtensions
         return BindingHelpers.ReadJsonBodyAsync<T>(context, cancellationToken);
     }
 
+    /// <summary>Reads the request form, so the synchronous form readers can serve from its cache.</summary>
+    /// <param name="context">The HTTP context.</param>
+    /// <param name="cancellationToken">
+    ///     An additional token to cancel the read by. Linked with
+    ///     <see cref="HttpContext.RequestAborted" />, which always applies, so passing
+    ///     <see langword="default" /> is the same as passing the request's own token.
+    /// </param>
+    /// <returns>The parsed form, or a failure keyed <c>body</c> describing what was wrong with it.</returns>
+    /// <remarks>
+    ///     Every way the body can be unusable — no <c>Content-Type</c>, or a malformed multipart body —
+    ///     is a failure rather than an exception, so a client mistake stays a <c>400</c> instead of
+    ///     becoming a <c>500</c>. Call this before any of the synchronous form readers below.
+    /// </remarks>
+    public static ValueTask<BindResult<IFormCollection>> FormAsync(this HttpContext context,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        return BindingHelpers.ReadFormAsync(context, cancellationToken);
+    }
+
+    /// <summary>Reads a form field as a string, taking the first when repeated.</summary>
+    /// <param name="context">The HTTP context.</param>
+    /// <param name="name">The field name.</param>
+    /// <param name="value">The raw value when present.</param>
+    /// <returns><see langword="true" /> when the field was present.</returns>
+    /// <remarks>Requires that the form has already been read — see <see cref="FormAsync" />.</remarks>
+    public static bool TryGetForm(this HttpContext context,
+        string name,
+        out string? value)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        return BindingHelpers.TryGetForm(context, name, out value);
+    }
+
+    /// <summary>Reads one uploaded file.</summary>
+    /// <param name="context">The HTTP context.</param>
+    /// <param name="name">The field name the file was uploaded under.</param>
+    /// <param name="file">The file when present.</param>
+    /// <returns><see langword="true" /> when a file was uploaded under that name.</returns>
+    /// <remarks>Requires that the form has already been read — see <see cref="FormAsync" />.</remarks>
+    public static bool TryGetFormFile(this HttpContext context,
+        string name,
+        out IFormFile? file)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        return BindingHelpers.TryGetFormFile(context, name, out file);
+    }
+
+    /// <summary>Reads every value of a repeated form field.</summary>
+    /// <param name="context">The HTTP context.</param>
+    /// <param name="name">The field name.</param>
+    /// <returns>All values, empty when the field is absent.</returns>
+    /// <remarks>
+    ///     The single-value reader takes the first value when a field repeats, which is what
+    ///     convention binding needs. A hand-written handler wanting all of them needs this. Requires
+    ///     that the form has already been read — see <see cref="FormAsync" />.
+    /// </remarks>
+    public static StringValues FormValues(this HttpContext context,
+        string name)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        return BindingHelpers.TryGetFormValues(context, name, out var values) ? values : StringValues.Empty;
+    }
+
+    /// <summary>Reads every file uploaded under one field name.</summary>
+    /// <param name="context">The HTTP context.</param>
+    /// <param name="name">The field name.</param>
+    /// <returns>Every file under that name, empty when there are none.</returns>
+    /// <remarks>
+    ///     <see cref="IFormFileCollection" /> means every file on the request; this means the files
+    ///     under one field name. Requires that the form has already been read — see
+    ///     <see cref="FormAsync" />.
+    /// </remarks>
+    public static IReadOnlyList<IFormFile> FormFiles(this HttpContext context,
+        string name)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        return BindingHelpers.GetFormFiles(context, name);
+    }
+
     /// <summary>Resolves a required service for this request.</summary>
     /// <typeparam name="TService">The service type.</typeparam>
     /// <param name="context">The HTTP context.</param>

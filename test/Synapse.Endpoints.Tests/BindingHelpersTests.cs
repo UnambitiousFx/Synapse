@@ -270,6 +270,89 @@ public sealed class BindingHelpersTests
             : string.Join(" ", result.Errors[BindingHelpers.BodyField]);
     }
 
+    private static DefaultHttpContext FormContext(Dictionary<string, StringValues> fields,
+        IFormFileCollection? files = null)
+    {
+        var context = new DefaultHttpContext();
+        context.Request.ContentType = "application/x-www-form-urlencoded";
+        context.Request.Form = new FormCollection(fields, files);
+        return context;
+    }
+
+    [Fact]
+    public async Task ReadFormAsync_WithAFormContentType_ReturnsTheForm()
+    {
+        // Arrange
+        var context = FormContext(new Dictionary<string, StringValues> { ["caption"] = "hello" });
+
+        // Act
+        var result = await BindingHelpers.ReadFormAsync(context, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.True(result.IsSuccess);
+        Assert.Equal("hello", result.Value!["caption"].ToString());
+    }
+
+    [Fact]
+    public async Task ReadFormAsync_WithNoContentType_FailsUnderBodyRatherThanThrowing()
+    {
+        // Arrange — a request with no Content-Type matches an endpoint regardless of what it
+        // accepts, so this is the one shape the consumes matcher lets through to the binder.
+        var context = new DefaultHttpContext();
+
+        // Act
+        var result = await BindingHelpers.ReadFormAsync(context, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.False(result.IsSuccess);
+    }
+
+    [Fact]
+    public void TryGetFormFile_WithAnUploadedFile_ReturnsIt()
+    {
+        // Arrange
+        var file = new FormFile(new MemoryStream("hi"u8.ToArray()), 0, 2, "file", "note.txt");
+        var context = FormContext(new Dictionary<string, StringValues>(), new FormFileCollection { file });
+
+        // Act
+        var found = BindingHelpers.TryGetFormFile(context, "file", out var read);
+
+        // Assert
+        Assert.True(found);
+        Assert.Equal("note.txt", read!.FileName);
+    }
+
+    [Fact]
+    public void TryGetFormFile_OnANonFormRequest_ReturnsFalseRatherThanThrowing()
+    {
+        // Arrange
+        var context = new DefaultHttpContext();
+
+        // Act
+        var found = BindingHelpers.TryGetFormFile(context, "file", out var read);
+
+        // Assert
+        Assert.False(found);
+        Assert.Null(read);
+    }
+
+    [Fact]
+    public void TryGetFormValues_WithARepeatedField_ReturnsEveryValue()
+    {
+        // Arrange
+        var context = FormContext(new Dictionary<string, StringValues>
+        {
+            ["tag"] = new StringValues(["a", "b"])
+        });
+
+        // Act
+        var found = BindingHelpers.TryGetFormValues(context, "tag", out var values);
+
+        // Assert
+        Assert.True(found);
+        Assert.Equal((string[])["a", "b"], values.ToArray());
+    }
+
 }
 
 internal sealed record BindingHelpersTestPayload(string Name);

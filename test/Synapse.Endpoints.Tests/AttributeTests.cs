@@ -42,6 +42,26 @@ public sealed class AttributeTests
     }
 
     [Fact]
+    public void FromFormAttribute_WithNoName_LeavesTheNameNull()
+    {
+        // Arrange & Act
+        var attribute = new FromFormAttribute();
+
+        // Assert
+        Assert.Null(attribute.Name);
+    }
+
+    [Fact]
+    public void FromFormAttribute_WithAName_KeepsIt()
+    {
+        // Arrange & Act
+        var attribute = new FromFormAttribute("caption");
+
+        // Assert
+        Assert.Equal("caption", attribute.Name);
+    }
+
+    [Fact]
     public void EndpointMetadata_WithEmptyRoute_IndicatesConfigureDeclaresIt()
     {
         // Arrange & Act

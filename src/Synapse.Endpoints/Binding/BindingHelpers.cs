@@ -1,3 +1,4 @@
+using System.IO;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Primitives;
@@ -202,5 +203,129 @@ public static class BindingHelpers
         {
             linked?.Dispose();
         }
+    }
+
+    /// <summary>Reads the request form, so the synchronous form readers can serve from its cache.</summary>
+    /// <param name="context">The HTTP context.</param>
+    /// <param name="cancellationToken">
+    ///     An additional token to cancel the read by, linked with
+    ///     <see cref="HttpContext.RequestAborted" />. Generated binders pass none.
+    /// </param>
+    /// <returns>The parsed form, or a failure describing what was wrong with the body.</returns>
+    /// <remarks>
+    ///     The mirror image of <see cref="ReadJsonBodyAsync{T}" />, including the two shapes that would
+    ///     otherwise become a 500 for what is a client mistake. A request with no <c>Content-Type</c> at
+    ///     all matches an endpoint regardless of what it declares it accepts, so the content type is
+    ///     checked here rather than left to the matcher; and a malformed multipart body or an exceeded
+    ///     form limit throws <see cref="InvalidDataException" />, which is caught rather than escaping.
+    /// </remarks>
+    public static async ValueTask<BindResult<IFormCollection>> ReadFormAsync(HttpContext context,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        if (!context.Request.HasFormContentType)
+        {
+            return BindResult<IFormCollection>.Failure(
+                BodyField,
+                "The request body is required to be a form, but the request declared content type " +
+                $"'{context.Request.ContentType ?? string.Empty}'. Send the body as multipart/form-data " +
+                "or application/x-www-form-urlencoded.");
+        }
+
+        CancellationTokenSource? linked = null;
+        var effective = context.RequestAborted;
+
+        if (cancellationToken.CanBeCanceled && cancellationToken != context.RequestAborted)
+        {
+            linked = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted, cancellationToken);
+            effective = linked.Token;
+        }
+
+        try
+        {
+            return BindResult<IFormCollection>.Success(await context.Request.ReadFormAsync(effective));
+        }
+        catch (InvalidDataException exception)
+        {
+            return BindResult<IFormCollection>.Failure(
+                BodyField, $"The request body is not a valid form: {exception.Message}");
+        }
+        finally
+        {
+            linked?.Dispose();
+        }
+    }
+
+    /// <summary>Reads a form field, taking the first when repeated.</summary>
+    /// <param name="context">The HTTP context.</param>
+    /// <param name="name">The field name.</param>
+    /// <param name="value">The raw value when present.</param>
+    /// <returns><see langword="true" /> when the field was present.</returns>
+    /// <remarks>
+    ///     Synchronous, and so requires that the form has already been read — by
+    ///     <see cref="ReadFormAsync" />, which every generated form binder calls first. After that
+    ///     <see cref="HttpRequest.Form" /> is served from the request's own cache and never blocks.
+    ///     A non-form request returns <see langword="false" /> rather than throwing.
+    /// </remarks>
+    public static bool TryGetForm(HttpContext context,
+        string name,
+        out string? value)
+    {
+        if (context.Request.HasFormContentType &&
+            context.Request.Form.TryGetValue(name, out var raw) &&
+            raw.Count > 0)
+        {
+            value = raw[0];
+            return value is not null;
+        }
+
+        value = null;
+        return false;
+    }
+
+    /// <summary>Reads every value of a repeated form field.</summary>
+    /// <param name="context">The HTTP context.</param>
+    /// <param name="name">The field name.</param>
+    /// <param name="values">Every value under the field, or empty when it is absent.</param>
+    /// <returns><see langword="true" /> when the field was present.</returns>
+    /// <remarks>Requires that the form has already been read — see <see cref="TryGetForm" />.</remarks>
+    public static bool TryGetFormValues(HttpContext context,
+        string name,
+        out StringValues values)
+    {
+        if (context.Request.HasFormContentType &&
+            context.Request.Form.TryGetValue(name, out values))
+        {
+            return true;
+        }
+
+        values = StringValues.Empty;
+        return false;
+    }
+
+    /// <summary>Reads one uploaded file.</summary>
+    /// <param name="context">The HTTP context.</param>
+    /// <param name="name">The field name the file was uploaded under.</param>
+    /// <param name="file">The file when present.</param>
+    /// <returns><see langword="true" /> when a file was uploaded under that name.</returns>
+    /// <remarks>Requires that the form has already been read — see <see cref="TryGetForm" />.</remarks>
+    public static bool TryGetFormFile(HttpContext context,
+        string name,
+        out IFormFile? file)
+    {
+        file = context.Request.HasFormContentType ? context.Request.Form.Files[name] : null;
+        return file is not null;
+    }
+
+    /// <summary>Reads every file uploaded under one field name.</summary>
+    /// <param name="context">The HTTP context.</param>
+    /// <param name="name">The field name.</param>
+    /// <returns>Every file under that name, empty when there are none.</returns>
+    /// <remarks>Requires that the form has already been read — see <see cref="TryGetForm" />.</remarks>
+    public static IReadOnlyList<IFormFile> GetFormFiles(HttpContext context,
+        string name)
+    {
+        return context.Request.HasFormContentType ? context.Request.Form.Files.GetFiles(name) : [];
     }
 }
