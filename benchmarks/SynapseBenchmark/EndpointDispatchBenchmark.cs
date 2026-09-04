@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json.Serialization;
 using BenchmarkDotNet.Attributes;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
@@ -53,12 +54,14 @@ public class EndpointDispatchBenchmark
     private IHost _hookedHost = null!;
     private IHost _processedHost = null!;
     private IHost _selfHandledHost = null!;
+    private IHost _collectionHost = null!;
     private HttpClient _handWritten = null!;
     private HttpClient _endpoint = null!;
     private HttpClient _raw = null!;
     private HttpClient _hooked = null!;
     private HttpClient _processed = null!;
     private HttpClient _selfHandled = null!;
+    private HttpClient _collection = null!;
 
     [GlobalSetup]
     public void Setup()
@@ -121,12 +124,19 @@ public class EndpointDispatchBenchmark
             app.UseEndpoints(endpoints => { endpoints.MapEndpoint<SelfHandledThingEndpoint>(); });
         });
 
+        _collectionHost = BuildHost(app =>
+        {
+            app.UseRouting();
+            app.UseEndpoints(endpoints => { endpoints.MapEndpoint<SearchThingsEndpoint>(); });
+        });
+
         _handWritten = _handWrittenHost.GetTestServer().CreateClient();
         _endpoint = _endpointHost.GetTestServer().CreateClient();
         _raw = _rawHost.GetTestServer().CreateClient();
         _hooked = _hookedHost.GetTestServer().CreateClient();
         _processed = _processedHost.GetTestServer().CreateClient();
         _selfHandled = _selfHandledHost.GetTestServer().CreateClient();
+        _collection = _collectionHost.GetTestServer().CreateClient();
     }
 
     [GlobalCleanup]
@@ -138,12 +148,14 @@ public class EndpointDispatchBenchmark
         _hooked.Dispose();
         _processed.Dispose();
         _selfHandled.Dispose();
+        _collection.Dispose();
         _handWrittenHost.Dispose();
         _endpointHost.Dispose();
         _rawHost.Dispose();
         _hookedHost.Dispose();
         _processedHost.Dispose();
         _selfHandledHost.Dispose();
+        _collectionHost.Dispose();
     }
 
     [Benchmark(Baseline = true)]
@@ -203,6 +215,18 @@ public class EndpointDispatchBenchmark
     }
 
     /// <summary>
+    ///     Dispatches a request bound entirely from a repeated query key. The generated binder for
+    ///     this shape accumulates into a <c>List&lt;T&gt;</c> and calls <c>.ToArray()</c> — new
+    ///     allocations that <see cref="SynapseEndpoint" />'s single route scalar never makes — so the
+    ///     pair is the regression check for the collection binder's cost.
+    /// </summary>
+    [Benchmark]
+    public Task<HttpResponseMessage> SynapseEndpointWithCollectionQuery()
+    {
+        return _collection.GetAsync("/things?tag=a&tag=b&tag=c");
+    }
+
+    /// <summary>
     ///     The body-reading counterpart of <see cref="HandWrittenLambda" />. The GET pair above never
     ///     touches <c>BindingHelpers.ReadJsonBodyAsync</c> — a bodyless verb binds entirely from the
     ///     route — so it cannot measure anything about how the body's <c>JsonTypeInfo</c> is resolved.
@@ -256,6 +280,7 @@ public class EndpointDispatchBenchmark
                     {
                         cfg.RegisterRequestHandler<GetThingQueryHandler, GetThingQuery, ThingDto>();
                         cfg.RegisterRequestHandler<CreateThingCommandHandler, CreateThingCommand, ThingDto>();
+                        cfg.RegisterRequestHandler<SearchThingsQueryHandler, SearchThingsQuery, ThingDto>();
                     });
 
                     // Only the processor arm registers anything beyond the shared wiring, so every
@@ -398,6 +423,32 @@ public sealed class BenchmarkPostProcessor : IEndpointPostProcessor
         return new ValueTask<IResult>(result);
     }
 }
+
+/// <summary>
+///     A query bound entirely from a repeated query key, exercising the generated collection binder
+///     rather than <see cref="GetThingQuery" />'s single route scalar.
+/// </summary>
+public sealed record SearchThingsQuery : IRequest<ThingDto>
+{
+    /// <summary>The tags to search by, accumulated from every <c>tag</c> query value.</summary>
+    [FromQuery(Name = "tag")]
+    public string[] Tags { get; init; } = [];
+}
+
+/// <summary>Handles <see cref="SearchThingsQuery" />. Never touches <see cref="SearchThingsQuery.Tags" /> beyond binding it — this arm measures binding, not handling.</summary>
+public sealed class SearchThingsQueryHandler : IRequestHandler<SearchThingsQuery, ThingDto>
+{
+    /// <inheritdoc />
+    public ValueTask<Result<ThingDto>> HandleAsync(SearchThingsQuery request,
+        CancellationToken cancellationToken = default)
+    {
+        return ValueTask.FromResult(Result.Success(new ThingDto { Id = Guid.Empty, Name = "Widget" }));
+    }
+}
+
+/// <summary>The Synapse endpoint whose generated binder reads a repeated query key into <c>string[]</c>.</summary>
+[Get("/things")]
+public sealed class SearchThingsEndpoint : Endpoint<SearchThingsQuery, ThingDto>;
 
 /// <summary>
 ///     The low-level counterpart of <see cref="GetThingEndpoint" />: the same route, message, handler
