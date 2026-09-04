@@ -334,4 +334,76 @@ public sealed class BindingValidatorTests
         Assert.True(read);
         Assert.Equal([4, 5], sizes);
     }
+
+    [Fact]
+    public void Form_WithAPresentField_ParsesIt()
+    {
+        // Arrange
+        var context = new DefaultHttpContext();
+        context.Request.ContentType = "application/x-www-form-urlencoded";
+        context.Request.Form = new FormCollection(new Dictionary<string, StringValues> { ["size"] = "7" });
+
+        // Act
+        var validation = context.Validate();
+        var read = validation.Form<int>("size", out var size);
+
+        // Assert
+        Assert.True(read);
+        Assert.Equal(7, size);
+        Assert.True(validation.IsValid);
+    }
+
+    [Fact]
+    public void Form_WithAnAbsentField_ReportsItAsRequiredNamingTheFormValue()
+    {
+        // Arrange
+        var context = new DefaultHttpContext();
+        context.Request.ContentType = "application/x-www-form-urlencoded";
+        context.Request.Form = new FormCollection(new Dictionary<string, StringValues>());
+
+        // Act
+        var validation = context.Validate();
+        validation.Form<int>("size", out _);
+
+        // Assert
+        Assert.NotNull(validation.Errors);
+        Assert.Equal("The form value is required.", Assert.Single(validation.Errors["size"]));
+    }
+
+    [Fact]
+    public void FormFile_WithAnAbsentFile_ReportsIt()
+    {
+        // Arrange
+        var context = new DefaultHttpContext();
+        context.Request.ContentType = "multipart/form-data; boundary=x";
+        context.Request.Form = new FormCollection(new Dictionary<string, StringValues>());
+
+        // Act
+        var validation = context.Validate();
+        var read = validation.FormFile("file", out _);
+
+        // Assert
+        Assert.False(read);
+        Assert.Equal("The form file is required.", Assert.Single(validation.Errors!["file"]));
+    }
+
+    [Fact]
+    public void Validate_AccumulatesFormFailuresAlongsideRouteAndQueryOnes()
+    {
+        // Arrange — one 400 naming everything wrong, whatever part of the request it came from.
+        var context = new DefaultHttpContext();
+        context.Request.ContentType = "multipart/form-data; boundary=x";
+        context.Request.Form = new FormCollection(new Dictionary<string, StringValues>());
+
+        // Act
+        var validation = context.Validate();
+        validation.Route<Guid>("taskId", out _);
+        validation.Form<string>("caption", out _);
+        validation.FormFile("file", out _);
+
+        // Assert
+        Assert.Equal(
+            ["caption", "file", "taskId"],
+            validation.Errors!.Keys.OrderBy(key => key, StringComparer.Ordinal).ToArray());
+    }
 }

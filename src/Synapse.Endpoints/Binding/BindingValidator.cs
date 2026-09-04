@@ -287,6 +287,123 @@ public struct BindingValidator
         return ReadEnumValues(BindingSourceKind.Header, name, out values);
     }
 
+    /// <summary>Reads a required form value.</summary>
+    /// <typeparam name="T">The value type.</typeparam>
+    /// <param name="name">The form field name.</param>
+    /// <param name="value">The parsed value, or <see langword="default" /> when absent or unparsable.</param>
+    /// <returns><see langword="true" /> when the value was present and parsed.</returns>
+    /// <remarks>Requires that the form has already been read — see <see cref="BindingHelpers.TryGetForm" />.</remarks>
+    public bool Form<T>(string name,
+        out T value)
+        where T : IParsable<T>
+    {
+        return Required(BindingSourceKind.Form, name, out value);
+    }
+
+    /// <summary>Reads an optional form value, reporting nothing when it is absent.</summary>
+    /// <typeparam name="T">The value type.</typeparam>
+    /// <param name="name">The form field name.</param>
+    /// <param name="value">The parsed value, or <see langword="null" /> when absent.</param>
+    /// <returns><see langword="true" /> when the value was absent or present and parsed.</returns>
+    /// <remarks>Requires that the form has already been read — see <see cref="BindingHelpers.TryGetForm" />.</remarks>
+    public bool FormOptional<T>(string name,
+        out T? value)
+        where T : struct, IParsable<T>
+    {
+        return Optional(BindingSourceKind.Form, name, out value);
+    }
+
+    /// <summary>
+    ///     Reads an optional form value of a reference type, reporting nothing when it is absent.
+    /// </summary>
+    /// <typeparam name="T">The reference type to parse into.</typeparam>
+    /// <param name="name">The form field name.</param>
+    /// <param name="value">The parsed value, or <see langword="null" /> when absent.</param>
+    /// <returns><see langword="true" /> when the value was absent or present and parsed.</returns>
+    /// <remarks>Requires that the form has already been read — see <see cref="BindingHelpers.TryGetForm" />.</remarks>
+    public bool FormOptional<T>(string name,
+        out T? value)
+        where T : class, IParsable<T>
+    {
+        return Optional(BindingSourceKind.Form, name, out value);
+    }
+
+    /// <summary>Reads a required form value as an enum, accepting its name or its numeric value.</summary>
+    /// <typeparam name="TEnum">The enum type.</typeparam>
+    /// <param name="name">The form field name.</param>
+    /// <param name="value">The parsed value.</param>
+    /// <returns><see langword="true" /> when the value was present and parsed.</returns>
+    /// <remarks>Requires that the form has already been read — see <see cref="BindingHelpers.TryGetForm" />.</remarks>
+    public bool FormEnum<TEnum>(string name,
+        out TEnum value)
+        where TEnum : struct, Enum
+    {
+        return RequiredEnum(BindingSourceKind.Form, name, out value);
+    }
+
+    /// <summary>Reads every value of a repeated form field, parsing each one.</summary>
+    /// <typeparam name="T">The element type.</typeparam>
+    /// <param name="name">The form field name.</param>
+    /// <param name="values">Every element that parsed, in request order.</param>
+    /// <returns><see langword="true" /> when every present element parsed.</returns>
+    /// <remarks>
+    ///     An absent key is an empty array and reports nothing, for the same reason as
+    ///     <see cref="QueryValues{T}" />. Requires that the form has already been read — see
+    ///     <see cref="BindingHelpers.TryGetForm" />.
+    /// </remarks>
+    public bool FormValues<T>(string name,
+        out T[] values)
+        where T : IParsable<T>
+    {
+        return ReadValues(BindingSourceKind.Form, name, out values);
+    }
+
+    /// <summary>Reads every value of a repeated form field as an enum, by name or numeric value.</summary>
+    /// <typeparam name="TEnum">The enum element type.</typeparam>
+    /// <param name="name">The form field name.</param>
+    /// <param name="values">Every element that parsed, in request order.</param>
+    /// <returns><see langword="true" /> when every present element parsed.</returns>
+    /// <remarks>Requires that the form has already been read — see <see cref="BindingHelpers.TryGetForm" />.</remarks>
+    public bool FormValuesEnum<TEnum>(string name,
+        out TEnum[] values)
+        where TEnum : struct, Enum
+    {
+        return ReadEnumValues(BindingSourceKind.Form, name, out values);
+    }
+
+    /// <summary>Reads a required uploaded file.</summary>
+    /// <param name="name">The field name the file was uploaded under.</param>
+    /// <param name="file">The file, or <see langword="null" /> when absent.</param>
+    /// <returns><see langword="true" /> when a file was uploaded under that name.</returns>
+    /// <remarks>
+    ///     A file has no parse step — it is a stream, not a wire-format string — so this reader reports
+    ///     presence and nothing else.
+    /// </remarks>
+    public bool FormFile(string name,
+        out IFormFile file)
+    {
+        if (BindingHelpers.TryGetFormFile(_context, name, out var found))
+        {
+            file = found!;
+            return true;
+        }
+
+        file = null!;
+        AddError(name, "The form file is required.");
+        return false;
+    }
+
+    /// <summary>Reads an optional uploaded file, reporting nothing when it is absent.</summary>
+    /// <param name="name">The field name the file was uploaded under.</param>
+    /// <param name="file">The file, or <see langword="null" /> when absent.</param>
+    /// <returns><see langword="true" /> always — an absent optional file is not a failure.</returns>
+    public bool FormFileOptional(string name,
+        out IFormFile? file)
+    {
+        BindingHelpers.TryGetFormFile(_context, name, out file);
+        return true;
+    }
+
     /// <summary>Reports <paramref name="message" /> against <paramref name="field" /> when the condition is false.</summary>
     /// <param name="condition">The condition that must hold.</param>
     /// <param name="field">The field the message is about.</param>
@@ -358,7 +475,9 @@ public struct BindingValidator
         {
             BindingSourceKind.Route => BindingHelpers.TryGetRoute(_context, name, out raw),
             BindingSourceKind.Query => BindingHelpers.TryGetQuery(_context, name, out raw),
-            _ => BindingHelpers.TryGetHeader(_context, name, out raw)
+            BindingSourceKind.Header => BindingHelpers.TryGetHeader(_context, name, out raw),
+            BindingSourceKind.Form => BindingHelpers.TryGetForm(_context, name, out raw),
+            _ => throw new ArgumentOutOfRangeException(nameof(source), source, null)
         };
     }
 
@@ -369,7 +488,9 @@ public struct BindingValidator
         return source switch
         {
             BindingSourceKind.Query => BindingHelpers.TryGetQueryValues(_context, name, out values),
-            _ => BindingHelpers.TryGetHeaderValues(_context, name, out values)
+            BindingSourceKind.Header => BindingHelpers.TryGetHeaderValues(_context, name, out values),
+            BindingSourceKind.Form => BindingHelpers.TryGetFormValues(_context, name, out values),
+            _ => throw new ArgumentOutOfRangeException(nameof(source), source, null)
         };
     }
 
@@ -533,7 +654,9 @@ public struct BindingValidator
         {
             BindingSourceKind.Route => "route value",
             BindingSourceKind.Query => "query value",
-            _ => "header"
+            BindingSourceKind.Header => "header",
+            BindingSourceKind.Form => "form value",
+            _ => throw new ArgumentOutOfRangeException(nameof(source), source, null)
         };
     }
 }
@@ -543,5 +666,6 @@ internal enum BindingSourceKind
 {
     Route,
     Query,
-    Header
+    Header,
+    Form
 }
