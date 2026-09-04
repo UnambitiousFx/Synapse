@@ -18,3 +18,6 @@ SYNE008 | Synapse.Endpoints | Warning | Type used by an endpoint is missing from
 SYNE014 | Synapse.Endpoints | Warning | Route declared in Configure on a message with convention-bound properties
 SYNE015 | Synapse.Endpoints | Warning | [NotBound] property is still populated from the request body
 SYNE016 | Synapse.Endpoints | Error | Bound property's collection type is not supported
+SYNE017 | Synapse.Endpoints | Warning | Form-bound property on a bodyless verb
+SYNE018 | Synapse.Endpoints | Error | Message binds from both the form and the JSON body
+SYNE019 | Synapse.Endpoints | Info | Message is form-bound by inference

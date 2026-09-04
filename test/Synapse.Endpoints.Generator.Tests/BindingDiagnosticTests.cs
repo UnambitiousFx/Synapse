@@ -98,6 +98,33 @@ public sealed class BindingDiagnosticTests
     }
 
     [Fact]
+    public void Generate_WhenTwoPropertiesClaimTheSameFormField_ReportsSyne002()
+    {
+        // Arrange — "Caption" and "Description" both explicitly claim form field "caption".
+        const string source = """
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+
+                              namespace TestNs;
+
+                              public sealed record UploadCommand : IRequest
+                              {
+                                  [FromForm("caption")] public string Caption { get; init; } = "";
+                                  [FromForm("caption")] public string Description { get; init; } = "";
+                              }
+
+                              [Post("/uploads")]
+                              public sealed class UploadEndpoint : Endpoint<UploadCommand>;
+                              """;
+
+        // Act
+        var diagnostics = GeneratorHarness.GetDiagnostics(source);
+
+        // Assert
+        Assert.Contains(diagnostics, d => d.Id == "SYNE002");
+    }
+
+    [Fact]
     public void Generate_WhenEveryPropertyClaimsADistinctInput_ReportsNoSyne002()
     {
         // Arrange — "Id" binds from the route, "Name" binds from the query (GET is bodyless); no

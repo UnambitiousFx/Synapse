@@ -1,7 +1,7 @@
 ---
 sidebar_position: 4
 title: Diagnostics
-description: SYNE001-SYNE016 - what each one means, why it fires, and what to do about it.
+description: SYNE001-SYNE019 - what each one means, why it fires, and what to do about it.
 ---
 
 # Diagnostics
@@ -11,7 +11,7 @@ The bundled analyzer reports these at build time. Errors stop the build; warning
 | ID | Severity | Fires when | Fix |
 |---|---|---|---|
 | `SYNE001` | Error | A route template parameter has no matching bindable property | Add a property with that name, or rename the route parameter |
-| `SYNE002` | Error | Two properties resolve to the same route parameter, the same query key, or more than one carries an explicit `[FromBody]` | Rename one, give it a distinct `[FromRoute]`/`[FromQuery]` name, or keep only one `[FromBody]` |
+| `SYNE002` | Error | Two properties resolve to the same route parameter, query key, or form field, or more than one carries an explicit `[FromBody]` | Rename one, give it a distinct `[FromRoute]`/`[FromQuery]`/`[FromForm]` name, or keep only one `[FromBody]` |
 | `SYNE003` | Info | A `POST`/`PUT` endpoint returning a value declares no explicit success mapping, so it always responds `200 OK` | Call `Created`/`Accepted`/etc. in `Configure`, or override `OnSuccess`, to make the status explicit |
 | `SYNE004` | Warning | `OnSuccess` is overridden *and* `Configure` calls a declarative success method | Remove one — the declarative call always wins, so the override is dead code |
 | `SYNE005` | Error | The bound message implements `IStreamRequest<T>` but the endpoint derives from `Endpoint<...>` | Derive from `StreamEndpoint<...>` instead |
@@ -26,6 +26,9 @@ The bundled analyzer reports these at build time. Errors stop the build; warning
 | `SYNE014` | Warning | An endpoint declares its route in `Configure` (so no verb is visible at compile time) and at least one property's binding source came from convention rather than an explicit `[From*]` attribute | Annotate those properties with `[FromRoute]`/`[FromQuery]`/`[FromHeader]`/`[FromBody]`, or declare the route with a route attribute — see [Escape hatches](./escape-hatches). Harmless for a computed `GET`; a real bug for a computed `POST` |
 | `SYNE015` | Warning | A `[NotBound]` property sits on a message the binder deserializes from the request body (a body-carrying verb, or an explicit `[FromBody]` on a bodyless one), so a caller can still set it by naming it in the payload | Add `[JsonIgnore]` beside `[NotBound]`, and have whatever owns the value assign it unconditionally rather than only when it is still at its default — see [Messages & binding](../high-level/messages). `[NotBound]` alone is sufficient on a bodyless verb |
 | `SYNE016` | Error | A route/query/header-bound property is enumerable but not one of the four collection shapes the binder supports (`HashSet<T>`, `Dictionary<K,V>`, etc.) | Change the property's type to `T[]`, `List<T>`, `IReadOnlyList<T>`, or `IEnumerable<T>`. A jagged array (`T[][]`) is *not* caught here — Roslyn's array rank reflects only the outermost dimension, so it reads as a supported `T[]` shape whose element type is `T[]`, and is reported as `SYNE012` naming that element instead |
+| `SYNE017` | Warning | An explicit `[FromForm]` property is declared on a bodyless verb (`GET`/`DELETE`/`HEAD`/`OPTIONS`/`TRACE`), so it can never bind | Remove `[FromForm]`, change the verb, or accept the property will always be missing |
+| `SYNE018` | Error | One message has both form-bound properties and body-bound properties. A request is either multipart form or JSON, never both, so whichever the binder reads, the other group can never bind | Move the JSON-bound properties to `[FromForm]`, or send the file on a separate request |
+| `SYNE019` | Info | A message became form-bound purely by inference — an `IFormFile`-typed property with no `[FromForm]` anywhere on the message — and at least one other property followed it to the form as a result | Add `[FromForm]` to the file property to state the intent explicitly, which silences this; the endpoint itself is already correct |
 
 ## `SYNE013` is a standing limitation
 
@@ -38,7 +41,7 @@ is correct.
 
 ## Grouped by what they are about
 
-**Binding** — `SYNE001`, `SYNE002`, `SYNE007`, `SYNE011`, `SYNE012`, `SYNE013`, `SYNE014`, `SYNE015`, `SYNE016`
+**Binding** — `SYNE001`, `SYNE002`, `SYNE007`, `SYNE011`, `SYNE012`, `SYNE013`, `SYNE014`, `SYNE015`, `SYNE016`, `SYNE017`, `SYNE018`, `SYNE019`
 See [Messages & binding](../high-level/messages).
 
 **Responses** — `SYNE003`, `SYNE004`
@@ -68,5 +71,5 @@ suppressed by kind rather than reported and ignored:
 | Level | Applies | Suppressed |
 |---|---|---|
 | `Endpoint<…>`, `StreamEndpoint<…>`, `MappedEndpoint<…>` | All of them | — |
-| `RawEndpoint<TRequest>` / `RawEndpoint<TRequest, TResponse>` | `SYNE003`, `SYNE004`, `SYNE005`, `SYNE008`, `SYNE009`, `SYNE010` | `SYNE001`, `SYNE002`, `SYNE007`, `SYNE011`, `SYNE012`, `SYNE013`, `SYNE014`, `SYNE015`, `SYNE016` |
+| `RawEndpoint<TRequest>` / `RawEndpoint<TRequest, TResponse>` | `SYNE003`, `SYNE004`, `SYNE005`, `SYNE008`, `SYNE009`, `SYNE010` | `SYNE001`, `SYNE002`, `SYNE007`, `SYNE011`, `SYNE012`, `SYNE013`, `SYNE014`, `SYNE015`, `SYNE016`, `SYNE017`, `SYNE018`, `SYNE019` |
 | `RawEndpoint` | `SYNE008` (call sites), `SYNE009`, `SYNE010` | Everything else |

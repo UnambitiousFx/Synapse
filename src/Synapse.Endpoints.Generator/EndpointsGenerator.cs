@@ -603,6 +603,19 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
         var propertyLocations = new Dictionary<string, LocationInfo?>(StringComparer.Ordinal);
         var explicitFromBodyProperties = new List<string>();
 
+        // SYNE019 — collected here and reported below, once the full set of resolved properties is
+        // known. explicitFromFormProperties gates the diagnostic off the moment any property states
+        // its form-binding intent explicitly; formConventionProperties names what actually moved to
+        // the form purely as a consequence of rule 6 (isFormBound); formFileProperty is the property
+        // whose type made the message form-bound in the first place (rule 3), and is where the
+        // diagnostic is reported. Tracked independently of whether ResolveBindableProperty later
+        // returns a model for the property (a property can carry [FromForm] and still fail to
+        // resolve, e.g. SYNE011/SYNE012), so an explicit annotation always suppresses this diagnostic
+        // even on such a property.
+        var explicitFromFormProperties = new List<string>();
+        var formConventionProperties = new List<string>();
+        (string Name, LocationInfo? Location)? formFileProperty = null;
+
         // SYNE015 — collected here and reported below, because whether the binder reads a body at all
         // is not known until every property has been resolved (an explicit [FromBody] forces a read
         // even on a bodyless verb).
@@ -623,6 +636,11 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
                 }
 
                 var propertyLocation = LocationInfo.CreateFrom(property.Locations.FirstOrDefault());
+
+                if (HasExplicitFromFormAttribute(property))
+                {
+                    explicitFromFormProperties.Add(property.Name);
+                }
 
                 if (HasNotBoundAttribute(property))
                 {
@@ -669,6 +687,37 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
                         explicitFromBodyProperties.Add(property.Name);
                     }
                 }
+
+                if (model.Source == BindingSource.Form)
+                {
+                    // SYNE017: the exact mirror of SYNE007 above — a form-bound property on a
+                    // bodyless verb can never bind, since a GET/DELETE/HEAD/OPTIONS/TRACE request
+                    // carries no multipart form data at runtime any more than it carries a JSON body.
+                    // Gated on the declared verb for the same reason as SYNE007: an endpoint that
+                    // declares its route in Configure has no verb here to name.
+                    if (IsDeclaredBodylessVerb(httpMethod))
+                    {
+                        diagnostics.Add(new DiagnosticInfo(
+                            EndpointDiagnostics.FormPropertyOnBodylessVerb,
+                            propertyLocation,
+                            new EquatableArray<string>([property.Name, boundTypeDisplay, httpMethod])));
+                    }
+
+                    if (model.Shape is BindingValueShape.FormFile or BindingValueShape.FormFileCollection)
+                    {
+                        // The file property is what makes HasFormPinnedProperty's rule-3 check true in
+                        // the first place; the first one found is where SYNE019 (if it fires) is
+                        // reported. isConventionBound is always false for a file-shaped property (see
+                        // ResolveSource), so it never itself lands in formConventionProperties below.
+                        formFileProperty ??= (property.Name, propertyLocation);
+                    }
+                    else if (isConventionBound)
+                    {
+                        // SYNE019 — a property that followed the message to the form purely under
+                        // rule 6, rather than because it carries its own [FromForm].
+                        formConventionProperties.Add(property.Name);
+                    }
+                }
             }
         }
 
@@ -693,13 +742,64 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
             }
         }
 
-        // SYNE002 — route/query key collisions: two properties resolved to the same (Source,
-        // SourceKey) pair, keyed case-insensitively the same way route/query matching itself is.
+        // SYNE018 — one message binding from both the form and the JSON body. BinderEmitter picks
+        // exactly one read strategy for the whole message (hasJsonBodyProperty wins over
+        // hasFormProperty — see its own comment), so whichever group loses can never actually
+        // populate its properties: a JSON request body has no multipart fields to read from, and a
+        // multipart request never carries a JSON body for the deserializer to read either way. This
+        // can only happen when an explicit [FromBody] overrides rule 6 on a message that is otherwise
+        // form-bound — the unattributed convention fallback in ResolveSource sends every remaining
+        // property to Form once isFormBound is true, never to Body.
+        var formPropertyNames = models.Where(static m => m.Source == BindingSource.Form)
+            .Select(static m => m.Name).ToArray();
+        var bodyPropertyNames = models.Where(static m => m.Source == BindingSource.Body)
+            .Select(static m => m.Name).ToArray();
+
+        if (formPropertyNames.Length > 0 && bodyPropertyNames.Length > 0)
+        {
+            diagnostics.Add(new DiagnosticInfo(
+                EndpointDiagnostics.FormAndBodyOnOneMessage,
+                propertyLocations[formPropertyNames[0]],
+                new EquatableArray<string>([
+                    boundTypeDisplay,
+                    string.Join(", ", formPropertyNames.Select(static n => $"'{n}'")),
+                    string.Join(", ", bodyPropertyNames.Select(static n => $"'{n}'"))
+                ])));
+        }
+
+        // SYNE019 — the message became form-bound purely by inference. isFormBound (computed before
+        // the loop by HasFormPinnedProperty) is true, no property anywhere carries an explicit
+        // [FromForm], and at least one property actually followed the message to the form under rule
+        // 6 rather than staying on the body — so the only way isFormBound could have become true at
+        // all is the file-typed property named here (rule 3). A message where the file is the only
+        // property never populates formConventionProperties, since there is nothing left to move.
+        if (isFormBound && explicitFromFormProperties.Count == 0 && formConventionProperties.Count > 0 &&
+            formFileProperty is { } file)
+        {
+            diagnostics.Add(new DiagnosticInfo(
+                EndpointDiagnostics.InferredFormBinding,
+                file.Location,
+                new EquatableArray<string>([
+                    boundTypeDisplay,
+                    file.Name,
+                    string.Join(", ", formConventionProperties.Select(static n => $"'{n}'"))
+                ])));
+        }
+
+        // SYNE002 — route/query/form key collisions: two properties resolved to the same (Source,
+        // SourceKey) pair, keyed case-insensitively the same way route/query/form matching itself is.
+        // Header stays excluded, unchanged from before this diagnostic gained the Form case.
         foreach (var sourceGroup in models
-                     .Where(static m => m.Source is BindingSource.Route or BindingSource.Query)
+                     .Where(static m => m.Source is BindingSource.Route or BindingSource.Query or BindingSource.Form)
                      .GroupBy(static m => m.Source))
         {
-            var sourceLabel = sourceGroup.Key == BindingSource.Route ? "route parameter" : "query key";
+            var sourceLabel = sourceGroup.Key switch
+            {
+                BindingSource.Route => "route parameter",
+                BindingSource.Query => "query key",
+                BindingSource.Form => "form field",
+                _ => throw new InvalidOperationException($"Unexpected binding source '{sourceGroup.Key}'.")
+            };
 
             foreach (var keyGroup in sourceGroup.GroupBy(static m => m.SourceKey, StringComparer.OrdinalIgnoreCase))
             {
@@ -747,6 +847,27 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
         foreach (var attribute in property.GetAttributes())
         {
             if (attribute.AttributeClass?.ToDisplayString() == "Microsoft.AspNetCore.Mvc.FromBodyAttribute")
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    ///     Whether <paramref name="property" /> carries an explicit <c>[FromForm]</c> attribute — this
+    ///     project's own, or Microsoft's. Used by SYNE019, which must stay silent the moment any
+    ///     property on the message states its form-binding intent explicitly, whether or not that
+    ///     property is itself the one a file-typed property's inference would otherwise be blamed on.
+    /// </summary>
+    private static bool HasExplicitFromFormAttribute(IPropertySymbol property)
+    {
+        foreach (var attribute in property.GetAttributes())
+        {
+            var name = attribute.AttributeClass?.ToDisplayString();
+            if (name is "UnambitiousFx.Synapse.Endpoints.FromFormAttribute"
+                or "Microsoft.AspNetCore.Mvc.FromFormAttribute")
             {
                 return true;
             }

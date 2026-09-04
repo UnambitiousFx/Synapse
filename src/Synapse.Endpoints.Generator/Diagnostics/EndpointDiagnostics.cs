@@ -411,4 +411,49 @@ internal static class EndpointDiagnostics
         Category,
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
+
+    /// <summary>
+    ///     SYNE017: a <c>[FromForm]</c> property on a verb that never carries a request body. The exact
+    ///     mirror of <see cref="BodyOnlyPropertyOnBodylessVerb" />, and gated the same way — on the
+    ///     *declared* verb, so it never names a verb nobody wrote.
+    /// </summary>
+    internal static readonly DiagnosticDescriptor FormPropertyOnBodylessVerb = new(
+        "SYNE017",
+        "Form-bound property on a bodyless verb",
+        "Property '{0}' on '{1}' binds from the request form, but '{2}' requests never carry a body, so it can never bind. Remove [FromForm], or change the verb.",
+        Category,
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
+    /// <summary>
+    ///     SYNE018: one message binds from both the form and the JSON body. A request carries one or the
+    ///     other, never both, so whichever the binder reads, the other property can never bind.
+    /// </summary>
+    internal static readonly DiagnosticDescriptor FormAndBodyOnOneMessage = new(
+        "SYNE018",
+        "Message binds from both the form and the JSON body",
+        "'{0}' has form-bound properties ({1}) and body-bound properties ({2}). A request is either a form or JSON, never both, so one of these groups can never bind. Move the JSON properties to [FromForm], or send the file separately.",
+        Category,
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    /// <summary>
+    ///     SYNE019: the message became form-bound purely by inference — a property typed
+    ///     <c>IFormFile</c>, with no <c>[FromForm]</c> anywhere — and at least one other property moved
+    ///     from the JSON body to the form as a result.
+    /// </summary>
+    /// <remarks>
+    ///     Info rather than Warning: the endpoint that results is correct and working, and the flip is
+    ///     what makes a file upload expressible without annotating every field. What is worth saying is
+    ///     that adding a file to an existing JSON message relocates every other property, which is a real
+    ///     behaviour change with no other signal. Writing <c>[FromForm]</c> on the file states the intent
+    ///     and silences this.
+    /// </remarks>
+    internal static readonly DiagnosticDescriptor InferredFormBinding = new(
+        "SYNE019",
+        "Message is form-bound by inference",
+        "'{0}' is form-bound because '{1}' is a file, and {2} therefore bind from the form rather than from a JSON body. Add [FromForm] to '{1}' to say so explicitly, or annotate the moved properties.",
+        Category,
+        DiagnosticSeverity.Info,
+        isEnabledByDefault: true);
 }
