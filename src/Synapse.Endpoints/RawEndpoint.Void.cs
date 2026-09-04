@@ -90,10 +90,8 @@ public abstract class RawEndpoint<TRequest> : BoundEndpoint<TRequest>
             ApplyMetadata = handlerBuilder =>
             {
                 // Declared explicitly because a RequestDelegate-shaped endpoint infers nothing.
-                if (DeclaresRequestBody(configuration.HttpMethods))
-                {
-                    handlerBuilder.Accepts<TRequest>("application/json");
-                }
+                RequestBodyMetadata.Apply(handlerBuilder, DeclaredRequestBody(configuration.HttpMethods),
+                    typeof(TRequest));
 
                 handlerBuilder.WithMetadata(new ProducesResponseMetadata(SuccessStatusCode(configuration)));
                 handlerBuilder.ProducesValidationProblem();

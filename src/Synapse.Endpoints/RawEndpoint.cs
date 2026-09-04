@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Http;
+using UnambitiousFx.Synapse.Endpoints.Binding;
 using UnambitiousFx.Synapse.Endpoints.Builders;
 using UnambitiousFx.Synapse.Endpoints.Internal;
 
@@ -51,19 +52,19 @@ public abstract class RawEndpoint : EndpointBase
     public abstract ValueTask<IResult> HandleAsync(HttpContext context,
         CancellationToken cancellationToken);
 
-    /// <summary>
-    ///     Whether this endpoint should declare that it accepts a JSON request body.
-    /// </summary>
+    /// <summary>What this endpoint declares it accepts as a request body.</summary>
     /// <param name="httpMethods">The endpoint's declared HTTP methods.</param>
-    /// <returns><see langword="true" /> to declare <c>Accepts</c>.</returns>
+    /// <returns>The kind of body to declare, or <see cref="RequestBodyKind.None" /> to declare nothing.</returns>
     /// <remarks>
     ///     The verb is all this tier has to go on, and it is the right answer here: the binding is
     ///     hand-written, so the author may read a body on any verb that carries one. The tiers with a
     ///     generated binder know better and override this — see <c>docs/known-issues/067</c>.
     /// </remarks>
-    private protected virtual bool DeclaresRequestBody(string[] httpMethods)
+    private protected virtual RequestBodyKind DeclaredRequestBody(string[] httpMethods)
     {
-        return !HttpMethodHelpers.AllVerbsAreBodyless(httpMethods);
+        return HttpMethodHelpers.AllVerbsAreBodyless(httpMethods)
+            ? RequestBodyKind.None
+            : RequestBodyKind.Json;
     }
 
     /// <summary>

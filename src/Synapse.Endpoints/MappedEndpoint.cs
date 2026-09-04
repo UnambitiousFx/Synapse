@@ -99,12 +99,14 @@ public abstract class MappedEndpoint<THttpRequest, TRequest, TResponse, THttpRes
 
     /// <inheritdoc />
     /// <remarks>The generated binder over <typeparamref name="THttpRequest" /> knows the answer.</remarks>
-    private protected sealed override bool DeclaresRequestBody(string[] httpMethods)
+    private protected sealed override RequestBodyKind DeclaredRequestBody(string[] httpMethods)
     {
-        // Both must hold: the verb has to be one that carries a body at all, and the binder has
-        // to actually read one. Narrowing only — a bodyless verb declared nothing before and
-        // still does, including the explicit-[FromBody]-on-a-GET shape SYNE007 warns about.
-        return base.DeclaresRequestBody(httpMethods) && (_binder?.ReadsRequestBody ?? true);
+        // Narrowing only, exactly as before: a bodyless verb declares nothing whatever the binder
+        // says, including the explicit-[FromBody]-on-a-GET shape SYNE007 warns about. What the binder
+        // adds is *which* body — a form-bound message reads one, but not a JSON one.
+        return base.DeclaredRequestBody(httpMethods) == RequestBodyKind.None
+            ? RequestBodyKind.None
+            : _binder?.BodyKind ?? RequestBodyKind.Json;
     }
 
     internal sealed override RawEndpointPlan CreatePlan(EndpointMetadata metadata)
@@ -124,10 +126,8 @@ public abstract class MappedEndpoint<THttpRequest, TRequest, TResponse, THttpRes
             ApplyMetadata = handlerBuilder =>
             {
                 // Declared explicitly because a RequestDelegate-shaped endpoint infers nothing.
-                if (DeclaresRequestBody(configuration.HttpMethods))
-                {
-                    handlerBuilder.Accepts(typeof(THttpRequest), "application/json");
-                }
+                RequestBodyMetadata.Apply(handlerBuilder, DeclaredRequestBody(configuration.HttpMethods),
+                    typeof(THttpRequest));
 
                 // Declared only when the configured mapper writes a body — see docs/known-issues/054.
                 handlerBuilder.WithMetadata(new ProducesResponseMetadata(

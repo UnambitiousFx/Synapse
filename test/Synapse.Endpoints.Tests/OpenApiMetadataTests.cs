@@ -375,6 +375,44 @@ public sealed class OpenApiMetadataTests
         Assert.NotNull(endpoint.Metadata.GetMetadata<IAcceptsMetadata>());
     }
 
+    // The spike in FormBindingHarnessTests proved a null-RequestType IAcceptsMetadata still drives
+    // ConsumesMatcherPolicy; this pins that a binder reporting RequestBodyKind.Form makes the tier
+    // declare exactly that shape rather than the JSON Accepts every other binder gets.
+    [Fact]
+    public void CreateDescriptor_ForABinderReportingAFormBody_DeclaresBothFormContentTypesAndNoSchema()
+    {
+        // Arrange
+        EndpointRegistry.RegisterBinder(new FormBinder());
+        EndpointRegistry.RegisterMetadata<FormEndpoint>(new EndpointMetadata(["POST"], "/uploads"));
+        var app = WebApplication.CreateSlimBuilder().Build();
+
+        // Act
+        app.MapEndpoint<FormEndpoint>();
+
+        // Assert — no schema is the point: a message holding an IFormFile is not describable as one.
+        var endpoint = ((IEndpointRouteBuilder)app).DataSources
+            .SelectMany(source => source.Endpoints)
+            .Single();
+        var accepts = endpoint.Metadata.GetMetadata<IAcceptsMetadata>();
+        Assert.NotNull(accepts);
+        Assert.Null(accepts!.RequestType);
+        Assert.Equal(["multipart/form-data", "application/x-www-form-urlencoded"], accepts.ContentTypes);
+    }
+
+    private sealed record FormRequest : IRequest<string>;
+
+    private sealed class FormEndpoint : Endpoint<FormRequest, string>;
+
+    private sealed class FormBinder : IEndpointBinder<FormRequest>
+    {
+        public RequestBodyKind BodyKind => RequestBodyKind.Form;
+
+        public ValueTask<BindResult<FormRequest>> BindAsync(HttpContext context)
+        {
+            return ValueTask.FromResult(BindResult<FormRequest>.Success(new FormRequest()));
+        }
+    }
+
     private sealed record MetaQuery : IRequest<string>;
 
     // A declarative mapper that writes no body must not declare one. NoContent() and StatusCode(int)

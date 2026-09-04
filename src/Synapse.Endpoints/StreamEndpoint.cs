@@ -84,12 +84,14 @@ public abstract class StreamEndpoint<TRequest, TItem> : BoundEndpoint<TRequest>
 
     /// <inheritdoc />
     /// <remarks>The generated binder knows whether a body is read; the verb alone does not.</remarks>
-    private protected sealed override bool DeclaresRequestBody(string[] httpMethods)
+    private protected sealed override RequestBodyKind DeclaredRequestBody(string[] httpMethods)
     {
-        // Both must hold: the verb has to be one that carries a body at all, and the binder has
-        // to actually read one. Narrowing only — a bodyless verb declared nothing before and
-        // still does, including the explicit-[FromBody]-on-a-GET shape SYNE007 warns about.
-        return base.DeclaresRequestBody(httpMethods) && (_binder?.ReadsRequestBody ?? true);
+        // Narrowing only, exactly as before: a bodyless verb declares nothing whatever the binder
+        // says, including the explicit-[FromBody]-on-a-GET shape SYNE007 warns about. What the binder
+        // adds is *which* body — a form-bound message reads one, but not a JSON one.
+        return base.DeclaredRequestBody(httpMethods) == RequestBodyKind.None
+            ? RequestBodyKind.None
+            : _binder?.BodyKind ?? RequestBodyKind.Json;
     }
 
     internal sealed override RawEndpointPlan CreatePlan(EndpointMetadata metadata)
@@ -115,10 +117,7 @@ public abstract class StreamEndpoint<TRequest, TItem> : BoundEndpoint<TRequest>
                 // document and left routing unable to reject a wrong content type, which surfaced as a
                 // 400 from the binder where every other endpoint answers 415 — see
                 // docs/known-issues/065.
-                if (DeclaresRequestBody(plan.HttpMethods))
-                {
-                    handlerBuilder.Accepts<TRequest>("application/json");
-                }
+                RequestBodyMetadata.Apply(handlerBuilder, DeclaredRequestBody(plan.HttpMethods), typeof(TRequest));
 
                 // The response format is negotiated at request time (see WantsServerSentEvents), so
                 // both content types are declared for the same 200 response.

@@ -123,10 +123,8 @@ public abstract class RawEndpoint<TRequest, TResponse> : BoundEndpoint<TRequest>
             ApplyMetadata = handlerBuilder =>
             {
                 // Declared explicitly because a RequestDelegate-shaped endpoint infers nothing.
-                if (DeclaresRequestBody(configuration.HttpMethods))
-                {
-                    handlerBuilder.Accepts<TRequest>("application/json");
-                }
+                RequestBodyMetadata.Apply(handlerBuilder, DeclaredRequestBody(configuration.HttpMethods),
+                    typeof(TRequest));
 
                 // The response type is declared only when the configured mapper actually writes one.
                 // NoContent() and StatusCode(int) write a status line and nothing else, so declaring

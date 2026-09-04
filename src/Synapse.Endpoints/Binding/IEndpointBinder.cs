@@ -34,4 +34,12 @@ public interface IEndpointBinder<TRequest>
     ///     </para>
     /// </remarks>
     bool ReadsRequestBody => true;
+
+    /// <summary>What this binder reads the request body as, so the endpoint can declare a matching content type.</summary>
+    /// <remarks>
+    ///     Defaulted <em>from</em> <see cref="ReadsRequestBody" /> rather than the other way round, so a
+    ///     hand-written binder that predates this member and overrides only <c>ReadsRequestBody</c> keeps
+    ///     behaving exactly as it did. Generated binders declare both explicitly.
+    /// </remarks>
+    RequestBodyKind BodyKind => ReadsRequestBody ? RequestBodyKind.Json : RequestBodyKind.None;
 }
