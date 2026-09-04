@@ -6,6 +6,7 @@ internal enum BindingSource
     Route,
     Query,
     Header,
+    Form,
     Body
 }
 

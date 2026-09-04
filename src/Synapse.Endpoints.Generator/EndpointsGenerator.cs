@@ -542,13 +542,14 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
     }
 
     /// <summary>
-    ///     Resolves every bindable property of <paramref name="boundType" />, applying the five
+    ///     Resolves every bindable property of <paramref name="boundType" />, applying the six
     ///     binding-source resolution rules from spec section 4, in order:
     ///     <list type="number">
     ///         <item><c>[NotBound]</c> excludes the property entirely.</item>
     ///         <item>
-    ///             <c>[FromRoute]</c>/<c>[FromQuery]</c>/<c>[FromHeader]</c>/<c>[FromBody]</c> pins the
-    ///             source, with the key taken from the attribute's name or else the property name.
+    ///             <c>[FromRoute]</c>/<c>[FromQuery]</c>/<c>[FromHeader]</c>/<c>[FromBody]</c>/
+    ///             <c>[FromForm]</c> pins the source, with the key taken from the attribute's name or
+    ///             else the property name.
     ///         </item>
     ///         <item>A name matching a route parameter (case-insensitively) binds from the route.</item>
     ///         <item>
@@ -557,6 +558,12 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
     ///             all — see <see cref="IsBodylessVerb" />) binds from the query.
     ///         </item>
     ///         <item>Otherwise the property binds from the body.</item>
+    ///         <item>
+    ///             Unless any property on the message pins itself to the form (rule 2's
+    ///             <c>[FromForm]</c>) — see <see cref="HasFormPinnedProperty" /> — in which case rule
+    ///             5's outcome flips to the form instead: a request is a form or it is JSON, never
+    ///             both.
+    ///         </item>
     ///     </list>
     ///     A property whose type has no viable parse path (not <see cref="string" />, not an enum,
     ///     and with no two-argument <c>TryParse(string, out T)</c>), or that can be assigned neither
@@ -580,6 +587,11 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
         var routeParameters = ExtractRouteParameterNames(route);
         var isBodylessVerb = IsBodylessVerb(httpMethod);
         var boundTypeDisplay = boundType.ToDisplayString();
+
+        // Answerable only after looking at every property, because any one of them can make the
+        // whole message form-bound. Cheap: an attribute scan over the same members the main pass
+        // walks.
+        var isFormBound = HasFormPinnedProperty(boundType);
 
         hasConventionBoundProperty = false;
 
@@ -623,8 +635,8 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
                     continue;
                 }
 
-                var model = ResolveBindableProperty(property, routeParameters, isBodylessVerb, propertyLocation,
-                    diagnostics, out var isConventionBound);
+                var model = ResolveBindableProperty(property, routeParameters, isBodylessVerb, isFormBound,
+                    propertyLocation, diagnostics, out var isConventionBound);
                 if (model is null)
                 {
                     continue;
@@ -733,6 +745,37 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
             if (attribute.AttributeClass?.ToDisplayString() == "Microsoft.AspNetCore.Mvc.FromBodyAttribute")
             {
                 return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    ///     Whether any property of <paramref name="boundType" /> pins itself to the form, which makes the
+    ///     whole message form-bound (rule 6).
+    /// </summary>
+    private static bool HasFormPinnedProperty(INamedTypeSymbol boundType)
+    {
+        for (var type = boundType; type is not null; type = type.BaseType)
+        {
+            foreach (var member in type.GetMembers())
+            {
+                if (member is not IPropertySymbol { IsStatic: false, IsIndexer: false } property ||
+                    HasNotBoundAttribute(property))
+                {
+                    continue;
+                }
+
+                foreach (var attribute in property.GetAttributes())
+                {
+                    var name = attribute.AttributeClass?.ToDisplayString();
+                    if (name is "UnambitiousFx.Synapse.Endpoints.FromFormAttribute"
+                        or "Microsoft.AspNetCore.Mvc.FromFormAttribute")
+                    {
+                        return true;
+                    }
+                }
             }
         }
 
@@ -995,13 +1038,15 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
     private static BindablePropertyModel? ResolveBindableProperty(IPropertySymbol property,
         Dictionary<string, string> routeParameters,
         bool isBodylessVerb,
+        bool isFormBound,
         LocationInfo? location,
         List<DiagnosticInfo> diagnostics,
         out bool isConventionBound)
     {
         isConventionBound = false;
 
-        var (source, sourceKey, fromConvention) = ResolveSource(property, routeParameters, isBodylessVerb);
+        var (source, sourceKey, fromConvention) =
+            ResolveSource(property, routeParameters, isBodylessVerb, isFormBound);
         if (source is null)
         {
             return null;
@@ -1139,7 +1184,8 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
     private static (BindingSource? Source, string? SourceKey, bool FromConvention) ResolveSource(
         IPropertySymbol property,
         Dictionary<string, string> routeParameters,
-        bool isBodylessVerb)
+        bool isBodylessVerb,
+        bool isFormBound)
     {
         foreach (var attribute in property.GetAttributes())
         {
@@ -1164,6 +1210,16 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
                     return (BindingSource.Header, ReadAttributeName(attribute) ?? property.Name, false);
                 case "Microsoft.AspNetCore.Mvc.FromBodyAttribute":
                     return (BindingSource.Body, property.Name, false);
+
+                case "UnambitiousFx.Synapse.Endpoints.FromFormAttribute":
+                    return (BindingSource.Form, ReadHeaderName(attribute) ?? property.Name, false);
+
+                // Microsoft's own FromForm is honoured too, for the same reason the other four MVC
+                // attributes are: it is the attribute a reader already has in scope, and recognising
+                // some of a family and silently ignoring the rest is how docs/known-issues/062
+                // happened.
+                case "Microsoft.AspNetCore.Mvc.FromFormAttribute":
+                    return (BindingSource.Form, ReadAttributeName(attribute) ?? property.Name, false);
             }
         }
 
@@ -1172,8 +1228,17 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
             return (BindingSource.Route, routeName, false);
         }
 
-        return isBodylessVerb
-            ? (BindingSource.Query, property.Name, true)
+        if (isBodylessVerb)
+        {
+            return (BindingSource.Query, property.Name, true);
+        }
+
+        // A request is a form or it is JSON, never both. Once anything on this message is
+        // form-bound, the properties that would have come from a JSON body come from the form
+        // instead — otherwise every field of a form message would need [FromForm] spelled out on
+        // it.
+        return isFormBound
+            ? (BindingSource.Form, property.Name, true)
             : (BindingSource.Body, property.Name, true);
     }
 
@@ -1383,10 +1448,11 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
     /// <summary>
     ///     SYNE008: the display name of <paramref name="bound" /> (the request/message type), or
     ///     null when it is not actually deserialized from the JSON request body — a bodyless verb
-    ///     (GET/DELETE/HEAD) with no property explicitly bound via <c>[FromBody]</c> never reaches
-    ///     the JSON deserializer at all (see <c>BinderEmitter</c>'s <c>isBodyless</c>), so requiring
-    ///     its registration would be a false positive. Also null for a primitive/framework scalar
-    ///     type or a type parameter — see <see cref="IsJsonCheckable" />.
+    ///     (GET/DELETE/HEAD) with no property explicitly bound via <c>[FromBody]</c>, or a form-bound
+    ///     message, never reaches the JSON deserializer at all (see <c>BinderEmitter</c>'s
+    ///     <c>constructsMessage</c>), so requiring its registration would be a false positive. Also
+    ///     null for a primitive/framework scalar type or a type parameter — see
+    ///     <see cref="IsJsonCheckable" />.
     /// </summary>
     private static string? ResolveJsonRequestTypeName(ITypeSymbol bound,
         EquatableArray<BindablePropertyModel> boundProperties)

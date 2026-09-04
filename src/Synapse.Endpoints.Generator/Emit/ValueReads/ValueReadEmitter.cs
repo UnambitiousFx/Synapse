@@ -55,6 +55,7 @@ internal static class ValueReadEmitter
             BindingSource.Route => "route value",
             BindingSource.Query => "query value",
             BindingSource.Header => "header",
+            BindingSource.Form => "form value",
             _ => throw new InvalidOperationException($"Unexpected binding source '{source}'.")
         };
     }
@@ -66,6 +67,7 @@ internal static class ValueReadEmitter
             BindingSource.Route => "TryGetRoute",
             BindingSource.Query => "TryGetQuery",
             BindingSource.Header => "TryGetHeader",
+            BindingSource.Form => "TryGetForm",
             _ => throw new InvalidOperationException($"Unexpected binding source '{source}'.")
         };
     }

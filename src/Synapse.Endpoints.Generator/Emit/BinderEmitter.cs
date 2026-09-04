@@ -63,34 +63,27 @@ internal static class BinderEmitter
         var properties = boundType.Properties;
         var className = GetBinderClassName(typeFullName);
 
-        var hasBodyProperty = false;
+        var hasJsonBodyProperty = false;
+        var hasFormProperty = false;
         foreach (var property in properties)
         {
-            if (property.Source == BindingSource.Body)
-            {
-                hasBodyProperty = true;
-                break;
-            }
+            hasJsonBodyProperty |= property.Source == BindingSource.Body;
+            hasFormProperty |= property.Source == BindingSource.Form;
         }
 
-        // What decides whether a body is read is whether anything binds from it — not the verb. A
-        // POST whose every property comes off the route has nothing to deserialize, and reading a
-        // body anyway made such an endpoint answer 400 unless the caller sent "{}" (see
-        // docs/known-issues/067). The verb has already had its say by this point: it is what rule 4
-        // consulted to resolve an unannotated property to the query string or to the body, so a
-        // body-carrying verb with an unannotated property does have one here.
-        //
-        // `isBodyless` therefore now means "this binder constructs the message itself", which is the
-        // thing the rest of this method actually branches on: construction through the primary
-        // constructor, and `required` members set in the object initializer, both belong to the case
-        // where no deserializer has already built the instance.
-        var isBodyless = !hasBodyProperty;
+        // "Constructs the message itself" is what the rest of this method branches on, and it is not
+        // the same question as "carries a body": a form-bound message carries one and is still built
+        // here, because nothing deserialized it. Primary-constructor construction and `required`
+        // members in the object initializer both belong to that case.
+        var constructsMessage = !hasJsonBodyProperty;
+
+        var bodyKind = hasJsonBodyProperty ? "Json" : hasFormProperty ? "Form" : "None";
 
         // Which properties the constructor will consume, decided before anything is emitted so that a
         // consumed property does not also get a presence flag it would never read. The value is the
         // parameter's default expression, if it declares one, which becomes the local's initial value
         // so an absent optional value falls back to the declared default instead of overwriting it.
-        var consumedByConstructor = isBodyless && !boundType.HasParameterlessConstructor
+        var consumedByConstructor = constructsMessage && !boundType.HasParameterlessConstructor
             ? ResolveConstructorConsumption(boundType.PrimaryConstructorParameters)
             : new Dictionary<string, string?>(StringComparer.Ordinal);
 
@@ -102,7 +95,11 @@ internal static class BinderEmitter
         // does. The runtime tier cannot work it out: it knows the verb, not what the properties bound
         // from. Emitted on every binder rather than only the false case, so the generated code states
         // the answer rather than relying on the interface's default.
-        builder.AppendLine($"    public bool ReadsRequestBody => {(isBodyless ? "false" : "true")};");
+        builder.AppendLine(
+            $"    public bool ReadsRequestBody => {(hasJsonBodyProperty || hasFormProperty ? "true" : "false")};");
+        builder.AppendLine();
+        builder.AppendLine(
+            $"    public {BindingNamespace}.RequestBodyKind BodyKind => {BindingNamespace}.RequestBodyKind.{bodyKind};");
         builder.AppendLine();
 
         builder.AppendLine(
@@ -110,7 +107,7 @@ internal static class BinderEmitter
         builder.AppendLine("        global::Microsoft.AspNetCore.Http.HttpContext context)");
         builder.AppendLine("    {");
 
-        if (!isBodyless)
+        if (hasJsonBodyProperty)
         {
             builder.AppendLine(
                 $"        var body = await {BindingNamespace}.BindingHelpers.ReadJsonBodyAsync<{typeFullName}>(context);");
@@ -119,6 +116,18 @@ internal static class BinderEmitter
             builder.AppendLine("            // A body that cannot be read at all is reported on its own: with no");
             builder.AppendLine("            // deserialized message there is nothing left to bind the other values onto.");
             builder.AppendLine("            return body;");
+            builder.AppendLine("        }");
+            builder.AppendLine();
+        }
+        else if (hasFormProperty)
+        {
+            builder.AppendLine($"        var form = await {BindingNamespace}.BindingHelpers.ReadFormAsync(context);");
+            builder.AppendLine("        if (!form.IsSuccess)");
+            builder.AppendLine("        {");
+            builder.AppendLine("            // The synchronous field readers below serve from the form's cache,");
+            builder.AppendLine("            // so a body that could not be parsed at all is reported on its own.");
+            builder.AppendLine(
+                $"            return {BindingNamespace}.BindResult<{typeFullName}>.Failure({BindingNamespace}.BindingHelpers.BodyField, \"The request body could not be read as a form.\");");
             builder.AppendLine("        }");
             builder.AppendLine();
         }
@@ -148,7 +157,7 @@ internal static class BinderEmitter
         // constructs the message — a body-bound message was constructed by the deserializer, which
         // satisfied its required members already.
         var initializerProperties = new List<BindablePropertyModel>();
-        if (isBodyless)
+        if (constructsMessage)
         {
             foreach (var property in bindable)
             {
@@ -185,7 +194,7 @@ internal static class BinderEmitter
             builder.AppendLine();
         }
 
-        if (isBodyless)
+        if (constructsMessage)
         {
             var initializer = FormatObjectInitializer(initializerProperties);
 

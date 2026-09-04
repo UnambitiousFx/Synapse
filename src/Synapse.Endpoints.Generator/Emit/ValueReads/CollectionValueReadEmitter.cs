@@ -93,12 +93,13 @@ internal static class CollectionValueReadEmitter
 
     private static string GetTryGetValuesMethod(BindingSource source)
     {
-        // Form joins these two in Task 11, once BindingSource.Form exists. Route and Body never
-        // will: a route segment cannot repeat, and a JSON array is already bound by the serializer.
+        // Route and Body never join this set: a route segment cannot repeat, and a JSON array is
+        // already bound by the serializer.
         return source switch
         {
             BindingSource.Query => "TryGetQueryValues",
             BindingSource.Header => "TryGetHeaderValues",
+            BindingSource.Form => "TryGetFormValues",
             _ => throw new InvalidOperationException(
                 $"'{source}' cannot repeat, so it has no collection reader.")
         };
