@@ -274,6 +274,21 @@ public static class HttpContextBindingExtensions
         return context.Request.Query.TryGetValue(name, out var values) ? values : StringValues.Empty;
     }
 
+    /// <summary>Reads every value of a repeated header.</summary>
+    /// <param name="context">The HTTP context.</param>
+    /// <param name="name">The header name.</param>
+    /// <returns>All values, empty when the header is absent.</returns>
+    /// <remarks>
+    ///     The single-value readers take the first value when a header repeats, which is what
+    ///     convention binding needs. A hand-written handler wanting all of them needs this.
+    /// </remarks>
+    public static StringValues HeaderValues(this HttpContext context,
+        string name)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        return BindingHelpers.TryGetHeaderValues(context, name, out var values) ? values : StringValues.Empty;
+    }
+
     /// <summary>
     ///     Reads and deserializes the JSON request body using the application's configured JSON options.
     /// </summary>

@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Primitives;
 using UnambitiousFx.Synapse.Endpoints.Binding;
 
 namespace UnambitiousFx.Synapse.Endpoints.Tests;
@@ -197,6 +198,65 @@ public sealed class BindingHelpersTests
                 ContentType = contentType
             }
         };
+    }
+
+    [Fact]
+    public void TryGetQueryValues_WithARepeatedKey_ReturnsEveryValueInOrder()
+    {
+        // Arrange
+        var context = new DefaultHttpContext();
+        context.Request.QueryString = new QueryString("?tag=a&tag=b&tag=c");
+
+        // Act
+        var found = BindingHelpers.TryGetQueryValues(context, "tag", out var values);
+
+        // Assert
+        Assert.True(found);
+        Assert.Equal((string[])["a", "b", "c"], values.ToArray());
+    }
+
+    [Fact]
+    public void TryGetQueryValues_WithACommaSeparatedValue_ReturnsOneValue()
+    {
+        // Arrange — repeated keys only. Splitting on commas is a convention, and picking one
+        // silently is how you get a bug report about a tag that legitimately contains a comma.
+        var context = new DefaultHttpContext();
+        context.Request.QueryString = new QueryString("?tag=a,b");
+
+        // Act
+        BindingHelpers.TryGetQueryValues(context, "tag", out var values);
+
+        // Assert
+        Assert.Equal((string[])["a,b"], values.ToArray());
+    }
+
+    [Fact]
+    public void TryGetQueryValues_WithAnAbsentKey_ReturnsFalseAndEmpty()
+    {
+        // Arrange
+        var context = new DefaultHttpContext();
+
+        // Act
+        var found = BindingHelpers.TryGetQueryValues(context, "tag", out var values);
+
+        // Assert
+        Assert.False(found);
+        Assert.Empty(values.ToArray());
+    }
+
+    [Fact]
+    public void TryGetHeaderValues_WithARepeatedHeader_ReturnsEveryValue()
+    {
+        // Arrange
+        var context = new DefaultHttpContext();
+        context.Request.Headers["X-Tag"] = new StringValues(["a", "b"]);
+
+        // Act
+        var found = BindingHelpers.TryGetHeaderValues(context, "X-Tag", out var values);
+
+        // Assert
+        Assert.True(found);
+        Assert.Equal((string[])["a", "b"], values.ToArray());
     }
 
     /// <summary>

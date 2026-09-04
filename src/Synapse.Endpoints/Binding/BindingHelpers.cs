@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Primitives;
 using UnambitiousFx.Synapse.Endpoints.Internal;
 
 namespace UnambitiousFx.Synapse.Endpoints.Binding;
@@ -74,6 +75,47 @@ public static class BindingHelpers
         }
 
         value = null;
+        return false;
+    }
+
+    /// <summary>Reads every value of a repeated query key.</summary>
+    /// <param name="context">The HTTP context.</param>
+    /// <param name="name">The query key.</param>
+    /// <param name="values">Every value under the key, or empty when it is absent.</param>
+    /// <returns><see langword="true" /> when the key was present.</returns>
+    /// <remarks>
+    ///     Repeated keys only: <c>?tag=a,b</c> is one value, <c>a,b</c>. Splitting on a separator is a
+    ///     convention rather than a rule, and choosing one here would silently corrupt any value that
+    ///     legitimately contains it.
+    /// </remarks>
+    public static bool TryGetQueryValues(HttpContext context,
+        string name,
+        out StringValues values)
+    {
+        if (context.Request.Query.TryGetValue(name, out values))
+        {
+            return true;
+        }
+
+        values = StringValues.Empty;
+        return false;
+    }
+
+    /// <summary>Reads every value of a repeated header.</summary>
+    /// <param name="context">The HTTP context.</param>
+    /// <param name="name">The header name.</param>
+    /// <param name="values">Every value under the header, or empty when it is absent.</param>
+    /// <returns><see langword="true" /> when the header was present.</returns>
+    public static bool TryGetHeaderValues(HttpContext context,
+        string name,
+        out StringValues values)
+    {
+        if (context.Request.Headers.TryGetValue(name, out values))
+        {
+            return true;
+        }
+
+        values = StringValues.Empty;
         return false;
     }
 

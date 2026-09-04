@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Primitives;
 using UnambitiousFx.Synapse.Endpoints.Binding;
 
 namespace UnambitiousFx.Synapse.Endpoints.Tests;
@@ -238,6 +239,33 @@ public sealed class HttpContextBindingExtensionsTests
 
         // Assert
         Assert.Equal("injected", resolved.Name);
+    }
+
+    [Fact]
+    public void HeaderValues_WithARepeatedHeader_ReturnsEveryValue()
+    {
+        // Arrange
+        var context = new DefaultHttpContext();
+        context.Request.Headers["X-Tag"] = new StringValues(["a", "b"]);
+
+        // Act
+        var values = context.HeaderValues("X-Tag");
+
+        // Assert
+        Assert.Equal((string[])["a", "b"], values.ToArray());
+    }
+
+    [Fact]
+    public void HeaderValues_WithAnAbsentHeader_ReturnsEmpty()
+    {
+        // Arrange
+        var context = new DefaultHttpContext();
+
+        // Act
+        var values = context.HeaderValues("X-Tag");
+
+        // Assert
+        Assert.Empty(values.ToArray());
     }
 
     private static DefaultHttpContext NewJsonContext(string body,
