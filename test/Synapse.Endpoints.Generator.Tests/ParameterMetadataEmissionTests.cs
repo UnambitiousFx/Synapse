@@ -92,6 +92,118 @@ public sealed class ParameterMetadataEmissionTests
     }
 
     [Fact]
+    public void Emit_WithRepeatedQueryKey_DeclaresArrayParameterWithElementValueType()
+    {
+        // Arrange — a repeated query key whose element type is not string, so ValueType being the
+        // *element* type rather than the declared collection type is actually observable.
+        const string source = """
+            using UnambitiousFx.Synapse.Abstractions;
+            using UnambitiousFx.Synapse.Endpoints;
+
+            public sealed record SearchQuery : IRequest<string>
+            {
+                public int[] Ids { get; init; } = [];
+            }
+
+            [Get("/search")]
+            public sealed class SearchEndpoint : Endpoint<SearchQuery, string>;
+            """;
+
+        // Act
+        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+
+        // Assert — the array-ness is carried by IsArray, and ValueType is int, never int[]: a
+        // consumer must not have to unwrap the collection type itself.
+        Assert.Contains("BoundParameterMetadata[] ParametersValue", generated);
+        Assert.Contains("Name = \"Ids\"", generated);
+        Assert.Contains("BoundParameterLocation.Query", generated);
+        Assert.Contains("IsArray = true", generated);
+        Assert.Contains("ValueType = typeof(int)", generated);
+        GeneratorHarness.AssertGeneratedCompiles(source);
+    }
+
+    [Fact]
+    public void Emit_WithNonNullableQueryCollection_DeclaresOptionalParameter()
+    {
+        // Arrange — non-nullable, and not `required`, but still not required on the wire: HTTP
+        // cannot express zero values under a key, so CollectionValueReadEmitter binds an absent
+        // ?tag= to an empty collection rather than reporting a missing value.
+        const string source = """
+            using UnambitiousFx.Synapse.Abstractions;
+            using UnambitiousFx.Synapse.Endpoints;
+
+            public sealed record SearchQuery : IRequest<string>
+            {
+                public required string[] Tags { get; init; }
+            }
+
+            [Get("/search")]
+            public sealed class SearchEndpoint : Endpoint<SearchQuery, string>;
+            """;
+
+        // Act
+        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+
+        // Assert
+        Assert.Contains("Required = false", generated);
+        Assert.DoesNotContain("Required = true", generated);
+        GeneratorHarness.AssertGeneratedCompiles(source);
+    }
+
+    [Fact]
+    public void Emit_WithConstructorDefaultedQueryScalar_DeclaresOptionalParameter()
+    {
+        // Arrange — the parameter's default is what the binder falls back to when ?page= is absent
+        // (docs/known-issues/060), so the request succeeds and the parameter is not required.
+        const string source = """
+            using UnambitiousFx.Synapse.Abstractions;
+            using UnambitiousFx.Synapse.Endpoints;
+
+            public sealed record ListUsers(int Page = 1) : IRequest<string>;
+
+            [Get("/users")]
+            public sealed class ListUsersEndpoint : Endpoint<ListUsers, string>;
+            """;
+
+        // Act
+        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+
+        // Assert
+        Assert.Contains("Name = \"Page\"", generated);
+        Assert.Contains("Required = false", generated);
+        Assert.DoesNotContain("Required = true", generated);
+        GeneratorHarness.AssertGeneratedCompiles(source);
+    }
+
+    [Fact]
+    public void Emit_WithRequiredNullableQueryScalar_DeclaresOptionalParameter()
+    {
+        // Arrange — C#'s `required` is a creation-site rule (CS9035), not a wire one: the binder
+        // binds null for an absent ?sort= and answers 200, so the document must not claim the value
+        // is mandatory.
+        const string source = """
+            using UnambitiousFx.Synapse.Abstractions;
+            using UnambitiousFx.Synapse.Endpoints;
+
+            public sealed record SearchQuery : IRequest<string>
+            {
+                public required string? Sort { get; init; }
+            }
+
+            [Get("/search")]
+            public sealed class SearchEndpoint : Endpoint<SearchQuery, string>;
+            """;
+
+        // Act
+        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+
+        // Assert
+        Assert.Contains("Required = false", generated);
+        Assert.DoesNotContain("Required = true", generated);
+        GeneratorHarness.AssertGeneratedCompiles(source);
+    }
+
+    [Fact]
     public void Emit_WithRouteAndHeaderProperties_DeclaresBothLocations()
     {
         // Arrange
@@ -226,8 +338,10 @@ public sealed class ParameterMetadataEmissionTests
         // Act
         var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
 
-        // Assert
+        // Assert — and not required: FormFileCollectionValueReadEmitter binds an absent file field
+        // to an empty collection, exactly as the other collection shapes do.
         Assert.Contains("IsArray = true", generated);
+        Assert.Contains("Required = false", generated);
         GeneratorHarness.AssertGeneratedCompiles(source);
     }
 

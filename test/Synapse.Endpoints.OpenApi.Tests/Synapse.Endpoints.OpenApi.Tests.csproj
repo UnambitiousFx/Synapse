@@ -9,7 +9,6 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageReference Include="NSubstitute" />
         <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
         <!-- The document is generated from the DI-registered EndpointDataSource, which a
              WebApplication only publishes when it starts. TestServer lets the host start without

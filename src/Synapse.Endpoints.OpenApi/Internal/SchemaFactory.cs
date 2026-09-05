@@ -40,12 +40,16 @@ internal static class SchemaFactory
         {
             return await context.GetOrCreateSchemaAsync(valueType, cancellationToken: cancellationToken);
         }
-        catch (Exception)
+        catch (Exception e) when (e is not OperationCanceledException)
         {
             // A named parameter with a vague type is strictly more useful than a silently absent
             // one, which is the status quo this feature exists to end. Document generation must
             // never fail because of this transformer: the OpenAPI endpoint regenerates per request,
             // so a throw takes the whole document down.
+            //
+            // Cancellation is excluded on purpose: an aborted document request is not a schema the
+            // caller is waiting for, and swallowing it here would turn "the client went away" into
+            // a silently empty schema baked into a document nobody asked for any more.
             return new OpenApiSchema();
         }
     }

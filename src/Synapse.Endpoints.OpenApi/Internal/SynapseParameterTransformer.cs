@@ -100,7 +100,9 @@ internal sealed class SynapseParameterTransformer : IOpenApiOperationTransformer
                 {
                     concrete.Schema ??= await SchemaFactory.CreateAsync(
                         parameter.ValueType, parameter.IsArray, context, cancellationToken);
-                    concrete.Required = concrete.Required || parameter.Required;
+                    concrete.Required = location == ParameterLocation.Path ||
+                                        concrete.Required ||
+                                        parameter.Required;
                 }
 
                 continue;
@@ -110,7 +112,15 @@ internal sealed class SynapseParameterTransformer : IOpenApiOperationTransformer
             {
                 Name = parameter.Name,
                 In = location,
-                Required = parameter.Required,
+
+                // A path parameter is required whatever the binder reports. OpenAPI 3.x forbids an
+                // optional path parameter, and a binder can legitimately report one as optional —
+                // `Guid? TaskId` bound to `{taskId}`, or a route property with a constructor
+                // default. Emitting `required: false` there would make the whole document invalid,
+                // which is the same "never emit an invalid document" argument that justifies the
+                // reconcile branch above. Applied here rather than in the generator because this
+                // package cannot trust a hand-written binder's Required either.
+                Required = location == ParameterLocation.Path || parameter.Required,
                 Schema = await SchemaFactory.CreateAsync(
                     parameter.ValueType, parameter.IsArray, context, cancellationToken)
             });

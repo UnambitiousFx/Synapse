@@ -103,8 +103,8 @@ internal static class BinderEmitter
             $"    public {BindingNamespace}.RequestBodyKind BodyKind => {BindingNamespace}.RequestBodyKind.{bodyKind};");
         builder.AppendLine();
 
-        EmitParameters(builder, properties);
-        EmitFormFields(builder, properties);
+        EmitParameters(builder, properties, consumedByConstructor);
+        EmitFormFields(builder, properties, consumedByConstructor);
 
         builder.AppendLine(
             $"    public async global::System.Threading.Tasks.ValueTask<{BindingNamespace}.BindResult<{typeFullName}>> BindAsync(");
@@ -351,7 +351,8 @@ internal static class BinderEmitter
     ///     is a singleton, so a property returning a fresh array would allocate on every read.
     /// </remarks>
     private static void EmitParameters(StringBuilder builder,
-        EquatableArray<BindablePropertyModel> properties)
+        EquatableArray<BindablePropertyModel> properties,
+        Dictionary<string, string?> consumedByConstructor)
     {
         var parameters = new List<BindablePropertyModel>();
         foreach (var property in properties)
@@ -381,7 +382,7 @@ internal static class BinderEmitter
             builder.AppendLine(
                 $"            Location = {InternalNamespace}.BoundParameterLocation.{location},");
             builder.AppendLine(
-                $"            Required = {(property.IsRequired || !property.IsNullable ? "true" : "false")},");
+                $"            Required = {(RejectsAbsence(property, consumedByConstructor) ? "true" : "false")},");
             builder.AppendLine(
                 $"            IsArray = {(property.Shape == BindingValueShape.Collection ? "true" : "false")},");
             builder.AppendLine($"            ValueType = typeof({property.TypeFullName}),");
@@ -403,7 +404,8 @@ internal static class BinderEmitter
     ///     them would mean a flag argument at every call site.
     /// </remarks>
     private static void EmitFormFields(StringBuilder builder,
-        EquatableArray<BindablePropertyModel> properties)
+        EquatableArray<BindablePropertyModel> properties,
+        Dictionary<string, string?> consumedByConstructor)
     {
         var fields = new List<BindablePropertyModel>();
         foreach (var property in properties)
@@ -432,7 +434,7 @@ internal static class BinderEmitter
             builder.AppendLine("        {");
             builder.AppendLine($"            Name = \"{property.SourceKey}\",");
             builder.AppendLine(
-                $"            Required = {(property.IsRequired || !property.IsNullable ? "true" : "false")},");
+                $"            Required = {(RejectsAbsence(property, consumedByConstructor) ? "true" : "false")},");
             builder.AppendLine($"            IsArray = {(isArray ? "true" : "false")},");
             builder.AppendLine($"            ValueType = typeof({FieldValueType(property)}),");
             builder.AppendLine("        },");
@@ -443,6 +445,51 @@ internal static class BinderEmitter
         builder.AppendLine(
             $"    public global::System.Collections.Generic.IReadOnlyList<{InternalNamespace}.FormFieldMetadata> FormFields => FormFieldsValue;");
         builder.AppendLine();
+    }
+
+    /// <summary>
+    ///     Whether the binder rejects a request that omits this value — the documented meaning of both
+    ///     <c>BoundParameterMetadata.Required</c> and <c>FormFieldMetadata.Required</c>.
+    /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         Deliberately <em>not</em> <c>IsRequired || !IsNullable</c>. That formula described the
+    ///         declaration site rather than the wire, and over-reported in three ways that are each
+    ///         checkable against the value-read emitters — so please do not "restore" the
+    ///         <c>IsRequired ||</c> term thinking it was omitted by accident.
+    ///     </para>
+    ///     <para>
+    ///         <b>A constructor default accepts absence.</b> For
+    ///         <c>record ListUsers(int Page = 1)</c>, <see cref="ScalarValueReadEmitter" /> seeds the
+    ///         local with the parameter's default expression and never reports a missing value (see
+    ///         docs/known-issues/060), so the request succeeds while <c>required: true</c> claimed it
+    ///         would not.
+    ///     </para>
+    ///     <para>
+    ///         <b>A collection never reports required.</b> Both
+    ///         <see cref="CollectionValueReadEmitter" /> and
+    ///         <see cref="FormFileCollectionValueReadEmitter" /> say so in their own remarks: HTTP
+    ///         cannot express zero values under a key, so an absent repeated key binds an empty
+    ///         collection. A non-nullable <c>string[] Tags</c> or <c>IFormFile[] Files</c> binds fine.
+    ///     </para>
+    ///     <para>
+    ///         <b>C# <c>required</c> is a construction-site concern, not a wire one.</b>
+    ///         <c>BindablePropertyModel.IsRequired</c> exists for CS9035 — the object initializer has
+    ///         to set the member — and says nothing about what the request must carry.
+    ///         <c>required string? Sort</c> binds null and answers <c>200</c>.
+    ///     </para>
+    /// </remarks>
+    private static bool RejectsAbsence(BindablePropertyModel property,
+        Dictionary<string, string?> consumedByConstructor)
+    {
+        if (consumedByConstructor.TryGetValue(property.Name, out var constructorDefault) &&
+            constructorDefault is not null)
+        {
+            return false;
+        }
+
+        return !property.IsNullable &&
+               property.Shape is BindingValueShape.Scalar or BindingValueShape.FormFile;
     }
 
     /// <summary>The type to emit for one form field's <c>ValueType</c>.</summary>

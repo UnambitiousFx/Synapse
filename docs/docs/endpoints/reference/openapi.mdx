@@ -153,7 +153,7 @@ public sealed class SearchTasksEndpoint : Endpoint<SearchTasksQuery, IReadOnlyLi
 ]
 ```
 
-Three rules decide what is declared, and each one exists because getting it wrong documents a
+Four rules decide what is declared, and each one exists because getting it wrong documents a
 contract the endpoint does not actually have:
 
 - **The name is the key the binder reads, not the property name.** `Page` has no `[FromQuery]`, so
@@ -162,10 +162,25 @@ contract the endpoint does not actually have:
   has `[FromQuery(Name = "tag")]`, so the document says `tag`, not `Tags` — the same reconciliation
   the binder itself does. A parameter name that did not match the key the binder reads would be a
   wrong document, not a stylistic choice.
-- **`required` follows the binder's own rule**, not a guess from the CLR type alone: `Page` is
-  `required` and non-nullable, so it is `required: true`; `Tags` is nullable, so it is
-  `required: false` — see [Is a missing value an error?](../high-level/messages#is-a-missing-value-an-error)
-  for the full rule, which this parameter declaration mirrors exactly rather than reimplementing.
+- **`required` means "the binder rejects a request that omits this"**, not "the CLR type looks
+  mandatory". `required: true` needs all three of: a non-nullable property, no constructor default,
+  and a single-value shape — a scalar or one `IFormFile`. So `Page` above is `required: true`, and
+  each of these is `required: false` even though none of them is a nullable scalar:
+  - a property with a **constructor default** — `record ListUsers(int Page = 1)` — because an absent
+    `?page=` falls back to `1` and answers `200`;
+  - a **collection-shaped** property, `Tags` included, however it is declared: HTTP cannot express
+    zero values under a key, so an absent `?tag=` binds an empty collection rather than failing.
+    That holds for a non-nullable `string[]` exactly as it does for a `string[]?`;
+  - a property declared C#-`required` but **nullable** — `required string? Sort` — because `required`
+    is a creation-site rule the compiler enforces on the object initializer, not a statement about
+    what the request must carry.
+
+  See [Is a missing value an error?](../high-level/messages#is-a-missing-value-an-error) for the
+  binding rule this declaration mirrors rather than reimplementing.
+- **A `path` parameter is always `required: true`.** OpenAPI 3.x has no optional path parameter, so a
+  route-bound property that the binder itself treats as optional — a `Guid? TaskId`, or a route
+  property with a constructor default — is still documented as required. The alternative is not a
+  more honest document but an invalid one.
 - **A route parameter is reconciled with the template's inference, never duplicated.** ASP.NET Core
   infers a `path` parameter from the route template itself (`{taskId}`) independently of anything
   Synapse emits; the transformer finds that entry already present and fills in its `schema` and

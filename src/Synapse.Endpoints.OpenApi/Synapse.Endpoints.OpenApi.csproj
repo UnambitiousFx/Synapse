@@ -8,7 +8,7 @@
              is described inside a response body. -->
         <TargetFrameworks>net10.0</TargetFrameworks>
         <Description>OpenAPI parameter and form-schema declaration for UnambitiousFx.Synapse.Endpoints. Opt-in: the core package stays free of any OpenAPI dependency.</Description>
-        <PackageTags>aspnetcore;openapi;endpoints;cqrs;native-aot</PackageTags>
+        <PackageTags>aspnetcore;openapi;endpoints;cqrs</PackageTags>
     </PropertyGroup>
 
     <ItemGroup>

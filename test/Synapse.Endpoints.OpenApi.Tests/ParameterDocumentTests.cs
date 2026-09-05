@@ -40,7 +40,9 @@ public sealed class ParameterDocumentTests
             .Parameters!
             .Single(p => p.Name == "tag");
 
-        // Assert
+        // Assert — required: false even though `string[] Tags` is non-nullable: HTTP cannot express
+        // zero values under a key, so an absent ?tag= binds an empty collection rather than
+        // failing, and a parameter the binder never rejects is not a required one.
         Assert.Equal(JsonSchemaType.Array, parameter.Schema!.Type);
         Assert.Equal(JsonSchemaType.String, parameter.Schema.Items!.Type);
         Assert.False(parameter.Required);
@@ -63,6 +65,25 @@ public sealed class ParameterDocumentTests
         Assert.Single(parameters);
         Assert.Equal(ParameterLocation.Path, parameters[0].In);
         Assert.NotNull(parameters[0].Schema);
+    }
+
+    [Fact]
+    public async Task Document_WithNullableRouteProperty_StillDeclaresPathParameterRequired()
+    {
+        // Arrange — PeekTaskQuery.TaskId is Guid?, so the binder accepts its absence and reports
+        // Required = false. OpenAPI 3.x forbids an optional path parameter, so the transformer has
+        // to override that rather than emit an invalid document.
+        var document = await OpenApiTestHost.GenerateAsync<PeekTaskEndpoint>();
+
+        // Act
+        var parameter = document.Paths["/tasks/{taskId}/peek"]
+            .Operations![HttpMethod.Get]
+            .Parameters!
+            .Single(p => p.Name == "taskId");
+
+        // Assert
+        Assert.Equal(ParameterLocation.Path, parameter.In);
+        Assert.True(parameter.Required);
     }
 
     [Fact]

@@ -14,19 +14,19 @@ public sealed record TaskDto
 ///     A query bound entirely from the query string: one required scalar and one optional
 ///     collection.
 /// </summary>
-/// <remarks>
-///     <see cref="Tags" /> is nullable on purpose. The generator declares a parameter required when
-///     the property is <c>required</c> or non-nullable, so a non-nullable <c>string[]</c> would be
-///     documented as a required parameter and the array test would be asserting the wrong thing.
-/// </remarks>
 public sealed record SearchTasksQuery : IRequest<IReadOnlyList<TaskDto>>
 {
     /// <summary>The page to return, bound from <c>?page=</c> by the bodyless-verb convention.</summary>
     public required int Page { get; init; }
 
     /// <summary>The tags to filter on, repeated as <c>?tag=a&amp;tag=b</c>.</summary>
+    /// <remarks>
+    ///     Non-nullable on purpose, and still documented <c>required: false</c>: an absent repeated
+    ///     key binds an empty collection rather than failing, so a collection-shaped parameter is
+    ///     never required however it is declared.
+    /// </remarks>
     [FromQuery(Name = "tag")]
-    public string[]? Tags { get; init; }
+    public string[] Tags { get; init; } = [];
 }
 
 /// <summary>Searches tasks. Reads only the query string.</summary>
@@ -51,3 +51,19 @@ public sealed record GetTaskQuery : IRequest<TaskDto>
 /// </remarks>
 [Get("/tasks/{taskId:guid}")]
 public sealed class GetTaskEndpoint : Endpoint<GetTaskQuery, TaskDto>;
+
+/// <summary>A query whose route-bound property is nullable, so its binder reports it optional.</summary>
+/// <remarks>
+///     The point of this fixture: a nullable route property binds null instead of failing, so the
+///     binder's own <c>Required</c> is <see langword="false" /> — and OpenAPI 3.x still forbids an
+///     optional path parameter, so the document must override it.
+/// </remarks>
+public sealed record PeekTaskQuery : IRequest<TaskDto>
+{
+    /// <summary>The task's id, matched to the <c>{taskId}</c> route parameter by name.</summary>
+    public Guid? TaskId { get; init; }
+}
+
+/// <summary>Peeks at one task. The nullable-route-property case.</summary>
+[Get("/tasks/{taskId:guid}/peek")]
+public sealed class PeekTaskEndpoint : Endpoint<PeekTaskQuery, TaskDto>;
