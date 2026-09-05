@@ -52,10 +52,8 @@ internal static class OpenApiTestHost
     {
         var builder = WebApplication.CreateSlimBuilder();
         builder.WebHost.UseTestServer();
-        // Required alongside the options-level call below: without it, a form-bound endpoint
-        // crashes document generation entirely — see FormRequestBodyDescriptionFixup's remarks.
         builder.Services.AddSynapseEndpointsOpenApi();
-        builder.Services.AddOpenApi(options => options.AddSynapseEndpoints());
+        builder.Services.AddOpenApi();
 
         await using var app = builder.Build();
         map(app);

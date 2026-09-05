@@ -22,7 +22,7 @@ builder.Services.AddSynapse(cfg =>
     cfg.AddRegisterGroup(new global::UnambitiousFx.Examples.EndpointsApi.RegisterGroup()));
 
 builder.Services.AddSynapseEndpointsOpenApi();
-builder.Services.AddOpenApi(options => options.AddSynapseEndpoints());
+builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
