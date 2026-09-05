@@ -47,8 +47,15 @@ internal sealed class SynapseParameterTransformer : IOpenApiOperationTransformer
             await ApplyParametersAsync(operation, declared, context, cancellationToken);
         }
 
+        // Not gated on Fields.Count > 0: FormRequestMetadata's constructor documents "may be empty"
+        // (a hand-written binder can report BodyKind.Form without overriding FormFields), and the
+        // fixup strips the framework's synthetic body parameter whenever this metadata is present
+        // regardless of field count. Skipping the empty case here would leave such an endpoint with
+        // no requestBody at all — losing both form content types, which ConsumesMatcherPolicy needs
+        // to answer 415. An empty-Properties object schema is the honest description of "this is a
+        // form, its fields are undescribed", and it keeps the content types in the document.
         var form = metadata.OfType<FormRequestMetadata>().FirstOrDefault();
-        if (form is { Fields.Count: > 0 })
+        if (form is not null)
         {
             ApplyFormSchema(operation, form);
         }

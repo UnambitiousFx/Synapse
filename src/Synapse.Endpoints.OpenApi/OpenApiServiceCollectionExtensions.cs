@@ -1,4 +1,3 @@
-using System.Linq;
 using Microsoft.AspNetCore.Mvc.ApiExplorer;
 using Microsoft.AspNetCore.OpenApi;
 using Microsoft.Extensions.DependencyInjection;
@@ -27,16 +26,10 @@ public static class OpenApiServiceCollectionExtensions
     /// </example>
     /// <remarks>
     ///     <para>
-    ///         One call, not two. An earlier iteration split this into an <c>OpenApiOptions</c>
-    ///         extension (<c>options.AddSynapseEndpoints()</c>, contributing the operation transformer)
-    ///         and this <see cref="IServiceCollection" /> extension (contributing
-    ///         <see cref="Internal.FormRequestBodyDescriptionFixup" />, the fix described below) — two
-    ///         calls that fail in <em>opposite</em> directions when only one is made: the fixup alone
-    ///         means no parameters or form schema are ever declared, and the transformer alone means a
-    ///         crashed document the moment any endpoint accepts a form body. An API that cannot be used
-    ///         correctly on its own should not exist, so both are registered here together. The split
-    ///         existed only because, at the time, the fixup did not — once the framework bug below was
-    ///         handled, the constraint that justified two entry points went with it.
+    ///         One call, registering both the operation transformer and the fix described below,
+    ///         because either alone is broken: no transformer means no parameters or form schema are
+    ///         ever declared, and no fixup means a crashed document the moment any endpoint accepts a
+    ///         form body. An API that cannot be used correctly on its own should not exist.
     ///     </para>
     ///     <para>
     ///         The transformer is registered via <c>services.ConfigureAll&lt;OpenApiOptions&gt;(…)</c>

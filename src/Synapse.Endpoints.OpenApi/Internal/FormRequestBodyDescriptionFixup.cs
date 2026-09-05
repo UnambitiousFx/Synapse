@@ -35,16 +35,19 @@ namespace UnambitiousFx.Synapse.Endpoints.OpenApi.Internal;
 ///         find it before replacing it with the field-by-field schema.
 ///     </para>
 ///     <para>
-///         <see cref="Order" /> is <c>-1000</c>, deliberately after
-///         <c>EndpointMetadataApiDescriptionProvider</c>'s <c>-1100</c>: <c>IApiDescriptionProvider</c>s
+///         <see cref="Order" /> is <c>-1050</c>: after
+///         <c>EndpointMetadataApiDescriptionProvider</c>'s <c>-1100</c> (<c>IApiDescriptionProvider</c>s
 ///         run <c>OnProvidersExecuting</c> in ascending order, and the parameter removed here does not
-///         exist until that provider's pass has added it.
+///         exist until that provider's pass has added it), and deliberately not <c>-1000</c> — that
+///         value exactly ties MVC's own <c>DefaultApiDescriptionProvider</c>. Harmless today, since
+///         that provider only handles <c>ControllerActionDescriptor</c> and never sees a Synapse
+///         endpoint, but <c>-1050</c> sits unambiguously between the two and removes the question.
 ///     </para>
 /// </remarks>
 internal sealed class FormRequestBodyDescriptionFixup : IApiDescriptionProvider
 {
     /// <inheritdoc />
-    public int Order => -1000;
+    public int Order => -1050;
 
     /// <inheritdoc />
     public void OnProvidersExecuting(ApiDescriptionProviderContext context)

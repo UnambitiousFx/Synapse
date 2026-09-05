@@ -37,6 +37,27 @@ internal static class OpenApiTestHost
         return GenerateAsync(app => app.MapEndpoint<TEndpoint>());
     }
 
+    /// <summary>Maps two Synapse endpoints into one document and returns it.</summary>
+    /// <typeparam name="TEndpointA">The first endpoint type to map.</typeparam>
+    /// <typeparam name="TEndpointB">The second endpoint type to map.</typeparam>
+    /// <returns>The generated document, carrying both endpoints' operations.</returns>
+    /// <remarks>
+    ///     For proving isolation: the framework bug this package works around (a form-bound endpoint
+    ///     crashing the <em>entire</em> document) and the fixup's own blast radius (it must touch only
+    ///     the operation it targets) are both properties of a multi-endpoint document — a single-
+    ///     endpoint document cannot exercise either.
+    /// </remarks>
+    internal static Task<OpenApiDocument> GenerateAsync<TEndpointA, TEndpointB>()
+        where TEndpointA : EndpointBase, new()
+        where TEndpointB : EndpointBase, new()
+    {
+        return GenerateAsync(app =>
+        {
+            app.MapEndpoint<TEndpointA>();
+            app.MapEndpoint<TEndpointB>();
+        });
+    }
+
     /// <summary>Maps a hand-written minimal-API route and returns the document generated for it.</summary>
     /// <returns>The generated document.</returns>
     /// <remarks>
