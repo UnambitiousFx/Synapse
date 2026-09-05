@@ -127,7 +127,7 @@ public abstract class MappedEndpoint<THttpRequest, TRequest, TResponse, THttpRes
             {
                 // Declared explicitly because a RequestDelegate-shaped endpoint infers nothing.
                 RequestBodyMetadata.Apply(handlerBuilder, DeclaredRequestBody(configuration.HttpMethods),
-                    typeof(THttpRequest));
+                    typeof(THttpRequest), []);
 
                 // Declared only when the configured mapper writes a body — see docs/known-issues/054.
                 handlerBuilder.WithMetadata(new ProducesResponseMetadata(

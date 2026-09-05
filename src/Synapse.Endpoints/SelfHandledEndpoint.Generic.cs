@@ -151,7 +151,7 @@ public abstract class SelfHandledEndpoint<TRequest, TResponse> : BoundEndpoint<T
             {
                 // Declared explicitly because a RequestDelegate-shaped endpoint infers nothing.
                 RequestBodyMetadata.Apply(handlerBuilder, DeclaredRequestBody(configuration.HttpMethods),
-                    typeof(TRequest));
+                    typeof(TRequest), []);
 
                 // Declared only when the configured mapper writes a body — see docs/known-issues/054.
                 handlerBuilder.WithMetadata(new ProducesResponseMetadata(

@@ -91,7 +91,7 @@ public abstract class RawEndpoint<TRequest> : BoundEndpoint<TRequest>
             {
                 // Declared explicitly because a RequestDelegate-shaped endpoint infers nothing.
                 RequestBodyMetadata.Apply(handlerBuilder, DeclaredRequestBody(configuration.HttpMethods),
-                    typeof(TRequest));
+                    typeof(TRequest), []);
 
                 handlerBuilder.WithMetadata(new ProducesResponseMetadata(SuccessStatusCode(configuration)));
                 handlerBuilder.ProducesValidationProblem();

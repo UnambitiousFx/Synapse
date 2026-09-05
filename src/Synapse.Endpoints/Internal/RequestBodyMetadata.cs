@@ -16,7 +16,8 @@ internal static class RequestBodyMetadata
 {
     internal static void Apply(RouteHandlerBuilder builder,
         RequestBodyKind kind,
-        Type requestType)
+        Type requestType,
+        IReadOnlyList<FormFieldMetadata> formFields)
     {
         switch (kind)
         {
@@ -24,7 +25,7 @@ internal static class RequestBodyMetadata
                 builder.Accepts(requestType, "application/json");
                 break;
             case RequestBodyKind.Form:
-                builder.WithMetadata(FormRequestMetadata.Instance);
+                builder.WithMetadata(new FormRequestMetadata(formFields));
                 break;
         }
     }

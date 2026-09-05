@@ -1044,4 +1044,45 @@ public sealed class OpenApiMetadataTests
                 BindResult<SelfHandledVoidMetaRequest>.Success(new SelfHandledVoidMetaRequest("thing")));
         }
     }
+
+    [Fact]
+    public void FormRequestMetadata_WithFields_ExposesThemAndKeepsBothContentTypes()
+    {
+        // Arrange
+        var caption = new FormFieldMetadata
+        {
+            Name = "Caption",
+            Required = true,
+            IsArray = false,
+            ValueType = typeof(string)
+        };
+
+        // Act
+        var metadata = new FormRequestMetadata([caption]);
+
+        // Assert
+        Assert.Single(metadata.Fields);
+        Assert.Equal("Caption", metadata.Fields[0].Name);
+
+        // The content types are what ConsumesMatcherPolicy needs to answer 415; adding a schema
+        // must not disturb them.
+        Assert.Equal(
+            ["multipart/form-data", "application/x-www-form-urlencoded"],
+            metadata.ContentTypes);
+
+        // Still null: a message holding an IFormFile has no JSON schema to describe.
+        Assert.Null(metadata.RequestType);
+        Assert.False(metadata.IsOptional);
+    }
+
+    [Fact]
+    public void FormRequestMetadata_WithNoFields_IsStillValid()
+    {
+        // Arrange & Act — the shape every caller passes until Task 5 emits real fields.
+        var metadata = new FormRequestMetadata([]);
+
+        // Assert
+        Assert.Empty(metadata.Fields);
+        Assert.Equal(2, metadata.ContentTypes.Count);
+    }
 }

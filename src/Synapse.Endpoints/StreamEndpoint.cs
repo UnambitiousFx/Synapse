@@ -117,7 +117,7 @@ public abstract class StreamEndpoint<TRequest, TItem> : BoundEndpoint<TRequest>
                 // document and left routing unable to reject a wrong content type, which surfaced as a
                 // 400 from the binder where every other endpoint answers 415 — see
                 // docs/known-issues/065.
-                RequestBodyMetadata.Apply(handlerBuilder, DeclaredRequestBody(plan.HttpMethods), typeof(TRequest));
+                RequestBodyMetadata.Apply(handlerBuilder, DeclaredRequestBody(plan.HttpMethods), typeof(TRequest), []);
 
                 // The response format is negotiated at request time (see WantsServerSentEvents), so
                 // both content types are declared for the same 200 response.
