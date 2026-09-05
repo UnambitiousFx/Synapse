@@ -11,6 +11,10 @@
     <ItemGroup>
         <PackageReference Include="NSubstitute" />
         <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+        <!-- The document is generated from the DI-registered EndpointDataSource, which a
+             WebApplication only publishes when it starts. TestServer lets the host start without
+             binding a socket, so the tests neither pick a port nor race one another. -->
+        <PackageReference Include="Microsoft.AspNetCore.TestHost" />
     </ItemGroup>
 
     <ItemGroup>
@@ -20,6 +24,12 @@
     <ItemGroup>
         <ProjectReference Include="..\..\src\Synapse.Endpoints.OpenApi\Synapse.Endpoints.OpenApi.csproj" />
         <ProjectReference Include="..\..\src\Synapse.Endpoints.Testing\Synapse.Endpoints.Testing.csproj" />
+        <!-- The fixtures are declared with route attributes and bound properties and nothing else, so
+             the binder, its parameter metadata and the route registration all come from the generator
+             here. That makes these tests the one place the whole chain — generator, endpoint tier,
+             transformer, document — is asserted end to end. -->
+        <ProjectReference Include="..\..\src\Synapse.Endpoints.Generator\Synapse.Endpoints.Generator.csproj"
+                          OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     </ItemGroup>
 
 </Project>
