@@ -1,7 +1,7 @@
 ---
 sidebar_position: 2
 title: OpenAPI
-description: What each endpoint shape declares in the document, how to add to it, and the net8.0 gap.
+description: What each endpoint shape declares in the document, how to add to it, the opt-in satellite package that declares parameters and the form schema, and the net8.0 gap.
 ---
 
 # OpenAPI
@@ -30,12 +30,13 @@ itself — `Endpoint<TRequest, TResponse>`, `Endpoint<TRequest>`, `StreamEndpoin
 [form-bound](../high-level/messages#forms-and-files) — on any of the four — the endpoint declares the
 form content types instead, described next.
 
-### A form-bound message declares content types, and no schema
+### A form-bound message's schema depends on the satellite package
 
 A message with a form-bound property — [`[FromForm]`, or a file-typed property](../high-level/messages#forms-and-files)
-— does not get an `Accepts<TRequest>`. It gets both form content types with no request schema at all:
+— does not get an `Accepts<TRequest>`. On its own, `Synapse.Endpoints` declares both form content
+types with no request schema at all:
 
-```json title="/openapi/v1.json — a form-bound POST"
+```json title="/openapi/v1.json — a form-bound POST, core package only"
 "post": {
   "requestBody": {
     "content": {
@@ -46,15 +47,60 @@ A message with a form-bound property — [`[FromForm]`, or a file-typed property
 }
 ```
 
-That is deliberate, not a gap the generator failed to close: a message holding an `IFormFile` has no
-JSON schema to describe, so `Accepts(typeof(TRequest), …)` would hand the schema generator a type it
-cannot render. Declaring the two content types with no schema is what `ConsumesMatcherPolicy` needs
-to answer `415` for a JSON request rather than letting it through to a `400` — content-type
-negotiation and schema description are two different jobs, and only the first one is met today. The
-second — a request-body schema for a form-bound message, and a declared parameter for a query or
-header value at all, scalar or array — is unmet by anything in this package right now, and is
-feature doc 018 (OpenAPI parameter metadata, under `docs/endpoints/features/`), not silently dropped
-scope.
+That is deliberate, not an oversight: a message holding an `IFormFile` has no JSON schema to
+describe, so `Accepts(typeof(TRequest), …)` would hand the schema generator a type it cannot render.
+Declaring the two content types is what `ConsumesMatcherPolicy` needs to answer `415` for a JSON
+request rather than letting it through to a `400` — content-type negotiation and schema description
+are two different jobs, and the core package only does the first one. `FormRequestMetadata.RequestType`
+stays `null` for the same reason regardless of which package you reference; see
+[known issue 068](https://github.com/UnambitiousFx/Synapse/blob/feat/synapse-endpoints/docs/known-issues/068-null-request-type-fails-the-whole-openapi-document.md)
+for what a `null` `RequestType` does to `Microsoft.AspNetCore.OpenApi` 10.0.11 without the workaround
+described below.
+
+Add [`UnambitiousFx.Synapse.Endpoints.OpenApi`](#the-satellite-package) and the schema is populated,
+field by field, from the same metadata the binder itself reads:
+
+```json title="/openapi/v1.json — the same endpoint, with the satellite package"
+"post": {
+  "requestBody": {
+    "required": true,
+    "content": {
+      "multipart/form-data": {
+        "schema": {
+          "type": "object",
+          "properties": {
+            "File": { "type": "string", "format": "binary" },
+            "Caption": { "type": "string" }
+          },
+          "required": ["File", "Caption"]
+        }
+      },
+      "application/x-www-form-urlencoded": {
+        "schema": {
+          "type": "object",
+          "properties": {
+            "File": { "type": "string", "format": "binary" },
+            "Caption": { "type": "string" }
+          },
+          "required": ["File", "Caption"]
+        }
+      }
+    }
+  }
+}
+```
+
+The same `OpenApiSchema` object is shared by both content-type entries in memory — an endpoint
+accepting either encoding accepts the same fields in both, and building two equal schemas would
+double the document for no gain — so the two blocks above are identical rather than cross-referenced.
+
+A file part (`IFormFile`, or one element of an `IFormFile` collection) always
+renders as `type: string, format: binary`, never through the response-body schema generator: it is an
+interface over a buffered stream, and asking `JsonSchemaExporter` to describe it is exactly what
+`RequestType` stays `null` to avoid. Every other field renders as `string` — a form value arrives as
+text on the wire, so an `int`-typed field is still transmitted as `"42"`. A binder that reports
+`RequestBodyKind.Form` with no described fields (a supported low-level scenario) still gets both
+content types, with an empty `properties` object rather than losing the request body entirely.
 
 The `400` is declared as `HttpValidationProblemDetails` — a problem document plus an `errors`
 dictionary — because that is what a bind failure actually sends. Not a plain `ProblemDetails`.
@@ -64,6 +110,140 @@ statuses the registered `IFailureHttpMapper` writes when a dispatched message re
 `Result` — the `401`, `404`, `409`, `422` or `500` — are not in it. Nothing about an endpoint's types
 or its configuration says which of them its handler can reach, so
 [you declare them](#declaring-the-failures-your-handler-produces).
+
+## Declaring query, header and route parameters
+
+None of this happens without [the satellite package](#the-satellite-package): on its own,
+`Synapse.Endpoints` declares nothing about a query key, a header or a route value beyond what ASP.NET
+Core's own route-template parsing infers — which, for a Synapse endpoint, is nothing at all, since
+[every route maps through one untyped `HttpContext` parameter](#the-satellite-package), not a typed
+method signature the framework can read parameters off. With the package added, a query-bound,
+header-bound or route-bound property is declared as an `operation.parameters` entry:
+
+```csharp title="A query-bound message, unattributed and attributed"
+public sealed record SearchTasksQuery : IRequest<IReadOnlyList<TaskDto>>
+{
+    // Bound from ?page= by the bodyless-verb convention — no attribute needed.
+    public required int Page { get; init; }
+
+    // [FromQuery(Name = "tag")] pins the wire key explicitly. Nullable, so a request with no
+    // ?tag= at all binds null rather than failing — see [Repeated keys](../high-level/messages#repeated-keys).
+    [FromQuery(Name = "tag")]
+    public string[]? Tags { get; init; }
+}
+
+[Get("/tasks/search")]
+public sealed class SearchTasksEndpoint : Endpoint<SearchTasksQuery, IReadOnlyList<TaskDto>>;
+```
+
+```json title="/openapi/v1.json — GET /tasks/search"
+"parameters": [
+  {
+    "name": "Page",
+    "in": "query",
+    "required": true,
+    "schema": { "type": ["integer", "string"] }
+  },
+  {
+    "name": "tag",
+    "in": "query",
+    "required": false,
+    "schema": { "type": "array", "items": { "type": "string" } }
+  }
+]
+```
+
+Three rules decide what is declared, and each one exists because getting it wrong documents a
+contract the endpoint does not actually have:
+
+- **The name is the key the binder reads, not the property name.** `Page` has no `[FromQuery]`, so
+  it is bound — and documented — under its own property name, `Page`, capital `P`; query binding is
+  case-insensitive at runtime, so `?page=` still works even though the document says `Page`. `Tags`
+  has `[FromQuery(Name = "tag")]`, so the document says `tag`, not `Tags` — the same reconciliation
+  the binder itself does. A parameter name that did not match the key the binder reads would be a
+  wrong document, not a stylistic choice.
+- **`required` follows the binder's own rule**, not a guess from the CLR type alone: `Page` is
+  `required` and non-nullable, so it is `required: true`; `Tags` is nullable, so it is
+  `required: false` — see [Is a missing value an error?](../high-level/messages#is-a-missing-value-an-error)
+  for the full rule, which this parameter declaration mirrors exactly rather than reimplementing.
+- **A route parameter is reconciled with the template's inference, never duplicated.** ASP.NET Core
+  infers a `path` parameter from the route template itself (`{taskId}`) independently of anything
+  Synapse emits; the transformer finds that entry already present and fills in its `schema` and
+  `required` rather than adding a second one. Two entries for the same path parameter is invalid
+  OpenAPI, and some client generators reject it outright.
+
+That reconciliation rule matters because a route-bound property being declared **at all** is new
+behaviour this package adds, not something the framework already did for a Synapse endpoint — a
+Synapse route handler is one `context => …` delegate, and the framework only infers parameters from a
+method-level signature it can read types and names off. Without the satellite package, a Synapse
+`{taskId}` route segment appears in `/openapi/v1.json`'s path template and nowhere else — no `schema`,
+no `required`, not even a `parameters` entry:
+
+```csharp title="A route- and header-bound message"
+public sealed record GetTaskQuery : IRequest<TaskDto>
+{
+    public required Guid TaskId { get; init; }          // matches {taskId} in the route
+
+    [FromHeader("X-Tenant")]
+    public required string Tenant { get; init; }         // headers are never bound by convention
+}
+
+[Get("/tasks/{taskId:guid}")]
+public sealed class GetTaskEndpoint : Endpoint<GetTaskQuery, TaskDto>;
+```
+
+```json title="/openapi/v1.json — GET /tasks/{taskId}, with the satellite package"
+"parameters": [
+  { "name": "taskId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+  { "name": "X-Tenant", "in": "header", "required": true, "schema": { "type": "string" } }
+]
+```
+
+## The satellite package
+
+Declaring parameters and the form schema needs `Microsoft.AspNetCore.OpenApi`'s own schema generator
+— `OpenApiOperationTransformerContext.GetOrCreateSchemaAsync`, specifically, so a parameter's schema
+matches how the same CLR type is described everywhere else in the document, rather than a
+hand-rolled Type-to-schema table drifting out of sync with it. `Synapse.Endpoints` itself carries no
+`PackageReference` at all — that is a deliberate zero, not an oversight, and pulling in
+`Microsoft.AspNetCore.OpenApi` would break it for every consumer, including the ones who never
+generate a document. So this work ships as its own opt-in package:
+
+```xml title="YourApp.csproj"
+<PackageReference Include="UnambitiousFx.Synapse.Endpoints.OpenApi" Version="…" />
+```
+
+```csharp title="Program.cs"
+builder.Services.AddSynapseEndpointsOpenApi();
+builder.Services.AddOpenApi();
+```
+
+One call, in whichever order relative to `AddOpenApi()`. It registers two things together, and
+deliberately offers no way to register just one of them:
+
+- **An operation transformer** (`ConfigureAll<OpenApiOptions>`, so it reaches every named document
+  `AddOpenApi()` produces, however many) that adds the parameters and the form schema described
+  above.
+- **The fixup for [known issue 068](https://github.com/UnambitiousFx/Synapse/blob/feat/synapse-endpoints/docs/known-issues/068-null-request-type-fails-the-whole-openapi-document.md)** —
+  without it, a form-bound endpoint crashes the *entire* document (`500` on `/openapi/v1.json`,
+  every endpoint, not just the form-bound one), because `Microsoft.AspNetCore.OpenApi` 10.0.11
+  cannot handle `FormRequestMetadata.RequestType` being `null`.
+
+The two halves fail in opposite, equally unusable directions on their own: the fixup alone declares
+no parameters and no form schema at all, and the transformer alone crashes the document the moment
+any endpoint accepts a form body. An API that only works correctly with both halves present should
+not offer a way to register just one, so there is deliberately no second call, and no
+`OpenApiOptions` extension method the way every other OpenAPI declaration in this package is one —
+a reader expecting that symmetry is the reason this paragraph exists.
+
+`UnambitiousFx.Synapse.Endpoints.OpenApi` targets `net10.0` **only**. Not `net9.0`+, the way
+`Synapse.Endpoints` itself is, because `GetOrCreateSchemaAsync` is new in .NET 10 — a .NET 9 host has
+no equivalent call to hang the schema on, and the only alternative (a hand-rolled Type-to-schema
+table) would describe a type inconsistently with the response bodies and the rest of the document
+that `Microsoft.AspNetCore.OpenApi` already generates for that same host. On `net8.0`/`net9.0`, you
+get [everything the core package declares on its own](#a-form-bound-messages-schema-depends-on-the-satellite-package) —
+correct `Accepts`/`Produces` metadata, form content types with no schema — and nothing this package
+adds.
 
 ## The declared status code follows `Configure`
 

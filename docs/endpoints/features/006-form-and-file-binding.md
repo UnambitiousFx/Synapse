@@ -190,9 +190,10 @@ if (!v.IsValid) { return v.Problem(); }
       from the type the same way an explicit `[FromForm]` states it.
 - [x] `[FromForm]` and `[FromBody]` on the same message is a diagnostic, not a runtime surprise —
       shipped as `SYNE018`.
-- [ ] OpenAPI declares the multipart schema — tracked separately as feature 018 (OpenAPI parameter
-      metadata), not part of this feature's scope. What ships here declares the correct content
-      types and no schema, which is what the criterion above actually needs.
+- [x] OpenAPI declares the multipart schema — shipped as feature 018 (OpenAPI parameter metadata),
+      via the opt-in `UnambitiousFx.Synapse.Endpoints.OpenApi` package. What ships here (this
+      feature) still declares the correct content types and no schema on its own; the schema itself
+      is the satellite package's contribution. See [OpenAPI](../../docs/endpoints/reference/openapi.mdx#a-form-bound-messages-schema-depends-on-the-satellite-package).
 - [x] Native AOT path verified — form reading is reflection-free, and `SYNE008`/`SYNE015` are scoped
       to messages that are actually JSON-deserialized, so neither fires for a form-bound one. See
       [Native AOT](../../docs/endpoints/reference/native-aot.mdx#form-binding-needs-no-registration-at-all).

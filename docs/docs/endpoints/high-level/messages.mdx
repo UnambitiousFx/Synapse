@@ -170,11 +170,12 @@ multipart field above happens to use. Form-field lookup is case-insensitive on r
 file=@note.txt` still binds `File` fine); the error key is not — it comes straight off
 `property.Name`, verbatim.
 
-The endpoint declares both `multipart/form-data` and `application/x-www-form-urlencoded`, and
-**no request schema**: a message holding an `IFormFile` is not describable as one, and pretending
-otherwise would be a wrong document rather than an honest gap. See [OpenAPI](../reference/openapi#what-is-declared-for-you)
-for what a form-bound endpoint declares, and feature doc 018 (OpenAPI parameter metadata, under
-`docs/endpoints/features/`) for the schema work this defers.
+The endpoint declares both `multipart/form-data` and `application/x-www-form-urlencoded`. On its own,
+`Synapse.Endpoints` declares **no request schema** alongside them: a message holding an `IFormFile`
+is not describable as a JSON schema, and pretending otherwise would be a wrong document rather than
+an honest gap. Add [`UnambitiousFx.Synapse.Endpoints.OpenApi`](../reference/openapi#the-satellite-package)
+and the schema is populated field by field instead — see
+[A form-bound message's schema depends on the satellite package](../reference/openapi#a-form-bound-messages-schema-depends-on-the-satellite-package).
 
 :::warning `[FromForm]` collides with `Microsoft.AspNetCore.Mvc`, the same as `[FromHeader]`
 `Microsoft.AspNetCore.Mvc` declares its own `FromFormAttribute`. Importing both
@@ -318,6 +319,11 @@ Two more rules, both there to keep the wire format unambiguous:
 ```json title="GET /tasks/search?status=Open&status=Nope"
 {"status":400,"errors":{"status":["The query value at index 1 is not a valid TaskStatus."]}}
 ```
+
+With [`UnambitiousFx.Synapse.Endpoints.OpenApi`](../reference/openapi#the-satellite-package) added, a
+repeated-key property like `Tags` above is declared in the document as an array parameter, and a
+scalar one like `Page` as a required or optional parameter matching the table above exactly — see
+[Declaring query, header and route parameters](../reference/openapi#declaring-query-header-and-route-parameters).
 
 ## The record-or-setter rule
 

@@ -157,7 +157,8 @@ v.QueryValuesEnum<TaskStatus>("status", out var statuses);   // per-element erro
 - [x] `SYNE012` reports the element type, not the collection type, when the element is unparsable.
 - [x] Empty vs absent is distinguishable and documented — a non-nullable collection is empty and
       silent, a nullable one is `null`. See [Repeated keys](../../docs/endpoints/high-level/messages.mdx#repeated-keys).
-- [ ] OpenAPI declares an array parameter with the right element schema — tracked separately as
-      feature 018 (OpenAPI parameter metadata), not part of this feature's scope.
+- [x] OpenAPI declares an array parameter with the right element schema — shipped as feature 018
+      (OpenAPI parameter metadata), via the opt-in `UnambitiousFx.Synapse.Endpoints.OpenApi`
+      package. See [Declaring query, header and route parameters](../../docs/endpoints/reference/openapi.mdx#declaring-query-header-and-route-parameters).
 - [x] Tests in `test/Synapse.Endpoints.Generator.Tests/CollectionBinderEmissionTests.cs` and
       `CollectionDiagnosticTests.cs`.
