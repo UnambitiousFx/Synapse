@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <!-- net10.0 only. net8.0 has no OpenAPI document integration at all, and net9.0 lacks
+             OpenApiOperationTransformerContext.GetOrCreateSchemaAsync, which arrived in .NET 10 —
+             without it the only way to produce a schema is a hand-rolled Type-to-schema table, which
+             the design rejects because it would describe a type differently here than the same type
+             is described inside a response body. -->
+        <TargetFrameworks>net10.0</TargetFrameworks>
+        <Description>OpenAPI parameter and form-schema declaration for UnambitiousFx.Synapse.Endpoints. Opt-in: the core package stays free of any OpenAPI dependency.</Description>
+        <PackageTags>aspnetcore;openapi;endpoints;cqrs;native-aot</PackageTags>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <!-- The only project in the solution that references this package. Keeping it here rather
+             than in Synapse.Endpoints is the whole reason this project exists: the core package
+             carries a FrameworkReference only, and Microsoft.AspNetCore.OpenApi is not part of the
+             shared framework. -->
+        <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+        <ProjectReference Include="..\Synapse.Endpoints\Synapse.Endpoints.csproj" />
+    </ItemGroup>
+
+</Project>
