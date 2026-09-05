@@ -22,5 +22,10 @@ public sealed class FormFieldMetadata
     ///     The scalar or element type; <c>IFormFile</c> for a file part, which renders as
     ///     <c>type: string, format: binary</c>.
     /// </summary>
+    /// <remarks>
+    ///     Never a collection type — a repeated field or a file collection carries its element type
+    ///     here and its repetition in <see cref="IsArray" />. A consumer may therefore test
+    ///     <c>ValueType == typeof(IFormFile)</c> to recognise a file part regardless of arity.
+    /// </remarks>
     public required Type ValueType { get; init; }
 }

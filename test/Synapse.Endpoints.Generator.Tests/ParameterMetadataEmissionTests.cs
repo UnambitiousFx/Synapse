@@ -171,4 +171,88 @@ public sealed class ParameterMetadataEmissionTests
         Assert.DoesNotContain("ParametersValue", generated);
         GeneratorHarness.AssertGeneratedCompiles(source);
     }
+
+    [Fact]
+    public void Emit_WithFormMessage_DeclaresFieldAndFileParts()
+    {
+        // Arrange
+        const string source = """
+            using Microsoft.AspNetCore.Http;
+            using UnambitiousFx.Synapse.Abstractions;
+            using UnambitiousFx.Synapse.Endpoints;
+
+            public sealed record UploadCommand : IRequest<string>
+            {
+                public required IFormFile File { get; init; }
+                public required string Caption { get; init; }
+            }
+
+            [Post("/attachments")]
+            public sealed class UploadEndpoint : Endpoint<UploadCommand, string>;
+            """;
+
+        // Act
+        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+
+        // Assert
+        Assert.Contains("FormFieldMetadata[] FormFieldsValue", generated);
+        Assert.Contains("Name = \"File\"", generated);
+        Assert.Contains("ValueType = typeof(global::Microsoft.AspNetCore.Http.IFormFile)", generated);
+        Assert.Contains("Name = \"Caption\"", generated);
+
+        // A form field is a body concern, never a parameter.
+        Assert.DoesNotContain("ParametersValue", generated);
+        GeneratorHarness.AssertGeneratedCompiles(source);
+    }
+
+    [Fact]
+    public void Emit_WithFormFileCollection_DeclaresArrayField()
+    {
+        // Arrange
+        const string source = """
+            using Microsoft.AspNetCore.Http;
+            using UnambitiousFx.Synapse.Abstractions;
+            using UnambitiousFx.Synapse.Endpoints;
+
+            public sealed record UploadCommand : IRequest<string>
+            {
+                public required IFormFileCollection Files { get; init; }
+            }
+
+            [Post("/attachments")]
+            public sealed class UploadEndpoint : Endpoint<UploadCommand, string>;
+            """;
+
+        // Act
+        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+
+        // Assert
+        Assert.Contains("IsArray = true", generated);
+        GeneratorHarness.AssertGeneratedCompiles(source);
+    }
+
+    [Fact]
+    public void Emit_WithNonFormMessage_DeclaresNoFormFieldsMember()
+    {
+        // Arrange
+        const string source = """
+            using UnambitiousFx.Synapse.Abstractions;
+            using UnambitiousFx.Synapse.Endpoints;
+
+            public sealed record SearchQuery : IRequest<string>
+            {
+                public required int Page { get; init; }
+            }
+
+            [Get("/search")]
+            public sealed class SearchEndpoint : Endpoint<SearchQuery, string>;
+            """;
+
+        // Act
+        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+
+        // Assert
+        Assert.DoesNotContain("FormFieldsValue", generated);
+        GeneratorHarness.AssertGeneratedCompiles(source);
+    }
 }

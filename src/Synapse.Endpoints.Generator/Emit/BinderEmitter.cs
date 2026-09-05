@@ -104,6 +104,7 @@ internal static class BinderEmitter
         builder.AppendLine();
 
         EmitParameters(builder, properties);
+        EmitFormFields(builder, properties);
 
         builder.AppendLine(
             $"    public async global::System.Threading.Tasks.ValueTask<{BindingNamespace}.BindResult<{typeFullName}>> BindAsync(");
@@ -392,6 +393,75 @@ internal static class BinderEmitter
         builder.AppendLine(
             $"    public global::System.Collections.Generic.IReadOnlyList<{InternalNamespace}.BoundParameterMetadata> Parameters => ParametersValue;");
         builder.AppendLine();
+    }
+
+    /// <summary>Emits the <c>FormFields</c> member, or nothing when the message is not form-bound.</summary>
+    /// <remarks>
+    ///     Mirrors <see cref="EmitParameters" />, including the <c>static readonly</c> backing field
+    ///     and the emit-nothing-when-empty rule. Kept as a second method rather than a parameterised
+    ///     one because the two select different properties and produce different types, and merging
+    ///     them would mean a flag argument at every call site.
+    /// </remarks>
+    private static void EmitFormFields(StringBuilder builder,
+        EquatableArray<BindablePropertyModel> properties)
+    {
+        var fields = new List<BindablePropertyModel>();
+        foreach (var property in properties)
+        {
+            if (property.Source == BindingSource.Form)
+            {
+                fields.Add(property);
+            }
+        }
+
+        if (fields.Count == 0)
+        {
+            return;
+        }
+
+        builder.AppendLine(
+            $"    private static readonly {InternalNamespace}.FormFieldMetadata[] FormFieldsValue =");
+        builder.AppendLine("    [");
+
+        foreach (var property in fields)
+        {
+            var isArray = property.Shape is BindingValueShape.Collection
+                or BindingValueShape.FormFileCollection;
+
+            builder.AppendLine("        new()");
+            builder.AppendLine("        {");
+            builder.AppendLine($"            Name = \"{property.SourceKey}\",");
+            builder.AppendLine(
+                $"            Required = {(property.IsRequired || !property.IsNullable ? "true" : "false")},");
+            builder.AppendLine($"            IsArray = {(isArray ? "true" : "false")},");
+            builder.AppendLine($"            ValueType = typeof({FieldValueType(property)}),");
+            builder.AppendLine("        },");
+        }
+
+        builder.AppendLine("    ];");
+        builder.AppendLine();
+        builder.AppendLine(
+            $"    public global::System.Collections.Generic.IReadOnlyList<{InternalNamespace}.FormFieldMetadata> FormFields => FormFieldsValue;");
+        builder.AppendLine();
+    }
+
+    /// <summary>The type to emit for one form field's <c>ValueType</c>.</summary>
+    /// <remarks>
+    ///     A file part emits <c>IFormFile</c> as a literal rather than the property's own
+    ///     <c>TypeFullName</c>. For the single-file shape those coincide, but for
+    ///     <c>FormFileCollection</c> they do not: that shape's emitter
+    ///     (<c>FormFileCollectionValueReadEmitter</c>) never reads <c>TypeFullName</c> — it emits
+    ///     <c>context.Request.Form.Files</c> or <c>GetFormFiles(...)</c> — so the model's value there
+    ///     is the declared collection type. Emitting it would break the
+    ///     <c>ValueType == typeof(IFormFile)</c> test the OpenAPI package uses to recognise a file
+    ///     part, and a file array would silently render as a plain string array with no
+    ///     <c>format: binary</c>. The array-ness is already carried by <c>IsArray</c>.
+    /// </remarks>
+    private static string FieldValueType(BindablePropertyModel property)
+    {
+        return property.Shape is BindingValueShape.FormFile or BindingValueShape.FormFileCollection
+            ? "global::Microsoft.AspNetCore.Http.IFormFile"
+            : property.TypeFullName;
     }
 
     /// <summary>Maps a binding source onto an OpenAPI parameter location, if it is one.</summary>
