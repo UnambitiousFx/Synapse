@@ -2,7 +2,7 @@
 
 |  |  |
 |---|---|
-| **Status** | 🔴 Missing |
+| **Status** | ✅ Shipped |
 | **Priority** | Medium |
 | **Area** | OpenAPI / Builders |
 | **Tiers** | All bound tiers |
@@ -167,18 +167,41 @@ already knows; nothing about the binding rules or the generated code changes.
 
 ## Acceptance criteria
 
-- [ ] A route-bound property appears as a `path` parameter — today inferred correctly by ASP.NET Core
-      from the route template alone, so this criterion is about not regressing that, not about new work.
-- [ ] A query-bound scalar property appears as a `query` parameter with the right `required` and
+- [x] A route-bound property appears as a `path` parameter — **this premise turned out to be
+      false: ASP.NET Core does not infer it.** The framework only infers a `path` parameter from the
+      route handler delegate's own signature, and a Synapse endpoint maps through one untyped
+      `context => …` `HttpContext` parameter — no method-level parameter for the framework to read a
+      name or type off. So a Synapse route segment appeared in the document's path template and
+      nowhere else: no `parameters` entry, no `schema`, no `required`, before this work. This
+      criterion is therefore about new behaviour, not about not regressing existing inference; see
+      [OpenAPI → Declaring query, header and route parameters](../../docs/endpoints/reference/openapi.mdx#declaring-query-header-and-route-parameters).
+- [x] A query-bound scalar property appears as a `query` parameter with the right `required` and
       `schema`.
-- [ ] A query- or header-bound collection property (feature 007) appears as an array parameter with
+- [x] A query- or header-bound collection property (feature 007) appears as an array parameter with
       the right element schema.
-- [ ] A header-bound property appears as a `header` parameter.
-- [ ] A form-bound message (feature 006) declares a `multipart/form-data` and
+- [x] A header-bound property appears as a `header` parameter.
+- [x] A form-bound message (feature 006) declares a `multipart/form-data` and
       `application/x-www-form-urlencoded` schema naming every form field and file, instead of an
       empty content-type entry.
-- [ ] `net8.0` is unaffected — this work extends the same `net9.0`+-only OpenAPI integration
+- [x] `net8.0` is unaffected — this work extends the same `net9.0`+-only OpenAPI integration
       features 001 and the rest already depend on; see
       [OpenAPI → `net8.0` has no document integration](../../docs/endpoints/reference/openapi.mdx#net80-has-no-document-integration).
-- [ ] Tests assert on the generated `OpenApiDocument` directly (the existing `OpenApiMetadataTests`
-      pattern), not on string-matched JSON, so a schema shape regression fails loudly.
+- [x] Tests assert on the generated `OpenApiDocument` directly (the existing `OpenApiMetadataTests`
+      pattern), not on string-matched JSON, so a schema shape regression fails loudly. See
+      `test/Synapse.Endpoints.OpenApi.Tests/ParameterDocumentTests.cs` and
+      `FormSchemaDocumentTests.cs`.
+
+## Shipped as an opt-in satellite package, working around a framework bug
+
+This work ships as `UnambitiousFx.Synapse.Endpoints.OpenApi` — opt-in, `net10.0` only, the only
+project in the solution referencing `Microsoft.AspNetCore.OpenApi` — rather than inside the core
+package. Registering it (`services.AddSynapseEndpointsOpenApi()`) also registers
+`FormRequestBodyDescriptionFixup`, an `IApiDescriptionProvider` that works around a framework bug
+found while implementing the form schema above: `Microsoft.AspNetCore.OpenApi` 10.0.11 fails the
+*entire* OpenAPI document — every endpoint, `500` on `/openapi/v1.json` — whenever any endpoint
+carries an `IAcceptsMetadata` with a `null RequestType`, which `FormRequestMetadata.RequestType` has
+been since feature 006 shipped. See
+[known issue 068](https://github.com/UnambitiousFx/Synapse/blob/feat/synapse-endpoints/docs/known-issues/068-null-request-type-fails-the-whole-openapi-document.md)
+for the root cause and the fix; without the fixup (and without the satellite package that registers
+it), a form-bound endpoint's presence in an app calling `AddOpenApi()` breaks the document for every
+route, not just its own.
