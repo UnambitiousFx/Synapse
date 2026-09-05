@@ -9,6 +9,12 @@ or the runtime answers instead, a proposed API with the same scenario written ag
 acceptance criteria. Shipped features are listed here
 only; their user-facing documentation lives under [`../docs/endpoints/`](../docs/endpoints/).
 
+Every Medium-priority gap below now has a design spec under
+[`../superpowers/specs/`](../superpowers/specs/), linked from its row. A feature doc states the
+problem; its spec resolves the open API choices, names the diagnostics, and sequences the work.
+Where the two disagree, **the spec is current** — three feature docs rest on claims the code has
+since outgrown, and each spec says so explicitly with evidence.
+
 **Legend** — ✅ Shipped · 🟡 Partial · ❌ Missing
 
 > The package is preview-only and its public surface is not frozen. See
@@ -43,28 +49,51 @@ only; their user-facing documentation lives under [`../docs/endpoints/`](../docs
 
 ## Gaps
 
-Ordered by recommended implementation sequence.
+Ordered by recommended implementation sequence. **Spec** links the design document that resolves the
+feature's open questions.
 
-| # | Feature | Status | Priority | Description |
-|---|---|---|---|---|
-| [008](features/008-additional-binding-sources.md) | Claims, cookies and services as sources | ❌ | Medium | Only four sources exist. No `[FromClaim]` — so the ergonomic path to a caller id is a client-controlled header. |
-| [009](features/009-custom-value-parsers.md) | Custom value parsers | ❌ | Medium | A bound type must be `string`, an enum, or expose `TryParse`. `SYNE012`'s advice is unusable for a type you do not own. |
-| [010](features/010-endpoint-validators.md) | Per-endpoint validators | 🟡 | Medium | Business validation works but lives in DI configuration, and its error shape differs from the binding path's field-keyed `400`. |
-| [011](features/011-multiple-routes-and-verbs.md) | Multiple routes and verbs | ❌ | Medium | One verb, one route per class. `EndpointBuilderCore.Route` overwrites rather than accumulates; route attributes are `AllowMultiple = false`. |
-| [012](features/012-nested-groups.md) | Nested groups, richer group metadata | 🟡 | Medium | Groups are one level deep and carry prefix/tags/auth only. No `/api` → `/api/v1` → `/api/v1/tasks`. |
-| [013](features/013-global-conventions.md) | Global endpoint conventions | ❌ | Medium | `MapSynapseEndpoints` takes no configuration callback, so an app-wide prefix, policy, tag or filter must be repeated per endpoint. |
-| [014](features/014-typed-result-unions.md) | Typed result unions | ❌ | Medium | One declared success status per endpoint. `200`-or-`201` upserts and `200`-or-`304` conditional reads cannot be described. |
-| [015](features/015-api-versioning.md) | API versioning | ❌ | Medium | Not merely unsupported: the documented `Raw` + matcher-policy workaround trips the startup duplicate-route check and fails to boot. |
-| [018](features/018-openapi-parameter-metadata.md) | OpenAPI parameter metadata | ❌ | Medium | No query or header parameter is declared in the document at all, scalar or array; a form-bound message declares its content types but no schema. Left behind by 006 and 007, which needed only the content-type half. |
-| [016](features/016-link-generation.md) | Link generation for `Location` | 🟡 | Low | `Created` takes a URL-building delegate, so route templates are duplicated as interpolated strings. `Name()` exists but `CreatedAtRoute` does not. |
-| [017](features/017-endpoint-dependency-injection.md) | Dependency injection into endpoints | 🟡 | Low | Singleton endpoints, `context.Service<T>()` service location. Coherent by design; listed for completeness and ranked last. |
+| # | Feature | Status | Priority | Spec | Description |
+|---|---|---|---|---|---|
+| [018](features/018-openapi-parameter-metadata.md) | OpenAPI parameter metadata | ❌ | Medium | [spec](../superpowers/specs/2026-09-05-openapi-parameter-metadata-design.md) | No query or header parameter is declared in the document at all, scalar or array; a form-bound message declares its content types but no schema. Left behind by 006 and 007, which needed only the content-type half. **Moved to the front:** 008's OpenAPI criteria need the parameter pipeline only this builds. |
+| [008](features/008-additional-binding-sources.md) | Claims and cookies as sources | ❌ | Medium | [spec](../superpowers/specs/2026-09-05-additional-binding-sources-design.md) | Only five sources exist. No `[FromClaim]` — so the ergonomic path to a caller id is a client-controlled header. `[FromServices]` is out of scope here; see 017. |
+| [009](features/009-custom-value-parsers.md) | Custom value parsers | ❌ | Medium | [spec](../superpowers/specs/2026-09-05-custom-value-parsers-design.md) | A bound type must be `string`, an enum, or expose `TryParse`. `SYNE012`'s advice is unusable for a type you do not own. |
+| [010](features/010-endpoint-validators.md) | Per-endpoint validators | 🟡 | Medium | [spec](../superpowers/specs/2026-09-05-endpoint-validators-design.md) | Binding failures are field-keyed; business-rule failures are an opaque problem document. One endpoint, two error models. **Colocation is already solved** by `[Validator]`, and `known-issues/004` is resolved — the spec narrows this to the error contract and the status. Blocked on a `UnambitiousFx.Functional` release. |
+| [011](features/011-multiple-routes-and-verbs.md) | Multiple routes and verbs | ❌ | Medium | [spec](../superpowers/specs/2026-09-05-routes-verbs-and-versioning-design.md) | One verb, one route per class. `EndpointBuilderCore.Route` overwrites rather than accumulates; route attributes are `AllowMultiple = false`. **Breaking**, contrary to the feature doc's header: `MapEndpoint<T>` cannot keep returning one `RouteHandlerBuilder`. |
+| [015](features/015-api-versioning.md) | API versioning | ❌ | Medium | [spec](../superpowers/specs/2026-09-05-routes-verbs-and-versioning-design.md) | Not merely unsupported: the documented `Raw` + matcher-policy workaround trips the startup duplicate-route check and fails to boot. Specced with 011, in two phases — the opt-out ships alone. |
+| [012](features/012-nested-groups.md) | Nested groups, richer group metadata | 🟡 | Medium | [spec](../superpowers/specs/2026-09-05-group-nesting-and-conventions-design.md) | Groups are one level deep and carry prefix/tags/auth only. No `/api` → `/api/v1` → `/api/v1/tasks`. |
+| [013](features/013-global-conventions.md) | Global endpoint conventions | ❌ | Medium | [spec](../superpowers/specs/2026-09-05-group-nesting-and-conventions-design.md) | `MapSynapseEndpoints` takes no configuration callback, so an app-wide prefix, policy, tag or filter must be repeated per endpoint. |
+| [014](features/014-typed-result-unions.md) | Typed result unions | ❌ | Medium | [spec](../superpowers/specs/2026-09-05-typed-result-unions-design.md) | One declared success status per endpoint. `200`-or-`201` upserts and `200`-or-`304` conditional reads cannot be described. |
+| [016](features/016-link-generation.md) | Link generation for `Location` | 🟡 | Low | — | `Created` takes a URL-building delegate, so route templates are duplicated as interpolated strings. `Name()` exists but `CreatedAtRoute` does not. |
+| [017](features/017-endpoint-dependency-injection.md) | Dependency injection into endpoints | 🟡 | Low | — | Singleton endpoints, `context.Service<T>()` service location. Coherent by design; listed for completeness and ranked last. |
 
 ## Suggested sequencing
 
-1. **008–015** round out binding, routing and grouping.
-2. **018** closes the OpenAPI gap 006 and 007 both left behind — neither could describe a parameter
-   or a multipart schema on its own, and both said so explicitly in their own acceptance criteria.
-3. **016–017** are polish, and 017 may reasonably be closed as "working as intended".
+1. **018 first.** It closes the OpenAPI gap 006 and 007 both left behind — neither could describe a
+   parameter or a multipart schema on its own, and both said so in their own acceptance criteria —
+   and it builds the parameter pipeline that 008 then plugs into. The original ordering put 018 last,
+   which cannot work: two of 008's acceptance criteria are about the document.
+2. **008–009** round out binding on top of it.
+3. **010** is blocked on an external release and its remaining scope is smaller than its feature doc
+   suggests. Its *documentation* corrections are not blocked and should be done immediately.
+4. **011 + 015** together rewrite `ThrowOnDuplicateRoutes` and multi-map an endpoint. 015 phase 1
+   (the `AllowDuplicateRoute()` opt-out) is small, unblocks users today, and should ship on its own
+   even if first-class versioning is deferred.
+5. **012 + 013** together compose prefixes and policy at group and application scope.
+6. **014** is self-contained and can be taken at any point after 001, which is shipped.
+7. **016–017** are polish, and 017 may reasonably be closed as "working as intended".
+
+Diagnostic IDs are pre-allocated across the specs so implementation order does not matter — next
+free is `SYNE031`:
+
+| Spec | IDs |
+|---|---|
+| 018 | none (runtime metadata only) |
+| 008 | `SYNE020`–`SYNE021` |
+| 009 | `SYNE022` |
+| 010 | `SYNE023` |
+| 011 + 015 | `SYNE024`–`SYNE026` |
+| 012 + 013 | `SYNE027`–`SYNE028` |
+| 014 | `SYNE029`–`SYNE030` |
 
 001–007 are shipped: the OpenAPI document no longer lies about what an endpoint can return, the most
 common optional parameter is expressible on the collector, an endpoint can be exercised without a
