@@ -46,6 +46,18 @@ public abstract class Endpoint<TRequest> : RawEndpoint<TRequest>
             : _binder?.BodyKind ?? RequestBodyKind.Json;
     }
 
+    /// <inheritdoc />
+    private protected sealed override IReadOnlyList<BoundParameterMetadata> DeclaredParameters()
+    {
+        return _binder?.Parameters ?? [];
+    }
+
+    /// <inheritdoc />
+    private protected sealed override IReadOnlyList<FormFieldMetadata> DeclaredFormFields()
+    {
+        return _binder?.FormFields ?? [];
+    }
+
     internal sealed override RawEndpointPlan CreatePlan(EndpointMetadata metadata)
     {
         var plan = base.CreatePlan(metadata);

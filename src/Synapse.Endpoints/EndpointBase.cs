@@ -42,4 +42,28 @@ public abstract class EndpointBase
             "package, which maps it and hands back something that answers requests; otherwise map the " +
             "endpoint into a route builder and exercise it through the pipeline.");
     }
+
+    /// <summary>
+    ///     The non-body inputs this endpoint's binder reads, for OpenAPI parameter declaration, or
+    ///     empty when the endpoint binds by hand.
+    /// </summary>
+    /// <remarks>
+    ///     Returns the list rather than the binder because the binder's type argument differs by
+    ///     tier — <c>MappedEndpoint</c> binds <c>THttpRequest</c> where the others bind
+    ///     <c>TRequest</c> — so no single binder-returning signature fits all of them. Mirrors
+    ///     <c>DeclaredRequestBody</c>, which returns a value for the same reason. Empty is the
+    ///     honest answer for a hand-written <c>BindAsync</c>: it declares no parameters.
+    /// </remarks>
+    private protected virtual IReadOnlyList<Internal.BoundParameterMetadata> DeclaredParameters()
+    {
+        return [];
+    }
+
+    /// <summary>
+    ///     The form fields and file parts this endpoint's binder reads, or empty when it reads none.
+    /// </summary>
+    private protected virtual IReadOnlyList<Internal.FormFieldMetadata> DeclaredFormFields()
+    {
+        return [];
+    }
 }

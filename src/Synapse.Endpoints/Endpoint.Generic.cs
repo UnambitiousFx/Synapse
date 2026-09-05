@@ -64,6 +64,18 @@ public abstract class Endpoint<TRequest, TResponse> : RawEndpoint<TRequest, TRes
             : _binder?.BodyKind ?? RequestBodyKind.Json;
     }
 
+    /// <inheritdoc />
+    private protected sealed override IReadOnlyList<BoundParameterMetadata> DeclaredParameters()
+    {
+        return _binder?.Parameters ?? [];
+    }
+
+    /// <inheritdoc />
+    private protected sealed override IReadOnlyList<FormFieldMetadata> DeclaredFormFields()
+    {
+        return _binder?.FormFields ?? [];
+    }
+
     internal sealed override RawEndpointPlan CreatePlan(EndpointMetadata metadata)
     {
         // Resolved after the plan, matching the order the route and binder were resolved in before:

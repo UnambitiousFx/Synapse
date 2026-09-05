@@ -124,7 +124,14 @@ public abstract class RawEndpoint<TRequest, TResponse> : BoundEndpoint<TRequest>
             {
                 // Declared explicitly because a RequestDelegate-shaped endpoint infers nothing.
                 RequestBodyMetadata.Apply(handlerBuilder, DeclaredRequestBody(configuration.HttpMethods),
-                    typeof(TRequest), []);
+                    typeof(TRequest), DeclaredFormFields());
+
+                // Attached as one entry so a single GetMetadata call retrieves the whole list —
+                // see BoundParametersMetadata's remarks.
+                if (DeclaredParameters() is { Count: > 0 } parameters)
+                {
+                    handlerBuilder.WithMetadata(new BoundParametersMetadata(parameters));
+                }
 
                 // The response type is declared only when the configured mapper actually writes one.
                 // NoContent() and StatusCode(int) write a status line and nothing else, so declaring

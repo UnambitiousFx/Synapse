@@ -42,4 +42,31 @@ public interface IEndpointBinder<TRequest>
     ///     behaving exactly as it did. Generated binders declare both explicitly.
     /// </remarks>
     RequestBodyKind BodyKind => ReadsRequestBody ? RequestBodyKind.Json : RequestBodyKind.None;
+
+    /// <summary>The non-body inputs this binder reads, for OpenAPI parameter declaration.</summary>
+    /// <remarks>
+    ///     <para>
+    ///         Empty by default so a hand-written binder written before this member existed keeps
+    ///         compiling and keeps its current document, which declares no parameter — the same
+    ///         defaulting rationale as <see cref="ReadsRequestBody" /> and <see cref="BodyKind" />.
+    ///         Generated binders declare the full list, backed by a <c>static readonly</c> array so
+    ///         it is allocated once per message type rather than once per read.
+    ///     </para>
+    ///     <para>
+    ///         An instance member rather than <c>static virtual</c>: every tier holds its binder as an
+    ///         <see cref="IEndpointBinder{TRequest}" /> reference obtained from
+    ///         <c>EndpointRegistry.GetBinder&lt;TRequest&gt;()</c>, and a <c>static virtual</c> member
+    ///         can only be invoked through a generic parameter bound to the concrete implementing
+    ///         type, which nothing here has. Read once per endpoint at startup, never on a request
+    ///         path, so dispatch cost is not a consideration.
+    ///     </para>
+    /// </remarks>
+    IReadOnlyList<Internal.BoundParameterMetadata> Parameters => [];
+
+    /// <summary>
+    ///     The form fields and file parts this binder reads, when <see cref="BodyKind" /> is
+    ///     <see cref="RequestBodyKind.Form" />.
+    /// </summary>
+    /// <remarks>Empty by default, and empty for every non-form binder.</remarks>
+    IReadOnlyList<Internal.FormFieldMetadata> FormFields => [];
 }

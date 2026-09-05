@@ -98,6 +98,18 @@ public abstract class SelfHandledEndpoint<TRequest> : BoundEndpoint<TRequest>
             : _binder?.BodyKind ?? RequestBodyKind.Json;
     }
 
+    /// <inheritdoc />
+    private protected sealed override IReadOnlyList<BoundParameterMetadata> DeclaredParameters()
+    {
+        return _binder?.Parameters ?? [];
+    }
+
+    /// <inheritdoc />
+    private protected sealed override IReadOnlyList<FormFieldMetadata> DeclaredFormFields()
+    {
+        return _binder?.FormFields ?? [];
+    }
+
     internal sealed override RawEndpointPlan CreatePlan(EndpointMetadata metadata)
     {
         var builder = new EndpointBuilder<Unit>(metadata);
@@ -116,7 +128,14 @@ public abstract class SelfHandledEndpoint<TRequest> : BoundEndpoint<TRequest>
             {
                 // Declared explicitly because a RequestDelegate-shaped endpoint infers nothing.
                 RequestBodyMetadata.Apply(handlerBuilder, DeclaredRequestBody(configuration.HttpMethods),
-                    typeof(TRequest), []);
+                    typeof(TRequest), DeclaredFormFields());
+
+                // Attached as one entry so a single GetMetadata call retrieves the whole list —
+                // see BoundParametersMetadata's remarks.
+                if (DeclaredParameters() is { Count: > 0 } parameters)
+                {
+                    handlerBuilder.WithMetadata(new BoundParametersMetadata(parameters));
+                }
 
                 handlerBuilder.WithMetadata(new ProducesResponseMetadata(SuccessStatusCode(configuration)));
                 handlerBuilder.ProducesValidationProblem();
