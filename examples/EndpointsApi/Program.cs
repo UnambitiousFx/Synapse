@@ -4,6 +4,7 @@ using UnambitiousFx.Examples.EndpointsApi.Infrastructure;
 using UnambitiousFx.Synapse;
 using UnambitiousFx.Synapse.AspNetCore;
 using UnambitiousFx.Synapse.Endpoints;
+using UnambitiousFx.Synapse.Endpoints.OpenApi;
 
 var builder = WebApplication.CreateSlimBuilder(args);
 
@@ -20,7 +21,8 @@ builder.Services.AddSynapseAspNetCore();
 builder.Services.AddSynapse(cfg =>
     cfg.AddRegisterGroup(new global::UnambitiousFx.Examples.EndpointsApi.RegisterGroup()));
 
-builder.Services.AddOpenApi();
+builder.Services.AddSynapseEndpointsOpenApi();
+builder.Services.AddOpenApi(options => options.AddSynapseEndpoints());
 
 var app = builder.Build();
 

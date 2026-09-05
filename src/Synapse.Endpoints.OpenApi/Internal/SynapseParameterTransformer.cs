@@ -19,6 +19,14 @@ namespace UnambitiousFx.Synapse.Endpoints.OpenApi.Internal;
 ///         Scoped to endpoints carrying <c>SynapseEndpointMarker</c>, the same predicate
 ///         <c>ThrowOnDuplicateRoutes</c> uses, so a hand-written <c>app.MapGet</c> is never touched.
 ///     </para>
+///     <para>
+///         The form pass here assumes <c>operation.RequestBody</c> is still whatever the framework
+///         built (possibly <see langword="null" />) when this runs. For a form-bound endpoint that
+///         assumption only holds because <see cref="FormRequestBodyDescriptionFixup" /> has already
+///         deleted the framework's own crashing attempt at one — see its remarks for why that is a
+///         separate, container-level registration rather than something this transformer can prevent
+///         on its own.
+///     </para>
 /// </remarks>
 internal sealed class SynapseParameterTransformer : IOpenApiOperationTransformer
 {
@@ -39,7 +47,11 @@ internal sealed class SynapseParameterTransformer : IOpenApiOperationTransformer
             await ApplyParametersAsync(operation, declared, context, cancellationToken);
         }
 
-        // Task 8 adds the form schema.
+        var form = metadata.OfType<FormRequestMetadata>().FirstOrDefault();
+        if (form is { Fields.Count: > 0 })
+        {
+            ApplyFormSchema(operation, form);
+        }
     }
 
     private static async Task ApplyParametersAsync(OpenApiOperation operation,
@@ -96,6 +108,68 @@ internal sealed class SynapseParameterTransformer : IOpenApiOperationTransformer
                     parameter.ValueType, parameter.IsArray, context, cancellationToken)
             });
         }
+    }
+
+    /// <summary>Renders the declared form fields as the schema of both form content types.</summary>
+    /// <remarks>
+    ///     One schema instance is shared by both content-type entries: an endpoint accepting either
+    ///     encoding accepts the same fields in both, and emitting two equal schemas would double the
+    ///     document for no gain. <c>IFormFile</c> is rendered directly rather than through
+    ///     <see cref="SchemaFactory" /> — it is an interface over a buffered stream, and asking the
+    ///     schema generator to describe it is exactly what <c>FormRequestMetadata.RequestType</c>
+    ///     stays null to avoid.
+    /// </remarks>
+    private static void ApplyFormSchema(OpenApiOperation operation, FormRequestMetadata form)
+    {
+        var properties = new Dictionary<string, IOpenApiSchema>(StringComparer.Ordinal);
+        var required = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var field in form.Fields)
+        {
+            properties[field.Name] = BuildFieldSchema(field);
+
+            if (field.Required)
+            {
+                required.Add(field.Name);
+            }
+        }
+
+        var schema = new OpenApiSchema
+        {
+            Type = JsonSchemaType.Object,
+            Properties = properties,
+            Required = required
+        };
+
+        // Replaced wholesale rather than mutated: OpenApiOperation.RequestBody is
+        // IOpenApiRequestBody?, a read-only interface, so there is nothing to mutate in place.
+        operation.RequestBody = new OpenApiRequestBody
+        {
+            Required = true,
+            Content = form.ContentTypes.ToDictionary(
+                contentType => contentType,
+                _ => new OpenApiMediaType { Schema = schema },
+                StringComparer.Ordinal)
+        };
+    }
+
+    /// <summary>Renders one form field's schema. Non-file fields are always <c>string</c>.</summary>
+    /// <remarks>
+    ///     A form value arrives as text on the wire, so an <c>int</c>-typed form field is still
+    ///     transmitted as <c>"42"</c>. Routing it through <see cref="SchemaFactory" /> for a richer
+    ///     type would need its own decision and its own test, so it stays out of scope here.
+    /// </remarks>
+    private static OpenApiSchema BuildFieldSchema(FormFieldMetadata field)
+    {
+        var isFile = field.ValueType == typeof(Microsoft.AspNetCore.Http.IFormFile);
+
+        var element = isFile
+            ? new OpenApiSchema { Type = JsonSchemaType.String, Format = "binary" }
+            : new OpenApiSchema { Type = JsonSchemaType.String };
+
+        return field.IsArray
+            ? new OpenApiSchema { Type = JsonSchemaType.Array, Items = element }
+            : element;
     }
 
     private static ParameterLocation Translate(BoundParameterLocation location)
