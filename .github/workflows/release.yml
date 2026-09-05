@@ -22,14 +22,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
-
-      - name: Extract version from tag
-        id: get_version
-        run: |
-          TAG_NAME=${GITHUB_REF#refs/tags/v}
-          echo "VERSION=$TAG_NAME" >> $GITHUB_OUTPUT
-          echo "Releasing version: $TAG_NAME"
+          fetch-depth: 0   # MinVer reads the pushed v* tag to derive the version
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v6
@@ -42,8 +35,10 @@ jobs:
       - name: Restore dependencies
         run: dotnet restore Synapse.slnx
 
+      # No /p:Version here: MinVer derives it from the pushed v* tag. A command-line /p:Version would
+      # also override the preview pin in src/Directory.Build.targets (Synapse.Endpoints stays -preview).
       - name: Build
-        run: dotnet build Synapse.slnx --no-restore --configuration Release /p:Version=${{ steps.get_version.outputs.VERSION }}
+        run: dotnet build Synapse.slnx --no-restore --configuration Release
 
       - name: Publish to NuGet
         run: |

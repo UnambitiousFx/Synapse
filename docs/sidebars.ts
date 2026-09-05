@@ -64,6 +64,7 @@ const sidebars: SidebarsConfig = {
             'endpoints/reference/escape-hatches',
             'endpoints/reference/testing',
             'endpoints/reference/lifecycle',
+            'endpoints/reference/preview',
           ],
         },
       ],

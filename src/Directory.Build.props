@@ -32,6 +32,14 @@
         <Deterministic>true</Deterministic>
         <PackageIcon>icon.png</PackageIcon>
 
+        <!-- Versioning: MinVer derives Version/PackageVersion from the nearest v* git tag.
+             Post-RTM commits with no tag of their own become <next patch>-preview.0.<height>.
+             src/Directory.Build.targets adjusts that output for preview-pinned packages and
+             for local (non-CI) builds. -->
+        <MinVerTagPrefix>v</MinVerTagPrefix>
+        <MinVerAutoIncrement>patch</MinVerAutoIncrement>
+        <MinVerDefaultPreReleaseIdentifiers>preview.0</MinVerDefaultPreReleaseIdentifiers>
+
         <!-- Package validation -->
         <EnablePackageValidation>true</EnablePackageValidation>
         <!-- <PackageValidationBaselineVersion>1.0.0</PackageValidationBaselineVersion> -->
@@ -41,6 +49,11 @@
 
     <ItemGroup Condition="$(CI) == 'true'">
         <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="All" />
+    </ItemGroup>
+
+    <!-- Unconditional: MinVer must run locally too, so a local build still produces a real version. -->
+    <ItemGroup>
+        <PackageReference Include="MinVer" PrivateAssets="All" />
     </ItemGroup>
 
     <ItemGroup Condition="!Exists('README.md')">
