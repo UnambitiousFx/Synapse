@@ -112,17 +112,34 @@ public sealed class BoundParameterMetadataTests
 
     private sealed class SearchTasksEndpoint : Endpoint<SearchTasksQuery, string>;
 
-    // Deliberately does not override Parameters: this is exactly what the generator still emits
-    // before Task 4 regenerates it, so the endpoint below declares no BoundParametersMetadata yet.
+    // A hand-written binder, not a generated one: this test's subject is the tier's attachment of
+    // whatever the binder declares, not what the generator emits — that is the generator project's
+    // own snapshot tests, and the full chain (generator through OpenApiDocument) is Task 7/8's. A
+    // binder that declares something proves the attachment works now, rather than waiting on a skip
+    // that Task 4 (which only touches the generator) could never actually lift.
     private sealed class SearchTasksBinder : IEndpointBinder<SearchTasksQuery>
     {
+        private static readonly BoundParameterMetadata[] ParametersValue =
+        [
+            new()
+            {
+                Name = "page",
+                Location = BoundParameterLocation.Query,
+                Required = true,
+                IsArray = false,
+                ValueType = typeof(int)
+            }
+        ];
+
         public ValueTask<BindResult<SearchTasksQuery>> BindAsync(HttpContext context)
         {
             return ValueTask.FromResult(BindResult<SearchTasksQuery>.Success(new SearchTasksQuery()));
         }
+
+        public IReadOnlyList<BoundParameterMetadata> Parameters => ParametersValue;
     }
 
-    [Fact(Skip = "Enabled by Task 4")]
+    [Fact]
     public void MappedEndpoint_WithQueryBoundMessage_CarriesBoundParametersMetadata()
     {
         // Arrange & Act — map through the real routing stack so the real routing stack applies the
@@ -140,5 +157,35 @@ public sealed class BoundParameterMetadataTests
         var metadata = endpoint.Metadata.GetMetadata<BoundParametersMetadata>();
         Assert.NotNull(metadata);
         Assert.Contains(metadata.Parameters, p => p.Name == "page" && p.Location == BoundParameterLocation.Query);
+    }
+
+    private sealed record NoParametersQuery : IRequest<string>;
+
+    private sealed class NoParametersEndpoint : Endpoint<NoParametersQuery, string>;
+
+    // Overrides neither Parameters nor FormFields, so the tier's { Count: > 0 } guard should skip
+    // WithMetadata entirely rather than attaching an empty BoundParametersMetadata.
+    private sealed class NoParametersBinder : IEndpointBinder<NoParametersQuery>
+    {
+        public ValueTask<BindResult<NoParametersQuery>> BindAsync(HttpContext context)
+        {
+            return ValueTask.FromResult(BindResult<NoParametersQuery>.Success(new NoParametersQuery()));
+        }
+    }
+
+    [Fact]
+    public void MappedEndpoint_WithBinderDeclaringNoParameters_CarriesNoMetadata()
+    {
+        // Arrange & Act
+        EndpointRegistry.RegisterBinder(new NoParametersBinder());
+        EndpointRegistry.RegisterMetadata<NoParametersEndpoint>(new EndpointMetadata(["GET"], "/no-parameters"));
+        var app = WebApplication.CreateSlimBuilder().Build();
+        app.MapEndpoint<NoParametersEndpoint>();
+        var endpoint = ((IEndpointRouteBuilder)app).DataSources
+            .SelectMany(source => source.Endpoints)
+            .Single();
+
+        // Assert
+        Assert.Null(endpoint.Metadata.GetMetadata<BoundParametersMetadata>());
     }
 }
