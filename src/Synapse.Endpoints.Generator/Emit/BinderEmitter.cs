@@ -15,6 +15,7 @@ namespace UnambitiousFx.Synapse.Endpoints.Generator.Emit;
 internal static class BinderEmitter
 {
     private const string BindingNamespace = "global::UnambitiousFx.Synapse.Endpoints.Binding";
+    private const string InternalNamespace = "global::UnambitiousFx.Synapse.Endpoints.Internal";
 
     internal static SourceText Emit(string rootNamespace,
         BoundTypeInfo[] boundTypes)
@@ -101,6 +102,8 @@ internal static class BinderEmitter
         builder.AppendLine(
             $"    public {BindingNamespace}.RequestBodyKind BodyKind => {BindingNamespace}.RequestBodyKind.{bodyKind};");
         builder.AppendLine();
+
+        EmitParameters(builder, properties);
 
         builder.AppendLine(
             $"    public async global::System.Threading.Tasks.ValueTask<{BindingNamespace}.BindResult<{typeFullName}>> BindAsync(");
@@ -333,6 +336,86 @@ internal static class BinderEmitter
         if (read.PresenceLocal is not null)
         {
             builder.AppendLine("        }");
+        }
+    }
+
+    /// <summary>
+    ///     Emits the <c>Parameters</c> member, or nothing when no property maps to an OpenAPI
+    ///     parameter.
+    /// </summary>
+    /// <remarks>
+    ///     Nothing rather than an empty array: the interface default already answers "no parameters",
+    ///     and every body-bound binder would otherwise carry a dead member. The backing field is
+    ///     <c>static readonly</c> so the array is allocated once per message type — the binder itself
+    ///     is a singleton, so a property returning a fresh array would allocate on every read.
+    /// </remarks>
+    private static void EmitParameters(StringBuilder builder,
+        EquatableArray<BindablePropertyModel> properties)
+    {
+        var parameters = new List<BindablePropertyModel>();
+        foreach (var property in properties)
+        {
+            if (TryMapLocation(property.Source, out _))
+            {
+                parameters.Add(property);
+            }
+        }
+
+        if (parameters.Count == 0)
+        {
+            return;
+        }
+
+        builder.AppendLine(
+            $"    private static readonly {InternalNamespace}.BoundParameterMetadata[] ParametersValue =");
+        builder.AppendLine("    [");
+
+        foreach (var property in parameters)
+        {
+            TryMapLocation(property.Source, out var location);
+
+            builder.AppendLine("        new()");
+            builder.AppendLine("        {");
+            builder.AppendLine($"            Name = \"{property.SourceKey}\",");
+            builder.AppendLine(
+                $"            Location = {InternalNamespace}.BoundParameterLocation.{location},");
+            builder.AppendLine(
+                $"            Required = {(property.IsRequired || !property.IsNullable ? "true" : "false")},");
+            builder.AppendLine(
+                $"            IsArray = {(property.Shape == BindingValueShape.Collection ? "true" : "false")},");
+            builder.AppendLine($"            ValueType = typeof({property.TypeFullName}),");
+            builder.AppendLine("        },");
+        }
+
+        builder.AppendLine("    ];");
+        builder.AppendLine();
+        builder.AppendLine(
+            $"    public global::System.Collections.Generic.IReadOnlyList<{InternalNamespace}.BoundParameterMetadata> Parameters => ParametersValue;");
+        builder.AppendLine();
+    }
+
+    /// <summary>Maps a binding source onto an OpenAPI parameter location, if it is one.</summary>
+    /// <remarks>
+    ///     <c>Form</c> goes to <c>FormFields</c> and <c>Body</c> is described by <c>Accepts</c>, so
+    ///     neither is a parameter. Returning false for them rather than throwing keeps this the single
+    ///     place that decides which sources are parameters.
+    /// </remarks>
+    private static bool TryMapLocation(BindingSource source, out string location)
+    {
+        switch (source)
+        {
+            case BindingSource.Route:
+                location = "Path";
+                return true;
+            case BindingSource.Query:
+                location = "Query";
+                return true;
+            case BindingSource.Header:
+                location = "Header";
+                return true;
+            default:
+                location = string.Empty;
+                return false;
         }
     }
 
