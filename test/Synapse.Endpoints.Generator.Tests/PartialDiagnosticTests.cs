@@ -60,9 +60,13 @@ public sealed class PartialDiagnosticTests
         // Act
         var diagnostics = GeneratorHarness.GetDiagnostics(source);
 
-        // Assert — the endpoint itself is partial; the error names the type that is not.
+        // Assert — the endpoint itself is partial; the error names the type that is not, and is
+        // reported on that type: anchored at the endpoint instead, the squiggle sat on a declaration
+        // the author has nothing to change.
         var reported = Assert.Single(diagnostics, d => d.Id == "SYNE020");
         Assert.Contains("Outer", reported.GetMessage());
+        var span = reported.Location.SourceSpan;
+        Assert.Equal("Outer", source.Substring(span.Start, span.Length));
     }
 
     [Fact]

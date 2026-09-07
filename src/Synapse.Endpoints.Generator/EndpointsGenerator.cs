@@ -145,6 +145,12 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
             var location = LocationInfo.CreateFrom(symbol.Locations.FirstOrDefault());
             var classDeclaration = (ClassDeclarationSyntax)context.Node;
 
+            // Every part of the class, not only the matched one: a partial endpoint may write
+            // Configure in one file and read its request body in another, and each part carrying a
+            // base list is analysed separately, so the syntax scans below have to agree across parts
+            // for the surviving analysis (see Emit) to be the same whichever part it came from.
+            var declarationParts = ReadDeclarationParts(symbol, classDeclaration);
+
             var diagnostics = new List<DiagnosticInfo>();
 
             // SYNE010 first: a shape violation makes every other diagnostic moot — the endpoint
@@ -231,7 +237,7 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
             }
 
             // SYNE009
-            if (method.Length > 0 && ConfigureCallsVerbMethodDirectly(classDeclaration))
+            if (method.Length > 0 && ConfigureCallsVerbMethodDirectly(declarationParts))
             {
                 diagnostics.Add(new DiagnosticInfo(
                     EndpointDiagnostics.RouteDeclaredTwice,
@@ -240,7 +246,7 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
             }
 
             var overridesOnSuccess = DeclaresOnSuccessOverride(symbol);
-            var callsDeclarativeSuccessMethod = ConfigureCallsSuccessMethodDirectly(classDeclaration);
+            var callsDeclarativeSuccessMethod = ConfigureCallsSuccessMethodDirectly(declarationParts);
 
             // SYNE003 — only Endpoint<TRequest,TResponse> actually returns a value; Mapped maps
             // through its own ToResponse/OnSuccess pair and is out of scope for this nudge.
@@ -280,7 +286,7 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
             // read off the endpoint's own call sites instead.
             var jsonCallSites = kind.Value.HasGeneratedBinder()
                 ? new EquatableArray<JsonCallSite>(Array.Empty<JsonCallSite>())
-                : CollectJsonCallSites(classDeclaration, context.SemanticModel);
+                : CollectJsonCallSites(declarationParts, context.SemanticModel);
 
             var diagnosticInfos = new EquatableArray<DiagnosticInfo>(diagnostics.ToArray());
 
@@ -309,12 +315,14 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
                 d.Descriptor.DefaultSeverity == DiagnosticSeverity.Error &&
                 d.Descriptor.Id is not ("SYNE011" or "SYNE012"));
 
-            var declaration = ReadDeclaration(symbol, classDeclaration);
+            var declaration = ReadDeclaration(symbol);
+
+            var endpointFullName = symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
 
             EndpointTarget? target = hasBlockingError
                 ? null
                 : new EndpointTarget(
-                    symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                    endpointFullName,
                     bound?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) ?? string.Empty,
                     kind.Value,
                     method,
@@ -329,34 +337,37 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
                     jsonCallSites,
                     declaration);
 
-            return new EndpointAnalysisResult(target, diagnosticInfos);
+            return new EndpointAnalysisResult(endpointFullName, target, diagnosticInfos);
         }
 
         return null;
     }
 
     /// <summary>
-    ///     Reads how the endpoint is declared, so generated code can reopen it. Modifiers come from
-    ///     syntax rather than the symbol because <c>partial</c> is not a symbol-level fact.
+    ///     Reads how the endpoint is declared, so generated code can reopen it.
     /// </summary>
-    private static EndpointDeclaration ReadDeclaration(INamedTypeSymbol symbol,
-        ClassDeclarationSyntax syntax)
+    /// <remarks>
+    ///     Every fact here is read from the symbol, or from all of its declaration parts, never from
+    ///     the single part that happened to match the syntax predicate. A class declared in several
+    ///     parts is analysed once per matching part, and only one of those analyses survives
+    ///     deduplication in <see cref="Emit" /> — so a fact read from one part alone (<c>sealed</c>
+    ///     written on the part carrying the base list, say) would make the emitted source depend on
+    ///     which part won.
+    /// </remarks>
+    private static EndpointDeclaration ReadDeclaration(INamedTypeSymbol symbol)
     {
         var enclosing = new List<EnclosingTypeDeclaration>();
-        var nonPartial = new List<string>();
+        var nonPartial = new List<NonPartialEnclosingType>();
 
         for (var container = symbol.ContainingType; container is not null; container = container.ContainingType)
         {
             enclosing.Insert(0, EnclosingTypeDeclaration.From(container));
 
-            var isPartial = container.DeclaringSyntaxReferences
-                .Select(static reference => reference.GetSyntax())
-                .OfType<TypeDeclarationSyntax>()
-                .Any(static declaration => declaration.Modifiers.Any(SyntaxKind.PartialKeyword));
-
-            if (!isPartial)
+            if (!IsDeclaredPartial(container))
             {
-                nonPartial.Insert(0, container.Name);
+                nonPartial.Insert(0, new NonPartialEnclosingType(
+                    container.Name,
+                    LocationInfo.CreateFrom(container.Locations.FirstOrDefault())));
             }
         }
 
@@ -365,10 +376,46 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
                 ? string.Empty
                 : symbol.ContainingNamespace.ToDisplayString(),
             symbol.Name,
-            syntax.Modifiers.Any(SyntaxKind.PartialKeyword),
-            syntax.Modifiers.Any(SyntaxKind.SealedKeyword),
+            IsDeclaredPartial(symbol),
+            symbol.IsSealed,
             EquatableArray<EnclosingTypeDeclaration>.From(enclosing),
-            EquatableArray<string>.From(nonPartial));
+            EquatableArray<NonPartialEnclosingType>.From(nonPartial));
+    }
+
+    /// <summary>
+    ///     Whether <paramref name="symbol" /> is declared <c>partial</c>. Read across every
+    ///     declaration part rather than from one of them: <c>partial</c> is not a symbol-level fact,
+    ///     but it is a whole-type one — C# requires every part to repeat the keyword.
+    /// </summary>
+    private static bool IsDeclaredPartial(INamedTypeSymbol symbol)
+    {
+        return symbol.DeclaringSyntaxReferences
+            .Select(static reference => reference.GetSyntax())
+            .OfType<TypeDeclarationSyntax>()
+            .Any(static declaration => declaration.Modifiers.Any(SyntaxKind.PartialKeyword));
+    }
+
+    /// <summary>
+    ///     Every declaration part of <paramref name="symbol" />, ordered by file path then position
+    ///     so the scans below see them in the same order on every build.
+    /// </summary>
+    /// <param name="symbol">The endpoint type.</param>
+    /// <param name="matched">The part the syntax predicate matched, returned alone in the common single-part case.</param>
+    /// <returns>The endpoint's class declarations.</returns>
+    private static ClassDeclarationSyntax[] ReadDeclarationParts(INamedTypeSymbol symbol,
+        ClassDeclarationSyntax matched)
+    {
+        if (symbol.DeclaringSyntaxReferences.Length <= 1)
+        {
+            return [matched];
+        }
+
+        return symbol.DeclaringSyntaxReferences
+            .Select(static reference => reference.GetSyntax())
+            .OfType<ClassDeclarationSyntax>()
+            .OrderBy(static declaration => declaration.SyntaxTree.FilePath, StringComparer.Ordinal)
+            .ThenBy(static declaration => declaration.SpanStart)
+            .ToArray();
     }
 
     /// <summary>
@@ -457,9 +504,9 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
     ///     reached through a helper method or a captured local is not detected; see
     ///     <see cref="EndpointDiagnostics.RouteDeclaredTwice" /> for why.
     /// </summary>
-    private static bool ConfigureCallsVerbMethodDirectly(ClassDeclarationSyntax classDeclaration)
+    private static bool ConfigureCallsVerbMethodDirectly(ClassDeclarationSyntax[] declarationParts)
     {
-        return ConfigureCallsMethodDirectly(classDeclaration, VerbMethodNames);
+        return ConfigureCallsMethodDirectly(declarationParts, VerbMethodNames);
     }
 
     private static readonly string[] VerbMethodNames = ["Get", "Post", "Put", "Patch", "Delete", "Route"];
@@ -479,9 +526,9 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
     ///     <see cref="EndpointDiagnostics.NoExplicitSuccessMapping" /> and
     ///     <see cref="EndpointDiagnostics.ConflictingSuccessMapping" /> for why.
     /// </summary>
-    private static bool ConfigureCallsSuccessMethodDirectly(ClassDeclarationSyntax classDeclaration)
+    private static bool ConfigureCallsSuccessMethodDirectly(ClassDeclarationSyntax[] declarationParts)
     {
-        return ConfigureCallsMethodDirectly(classDeclaration, DeclarativeSuccessMethodNames);
+        return ConfigureCallsMethodDirectly(declarationParts, DeclarativeSuccessMethodNames);
     }
 
     /// <summary>
@@ -490,6 +537,24 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
     ///     that is, <c>builder.Name(...)</c>, not <c>builder.Other(...).Name(...)</c>. Shared by
     ///     SYNE009 (verb methods) and SYNE003/SYNE004 (declarative success methods): all three
     ///     diagnostics accept the same direct-case-only limitation.
+    /// </summary>
+    private static bool ConfigureCallsMethodDirectly(ClassDeclarationSyntax[] declarationParts,
+        IReadOnlyCollection<string> methodNames)
+    {
+        foreach (var declarationPart in declarationParts)
+        {
+            if (ConfigureCallsMethodDirectly(declarationPart, methodNames))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    ///     <see cref="ConfigureCallsMethodDirectly(ClassDeclarationSyntax[], IReadOnlyCollection{string})" />
+    ///     for one declaration part.
     /// </summary>
     private static bool ConfigureCallsMethodDirectly(ClassDeclarationSyntax classDeclaration,
         IReadOnlyCollection<string> methodNames)
@@ -2280,7 +2345,23 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
             return;
         }
 
-        foreach (var result in results)
+        // One class declared in several parts matches the syntax predicate once per part that
+        // carries a base list (`partial class E : Endpoint<Q, R>` in one file, `partial class E :
+        // IDisposable` in another — ordinary C#, and far more likely now that every endpoint has to
+        // be partial). Collect() keeps every one of those analyses: value equality drives incremental
+        // caching, not deduplication. Emitting them all would report each diagnostic once per part
+        // and, worse, call AddSource twice with one hint name — which throws, aborts the generator
+        // for the whole compilation (CS8785, a *warning* by default) and leaves every endpoint in the
+        // assembly without its partial. Deduplicated here, after the pipeline's caching point, so no
+        // non-value-equatable state enters the cache; ordered by name first so the survivor does not
+        // depend on the order the syntax provider happened to visit the parts in.
+        var distinctResults = results
+            .OrderBy(static result => result.EndpointFullName, StringComparer.Ordinal)
+            .GroupBy(static result => result.EndpointFullName, StringComparer.Ordinal)
+            .Select(static group => group.First())
+            .ToArray();
+
+        foreach (var result in distinctResults)
         {
             foreach (var diagnostic in result.Diagnostics)
             {
@@ -2288,7 +2369,7 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
             }
         }
 
-        var endpoints = results
+        var endpoints = distinctResults
             .Where(static r => r.Target is not null)
             .Select(static r => r.Target!.Value)
             .ToImmutableArray();
@@ -2316,10 +2397,14 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
                     EndpointDiagnostics.EndpointMustBePartial, location, endpoint.Declaration.TypeName));
             }
 
-            foreach (var enclosing in endpoint.Declaration.NonPartialEnclosingTypeNames)
+            // Reported at the enclosing type, not at the endpoint: the message names the enclosing
+            // type, so a squiggle on the endpoint would point the author at the wrong declaration.
+            foreach (var enclosing in endpoint.Declaration.NonPartialEnclosingTypes)
             {
                 context.ReportDiagnostic(Diagnostic.Create(
-                    EndpointDiagnostics.EndpointMustBePartial, location, enclosing));
+                    EndpointDiagnostics.EndpointMustBePartial,
+                    enclosing.Location?.ToLocation() ?? location,
+                    enclosing.Name));
             }
         }
 
@@ -2366,11 +2451,34 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
     ///         (<c>context.BodyAsync&lt;T&gt;()</c>) and the static form alike.
     ///     </para>
     /// </remarks>
-    private static EquatableArray<JsonCallSite> CollectJsonCallSites(ClassDeclarationSyntax classDeclaration,
-        SemanticModel semanticModel)
+    private static EquatableArray<JsonCallSite> CollectJsonCallSites(ClassDeclarationSyntax[] declarationParts,
+        SemanticModel matchedModel)
     {
         List<JsonCallSite>? callSites = null;
 
+        foreach (var classDeclaration in declarationParts)
+        {
+            // A part in another file needs its own semantic model; the matched part already has one,
+            // and asking the compilation for a second model over the same tree would only pay for
+            // binding it twice.
+            var semanticModel = ReferenceEquals(classDeclaration.SyntaxTree, matchedModel.SyntaxTree)
+                ? matchedModel
+                : matchedModel.Compilation.GetSemanticModel(classDeclaration.SyntaxTree);
+
+            CollectJsonCallSites(classDeclaration, semanticModel, ref callSites);
+        }
+
+        return new EquatableArray<JsonCallSite>(callSites?.ToArray() ?? Array.Empty<JsonCallSite>());
+    }
+
+    /// <summary>
+    ///     Appends the JSON-relevant call sites written inside one declaration part to
+    ///     <paramref name="callSites" />, allocating the list only when there is something to add.
+    /// </summary>
+    private static void CollectJsonCallSites(ClassDeclarationSyntax classDeclaration,
+        SemanticModel semanticModel,
+        ref List<JsonCallSite>? callSites)
+    {
         foreach (var invocation in classDeclaration.DescendantNodes().OfType<InvocationExpressionSyntax>())
         {
             if (semanticModel.GetSymbolInfo(invocation).Symbol is not IMethodSymbol method ||
@@ -2404,8 +2512,6 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
                 argument.ToDisplayString(),
                 LocationInfo.CreateFrom(invocation.GetLocation())));
         }
-
-        return new EquatableArray<JsonCallSite>(callSites?.ToArray() ?? Array.Empty<JsonCallSite>());
     }
 
     /// <summary>

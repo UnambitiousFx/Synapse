@@ -70,7 +70,7 @@ public abstract class RawEndpoint : EndpointBase
     ///     The verbs are resolved at startup, not compile time, because an endpoint may declare its
     ///     route (and therefore its verb) inside Configure — the shape SYNE014 reports.
     /// </remarks>
-    protected RequestBodyKind DeclaredRequestBody(string[] httpMethods)
+    private protected RequestBodyKind DeclaredRequestBody(string[] httpMethods)
     {
         return HttpMethodHelpers.AllVerbsAreBodyless(httpMethods)
             ? RequestBodyKind.None

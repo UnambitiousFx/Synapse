@@ -40,8 +40,23 @@ internal static class GeneratorHarness
     /// </remarks>
     internal static IReadOnlyDictionary<string, string> GetFiles(string source)
     {
-        var (_, trees) = Run(source, optionsProvider: null);
+        return ToFileMap(Run([source]).Trees);
+    }
 
+    /// <summary>
+    ///     Every file the generator emitted for <paramref name="sources" />, keyed by hint name — the
+    ///     multi-file form, for the shapes that only exist across files (an endpoint declared in two
+    ///     parts, for one).
+    /// </summary>
+    /// <param name="sources">The sources to compile together and run the generator over.</param>
+    /// <returns>The generated files, keyed by hint name.</returns>
+    internal static IReadOnlyDictionary<string, string> GetFilesFromSources(params string[] sources)
+    {
+        return ToFileMap(Run(sources).Trees);
+    }
+
+    private static IReadOnlyDictionary<string, string> ToFileMap(IReadOnlyList<SyntaxTree> trees)
+    {
         return trees.ToDictionary(
             static tree => Path.GetFileName(tree.FilePath),
             static tree => tree.ToString(),
@@ -69,14 +84,7 @@ internal static class GeneratorHarness
     internal static string GetEndpointFileWithReferences(string source,
         params MetadataReference[] extraReferences)
     {
-        var driver = CSharpGeneratorDriver.Create(new EndpointsGenerator());
-        var result = driver.RunGenerators(CreateCompilation(source).AddReferences(extraReferences))
-            .GetRunResult();
-
-        return SingleEndpointFile(result.GeneratedTrees.ToDictionary(
-            static tree => Path.GetFileName(tree.FilePath),
-            static tree => tree.ToString(),
-            StringComparer.Ordinal));
+        return SingleEndpointFile(ToFileMap(Run([source], extraReferences: extraReferences).Trees));
     }
 
     private static string SingleEndpointFile(IReadOnlyDictionary<string, string> files)
@@ -106,8 +114,8 @@ internal static class GeneratorHarness
             : new TestAnalyzerConfigOptionsProvider(
                 new Dictionary<string, string> { ["build_property.RootNamespace"] = rootNamespace });
 
-        var (_, trees) = Run(source, provider);
-        var tree = trees.FirstOrDefault(t => t.FilePath.EndsWith(fileName, StringComparison.Ordinal));
+        var tree = Run([source], provider).Trees
+            .FirstOrDefault(t => t.FilePath.EndsWith(fileName, StringComparison.Ordinal));
         return tree?.ToString()
                ?? throw new InvalidOperationException($"The generator did not emit '{fileName}'.");
     }
@@ -120,10 +128,7 @@ internal static class GeneratorHarness
     internal static string GetFileWithReferences(string source, string fileName,
         params MetadataReference[] extraReferences)
     {
-        var driver = CSharpGeneratorDriver.Create(new EndpointsGenerator());
-        var result = driver.RunGenerators(CreateCompilation(source).AddReferences(extraReferences))
-            .GetRunResult();
-        var tree = result.GeneratedTrees
+        var tree = Run([source], extraReferences: extraReferences).Trees
             .FirstOrDefault(t => t.FilePath.EndsWith(fileName, StringComparison.Ordinal));
 
         return tree?.ToString()
@@ -137,24 +142,24 @@ internal static class GeneratorHarness
     internal static void AssertGeneratedCompilesWithReferences(string source,
         params MetadataReference[] extraReferences)
     {
-        var compilation = CreateCompilation(source).AddReferences(extraReferences);
-        var driver = CSharpGeneratorDriver.Create(new EndpointsGenerator());
-        driver.RunGeneratorsAndUpdateCompilation(compilation, out var updated, out var generatorDiagnostics);
-
-        AssertNoGeneratorErrors(generatorDiagnostics);
-
-        var errors = updated.GetDiagnostics()
-            .Where(d => d.Severity == DiagnosticSeverity.Error)
-            .ToArray();
-
-        Assert.True(errors.Length == 0,
-            "Generated code should compile, but got: " + string.Join("; ", errors.Select(e => e.ToString())));
+        AssertGeneratedCompiles([source], optionsProvider: null, allowGeneratorErrors: false,
+            extraReferences: extraReferences);
     }
 
     internal static ImmutableArray<Diagnostic> GetDiagnostics(string source)
     {
-        var (diagnostics, _) = Run(source, optionsProvider: null);
-        return diagnostics;
+        return Run([source]).Diagnostics;
+    }
+
+    /// <summary>
+    ///     Same as <see cref="GetDiagnostics(string)" />, but over several sources compiled together
+    ///     — for the shapes that only exist across files, such as an endpoint declared in two parts.
+    /// </summary>
+    /// <param name="sources">The sources to compile together and run the generator over.</param>
+    /// <returns>What the generator reported.</returns>
+    internal static ImmutableArray<Diagnostic> GetDiagnosticsFromSources(params string[] sources)
+    {
+        return Run(sources).Diagnostics;
     }
 
     /// <summary>
@@ -165,10 +170,7 @@ internal static class GeneratorHarness
     /// </summary>
     internal static ImmutableArray<Diagnostic> GetDiagnostics(string source, params MetadataReference[] extraReferences)
     {
-        var driver = CSharpGeneratorDriver.Create(new EndpointsGenerator());
-        var compilation = CreateCompilation(source).AddReferences(extraReferences);
-        var result = driver.RunGenerators(compilation).GetRunResult();
-        return result.Diagnostics;
+        return Run([source], extraReferences: extraReferences).Diagnostics;
     }
 
     /// <summary>
@@ -205,7 +207,18 @@ internal static class GeneratorHarness
 
     internal static void AssertGeneratedCompiles(string source)
     {
-        AssertGeneratedCompiles(source, optionsProvider: null, allowGeneratorErrors: false);
+        AssertGeneratedCompiles([source], optionsProvider: null, allowGeneratorErrors: false);
+    }
+
+    /// <summary>
+    ///     Same as <see cref="AssertGeneratedCompiles(string)" />, but over several sources compiled
+    ///     together — for the shapes that only exist across files, such as an endpoint declared in
+    ///     two parts.
+    /// </summary>
+    /// <param name="sources">The sources to compile together and run the generator over.</param>
+    internal static void AssertGeneratedCompilesFromSources(params string[] sources)
+    {
+        AssertGeneratedCompiles(sources, optionsProvider: null, allowGeneratorErrors: false);
     }
 
     /// <summary>
@@ -217,7 +230,7 @@ internal static class GeneratorHarness
     /// </summary>
     internal static void AssertGeneratedCompilesDespiteDiagnostics(string source)
     {
-        AssertGeneratedCompiles(source, optionsProvider: null, allowGeneratorErrors: true);
+        AssertGeneratedCompiles([source], optionsProvider: null, allowGeneratorErrors: true);
     }
 
     /// <summary>
@@ -251,39 +264,25 @@ internal static class GeneratorHarness
     /// </summary>
     internal static void AssertGeneratedCompilesWithRootNamespace(string source, string rootNamespace)
     {
-        AssertGeneratedCompiles(source,
+        AssertGeneratedCompiles([source],
             new TestAnalyzerConfigOptionsProvider(
                 new Dictionary<string, string> { ["build_property.RootNamespace"] = rootNamespace }),
             allowGeneratorErrors: false);
     }
 
-    private static void AssertGeneratedCompiles(string source,
+    private static void AssertGeneratedCompiles(IReadOnlyList<string> sources,
         AnalyzerConfigOptionsProvider? optionsProvider,
-        bool allowGeneratorErrors)
+        bool allowGeneratorErrors,
+        IReadOnlyList<MetadataReference>? extraReferences = null)
     {
-        var compilation = CreateCompilation(source);
-        var driver = optionsProvider is null
-            ? CSharpGeneratorDriver.Create(new EndpointsGenerator())
-            : CSharpGeneratorDriver.Create([new EndpointsGenerator().AsSourceGenerator()], optionsProvider: optionsProvider);
-        var updatedDriver = driver.RunGeneratorsAndUpdateCompilation(compilation, out var updated, out var generatorDiagnostics);
-
-        // A generator that throws mid-Analyze surfaces as CS8785, which the compiler treats as a
-        // Warning by default — so checking only Error-severity diagnostics below would let a
-        // crashing generator through silently. Treat CS8785 as fatal regardless of the severity the
-        // driver assigned it.
-        var generatorFailures = generatorDiagnostics
-            .Where(d => d.Id == "CS8785")
-            .ToArray();
-
-        Assert.True(generatorFailures.Length == 0,
-            "The generator itself threw: " + string.Join("; ", generatorFailures.Select(e => e.ToString())));
+        var run = Run(sources, optionsProvider, extraReferences);
 
         if (!allowGeneratorErrors)
         {
-            AssertNoGeneratorErrors(generatorDiagnostics);
+            AssertNoGeneratorErrors(run.Diagnostics);
         }
 
-        var errors = updated.GetDiagnostics()
+        var errors = run.Updated.GetDiagnostics()
             .Where(d => d.Severity == DiagnosticSeverity.Error)
             .ToArray();
 
@@ -292,31 +291,66 @@ internal static class GeneratorHarness
 
         // A generator that silently emits nothing (e.g. because base-type matching failed for a
         // shape) introduces no diagnostics and would otherwise pass the checks above unnoticed.
-        var driverResult = updatedDriver.GetRunResult();
-        Assert.True(driverResult.GeneratedTrees.Length > 0,
-            "The generator produced no source at all.");
+        Assert.True(run.Trees.Count > 0, "The generator produced no source at all.");
     }
 
-    private static (ImmutableArray<Diagnostic> Diagnostics, IReadOnlyList<SyntaxTree> Trees) Run(string source,
-        AnalyzerConfigOptionsProvider? optionsProvider)
+    /// <summary>
+    ///     The one place the generator driver is set up and run. Every harness entry point goes
+    ///     through it, so the CS8785 guard below cannot be missing from some of them — which is
+    ///     exactly how a generator that crashed on a multi-part endpoint declaration went unnoticed:
+    ///     three of the four paths used to build their own driver and skip the check.
+    /// </summary>
+    /// <param name="sources">The sources to compile together.</param>
+    /// <param name="optionsProvider">The analyzer config options, or null to leave them unset.</param>
+    /// <param name="extraReferences">References to add on top of the shared framework set.</param>
+    /// <returns>What the generator reported, what it emitted, and the compilation it emitted into.</returns>
+    private static GeneratorRun Run(IReadOnlyList<string> sources,
+        AnalyzerConfigOptionsProvider? optionsProvider = null,
+        IReadOnlyList<MetadataReference>? extraReferences = null)
     {
+        var compilation = CreateCompilation(sources);
+        if (extraReferences is { Count: > 0 })
+        {
+            compilation = compilation.AddReferences(extraReferences);
+        }
+
         var driver = optionsProvider is null
             ? CSharpGeneratorDriver.Create(new EndpointsGenerator())
             : CSharpGeneratorDriver.Create([new EndpointsGenerator().AsSourceGenerator()],
                 optionsProvider: optionsProvider);
-        var result = driver.RunGenerators(CreateCompilation(source)).GetRunResult();
-        return (result.Diagnostics, result.GeneratedTrees);
+        var updatedDriver = driver.RunGeneratorsAndUpdateCompilation(compilation, out var updated,
+            out var generatorDiagnostics);
+
+        // A generator that throws mid-Analyze — or that calls AddSource twice with one hint name —
+        // surfaces as CS8785, which the compiler treats as a Warning by default. Checking only
+        // Error-severity diagnostics would therefore let a crashing generator through silently, so
+        // CS8785 is fatal here regardless of the severity the driver assigned it.
+        var generatorFailures = generatorDiagnostics
+            .Where(d => d.Id == "CS8785")
+            .ToArray();
+
+        Assert.True(generatorFailures.Length == 0,
+            "The generator itself threw: " + string.Join("; ", generatorFailures.Select(e => e.ToString())));
+
+        var result = updatedDriver.GetRunResult();
+        return new GeneratorRun(result.Diagnostics, result.GeneratedTrees, updated);
     }
 
-    private static CSharpCompilation CreateCompilation(string source)
+    private static CSharpCompilation CreateCompilation(IReadOnlyList<string> sources)
     {
         return CSharpCompilation.Create(
             "TestAssembly",
-            [CSharpSyntaxTree.ParseText(source)],
+            sources.Select(static source => CSharpSyntaxTree.ParseText(source)),
             GetMetadataReferences(),
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary,
                 nullableContextOptions: NullableContextOptions.Enable));
     }
+
+    /// <summary>One generator run: what it reported, what it emitted, and the updated compilation.</summary>
+    private readonly record struct GeneratorRun(
+        ImmutableArray<Diagnostic> Diagnostics,
+        IReadOnlyList<SyntaxTree> Trees,
+        Compilation Updated);
 
     /// <summary>
     ///     The framework reference set, built once per process.

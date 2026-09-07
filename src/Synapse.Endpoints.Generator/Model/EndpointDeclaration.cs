@@ -16,14 +16,14 @@ internal readonly record struct EndpointDeclaration
         bool isPartial,
         bool isSealed,
         EquatableArray<EnclosingTypeDeclaration> enclosingTypes,
-        EquatableArray<string> nonPartialEnclosingTypeNames)
+        EquatableArray<NonPartialEnclosingType> nonPartialEnclosingTypes)
     {
         Namespace = @namespace;
         TypeName = typeName;
         IsPartial = isPartial;
         IsSealed = isSealed;
         EnclosingTypes = enclosingTypes;
-        NonPartialEnclosingTypeNames = nonPartialEnclosingTypeNames;
+        NonPartialEnclosingTypes = nonPartialEnclosingTypes;
     }
 
     /// <summary>The endpoint's namespace, or empty for the global namespace.</summary>
@@ -48,8 +48,8 @@ internal readonly record struct EndpointDeclaration
     public EquatableArray<EnclosingTypeDeclaration> EnclosingTypes { get; }
 
     /// <summary>
-    ///     The enclosing type names that are not declared <c>partial</c>, so cannot be reopened.
-    ///     SYNE020 reports each of them.
+    ///     The enclosing types that are not declared <c>partial</c>, so cannot be reopened. SYNE020
+    ///     reports each of them, at its own location.
     /// </summary>
-    public EquatableArray<string> NonPartialEnclosingTypeNames { get; }
+    public EquatableArray<NonPartialEnclosingType> NonPartialEnclosingTypes { get; }
 }

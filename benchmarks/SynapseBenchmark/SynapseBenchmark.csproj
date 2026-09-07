@@ -22,8 +22,8 @@
         <ProjectReference Include="..\..\src\Synapse.Endpoints\Synapse.Endpoints.csproj" />
         <!-- PrivateAssets="all" on the analyzer reference inside Synapse.Endpoints.csproj means the
              generator does not flow through this ProjectReference (the same constraint Task 20 hit).
-             Without this explicit reference, EndpointRegistry.GetBinder<T>()/GetMetadata<T>() throw at
-             startup because no binder/metadata was ever generated for GetThingEndpoint. -->
+             Without this explicit reference nothing generates GetThingEndpoint's partial, so its
+             inherited abstract CreateMetadata is never overridden and the build fails on CS0534. -->
         <ProjectReference Include="..\..\src\Synapse.Endpoints.Generator\Synapse.Endpoints.Generator.csproj"
                           OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     </ItemGroup>

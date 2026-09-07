@@ -15,12 +15,22 @@ namespace UnambitiousFx.Synapse.Endpoints.Generator.Model;
 /// </summary>
 internal readonly record struct EndpointAnalysisResult
 {
-    public EndpointAnalysisResult(EndpointTarget? target,
+    public EndpointAnalysisResult(string endpointFullName,
+        EndpointTarget? target,
         EquatableArray<DiagnosticInfo> diagnostics)
     {
+        EndpointFullName = endpointFullName;
         Target = target;
         Diagnostics = diagnostics;
     }
+
+    /// <summary>
+    ///     The candidate endpoint's fully qualified name, populated even when <see cref="Target" />
+    ///     is null. It identifies the endpoint across the several results one class produces when it
+    ///     is declared in more than one part, so <c>EndpointsGenerator.Emit</c> can keep exactly one
+    ///     of them.
+    /// </summary>
+    public string EndpointFullName { get; }
 
     /// <summary>
     ///     The endpoint to emit, or null when a blocking error-severity diagnostic was reported for

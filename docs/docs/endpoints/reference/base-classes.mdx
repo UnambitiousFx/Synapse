@@ -99,6 +99,12 @@ that needs the keyword. Without analyzers running at all, there is no `SYNE020` 
 fails on the compiler's own `CS0534` instead, naming `EndpointBase` (and, on the generated tiers,
 `RawEndpoint<...>`) — base classes the author never wrote; see [Preview status](./preview#risks).
 
+Put shared behaviour on an `abstract` base rather than deriving one concrete endpoint from another:
+the generated members are emitted `sealed override` on every non-`sealed` endpoint, so a concrete
+endpoint deriving from another concrete endpoint fails with the compiler's `CS0239` against code you
+cannot see, and no `SYNE` diagnostic explains it. An abstract intermediate is skipped by discovery,
+generates nothing, and leaves each concrete leaf with its own generated members.
+
 ```csharp
 // Supported: shared configuration, never mapped itself.
 public abstract class SecuredEndpoint<TRequest, TResponse> : Endpoint<TRequest, TResponse>

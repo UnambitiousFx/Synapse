@@ -290,6 +290,94 @@ public sealed class PartialEmissionTests
     }
 
     [Theory]
+    [InlineData("", "")]
+    [InlineData(" : Endpoint<ProbeQuery, string>", "")]
+    [InlineData(" : System.IDisposable", "public void Dispose() { }")]
+    public void Generate_ForEndpointDeclaredInTwoParts_EmitsExactlyOneFile(string secondPartBaseList,
+        string secondPartBody)
+    {
+        // Arrange — one endpoint, two declaration parts, in two files. Discovery matches every class
+        // declaration carrying a base list, so the two parts that repeat the base class or add an
+        // interface are each analysed separately and resolve to the same symbol — and the same hint
+        // name. AddSource rejects a repeated hint name, which aborts the generator for the whole
+        // compilation as a mere CS8785 *warning*, leaving every endpoint in the assembly without its
+        // partial and the build failing on CS0534 instead.
+        const string firstPart = """
+                                 using UnambitiousFx.Synapse.Abstractions;
+                                 using UnambitiousFx.Synapse.Endpoints;
+
+                                 namespace TestNs;
+
+                                 public sealed record ProbeQuery : IRequest<string>
+                                 {
+                                     public string Name { get; init; } = "";
+                                 }
+
+                                 [Get("/probes/{name}")]
+                                 public sealed partial class ProbeEndpoint : Endpoint<ProbeQuery, string>;
+                                 """;
+
+        var secondPart = $$"""
+                           using UnambitiousFx.Synapse.Endpoints;
+
+                           namespace TestNs;
+
+                           partial class ProbeEndpoint{{secondPartBaseList}}
+                           {
+                               {{secondPartBody}}
+                           }
+                           """;
+
+        // Act
+        var files = GeneratorHarness.GetFilesFromSources(firstPart, secondPart);
+
+        // Assert — exactly one partial for the endpoint, and it compiles against both parts.
+        var endpointFiles = files.Keys
+            .Where(static key => key.EndsWith(".Synapse.g.cs", StringComparison.Ordinal))
+            .ToArray();
+        Assert.Equal(["TestNs.ProbeEndpoint.Synapse.g.cs"], endpointFiles);
+        GeneratorHarness.AssertGeneratedCompilesFromSources(firstPart, secondPart);
+    }
+
+    [Theory]
+    [InlineData("", "")]
+    [InlineData(" : Endpoint<ProbeQuery, string>", "")]
+    public void Generate_ForEndpointDeclaredInTwoParts_ReportsEachDiagnosticOnce(string secondPartBaseList,
+        string secondPartBody)
+    {
+        // Arrange — the same two-part shape, but with a route parameter no property matches, so one
+        // SYNE001 is due. Reported once per matching declaration part, it would arrive twice.
+        const string firstPart = """
+                                 using UnambitiousFx.Synapse.Abstractions;
+                                 using UnambitiousFx.Synapse.Endpoints;
+
+                                 namespace TestNs;
+
+                                 public sealed record ProbeQuery : IRequest<string>;
+
+                                 [Get("/probes/{missing}")]
+                                 public sealed partial class ProbeEndpoint : Endpoint<ProbeQuery, string>;
+                                 """;
+
+        var secondPart = $$"""
+                           using UnambitiousFx.Synapse.Endpoints;
+
+                           namespace TestNs;
+
+                           partial class ProbeEndpoint{{secondPartBaseList}}
+                           {
+                               {{secondPartBody}}
+                           }
+                           """;
+
+        // Act
+        var diagnostics = GeneratorHarness.GetDiagnosticsFromSources(firstPart, secondPart);
+
+        // Assert
+        Assert.Single(diagnostics, d => d.Id == "SYNE001");
+    }
+
+    [Theory]
     [InlineData(nameof(StreamTier))]
     [InlineData(nameof(MappedTier))]
     [InlineData(nameof(SelfHandledTier))]

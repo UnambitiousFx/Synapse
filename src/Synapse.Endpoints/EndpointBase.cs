@@ -24,10 +24,12 @@ public abstract class EndpointBase
     /// <exception cref="InvalidOperationException">The endpoint has not been mapped.</exception>
     /// <remarks>
     ///     The resolved configuration is created when the endpoint is mapped, so a
-    ///     handler invoked before that has nothing to work with. Calling <c>HandleAsync</c> or
-    ///     <c>BindAsync</c> directly — the natural way to try to unit-test an endpoint, and possible
-    ///     because both are public — used to dereference a null field and produce a bare
+    ///     handler invoked before that has nothing to work with. Calling <c>HandleAsync</c> directly
+    ///     — the natural way to try to unit-test an endpoint, and possible because it is public —
+    ///     used to dereference a null field and produce a bare
     ///     <see cref="NullReferenceException" /> naming nothing. See docs/known-issues/056.
+    ///     No tier's <c>BindAsync</c> reaches here any more: binding is generated into the
+    ///     endpoint's own partial and reads nothing but the request.
     ///     The harness in <c>UnambitiousFx.Synapse.Endpoints.Testing</c> exists so this is a
     ///     signpost rather than a dead end.
     /// </remarks>
@@ -37,8 +39,8 @@ public abstract class EndpointBase
         return state ?? throw new InvalidOperationException(
             $"Endpoint '{GetType()}' has not been mapped, so it has no request-time state. That state " +
             "is created by MapEndpoint<TEndpoint>() (or MapSynapseEndpoints()) at startup, which means " +
-            "HandleAsync and BindAsync cannot run before the endpoint is mapped. This usually means one " +
-            "of them was called directly on a new instance. To exercise one endpoint on its own, use " +
+            "HandleAsync cannot run before the endpoint is mapped. This usually means it was called " +
+            "directly on a new instance. To exercise one endpoint on its own, use " +
             "EndpointHarness.Create<TEndpoint>() from the UnambitiousFx.Synapse.Endpoints.Testing " +
             "package, which maps it and hands back something that answers requests; otherwise map the " +
             "endpoint into a route builder and exercise it through the pipeline.");
