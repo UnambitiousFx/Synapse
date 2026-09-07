@@ -17,7 +17,6 @@ public sealed partial class EndpointLifecycleTests
     {
         // Arrange
         Order.Clear();
-        EndpointRegistry.RegisterMetadata<TracingEndpoint>(new EndpointMetadata(["GET"], "/trace"));
 
         var context = ContextWith(services =>
         {
@@ -25,8 +24,8 @@ public sealed partial class EndpointLifecycleTests
             services.AddScoped<TracingPostProcessor>();
         }, Ok());
 
-        var descriptor = ((EndpointBase)new TracingEndpoint())
-            .CreateDescriptor(EndpointRegistry.GetMetadata<TracingEndpoint>());
+        var endpoint = new TracingEndpoint();
+        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Act
         await descriptor.InvokeAsync(context);
@@ -42,14 +41,12 @@ public sealed partial class EndpointLifecycleTests
     {
         // Arrange
         Order.Clear();
-        EndpointRegistry.RegisterMetadata<ShortCircuitingEndpoint>(
-            new EndpointMetadata(["GET"], "/short-circuit"));
 
         var invoker = Substitute.For<IHttpInvoker>();
         var context = ContextWith(services => services.AddScoped<TracingPostProcessor>(), invoker);
 
-        var descriptor = ((EndpointBase)new ShortCircuitingEndpoint())
-            .CreateDescriptor(EndpointRegistry.GetMetadata<ShortCircuitingEndpoint>());
+        var endpoint = new ShortCircuitingEndpoint();
+        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Act
         await descriptor.InvokeAsync(context);
@@ -68,12 +65,11 @@ public sealed partial class EndpointLifecycleTests
     {
         // Arrange: pre-processors run before binding, so a rejection does not pay to bind.
         Order.Clear();
-        EndpointRegistry.RegisterMetadata<RejectingEndpoint>(new EndpointMetadata(["GET"], "/reject"));
 
         var context = ContextWith(services => services.AddScoped<RejectingPreProcessor>(), Ok());
 
-        var descriptor = ((EndpointBase)new RejectingEndpoint())
-            .CreateDescriptor(EndpointRegistry.GetMetadata<RejectingEndpoint>());
+        var endpoint = new RejectingEndpoint();
+        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Act
         await descriptor.InvokeAsync(context);
@@ -88,7 +84,6 @@ public sealed partial class EndpointLifecycleTests
     {
         // Arrange
         Order.Clear();
-        EndpointRegistry.RegisterMetadata<TracingEndpoint>(new EndpointMetadata(["GET"], "/trace"));
 
         // The invoker maps a failed dispatch itself and never calls the success factory, which is
         // exactly the path OnAfterHandleAsync must still see.
@@ -105,8 +100,8 @@ public sealed partial class EndpointLifecycleTests
             services.AddScoped<TracingPostProcessor>();
         }, invoker);
 
-        var descriptor = ((EndpointBase)new TracingEndpoint())
-            .CreateDescriptor(EndpointRegistry.GetMetadata<TracingEndpoint>());
+        var endpoint = new TracingEndpoint();
+        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Act
         await descriptor.InvokeAsync(context);
@@ -121,13 +116,11 @@ public sealed partial class EndpointLifecycleTests
         // Arrange: a response-header processor that skipped every 400 would be a bug, so the exit
         // steps run on the bind-failure path too.
         Order.Clear();
-        EndpointRegistry.RegisterMetadata<BindFailingEndpoint>(
-            new EndpointMetadata(["GET"], "/bind-fail"));
 
         var context = ContextWith(services => services.AddScoped<TracingPostProcessor>(), Ok());
 
-        var descriptor = ((EndpointBase)new BindFailingEndpoint())
-            .CreateDescriptor(EndpointRegistry.GetMetadata<BindFailingEndpoint>());
+        var endpoint = new BindFailingEndpoint();
+        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Act
         await descriptor.InvokeAsync(context);
@@ -144,13 +137,11 @@ public sealed partial class EndpointLifecycleTests
     {
         // Arrange
         Order.Clear();
-        EndpointRegistry.RegisterMetadata<BindReplacingEndpoint>(
-            new EndpointMetadata(["GET"], "/bind-replace"));
 
         var context = ContextWith(_ => { }, Ok());
 
-        var descriptor = ((EndpointBase)new BindReplacingEndpoint())
-            .CreateDescriptor(EndpointRegistry.GetMetadata<BindReplacingEndpoint>());
+        var endpoint = new BindReplacingEndpoint();
+        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Act
         await descriptor.InvokeAsync(context);
@@ -164,13 +155,11 @@ public sealed partial class EndpointLifecycleTests
     {
         // Arrange: the result has not executed yet, so a header set in step 7 still reaches the wire.
         Order.Clear();
-        EndpointRegistry.RegisterMetadata<HeaderStampingEndpoint>(
-            new EndpointMetadata(["GET"], "/stamp"));
 
         var context = ContextWith(services => services.AddScoped<HeaderStampingPostProcessor>(), Ok());
 
-        var descriptor = ((EndpointBase)new HeaderStampingEndpoint())
-            .CreateDescriptor(EndpointRegistry.GetMetadata<HeaderStampingEndpoint>());
+        var endpoint = new HeaderStampingEndpoint();
+        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Act
         await descriptor.InvokeAsync(context);
@@ -188,7 +177,6 @@ public sealed partial class EndpointLifecycleTests
         // and assigning ITS provider to RequestServices is the only way to tell the two apart.
         Order.Clear();
         ScopeCapturingPreProcessor.Reset();
-        EndpointRegistry.RegisterMetadata<ScopeCapturingEndpoint>(new EndpointMetadata(["GET"], "/scope"));
 
         var services = new ServiceCollection();
         services.AddSingleton(Ok());
@@ -205,8 +193,8 @@ public sealed partial class EndpointLifecycleTests
             Response = { Body = new MemoryStream() }
         };
 
-        var descriptor = ((EndpointBase)new ScopeCapturingEndpoint())
-            .CreateDescriptor(EndpointRegistry.GetMetadata<ScopeCapturingEndpoint>());
+        var endpoint = new ScopeCapturingEndpoint();
+        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Act
         await descriptor.InvokeAsync(context);
@@ -221,8 +209,6 @@ public sealed partial class EndpointLifecycleTests
     {
         // Arrange
         Order.Clear();
-        EndpointRegistry.RegisterMetadata<VoidTracingEndpoint>(
-            new EndpointMetadata(["POST"], "/void-trace"));
 
         var invoker = Substitute.For<IHttpInvoker>();
         invoker.InvokeAsync(Arg.Any<TraceCommand>(), Arg.Any<Func<IResult>>(),
@@ -239,8 +225,8 @@ public sealed partial class EndpointLifecycleTests
             services.AddScoped<TracingPostProcessor>();
         }, invoker);
 
-        var descriptor = ((EndpointBase)new VoidTracingEndpoint())
-            .CreateDescriptor(EndpointRegistry.GetMetadata<VoidTracingEndpoint>());
+        var endpoint = new VoidTracingEndpoint();
+        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Act
         await descriptor.InvokeAsync(context);
@@ -257,14 +243,12 @@ public sealed partial class EndpointLifecycleTests
         // Arrange: a hand-edit that dropped FinishAsync from this tier's bind-failure branch would
         // be a silent behaviour change with nothing else to catch it.
         Order.Clear();
-        EndpointRegistry.RegisterMetadata<VoidBindFailingEndpoint>(
-            new EndpointMetadata(["POST"], "/void-bind-fail"));
 
         var context = ContextWith(services => services.AddScoped<TracingPostProcessor>(),
             Substitute.For<IHttpInvoker>());
 
-        var descriptor = ((EndpointBase)new VoidBindFailingEndpoint())
-            .CreateDescriptor(EndpointRegistry.GetMetadata<VoidBindFailingEndpoint>());
+        var endpoint = new VoidBindFailingEndpoint();
+        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Act
         await descriptor.InvokeAsync(context);
@@ -281,8 +265,6 @@ public sealed partial class EndpointLifecycleTests
     {
         // Arrange
         Order.Clear();
-        EndpointRegistry.RegisterMetadata<VoidRejectingEndpoint>(
-            new EndpointMetadata(["POST"], "/void-reject"));
 
         var context = ContextWith(services =>
         {
@@ -290,8 +272,8 @@ public sealed partial class EndpointLifecycleTests
             services.AddScoped<TracingPostProcessor>();
         }, Substitute.For<IHttpInvoker>());
 
-        var descriptor = ((EndpointBase)new VoidRejectingEndpoint())
-            .CreateDescriptor(EndpointRegistry.GetMetadata<VoidRejectingEndpoint>());
+        var endpoint = new VoidRejectingEndpoint();
+        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Act
         await descriptor.InvokeAsync(context);
@@ -309,8 +291,6 @@ public sealed partial class EndpointLifecycleTests
         // Arrange: the hook runs around binding, and binding is what produces a DTO — so it sees
         // THttpRequest, not the message ToRequest maps it onto.
         Order.Clear();
-        EndpointRegistry.RegisterMetadata<MappedTracingEndpoint>(
-            new EndpointMetadata(["POST"], "/mapped-trace/{id}"));
 
         var context = ContextWith(services =>
         {
@@ -320,8 +300,8 @@ public sealed partial class EndpointLifecycleTests
 
         context.Request.RouteValues["id"] = "wire-1";
 
-        var descriptor = ((EndpointBase)new MappedTracingEndpoint())
-            .CreateDescriptor(EndpointRegistry.GetMetadata<MappedTracingEndpoint>());
+        var endpoint = new MappedTracingEndpoint();
+        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Act
         await descriptor.InvokeAsync(context);
@@ -343,13 +323,11 @@ public sealed partial class EndpointLifecycleTests
         // wire DTO rather than the message. The failure is a real one — this endpoint binds
         // TraceWireRequest from the JSON body of a POST, and the request below carries none.
         Order.Clear();
-        EndpointRegistry.RegisterMetadata<MappedBindFailingEndpoint>(
-            new EndpointMetadata(["POST"], "/mapped-bind-fail"));
 
         var context = ContextWith(services => services.AddScoped<TracingPostProcessor>(), Ok());
 
-        var descriptor = ((EndpointBase)new MappedBindFailingEndpoint())
-            .CreateDescriptor(EndpointRegistry.GetMetadata<MappedBindFailingEndpoint>());
+        var endpoint = new MappedBindFailingEndpoint();
+        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Act
         await descriptor.InvokeAsync(context);
@@ -366,8 +344,6 @@ public sealed partial class EndpointLifecycleTests
     {
         // Arrange
         Order.Clear();
-        EndpointRegistry.RegisterMetadata<MappedRejectingEndpoint>(
-            new EndpointMetadata(["POST"], "/mapped-reject"));
 
         var context = ContextWith(services =>
         {
@@ -375,8 +351,8 @@ public sealed partial class EndpointLifecycleTests
             services.AddScoped<TracingPostProcessor>();
         }, Ok());
 
-        var descriptor = ((EndpointBase)new MappedRejectingEndpoint())
-            .CreateDescriptor(EndpointRegistry.GetMetadata<MappedRejectingEndpoint>());
+        var endpoint = new MappedRejectingEndpoint();
+        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Act
         await descriptor.InvokeAsync(context);
@@ -395,8 +371,6 @@ public sealed partial class EndpointLifecycleTests
         // Arrange: a stream's result is the negotiated writer, so a post-processor can still set a
         // header — it runs before the writer executes.
         Order.Clear();
-        EndpointRegistry.RegisterMetadata<StreamTracingEndpoint>(
-            new EndpointMetadata(["GET"], "/stream-trace"));
 
         var invoker = Substitute.For<IHttpInvoker>();
         invoker.InvokeStreamAsync(Arg.Any<IStreamRequest<string>>(), Arg.Any<CancellationToken>())
@@ -408,8 +382,8 @@ public sealed partial class EndpointLifecycleTests
             services.AddScoped<HeaderStampingPostProcessor>();
         }, invoker);
 
-        var descriptor = ((EndpointBase)new StreamTracingEndpoint())
-            .CreateDescriptor(EndpointRegistry.GetMetadata<StreamTracingEndpoint>());
+        var endpoint = new StreamTracingEndpoint();
+        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Act
         await descriptor.InvokeAsync(context);
@@ -435,16 +409,14 @@ public sealed partial class EndpointLifecycleTests
         // is not one, which is the only way to make a generated binding fail on a tier with no
         // hand-written equivalent.
         Order.Clear();
-        EndpointRegistry.RegisterMetadata<StreamBindFailingEndpoint>(
-            new EndpointMetadata(["GET"], "/stream-bind-fail/{id}"));
 
         var context = ContextWith(services => services.AddScoped<TracingPostProcessor>(),
             Substitute.For<IHttpInvoker>());
 
         context.Request.RouteValues["id"] = "not-a-guid";
 
-        var descriptor = ((EndpointBase)new StreamBindFailingEndpoint())
-            .CreateDescriptor(EndpointRegistry.GetMetadata<StreamBindFailingEndpoint>());
+        var endpoint = new StreamBindFailingEndpoint();
+        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Act
         await descriptor.InvokeAsync(context);
@@ -461,8 +433,6 @@ public sealed partial class EndpointLifecycleTests
     {
         // Arrange
         Order.Clear();
-        EndpointRegistry.RegisterMetadata<StreamRejectingEndpoint>(
-            new EndpointMetadata(["GET"], "/stream-reject"));
 
         var context = ContextWith(services =>
         {
@@ -470,8 +440,8 @@ public sealed partial class EndpointLifecycleTests
             services.AddScoped<TracingPostProcessor>();
         }, Substitute.For<IHttpInvoker>());
 
-        var descriptor = ((EndpointBase)new StreamRejectingEndpoint())
-            .CreateDescriptor(EndpointRegistry.GetMetadata<StreamRejectingEndpoint>());
+        var endpoint = new StreamRejectingEndpoint();
+        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Act
         await descriptor.InvokeAsync(context);
@@ -581,6 +551,7 @@ public sealed partial class EndpointLifecycleTests
         }
     }
 
+    [Get("/scope")]
     internal sealed partial class ScopeCapturingEndpoint : Endpoint<TraceQuery, string>
     {
         public override void Configure(IEndpointBuilder<string> builder)
@@ -589,6 +560,7 @@ public sealed partial class EndpointLifecycleTests
         }
     }
 
+    [Get("/short-circuit")]
     internal sealed partial class ShortCircuitingEndpoint : Endpoint<TraceQuery, string>
     {
         public override void Configure(IEndpointBuilder<string> builder)
@@ -603,6 +575,7 @@ public sealed partial class EndpointLifecycleTests
         }
     }
 
+    [Get("/reject")]
     internal sealed partial class RejectingEndpoint : Endpoint<TraceQuery, string>
     {
         public override void Configure(IEndpointBuilder<string> builder)
@@ -662,6 +635,7 @@ public sealed partial class EndpointLifecycleTests
         }
     }
 
+    [Get("/stamp")]
     internal sealed partial class HeaderStampingEndpoint : Endpoint<TraceQuery, string>
     {
         public override void Configure(IEndpointBuilder<string> builder)
@@ -733,6 +707,7 @@ public sealed partial class EndpointLifecycleTests
         }
     }
 
+    [Post("/void-reject")]
     internal sealed partial class VoidRejectingEndpoint : Endpoint<TraceCommand>
     {
         public override void Configure(IEndpointBuilder builder)
@@ -856,6 +831,7 @@ public sealed partial class EndpointLifecycleTests
 
     internal sealed record TraceStream : IStreamRequest<string>;
 
+    [Get("/stream-trace")]
     internal sealed partial class StreamTracingEndpoint : StreamEndpoint<TraceStream, string>
     {
         public override void Configure(IStreamEndpointBuilder builder)
@@ -909,6 +885,7 @@ public sealed partial class EndpointLifecycleTests
         }
     }
 
+    [Get("/stream-reject")]
     internal sealed partial class StreamRejectingEndpoint : StreamEndpoint<TraceStream, string>
     {
         public override void Configure(IStreamEndpointBuilder builder)

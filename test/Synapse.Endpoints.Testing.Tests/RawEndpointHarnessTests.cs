@@ -1,15 +1,13 @@
 using Microsoft.AspNetCore.Http;
-using UnambitiousFx.Synapse.Endpoints.Binding;
 
 namespace UnambitiousFx.Synapse.Endpoints.Testing.Tests;
 
-public sealed class RawEndpointHarnessTests
+public sealed partial class RawEndpointHarnessTests
 {
     [Fact]
     public async Task SendAsync_ForARawEndpoint_ReturnsItsStatusAndBody()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<PingEndpoint>(new EndpointMetadata(["GET"], "/ping"));
         using var harness = EndpointHarness.Create<PingEndpoint>();
 
         // Act
@@ -25,7 +23,6 @@ public sealed class RawEndpointHarnessTests
     {
         // Arrange: Configure runs at map time, so a harness that mapped twice - or that
         // re-mapped per request - would show up here rather than as a subtle metadata bug.
-        EndpointRegistry.RegisterMetadata<CountingEndpoint>(new EndpointMetadata(["GET"], "/counting"));
         CountingEndpoint.ConfigureCount = 0;
         using var harness = EndpointHarness.Create<CountingEndpoint>();
 
@@ -37,7 +34,8 @@ public sealed class RawEndpointHarnessTests
         Assert.Equal(1, CountingEndpoint.ConfigureCount);
     }
 
-    internal sealed class PingEndpoint : RawEndpoint
+    [Get("/ping")]
+    internal sealed partial class PingEndpoint : RawEndpoint
     {
         public override ValueTask<IResult> HandleAsync(HttpContext context,
             CancellationToken cancellationToken)
@@ -46,7 +44,8 @@ public sealed class RawEndpointHarnessTests
         }
     }
 
-    internal sealed class CountingEndpoint : RawEndpoint
+    [Get("/counting")]
+    internal sealed partial class CountingEndpoint : RawEndpoint
     {
         internal static int ConfigureCount;
 

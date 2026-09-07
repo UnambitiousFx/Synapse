@@ -4,7 +4,6 @@ using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using UnambitiousFx.Synapse.Abstractions;
 using UnambitiousFx.Synapse.AspNetCore.Http;
-using UnambitiousFx.Synapse.Endpoints.Binding;
 using UnambitiousFx.Synapse.Endpoints.Builders;
 
 namespace UnambitiousFx.Synapse.Endpoints.Tests;
@@ -18,8 +17,6 @@ public sealed partial class StreamEndpointTests
     public async Task Invoke_NegotiatesContentType(string? accept, string expectedContentType)
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<TickEndpoint>(new EndpointMetadata(["GET"], "/ticks"));
-
         var invoker = Substitute.For<IHttpInvoker>();
         invoker.InvokeStreamAsync(Arg.Any<IStreamRequest<int>>(), Arg.Any<CancellationToken>())
             .Returns(Ticks());
@@ -37,8 +34,8 @@ public sealed partial class StreamEndpointTests
             context.Request.Headers.Accept = accept;
         }
 
-        var descriptor = ((EndpointBase)new TickEndpoint())
-            .CreateDescriptor(EndpointRegistry.GetMetadata<TickEndpoint>());
+        var endpoint = new TickEndpoint();
+        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Act
         await descriptor.InvokeAsync(context);
@@ -58,8 +55,6 @@ public sealed partial class StreamEndpointTests
     public async Task Invoke_WithJsonAccept_WritesExactJsonArrayBody()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<ArrayEndpoint>(new EndpointMetadata(["GET"], "/array-ticks"));
-
         var invoker = Substitute.For<IHttpInvoker>();
         invoker.InvokeStreamAsync(Arg.Any<IStreamRequest<int>>(), Arg.Any<CancellationToken>())
             .Returns(Ticks());
@@ -74,8 +69,8 @@ public sealed partial class StreamEndpointTests
         context.Response.Body = new MemoryStream();
         context.Request.Headers.Accept = "application/json";
 
-        var descriptor = ((EndpointBase)new ArrayEndpoint())
-            .CreateDescriptor(EndpointRegistry.GetMetadata<ArrayEndpoint>());
+        var endpoint = new ArrayEndpoint();
+        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Act
         await descriptor.InvokeAsync(context);
@@ -98,8 +93,6 @@ public sealed partial class StreamEndpointTests
     public async Task Invoke_WithEventStreamAccept_WritesServerSentEventBody()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<SseEndpoint>(new EndpointMetadata(["GET"], "/sse-ticks"));
-
         var invoker = Substitute.For<IHttpInvoker>();
         invoker.InvokeStreamAsync(Arg.Any<IStreamRequest<int>>(), Arg.Any<CancellationToken>())
             .Returns(Ticks());
@@ -114,8 +107,8 @@ public sealed partial class StreamEndpointTests
         context.Response.Body = new MemoryStream();
         context.Request.Headers.Accept = "text/event-stream";
 
-        var descriptor = ((EndpointBase)new SseEndpoint())
-            .CreateDescriptor(EndpointRegistry.GetMetadata<SseEndpoint>());
+        var endpoint = new SseEndpoint();
+        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Act
         await descriptor.InvokeAsync(context);
@@ -180,13 +173,9 @@ public sealed partial class StreamEndpointTests
     [Fact]
     public void CreateDescriptor_ForAStreamEndpointDeclaringItsRouteInConfigure_ResolvesIt()
     {
-        // Arrange
-        EndpointRegistry.RegisterMetadata<ConfiguredStreamEndpoint>(
-            new EndpointMetadata([], string.Empty));
-
         // Act
-        var descriptor = ((EndpointBase)new ConfiguredStreamEndpoint())
-            .CreateDescriptor(EndpointRegistry.GetMetadata<ConfiguredStreamEndpoint>());
+        var endpoint = new ConfiguredStreamEndpoint();
+        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Assert
         Assert.Equal("/computed-ticks", descriptor.Route);
@@ -203,14 +192,17 @@ public sealed partial class StreamEndpointTests
 
     internal sealed record TickQuery : IStreamRequest<int>;
 
+    [Get("/ticks")]
     internal sealed partial class TickEndpoint : StreamEndpoint<TickQuery, int>;
 
     internal sealed record ArrayQuery : IStreamRequest<int>;
 
+    [Get("/array-ticks")]
     internal sealed partial class ArrayEndpoint : StreamEndpoint<ArrayQuery, int>;
 
     internal sealed record SseQuery : IStreamRequest<int>;
 
+    [Get("/sse-ticks")]
     internal sealed partial class SseEndpoint : StreamEndpoint<SseQuery, int>;
 }
 
@@ -231,7 +223,6 @@ public sealed partial class StreamEndpointTests
 [JsonSerializable(typeof(MappedEndpointTests.CreateBody))]
 [JsonSerializable(typeof(OpenApiMetadataTests.CreatedMappedRequest))]
 [JsonSerializable(typeof(OpenApiMetadataTests.MetaQuery))]
-[JsonSerializable(typeof(OpenApiMetadataTests.MultiVerbMetaQuery))]
 [JsonSerializable(typeof(OpenApiMetadataTests.PostStreamMetaQuery))]
 [JsonSerializable(typeof(OpenApiMetadataTests.SelfHandledMetaRequest))]
 [JsonSerializable(typeof(OpenApiMetadataTests.SelfHandledVoidMetaRequest))]

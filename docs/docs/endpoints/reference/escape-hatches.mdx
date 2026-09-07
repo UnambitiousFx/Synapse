@@ -32,7 +32,7 @@ An endpoint whose route cannot be a constant expression can omit the route attri
 declare it in `Configure`:
 
 ```csharp
-public sealed class SearchTasksEndpoint : Endpoint<SearchTasksQuery, IReadOnlyList<TaskDto>>
+public sealed partial class SearchTasksEndpoint : Endpoint<SearchTasksQuery, IReadOnlyList<TaskDto>>
 {
     public override void Configure(IEndpointBuilder<IReadOnlyList<TaskDto>> builder)
     {
@@ -114,7 +114,7 @@ using FromHeader = UnambitiousFx.Synapse.Endpoints.FromHeaderAttribute;
 
 ```csharp
 [HttpEndpoint("HEAD", "/tasks")]
-public sealed class HeadTasksEndpoint : Endpoint<ListTasksQuery, IReadOnlyList<TaskDto>>;
+public sealed partial class HeadTasksEndpoint : Endpoint<ListTasksQuery, IReadOnlyList<TaskDto>>;
 ```
 
 All of `GET`, `DELETE`, `HEAD`, `OPTIONS` and `TRACE` count as bodyless for

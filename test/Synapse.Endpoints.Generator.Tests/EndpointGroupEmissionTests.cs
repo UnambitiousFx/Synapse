@@ -65,7 +65,7 @@ public sealed class EndpointGroupEmissionTests
     }
 
     [Fact]
-    public void Generate_ForOneEndpoint_EmitsMetadataRegistration()
+    public void Generate_ForOneEndpoint_EmitsItsRouteMetadata()
     {
         // Arrange
         const string source = """
@@ -84,12 +84,11 @@ public sealed class EndpointGroupEmissionTests
                               """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointRegistrations.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
-        // Assert
-        Assert.Contains("[global::System.Runtime.CompilerServices.ModuleInitializer]", generated);
+        // Assert — the metadata is a member of the endpoint itself, not a registration in a shared table.
         Assert.Contains(
-            "global::UnambitiousFx.Synapse.Endpoints.Binding.EndpointRegistry.RegisterMetadata<global::TestNs.GetThingEndpoint>(",
+            "protected override global::UnambitiousFx.Synapse.Endpoints.EndpointMetadata CreateMetadata()",
             generated);
         Assert.Contains("new global::UnambitiousFx.Synapse.Endpoints.EndpointMetadata(new[] { \"GET\" }, \"/things/{id}\")", generated);
     }
@@ -172,7 +171,7 @@ public sealed class EndpointGroupEmissionTests
                       """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointRegistrations.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert — the route is rendered through Roslyn's own escaper, not hand-rolled interpolation.
         Assert.Contains(routeLiteral, generated);
@@ -211,7 +210,7 @@ public sealed class EndpointGroupEmissionTests
                               """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointRegistrations.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert
         Assert.Contains("typeof(global::TestNs.MyGroup)", generated);

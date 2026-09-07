@@ -29,22 +29,22 @@ public sealed class TasksGroup : EndpointGroup
 // Serves GET /tasks — the group's prefix plus the endpoint's own route.
 [Get("/")]
 [InGroup<TasksGroup>]
-public sealed class ListTasksEndpoint : Endpoint<ListTasksQuery, IReadOnlyList<TaskDto>>;
+public sealed partial class ListTasksEndpoint : Endpoint<ListTasksQuery, IReadOnlyList<TaskDto>>;
 
 // GET /tasks/{taskId}
 [Get("/{taskId:guid}")]
 [InGroup<TasksGroup>]
-public sealed class GetTaskEndpoint : Endpoint<GetTaskQuery, TaskDto>;
+public sealed partial class GetTaskEndpoint : Endpoint<GetTaskQuery, TaskDto>;
 
 // POST /tasks
 [Post("/")]
 [InGroup<TasksGroup>]
-public sealed class CreateTaskEndpoint : Endpoint<CreateTaskCommand, TaskCreated>;
+public sealed partial class CreateTaskEndpoint : Endpoint<CreateTaskCommand, TaskCreated>;
 
 // DELETE /tasks/{taskId}
 [Delete("/{taskId:guid}")]
 [InGroup<TasksGroup>]
-public sealed class DeleteTaskEndpoint : Endpoint<DeleteTaskCommand>;
+public sealed partial class DeleteTaskEndpoint : Endpoint<DeleteTaskCommand>;
 ```
 
 Each endpoint's own route is relative to the group's prefix. `[Get("/")]` inside a `/tasks` group

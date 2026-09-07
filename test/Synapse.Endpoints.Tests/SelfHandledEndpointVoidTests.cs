@@ -3,7 +3,6 @@ using Microsoft.Extensions.DependencyInjection;
 using UnambitiousFx.Functional;
 using UnambitiousFx.Functional.Failures;
 using UnambitiousFx.Synapse.AspNetCore;
-using UnambitiousFx.Synapse.Endpoints.Binding;
 using UnambitiousFx.Synapse.Endpoints.Builders;
 
 namespace UnambitiousFx.Synapse.Endpoints.Tests;
@@ -14,14 +13,12 @@ public sealed partial class SelfHandledEndpointVoidTests
     public async Task Invoke_WithNoResponse_RunsExecuteAsyncAndAnswers204()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<PurgeEndpoint>(new EndpointMetadata(["DELETE"], "/cache/{key}"));
-
         var endpoint = new PurgeEndpoint();
         var context = Context("stale");
 
         // Act
         await ((EndpointBase)endpoint)
-            .CreateDescriptor(EndpointRegistry.GetMetadata<PurgeEndpoint>())
+            .CreateDescriptor(endpoint.Metadata)
             .InvokeAsync(context);
 
         // Assert
@@ -33,15 +30,11 @@ public sealed partial class SelfHandledEndpointVoidTests
     public async Task Invoke_WhenExecuteAsyncFails_MapsTheFailureThroughTheRegisteredMapper()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<ConflictedEndpoint>(
-            new EndpointMetadata(["DELETE"], "/cache-conflict/{key}"));
-
         var context = Context("stale");
+        var endpoint = new ConflictedEndpoint();
 
         // Act
-        await ((EndpointBase)new ConflictedEndpoint())
-            .CreateDescriptor(EndpointRegistry.GetMetadata<ConflictedEndpoint>())
-            .InvokeAsync(context);
+        await ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata).InvokeAsync(context);
 
         // Assert
         Assert.Equal(StatusCodes.Status409Conflict, context.Response.StatusCode);
@@ -51,15 +44,11 @@ public sealed partial class SelfHandledEndpointVoidTests
     public async Task Invoke_WithConfiguredStatusCode_UsesItInsteadOfOnSuccess()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<QueuedEndpoint>(
-            new EndpointMetadata(["POST"], "/cache/rebuild/{key}"));
-
         var context = Context("stale");
+        var endpoint = new QueuedEndpoint();
 
         // Act
-        await ((EndpointBase)new QueuedEndpoint())
-            .CreateDescriptor(EndpointRegistry.GetMetadata<QueuedEndpoint>())
-            .InvokeAsync(context);
+        await ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata).InvokeAsync(context);
 
         // Assert
         Assert.Equal(StatusCodes.Status202Accepted, context.Response.StatusCode);

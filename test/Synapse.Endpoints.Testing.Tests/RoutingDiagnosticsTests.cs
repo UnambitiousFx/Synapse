@@ -1,16 +1,14 @@
 using Microsoft.AspNetCore.Http;
-using UnambitiousFx.Synapse.Endpoints.Binding;
 using UnambitiousFx.Synapse.Endpoints.Builders;
 
 namespace UnambitiousFx.Synapse.Endpoints.Testing.Tests;
 
-public sealed class RoutingDiagnosticsTests
+public sealed partial class RoutingDiagnosticsTests
 {
     [Fact]
     public async Task SendAsync_WhenTheUrlMatchesNoRoute_ThrowsNamingTheMappedRoute()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<ItemEndpoint>(new EndpointMetadata(["GET"], "/items/{id:guid}"));
         using var harness = EndpointHarness.Create<ItemEndpoint>();
 
         // Act
@@ -27,7 +25,6 @@ public sealed class RoutingDiagnosticsTests
     {
         // Arrange: the :guid constraint is the framework's, and it runs here because the harness
         // maps through the real route table rather than seeding route values by hand.
-        EndpointRegistry.RegisterMetadata<ItemEndpoint>(new EndpointMetadata(["GET"], "/items/{id:guid}"));
         using var harness = EndpointHarness.Create<ItemEndpoint>();
 
         // Act
@@ -42,7 +39,6 @@ public sealed class RoutingDiagnosticsTests
     public async Task SendAsync_WhenTheVerbIsWrong_Returns405()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<ItemEndpoint>(new EndpointMetadata(["GET"], "/items/{id:guid}"));
         using var harness = EndpointHarness.Create<ItemEndpoint>();
 
         // Act
@@ -56,8 +52,6 @@ public sealed class RoutingDiagnosticsTests
     public async Task SendAsync_ForAnEndpointInAGroup_AppliesTheGroupPrefix()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<GroupedEndpoint>(new EndpointMetadata(
-            ["GET"], "/ping", typeof(OpsGroup), static () => new OpsGroup()));
         using var harness = EndpointHarness.Create<GroupedEndpoint>();
 
         // Act
@@ -71,9 +65,6 @@ public sealed class RoutingDiagnosticsTests
     [Fact]
     public async Task RouteDescription_ForAMappedEndpoint_NamesTheVerbAndTemplate()
     {
-        // Arrange
-        EndpointRegistry.RegisterMetadata<ItemEndpoint>(new EndpointMetadata(["GET"], "/items/{id:guid}"));
-
         // Act
         using var harness = EndpointHarness.Create<ItemEndpoint>();
 
@@ -81,7 +72,8 @@ public sealed class RoutingDiagnosticsTests
         Assert.Equal("GET /items/{id:guid}", harness.RouteDescription);
     }
 
-    internal sealed class ItemEndpoint : RawEndpoint
+    [Get("/items/{id:guid}")]
+    internal sealed partial class ItemEndpoint : RawEndpoint
     {
         public override ValueTask<IResult> HandleAsync(HttpContext context,
             CancellationToken cancellationToken)
@@ -98,7 +90,9 @@ public sealed class RoutingDiagnosticsTests
         }
     }
 
-    internal sealed class GroupedEndpoint : RawEndpoint
+    [Get("/ping")]
+    [InGroup<OpsGroup>]
+    internal sealed partial class GroupedEndpoint : RawEndpoint
     {
         public override ValueTask<IResult> HandleAsync(HttpContext context,
             CancellationToken cancellationToken)

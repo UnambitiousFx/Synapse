@@ -507,7 +507,7 @@ public sealed partial class SearchThingsEndpoint : Endpoint<SearchThingsQuery, T
 ///     and response mapping, with <c>BindAsync</c> written by hand rather than generated.
 /// </summary>
 [Get("/things/{id:guid}")]
-public sealed class RawGetThingEndpoint : RawEndpoint<GetThingQuery, ThingDto>
+public sealed partial class RawGetThingEndpoint : RawEndpoint<GetThingQuery, ThingDto>
 {
     /// <inheritdoc />
     public override ValueTask<BindResult<GetThingQuery>> BindAsync(HttpContext context)

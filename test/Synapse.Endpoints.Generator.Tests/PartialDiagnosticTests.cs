@@ -178,4 +178,37 @@ public sealed class PartialDiagnosticTests
         // Assert
         Assert.DoesNotContain(diagnostics, d => d.Id == "SYNE021");
     }
+
+    [Fact]
+    public void Generate_ForEndpointWithNoRouteAttributeAndNoConfigure_StillCompiles()
+    {
+        // Arrange — the "computed route" escape hatch: no attribute, route declared in Configure. The
+        // generated CreateMetadata must emit empty method/route rather than omit itself, or the
+        // endpoint would not satisfy the abstract member.
+        const string source = """
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+                              using UnambitiousFx.Synapse.Endpoints.Builders;
+
+                              namespace TestNs;
+
+                              public sealed record ProbeQuery : IRequest<string>;
+
+                              public sealed partial class ProbeEndpoint : Endpoint<ProbeQuery, string>
+                              {
+                                  public override void Configure(IEndpointBuilder<string> builder)
+                                  {
+                                      builder.Get("/probes");
+                                  }
+                              }
+                              """;
+
+        // Act
+        var generated = GeneratorHarness.GetEndpointFile(source);
+
+        // Assert
+        Assert.Contains("CreateMetadata()", generated);
+        Assert.Contains("global::System.Array.Empty<string>()", generated);
+        GeneratorHarness.AssertGeneratedCompiles(source);
+    }
 }

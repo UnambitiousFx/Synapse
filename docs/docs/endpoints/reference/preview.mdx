@@ -31,15 +31,16 @@ Once the surface settles, the package graduates to stable versions and this page
 ## Risks
 
 **Disabling the analyzer trades a named diagnostic for a raw compiler error naming the wrong type.**
-`SYNE020`/`SYNE021` exist because the endpoint's binding is emitted into its own `partial` class as an
-`override` — with the analyzer running, a missing `partial` or a hand-written `BindAsync` on a
-generated tier is reported against the endpoint itself. Turn the analyzer off and that reporting goes
-with it: the endpoint still fails to compile, but the only diagnostic left is the compiler's own
-`CS0534` for the abstract member nothing implemented, and it names `RawEndpoint<GetTaskQuery,
-TaskDto>.BindAsync` — a base class the author never wrote and would have no reason to suspect. This is
-the one respect in which generating into the endpoint's own class is worse than the old registry
-lookup, which at least failed with a message about the endpoint. Not fixable in code — a disabled
-analyzer cannot report anything — so this is here to explain the error if you ever see it.
+`SYNE020`/`SYNE021` exist because the endpoint's route metadata — and, on a generated tier, its
+binding — is emitted into its own `partial` class as an `override`. With the analyzer running, a
+missing `partial` or a hand-written `BindAsync` on a generated tier is reported against the endpoint
+itself. Turn the analyzer off and that reporting goes with it: the endpoint still fails to compile, but
+the only diagnostics left are the compiler's own `CS0534`s for the abstract members nothing
+implemented, naming `EndpointBase.CreateMetadata()` and `RawEndpoint<GetTaskQuery, TaskDto>.BindAsync`
+— base classes the author never wrote and would have no reason to suspect. This is the one respect in
+which generating into the endpoint's own class is worse than the old registry lookup, which at least
+failed at startup with a message about the endpoint. Not fixable in code — a disabled analyzer cannot
+report anything — so this is here to explain the error if you ever see it.
 
 ## Versioning
 

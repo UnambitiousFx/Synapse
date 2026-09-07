@@ -1,7 +1,6 @@
 using Microsoft.AspNetCore.Http;
 using UnambitiousFx.Functional;
 using UnambitiousFx.Functional.Failures;
-using UnambitiousFx.Synapse.Endpoints.Binding;
 
 namespace UnambitiousFx.Synapse.Endpoints.Testing.Tests;
 
@@ -11,7 +10,6 @@ public sealed partial class SelfHandledHarnessTests
     public async Task SendAsync_ForASelfHandledEndpoint_RunsItWithNoHandlerStubbed()
     {
         // Arrange: no options.Handle<…> call, because there is no message to stub.
-        EndpointRegistry.RegisterMetadata<ProbeEndpoint>(new EndpointMetadata(["GET"], "/health/{probe}"));
         using var harness = EndpointHarness.Create<ProbeEndpoint>();
 
         // Act
@@ -28,7 +26,6 @@ public sealed partial class SelfHandledHarnessTests
     public async Task SendAsync_WhenASelfHandledEndpointFails_MapsItThroughTheRealFailureMapper()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<MissingProbeEndpoint>(new EndpointMetadata(["GET"], "/health-missing"));
         using var harness = EndpointHarness.Create<MissingProbeEndpoint>();
 
         // Act

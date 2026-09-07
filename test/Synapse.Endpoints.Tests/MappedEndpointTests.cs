@@ -6,7 +6,6 @@ using NSubstitute;
 using UnambitiousFx.Synapse.Abstractions;
 using UnambitiousFx.Synapse.AspNetCore;
 using UnambitiousFx.Synapse.AspNetCore.Http;
-using UnambitiousFx.Synapse.Endpoints.Binding;
 using UnambitiousFx.Synapse.Endpoints.Builders;
 
 namespace UnambitiousFx.Synapse.Endpoints.Tests;
@@ -17,8 +16,6 @@ public sealed partial class MappedEndpointTests
     public async Task Invoke_WithMappedContracts_BindsHttpDtoAndReturnsMappedResponse()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<CreateEndpoint>(new EndpointMetadata(["POST"], "/things"));
-
         var invoker = Substitute.For<IHttpInvoker>();
         invoker.InvokeAsync(Arg.Any<IRequest<int>>(), Arg.Any<Func<int, IResult>>(), Arg.Any<CancellationToken>())
             .Returns(call => ValueTask.FromResult(call.Arg<Func<int, IResult>>()(7)));
@@ -28,8 +25,8 @@ public sealed partial class MappedEndpointTests
         services.AddLogging();
         var context = NewJsonBodyContext(services, """{"name":"thing"}""");
 
-        var descriptor = ((EndpointBase)new CreateEndpoint())
-            .CreateDescriptor(EndpointRegistry.GetMetadata<CreateEndpoint>());
+        var endpoint = new CreateEndpoint();
+        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Act
         await descriptor.InvokeAsync(context);
@@ -43,7 +40,6 @@ public sealed partial class MappedEndpointTests
     {
         // Arrange — no body and no content type, which is what the generated binding rejects: this
         // tier binds CreateBody from the JSON body, so a bodyless POST cannot produce one.
-        EndpointRegistry.RegisterMetadata<FailingEndpoint>(new EndpointMetadata(["POST"], "/things-fail"));
 
         var invoker = Substitute.For<IHttpInvoker>();
 
@@ -53,8 +49,8 @@ public sealed partial class MappedEndpointTests
         var context = new DefaultHttpContext { RequestServices = services.BuildServiceProvider() };
         context.Response.Body = new MemoryStream();
 
-        var descriptor = ((EndpointBase)new FailingEndpoint())
-            .CreateDescriptor(EndpointRegistry.GetMetadata<FailingEndpoint>());
+        var endpoint = new FailingEndpoint();
+        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Act
         await descriptor.InvokeAsync(context);
@@ -72,7 +68,6 @@ public sealed partial class MappedEndpointTests
         // and real DefaultFailureHttpMapper are exercised. This is the path the generic onSuccess
         // overload takes; inspection says it returns onSuccess(value!) directly with no wrapping, but
         // Task 8 showed inspection alone can miss a wrapper, so this proves it through the real pipeline.
-        EndpointRegistry.RegisterMetadata<CreatedEndpoint>(new EndpointMetadata(["POST"], "/things-created"));
 
         var mediator = Substitute.For<IInvoker>();
         mediator.InvokeAsync(Arg.Any<CreatedCommand>(), Arg.Any<CancellationToken>())
@@ -84,8 +79,8 @@ public sealed partial class MappedEndpointTests
         services.AddLogging();
         var context = NewJsonBodyContext(services, """{"name":"thing"}""");
 
-        var descriptor = ((EndpointBase)new CreatedEndpoint())
-            .CreateDescriptor(EndpointRegistry.GetMetadata<CreatedEndpoint>());
+        var endpoint = new CreatedEndpoint();
+        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Act
         await descriptor.InvokeAsync(context);

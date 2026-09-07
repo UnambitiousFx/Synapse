@@ -15,8 +15,6 @@ public sealed partial class EndpointGenericTests
     public async Task Invoke_WithDefaultConfiguration_Returns200AndTheResponse()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<EchoEndpoint>(new EndpointMetadata(["GET"], "/echo"));
-
         var invoker = Substitute.For<IHttpInvoker>();
         invoker.InvokeAsync(Arg.Any<IRequest<string>>(), Arg.Any<Func<string, IResult>>(), Arg.Any<CancellationToken>())
             .Returns(call => ValueTask.FromResult(call.Arg<Func<string, IResult>>()("hello")));
@@ -28,7 +26,7 @@ public sealed partial class EndpointGenericTests
         context.Response.Body = new MemoryStream();
 
         var endpoint = new EchoEndpoint();
-        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(EndpointRegistry.GetMetadata<EchoEndpoint>());
+        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Act
         await descriptor.InvokeAsync(context);
@@ -41,16 +39,14 @@ public sealed partial class EndpointGenericTests
     public async Task Invoke_WhenBindingFails_Returns400()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<FailingEndpoint>(new EndpointMetadata(["GET"], "/fail"));
-
         var services = new ServiceCollection();
         services.AddSingleton(Substitute.For<IHttpInvoker>());
         services.AddLogging();
         var context = new DefaultHttpContext { RequestServices = services.BuildServiceProvider() };
         context.Response.Body = new MemoryStream();
 
-        var descriptor = ((EndpointBase)new FailingEndpoint())
-            .CreateDescriptor(EndpointRegistry.GetMetadata<FailingEndpoint>());
+        var endpoint = new FailingEndpoint();
+        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Act
         await descriptor.InvokeAsync(context);

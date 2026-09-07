@@ -75,7 +75,6 @@ public async Task SendAsync_ForARawEndpoint_RunsConfigureExactlyOnce()
 {
     // Arrange: Configure runs at map time, so a harness that mapped twice - or that
     // re-mapped per request - would show up here rather than as a subtle metadata bug.
-    EndpointRegistry.RegisterMetadata<CountingEndpoint>(new EndpointMetadata(["GET"], "/counting"));
     CountingEndpoint.ConfigureCount = 0;
     using var harness = EndpointHarness.Create<CountingEndpoint>();
 
@@ -88,16 +87,11 @@ public async Task SendAsync_ForARawEndpoint_RunsConfigureExactlyOnce()
 }
 ```
 
-:::note `EndpointRegistry.RegisterMetadata` is internal test plumbing
-A handful of the package's own tests declare a `RawEndpoint` with no route attribute at all — there is
-nothing for the analyzer to read a route from, so nothing registers its metadata either — and register
-it by hand before mapping it. A real endpoint — declared with `[Get]`/`[Post]`/… and built through
-NuGet — already has that metadata generated for it; you never call `EndpointRegistry.RegisterMetadata`
-yourself. It only appears in the examples below because they are drawn from the harness's own test
-suite, which needs it for those attribute-less fixtures. Binding itself has no equivalent hand-rolled
-path any more: every generated tier's `BindAsync` is emitted straight into the endpoint's own
-`partial` class, so a test endpoint that wants a generated binding gets one the same way an
-application's endpoint does — by carrying a route attribute and being declared `partial`.
+:::note Nothing registers an endpoint's route
+A test endpoint is declared exactly like an application's: `[Get]`/`[Post]`/… on a `partial` class,
+with the route metadata and the binding both generated into that class. There is no registration step
+and no hand-rolled path for either — an endpoint with no route attribute simply has no route until its
+`Configure` declares one.
 :::
 
 **Route constraints apply**, because the real route matcher is doing the work — a value the endpoint's
@@ -127,8 +121,6 @@ application, from `test/Synapse.Endpoints.Testing.Tests/RoutingDiagnosticsTests.
 public async Task SendAsync_ForAnEndpointInAGroup_AppliesTheGroupPrefix()
 {
     // Arrange
-    EndpointRegistry.RegisterMetadata<GroupedEndpoint>(new EndpointMetadata(
-        ["GET"], "/ping", typeof(OpsGroup), static () => new OpsGroup()));
     using var harness = EndpointHarness.Create<GroupedEndpoint>();
 
     // Act
@@ -147,7 +139,6 @@ public async Task SendAsync_ForAnEndpointInAGroup_AppliesTheGroupPrefix()
 public async Task SendAsync_WhenTheVerbIsWrong_Returns405()
 {
     // Arrange
-    EndpointRegistry.RegisterMetadata<ItemEndpoint>(new EndpointMetadata(["GET"], "/items/{id:guid}"));
     using var harness = EndpointHarness.Create<ItemEndpoint>();
 
     // Act
@@ -206,7 +197,6 @@ public async Task CreateTask_WithABody_Returns201WithTheConfiguredLocation()
 public async Task SendAsync_ForAVoidCommand_ReturnsNoContent()
 {
     // Arrange
-    EndpointRegistry.RegisterMetadata<PurgeEndpoint>(new EndpointMetadata(["DELETE"], "/purge"));
     using var harness = EndpointHarness.Create<PurgeEndpoint>(options =>
         options.Handle<PurgeCommand>(_ => Result.Success()));
 
@@ -286,7 +276,6 @@ response read with `Json<T>()` always agree with whatever the endpoint itself se
 public async Task Query_WhenSet_IsVisibleToTheEndpoint()
 {
     // Arrange
-    EndpointRegistry.RegisterMetadata<EchoInputEndpoint>(new EndpointMetadata(["GET"], "/echo"));
     using var harness = EndpointHarness.Create<EchoInputEndpoint>();
 
     // Act
@@ -302,7 +291,6 @@ public async Task Query_WhenSet_IsVisibleToTheEndpoint()
 public async Task Header_WhenSet_IsVisibleToTheEndpoint()
 {
     // Arrange
-    EndpointRegistry.RegisterMetadata<EchoInputEndpoint>(new EndpointMetadata(["GET"], "/echo"));
     using var harness = EndpointHarness.Create<EchoInputEndpoint>();
 
     // Act
@@ -351,8 +339,6 @@ public async Task SendAsync_WithAMultipartUpload_BindsTheFileAndTheFieldAndTheRo
 {
     // Arrange — spec §6 case 1 is a file plus a field plus a route value; routing and multipart
     // parsing coexisting on one live request is a runtime property no emission test can assert.
-    EndpointRegistry.RegisterMetadata<UploadEndpoint>(
-        new EndpointMetadata(["POST"], "/tasks/{taskId}/uploads"));
     using var harness = EndpointHarness.Create<UploadEndpoint>(options =>
         options.Handle<UploadCommand, string>(command =>
             Result.Success($"{command.TaskId}:{command.File.FileName}:{command.Caption}")));
@@ -384,7 +370,6 @@ from `test/Synapse.Endpoints.Testing.Tests/RequestBuildingTests.cs`:
 public async Task Body_WhenSet_IsReadableVerbatimByTheEndpoint()
 {
     // Arrange
-    EndpointRegistry.RegisterMetadata<EchoRawBodyEndpoint>(new EndpointMetadata(["POST"], "/echo-raw"));
     using var harness = EndpointHarness.Create<EchoRawBodyEndpoint>();
 
     // Act
@@ -542,8 +527,6 @@ public async Task SendAsync_WhenBindingFails_Returns400WithTheFieldThatFailed()
 {
     // Arrange — a real bad value rather than a stubbed failure: the binding is generated now, so
     // the only way to make it fail is to send something it cannot parse.
-    EndpointRegistry.RegisterMetadata<RejectingEndpoint>(
-        new EndpointMetadata(["GET"], "/rejecting/{taskId}"));
     using var harness = EndpointHarness.Create<RejectingEndpoint>();
 
     // Act
@@ -571,7 +554,6 @@ Asking for `text/event-stream` switches the transport, from `test/Synapse.Endpoi
 public async Task SendAsync_WhenAcceptIsEventStream_MaterialisesTheStreamAsServerSentEvents()
 {
     // Arrange
-    EndpointRegistry.RegisterMetadata<TickerEndpoint>(new EndpointMetadata(["GET"], "/ticks"));
     using var harness = EndpointHarness.Create<TickerEndpoint>(options =>
         options.HandleStream<TickerQuery, Tick>(_ => [new Tick(7)]));
 
@@ -594,7 +576,6 @@ public async Task SendAsync_WhenAnItemFails_SkipsItAndStreamsTheRest()
 {
     // Arrange: the skip is IHttpInvoker.InvokeStreamAsync's behaviour, and the harness keeps
     // that real - so the failing item disappears here exactly as it does on the wire.
-    EndpointRegistry.RegisterMetadata<TickerEndpoint>(new EndpointMetadata(["GET"], "/ticks"));
     using var harness = EndpointHarness.Create<TickerEndpoint>(options =>
         options.HandleStream<TickerQuery, Tick>(_ => Ticks()));
 

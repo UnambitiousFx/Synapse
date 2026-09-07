@@ -13,7 +13,7 @@ does, and then **answers it itself** instead of dispatching a message.
 public sealed record ProbeQuery(string Probe);   // no IRequest<T>
 
 [Get("/health/{probe}")]
-public sealed class ProbeEndpoint : SelfHandledEndpoint<ProbeQuery, ProbeDto>
+public sealed partial class ProbeEndpoint : SelfHandledEndpoint<ProbeQuery, ProbeDto>
 {
     public override void Configure(IEndpointBuilder<ProbeDto> builder) =>
         builder.Ok().ProducesProblem(StatusCodes.Status404NotFound);
@@ -51,7 +51,7 @@ public sealed class ProbeQueryHandler : IRequestHandler<ProbeQuery, ProbeDto> { 
 services.AddSynapse(cfg => cfg.RegisterRequestHandler<ProbeQueryHandler, ProbeQuery, ProbeDto>());
 
 [Get("/health/{probe}")]
-public sealed class ProbeEndpoint : Endpoint<ProbeQuery, ProbeDto>;
+public sealed partial class ProbeEndpoint : Endpoint<ProbeQuery, ProbeDto>;
 ```
 
 The alternative before this tier existed was dropping to [`RawEndpoint`](../low-level/overview), which
@@ -89,7 +89,7 @@ endpoint inventing its own error responses.
 
 ```csharp
 [Delete("/cache/{key}")]
-public sealed class PurgeEndpoint : SelfHandledEndpoint<PurgeRequest>
+public sealed partial class PurgeEndpoint : SelfHandledEndpoint<PurgeRequest>
 {
     public override ValueTask<Result> ExecuteAsync(PurgeRequest request,
         HttpContext context,

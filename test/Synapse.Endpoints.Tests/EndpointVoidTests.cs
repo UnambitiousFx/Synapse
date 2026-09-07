@@ -4,7 +4,6 @@ using NSubstitute;
 using UnambitiousFx.Synapse.Abstractions;
 using UnambitiousFx.Synapse.AspNetCore;
 using UnambitiousFx.Synapse.AspNetCore.Http;
-using UnambitiousFx.Synapse.Endpoints.Binding;
 using UnambitiousFx.Synapse.Endpoints.Builders;
 
 namespace UnambitiousFx.Synapse.Endpoints.Tests;
@@ -15,8 +14,6 @@ public sealed partial class EndpointVoidTests
     public async Task Invoke_WithDefaultConfiguration_Returns204()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<PingEndpoint>(new EndpointMetadata(["POST"], "/ping"));
-
         var invoker = Substitute.For<IHttpInvoker>();
         invoker.InvokeAsync(Arg.Any<PingCommand>(), Arg.Any<Func<Microsoft.AspNetCore.Http.IResult>>(), Arg.Any<CancellationToken>())
             .Returns(call => ValueTask.FromResult(call.Arg<Func<Microsoft.AspNetCore.Http.IResult>>()()));
@@ -27,8 +24,8 @@ public sealed partial class EndpointVoidTests
         var context = new DefaultHttpContext { RequestServices = services.BuildServiceProvider() };
         context.Response.Body = new MemoryStream();
 
-        var descriptor = ((EndpointBase)new PingEndpoint())
-            .CreateDescriptor(EndpointRegistry.GetMetadata<PingEndpoint>());
+        var endpoint = new PingEndpoint();
+        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Act
         await descriptor.InvokeAsync(context);
@@ -41,8 +38,6 @@ public sealed partial class EndpointVoidTests
     public async Task Invoke_WhenInvokerReturnsMappedFailure_Returns409WithoutInvokingOnSuccess()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<ConflictPingEndpoint>(new EndpointMetadata(["POST"], "/ping-conflict"));
-
         // A real HttpInvoker never calls onSuccess for a mapped failure (see HttpInvokerTests); this
         // substitute mirrors that by returning the mapped failure directly, ignoring the factory.
         var invoker = Substitute.For<IHttpInvoker>();
@@ -56,8 +51,8 @@ public sealed partial class EndpointVoidTests
         var context = new DefaultHttpContext { RequestServices = services.BuildServiceProvider() };
         context.Response.Body = new MemoryStream();
 
-        var descriptor = ((EndpointBase)new ConflictPingEndpoint())
-            .CreateDescriptor(EndpointRegistry.GetMetadata<ConflictPingEndpoint>());
+        var endpoint = new ConflictPingEndpoint();
+        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Act
         await descriptor.InvokeAsync(context);
@@ -70,8 +65,6 @@ public sealed partial class EndpointVoidTests
     public async Task Invoke_WithConfiguredStatusCode_Returns202ThroughRealHttpInvoker()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<AcceptedPingEndpoint>(new EndpointMetadata(["POST"], "/ping-accepted"));
-
         // Substitute only the mediator (IInvoker), not IHttpInvoker: the point of this test is to
         // exercise the real HttpInvoker + AsHttpBuilder + WrapperHttpResult pipeline, which is what
         // silently discarded the configured status code before the onSuccess overload existed.
@@ -86,8 +79,8 @@ public sealed partial class EndpointVoidTests
         var context = new DefaultHttpContext { RequestServices = services.BuildServiceProvider() };
         context.Response.Body = new MemoryStream();
 
-        var descriptor = ((EndpointBase)new AcceptedPingEndpoint())
-            .CreateDescriptor(EndpointRegistry.GetMetadata<AcceptedPingEndpoint>());
+        var endpoint = new AcceptedPingEndpoint();
+        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Act
         await descriptor.InvokeAsync(context);
@@ -100,8 +93,6 @@ public sealed partial class EndpointVoidTests
     public async Task Invoke_WhenRealInvokerFails_ReturnsMappedFailureWithoutConfiguredStatusCode()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<FailingPingEndpoint>(new EndpointMetadata(["POST"], "/ping-failing"));
-
         var mediator = Substitute.For<IInvoker>();
         mediator.InvokeAsync(Arg.Any<FailingPingCommand>(), Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult(UnambitiousFx.Functional.Result.Failure("boom")));
@@ -113,8 +104,8 @@ public sealed partial class EndpointVoidTests
         var context = new DefaultHttpContext { RequestServices = services.BuildServiceProvider() };
         context.Response.Body = new MemoryStream();
 
-        var descriptor = ((EndpointBase)new FailingPingEndpoint())
-            .CreateDescriptor(EndpointRegistry.GetMetadata<FailingPingEndpoint>());
+        var endpoint = new FailingPingEndpoint();
+        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Act
         await descriptor.InvokeAsync(context);
@@ -126,14 +117,17 @@ public sealed partial class EndpointVoidTests
 
     internal sealed record PingCommand : IRequest;
 
+    [Post("/ping")]
     internal sealed partial class PingEndpoint : Endpoint<PingCommand>;
 
     internal sealed record ConflictPingCommand : IRequest;
 
+    [Post("/ping-conflict")]
     internal sealed partial class ConflictPingEndpoint : Endpoint<ConflictPingCommand>;
 
     internal sealed record AcceptedPingCommand : IRequest;
 
+    [Post("/ping-accepted")]
     internal sealed partial class AcceptedPingEndpoint : Endpoint<AcceptedPingCommand>
     {
         public override void Configure(IEndpointBuilder builder)
@@ -144,6 +138,7 @@ public sealed partial class EndpointVoidTests
 
     internal sealed record FailingPingCommand : IRequest;
 
+    [Post("/ping-failing")]
     internal sealed partial class FailingPingEndpoint : Endpoint<FailingPingCommand>
     {
         public override void Configure(IEndpointBuilder builder)

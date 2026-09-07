@@ -31,7 +31,7 @@ Worked through one message:
 
 ```csharp
 [Put("/tasks/{taskId:guid}")]
-public sealed class UpdateTaskEndpoint : Endpoint<UpdateTaskCommand>;
+public sealed partial class UpdateTaskEndpoint : Endpoint<UpdateTaskCommand>;
 
 public sealed record UpdateTaskCommand : IRequest
 {
@@ -143,7 +143,7 @@ public sealed record UploadAttachmentCommand : IRequest<AttachmentCreated>
 }
 
 [Post("/tasks/{taskId:guid}/attachments")]
-public sealed class UploadAttachmentEndpoint : Endpoint<UploadAttachmentCommand, AttachmentCreated>
+public sealed partial class UploadAttachmentEndpoint : Endpoint<UploadAttachmentCommand, AttachmentCreated>
 {
     public override void Configure(IEndpointBuilder<AttachmentCreated> builder) =>
         builder.Created(created => $"/tasks/{created.TaskId}/attachments/{created.AttachmentId}");

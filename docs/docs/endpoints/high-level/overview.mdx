@@ -13,7 +13,7 @@ endpoint class; the analyzer generates the binding between them.
 public sealed record GetTaskQuery(Guid TaskId) : IRequest<TaskDto>;
 
 [Get("/tasks/{taskId:guid}")]
-public sealed class GetTaskEndpoint : Endpoint<GetTaskQuery, TaskDto>;
+public sealed partial class GetTaskEndpoint : Endpoint<GetTaskQuery, TaskDto>;
 ```
 
 That is the entire endpoint. There is no method body because there is nothing left to write: the
@@ -39,15 +39,15 @@ Which base class you derive from follows from the message, not from taste:
 ```csharp
 // IRequest<TResponse> — the common case. 200 OK with the response as the body.
 [Get("/tasks/{taskId:guid}")]
-public sealed class GetTaskEndpoint : Endpoint<GetTaskQuery, TaskDto>;
+public sealed partial class GetTaskEndpoint : Endpoint<GetTaskQuery, TaskDto>;
 
 // IRequest — no response. 204 No Content.
 [Delete("/tasks/{taskId:guid}")]
-public sealed class DeleteTaskEndpoint : Endpoint<DeleteTaskCommand>;
+public sealed partial class DeleteTaskEndpoint : Endpoint<DeleteTaskCommand>;
 
 // IStreamRequest<TItem> — many items. SSE or a JSON array, negotiated on Accept.
 [Get("/tasks/stream")]
-public sealed class StreamTasksEndpoint : StreamEndpoint<StreamTasksQuery, TaskDto>;
+public sealed partial class StreamTasksEndpoint : StreamEndpoint<StreamTasksQuery, TaskDto>;
 
 // The wire contract must differ from the internal message.
 public sealed class CreateThingEndpoint
@@ -55,7 +55,7 @@ public sealed class CreateThingEndpoint
 
 // No message at all — the endpoint answers itself. See Self-handled.
 [Get("/health/{probe}")]
-public sealed class ProbeEndpoint : SelfHandledEndpoint<ProbeQuery, ProbeDto>;
+public sealed partial class ProbeEndpoint : SelfHandledEndpoint<ProbeQuery, ProbeDto>;
 ```
 
 Deriving from `Endpoint<…>` for a message that implements `IStreamRequest<T>` is reported as

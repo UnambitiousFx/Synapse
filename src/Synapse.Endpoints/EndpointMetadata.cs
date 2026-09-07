@@ -1,22 +1,27 @@
 namespace UnambitiousFx.Synapse.Endpoints;
 
 /// <summary>
-///     Route information for one endpoint, supplied by generated registration code so that
-///     nothing has to read attributes reflectively at runtime.
+///     Route information for one endpoint, returned by the <c>CreateMetadata</c> override the analyzer
+///     generates into the endpoint's own partial class, so that nothing has to read attributes
+///     reflectively at runtime.
 /// </summary>
 public sealed class EndpointMetadata
 {
     /// <summary>Initializes a new instance of the <see cref="EndpointMetadata" /> class.</summary>
     /// <param name="httpMethods">The HTTP methods, or empty when <c>Configure</c> declares them.</param>
     /// <param name="route">The route template, or empty when <c>Configure</c> declares it.</param>
-    /// <param name="groupType">The group this endpoint belongs to, if any.</param>
+    /// <remarks>
+    ///     For an endpoint with no group. There is deliberately no overload taking a group type on its
+    ///     own: a group is instantiated through its factory and never reflectively, so pairing the two
+    ///     in one constructor is what makes "a group with no factory" unrepresentable rather than a
+    ///     startup failure.
+    /// </remarks>
     public EndpointMetadata(string[] httpMethods,
-        string route,
-        Type? groupType = null)
+        string route)
     {
         HttpMethods = httpMethods;
         Route = route;
-        GroupType = groupType;
+        GroupType = null;
         GroupFactory = null;
     }
 
@@ -56,10 +61,9 @@ public sealed class EndpointMetadata
     public Type? GroupType { get; }
 
     /// <summary>
-    ///     Gets the factory that creates the <see cref="GroupType" /> instance, if a group was
-    ///     declared. No reflection is used to instantiate groups, so this is required whenever
-    ///     <see cref="GroupType" /> is set; <see cref="EndpointRouteBuilderExtensions.MapEndpoint{TEndpoint}" />
-    ///     throws when it is missing.
+    ///     Gets the factory that creates the <see cref="GroupType" /> instance, or
+    ///     <see langword="null" /> when no group was declared. Non-null exactly when
+    ///     <see cref="GroupType" /> is, because the only constructor that sets one sets both.
     /// </summary>
     public Func<EndpointGroup>? GroupFactory { get; }
 

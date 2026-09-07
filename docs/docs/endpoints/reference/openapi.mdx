@@ -133,7 +133,7 @@ public sealed record SearchTasksQuery : IRequest<IReadOnlyList<TaskDto>>
 }
 
 [Get("/tasks/search")]
-public sealed class SearchTasksEndpoint : Endpoint<SearchTasksQuery, IReadOnlyList<TaskDto>>;
+public sealed partial class SearchTasksEndpoint : Endpoint<SearchTasksQuery, IReadOnlyList<TaskDto>>;
 ```
 
 ```json title="/openapi/v1.json — GET /tasks/search"
@@ -204,7 +204,7 @@ public sealed record GetTaskQuery : IRequest<TaskDto>
 }
 
 [Get("/tasks/{taskId:guid}")]
-public sealed class GetTaskEndpoint : Endpoint<GetTaskQuery, TaskDto>;
+public sealed partial class GetTaskEndpoint : Endpoint<GetTaskQuery, TaskDto>;
 ```
 
 ```json title="/openapi/v1.json — GET /tasks/{taskId}, with the satellite package"

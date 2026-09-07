@@ -82,7 +82,6 @@ public sealed partial class FormSchemaDocumentTests
         // empty". Skipping the form pass here (the old Fields.Count > 0 guard) left such an endpoint
         // with no requestBody at all, losing both content types that ConsumesMatcherPolicy needs to
         // answer 415 — worse than the empty-schema state this package started from.
-        EndpointRegistry.RegisterMetadata<EmptyFormEndpoint>(new EndpointMetadata(["POST"], "/empty-form"));
         var document = await OpenApiTestHost.GenerateAsync<EmptyFormEndpoint>();
 
         // Act

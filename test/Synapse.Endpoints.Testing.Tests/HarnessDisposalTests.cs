@@ -1,10 +1,9 @@
 using System.Diagnostics;
 using Microsoft.AspNetCore.Http;
-using UnambitiousFx.Synapse.Endpoints.Binding;
 
 namespace UnambitiousFx.Synapse.Endpoints.Testing.Tests;
 
-public sealed class HarnessDisposalTests
+public sealed partial class HarnessDisposalTests
 {
     [Fact]
     public void Dispose_RemovesTheDiagnosticListenerFromAllListeners()
@@ -13,7 +12,6 @@ public sealed class HarnessDisposalTests
         // Create registers one as a pre-built singleton - DI never disposes those. Before the fix,
         // Dispose() disposed only the provider, so this instance stayed subscribed to the
         // process-wide DiagnosticListener.AllListeners forever.
-        EndpointRegistry.RegisterMetadata<PingEndpoint>(new EndpointMetadata(["GET"], "/ping"));
         var harness = EndpointHarness.Create<PingEndpoint>();
         var listener = harness.DiagnosticListener;
 
@@ -52,7 +50,8 @@ public sealed class HarnessDisposalTests
         }
     }
 
-    internal sealed class PingEndpoint : RawEndpoint
+    [Get("/ping")]
+    internal sealed partial class PingEndpoint : RawEndpoint
     {
         public override ValueTask<IResult> HandleAsync(HttpContext context,
             CancellationToken cancellationToken)

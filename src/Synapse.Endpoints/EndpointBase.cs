@@ -3,8 +3,9 @@ using UnambitiousFx.Synapse.Endpoints.Internal;
 namespace UnambitiousFx.Synapse.Endpoints;
 
 /// <summary>
-///     Base type shared by every endpoint. Because its only abstract member is internal, endpoints
-///     must derive from one of the library's own base classes rather than from this type directly.
+///     Base type shared by every endpoint. Because <see cref="CreateDescriptor" /> is both abstract
+///     and internal, endpoints must derive from one of the library's own base classes rather than
+///     from this type directly.
 /// </summary>
 public abstract class EndpointBase
 {
@@ -81,29 +82,16 @@ public abstract class EndpointBase
     /// <summary>
     ///     The endpoint's route, verbs and group, generated from its attributes. Called once at startup.
     /// </summary>
-    /// <returns>The metadata, or <see langword="null" /> while an endpoint still registers it.</returns>
+    /// <returns>The metadata.</returns>
     /// <remarks>
-    ///     <c>protected</c> so the generated override can live in the consumer's assembly, and nullable
-    ///     only transitionally: it becomes <c>abstract</c> once nothing registers metadata any more.
+    ///     <c>protected</c>, not <c>private protected</c>: the override is generated into the
+    ///     endpoint's own partial class, which lives in the consumer's assembly, where a
+    ///     <c>private protected</c> member is unreachable. <c>abstract</c> so that an endpoint whose
+    ///     metadata was never generated does not compile, rather than failing at startup — which is
+    ///     why nothing registers metadata any more and why every endpoint must be <c>partial</c>.
     /// </remarks>
-    protected virtual EndpointMetadata? CreateMetadata()
-    {
-        return null;
-    }
+    protected abstract EndpointMetadata CreateMetadata();
 
-    /// <summary>Resolves this endpoint's metadata, preferring what its generated code declares.</summary>
-    /// <param name="registered">What the registry holds, used only while the fallback exists.</param>
-    /// <returns>The metadata to map with.</returns>
-    internal EndpointMetadata ResolveMetadata(EndpointMetadata? registered)
-    {
-        // Registered metadata wins for now, deliberately. The module initializer registers every
-        // endpoint, so this makes the task change no runtime behaviour: the generated CreateMetadata is
-        // emitted and tested, but nothing consumes it until Task 9 deletes the registry. Preferring the
-        // generated value here instead would silently discard the 148 hand-registered routes in the test
-        // suite, because a generated CreateMetadata returns empty-but-non-null metadata for an endpoint
-        // with no route attribute — a route the test supplied would vanish rather than fail loudly.
-        return registered ?? CreateMetadata() ?? throw new InvalidOperationException(
-            $"Endpoint '{GetType()}' declares no route metadata. The Synapse.Endpoints analyzer emits it " +
-            "at compile time; verify it is enabled for the assembly declaring this endpoint.");
-    }
+    /// <summary>This endpoint's route metadata, generated from its attributes.</summary>
+    internal EndpointMetadata Metadata => CreateMetadata();
 }

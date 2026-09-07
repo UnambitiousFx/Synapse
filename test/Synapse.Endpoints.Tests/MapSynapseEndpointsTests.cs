@@ -2,7 +2,6 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using UnambitiousFx.Synapse.Abstractions;
-using UnambitiousFx.Synapse.Endpoints.Binding;
 using UnambitiousFx.Synapse.Endpoints.Builders;
 
 namespace UnambitiousFx.Synapse.Endpoints.Tests;
@@ -13,9 +12,6 @@ public sealed partial class MapSynapseEndpointsTests
     public void MapSynapseEndpoints_WhenTwoEndpointsShareVerbAndRoute_Throws()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<FirstDupEndpoint>(new EndpointMetadata(["GET"], "/dup"));
-        EndpointRegistry.RegisterMetadata<SecondDupEndpoint>(new EndpointMetadata(["GET"], "/dup"));
-
         var app = WebApplication.CreateSlimBuilder().Build();
 
         // Act & Assert
@@ -28,9 +24,6 @@ public sealed partial class MapSynapseEndpointsTests
     public void MapSynapseEndpoints_WhenRoutesAreDistinct_MapsBothWithoutThrowing()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<HappyFirstEndpoint>(new EndpointMetadata(["GET"], "/happy-a"));
-        EndpointRegistry.RegisterMetadata<HappySecondEndpoint>(new EndpointMetadata(["GET"], "/happy-b"));
-
         var app = WebApplication.CreateSlimBuilder().Build();
 
         // Act
@@ -51,8 +44,6 @@ public sealed partial class MapSynapseEndpointsTests
     public void MapSynapseEndpoints_Always_ReturnsSameBuilderForChaining()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<ChainEndpoint>(new EndpointMetadata(["GET"], "/chain"));
-
         var app = WebApplication.CreateSlimBuilder().Build();
 
         // Act
@@ -69,10 +60,6 @@ public sealed partial class MapSynapseEndpointsTests
         // If DataSources enumeration surfaced the bare template instead of the group-prefixed
         // one, the exception message would read "GET /dup" instead of "GET /shared/dup" - this
         // assertion is the proof that group prefixes are present in what the check inspects.
-        EndpointRegistry.RegisterMetadata<GroupDupFirstEndpoint>(
-            new EndpointMetadata(["GET"], "/dup", typeof(GroupPrefixDupGroup), static () => new GroupPrefixDupGroup()));
-        EndpointRegistry.RegisterMetadata<GroupDupSecondEndpoint>(
-            new EndpointMetadata(["GET"], "/dup", typeof(GroupPrefixDupGroup), static () => new GroupPrefixDupGroup()));
 
         var app = WebApplication.CreateSlimBuilder().Build();
 
@@ -92,7 +79,6 @@ public sealed partial class MapSynapseEndpointsTests
     {
         // Arrange — the duplicate is entirely outside Synapse: two plain MapGet calls on one route,
         // plus one unrelated Synapse endpoint so the check actually has something of ours to inspect.
-        EndpointRegistry.RegisterMetadata<ForeignDupEndpoint>(new EndpointMetadata(["GET"], "/mine"));
 
         var app = WebApplication.CreateSlimBuilder().Build();
 
@@ -116,9 +102,6 @@ public sealed partial class MapSynapseEndpointsTests
     public void MapSynapseEndpoints_WhenSynapseEndpointsCollideAlongsideHandWrittenRoutes_StillThrows()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<MixedDupFirstEndpoint>(new EndpointMetadata(["GET"], "/mixed-dup"));
-        EndpointRegistry.RegisterMetadata<MixedDupSecondEndpoint>(new EndpointMetadata(["GET"], "/mixed-dup"));
-
         var app = WebApplication.CreateSlimBuilder().Build();
         MapHealth(app);
 
@@ -143,6 +126,7 @@ public sealed partial class MapSynapseEndpointsTests
 
     internal sealed record ForeignDupQuery : IRequest<string>;
 
+    [Get("/mine")]
     internal sealed partial class ForeignDupEndpoint : Endpoint<ForeignDupQuery, string>;
 
     private sealed class MixedDupGroup : IEndpointGroup
@@ -156,10 +140,12 @@ public sealed partial class MapSynapseEndpointsTests
 
     internal sealed record MixedDupFirstQuery : IRequest<string>;
 
+    [Get("/mixed-dup")]
     internal sealed partial class MixedDupFirstEndpoint : Endpoint<MixedDupFirstQuery, string>;
 
     internal sealed record MixedDupSecondQuery : IRequest<string>;
 
+    [Get("/mixed-dup")]
     internal sealed partial class MixedDupSecondEndpoint : Endpoint<MixedDupSecondQuery, string>;
 
     private sealed class DupGroup : IEndpointGroup
@@ -173,10 +159,12 @@ public sealed partial class MapSynapseEndpointsTests
 
     internal sealed record FirstDupQuery : IRequest<string>;
 
+    [Get("/dup")]
     internal sealed partial class FirstDupEndpoint : Endpoint<FirstDupQuery, string>;
 
     internal sealed record SecondDupQuery : IRequest<string>;
 
+    [Get("/dup")]
     internal sealed partial class SecondDupEndpoint : Endpoint<SecondDupQuery, string>;
 
     private sealed class HappyGroup : IEndpointGroup
@@ -190,10 +178,12 @@ public sealed partial class MapSynapseEndpointsTests
 
     internal sealed record HappyFirstQuery : IRequest<string>;
 
+    [Get("/happy-a")]
     internal sealed partial class HappyFirstEndpoint : Endpoint<HappyFirstQuery, string>;
 
     internal sealed record HappySecondQuery : IRequest<string>;
 
+    [Get("/happy-b")]
     internal sealed partial class HappySecondEndpoint : Endpoint<HappySecondQuery, string>;
 
     private sealed class ChainGroup : IEndpointGroup
@@ -206,6 +196,7 @@ public sealed partial class MapSynapseEndpointsTests
 
     internal sealed record ChainQuery : IRequest<string>;
 
+    [Get("/chain")]
     internal sealed partial class ChainEndpoint : Endpoint<ChainQuery, string>;
 
     private sealed class GroupPrefixDupGroup : EndpointGroup
@@ -227,9 +218,13 @@ public sealed partial class MapSynapseEndpointsTests
 
     internal sealed record GroupDupFirstQuery : IRequest<string>;
 
+    [Get("/dup")]
+    [InGroup<GroupPrefixDupGroup>]
     internal sealed partial class GroupDupFirstEndpoint : Endpoint<GroupDupFirstQuery, string>;
 
     internal sealed record GroupDupSecondQuery : IRequest<string>;
 
+    [Get("/dup")]
+    [InGroup<GroupPrefixDupGroup>]
     internal sealed partial class GroupDupSecondEndpoint : Endpoint<GroupDupSecondQuery, string>;
 }

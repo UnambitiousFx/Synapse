@@ -1,8 +1,9 @@
 namespace UnambitiousFx.Synapse.Endpoints.Generator.Tests;
 
 /// <summary>
-///     Low-level endpoints are discovered, registered and mapped exactly like the high-level ones, but
-///     have no generated binder — their binding is either hand-written or does not exist.
+///     Low-level endpoints are discovered and mapped exactly like the high-level ones, and their route
+///     metadata is generated into them the same way, but they have no generated binder — their binding
+///     is either hand-written or does not exist.
 /// </summary>
 public sealed class RawEndpointEmissionTests
 {
@@ -15,7 +16,7 @@ public sealed class RawEndpointEmissionTests
                                             namespace TestNs;
 
                                             [Get("/health")]
-                                            public sealed class HealthEndpoint : RawEndpoint
+                                            public sealed partial class HealthEndpoint : RawEndpoint
                                             {
                                                 public override ValueTask<IResult> HandleAsync(HttpContext context, CancellationToken cancellationToken)
                                                     => ValueTask.FromResult(TypedResults.NoContent() as IResult);
@@ -36,7 +37,7 @@ public sealed class RawEndpointEmissionTests
                               namespace TestNs;
 
                               [Get("/health")]
-                              public sealed class HealthEndpoint : RawEndpoint
+                              public sealed partial class HealthEndpoint : RawEndpoint
                               {
                                   public override ValueTask<IResult> HandleAsync(HttpContext context, CancellationToken cancellationToken)
                                       => ValueTask.FromResult(TypedResults.NoContent() as IResult);
@@ -58,16 +59,15 @@ public sealed class RawEndpointEmissionTests
     }
 
     [Fact]
-    public void Generate_ForAFreeFormEndpoint_RegistersMetadataButNoBinding()
+    public void Generate_ForAFreeFormEndpoint_EmitsMetadataButNoBinding()
     {
         // Act
-        var files = GeneratorHarness.GetFiles(FreeFormEndpoint);
-        var registrations = files["SynapseEndpointRegistrations.g.cs"];
+        var generated = GeneratorHarness.GetEndpointFile(FreeFormEndpoint);
 
-        // Assert — the route still has to be registered, but there is no bound type to bind, so no
-        // per-endpoint binding partial is emitted.
-        Assert.Contains("RegisterMetadata<global::TestNs.HealthEndpoint>", registrations);
-        Assert.DoesNotContain(files.Keys, key => key.EndsWith(".Synapse.g.cs", StringComparison.Ordinal));
+        // Assert — the route is still emitted, into the endpoint's own partial, but there is no bound
+        // type to bind, so no BindAsync comes with it.
+        Assert.Contains("EndpointMetadata(new[] { \"GET\" }, \"/health\")", generated);
+        Assert.DoesNotContain("BindAsync(", generated);
         GeneratorHarness.AssertGeneratedCompiles(FreeFormEndpoint);
     }
 
@@ -91,7 +91,7 @@ public sealed class RawEndpointEmissionTests
 
                               [Get("/health")]
                               [InGroup<OpsGroup>]
-                              public sealed class HealthEndpoint : RawEndpoint
+                              public sealed partial class HealthEndpoint : RawEndpoint
                               {
                                   public override ValueTask<IResult> HandleAsync(HttpContext context, CancellationToken cancellationToken)
                                       => ValueTask.FromResult(TypedResults.NoContent() as IResult);
@@ -99,16 +99,16 @@ public sealed class RawEndpointEmissionTests
                               """;
 
         // Act
-        var registrations = GeneratorHarness.GetFile(source, "SynapseEndpointRegistrations.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert
         Assert.Contains("typeof(global::TestNs.OpsGroup), static () => new global::TestNs.OpsGroup()",
-            registrations);
+            generated);
         GeneratorHarness.AssertGeneratedCompiles(source);
     }
 
     [Fact]
-    public void Generate_ForAHandBoundEndpoint_RegistersMetadataButNoBinder()
+    public void Generate_ForAHandBoundEndpoint_EmitsMetadataButNoBinder()
     {
         // Arrange
         const string source = """
@@ -123,7 +123,7 @@ public sealed class RawEndpointEmissionTests
                               public sealed record LookupQuery(int Id) : IRequest<string>;
 
                               [Get("/lookup/{id}")]
-                              public sealed class LookupEndpoint : RawEndpoint<LookupQuery, string>
+                              public sealed partial class LookupEndpoint : RawEndpoint<LookupQuery, string>
                               {
                                   public override ValueTask<BindResult<LookupQuery>> BindAsync(HttpContext context)
                                   {
@@ -137,12 +137,12 @@ public sealed class RawEndpointEmissionTests
                               """;
 
         // Act
-        var files = GeneratorHarness.GetFiles(source);
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert — the endpoint supplies its own BindAsync, so generating one would not merely be
-        // dead code: it would collide with the author's own member.
-        Assert.Contains("RegisterMetadata<global::TestNs.LookupEndpoint>", files["SynapseEndpointRegistrations.g.cs"]);
-        Assert.DoesNotContain(files.Keys, key => key.EndsWith(".Synapse.g.cs", StringComparison.Ordinal));
+        // dead code: it would collide with the author's own member. Its metadata is still generated.
+        Assert.Contains("EndpointMetadata(new[] { \"GET\" }, \"/lookup/{id}\")", generated);
+        Assert.DoesNotContain("BindAsync(", generated);
         GeneratorHarness.AssertGeneratedCompiles(source);
     }
 
@@ -194,7 +194,7 @@ public sealed class RawEndpointEmissionTests
                               namespace TestNs;
 
                               [Post("/webhooks/{tenant}/{kind}")]
-                              public sealed class WebhookEndpoint : RawEndpoint
+                              public sealed partial class WebhookEndpoint : RawEndpoint
                               {
                                   public override ValueTask<IResult> HandleAsync(HttpContext context, CancellationToken cancellationToken)
                                       => ValueTask.FromResult(TypedResults.Accepted((string?)null) as IResult);
@@ -225,7 +225,7 @@ public sealed class RawEndpointEmissionTests
                               public sealed record SlugQuery(string Value) : IRequest<string>;
 
                               [Get("/pages/{slug}")]
-                              public sealed class SlugEndpoint : RawEndpoint<SlugQuery, string>
+                              public sealed partial class SlugEndpoint : RawEndpoint<SlugQuery, string>
                               {
                                   public override ValueTask<BindResult<SlugQuery>> BindAsync(HttpContext context)
                                   {
@@ -257,7 +257,7 @@ public sealed class RawEndpointEmissionTests
                               namespace TestNs;
 
                               [Get("/generic")]
-                              public sealed class GenericEndpoint<T> : RawEndpoint
+                              public sealed partial class GenericEndpoint<T> : RawEndpoint
                               {
                                   public override ValueTask<IResult> HandleAsync(HttpContext context, CancellationToken cancellationToken)
                                       => ValueTask.FromResult(TypedResults.NoContent() as IResult);
@@ -285,7 +285,7 @@ public sealed class RawEndpointEmissionTests
                               namespace TestNs;
 
                               [Get("/twice")]
-                              public sealed class TwiceEndpoint : RawEndpoint
+                              public sealed partial class TwiceEndpoint : RawEndpoint
                               {
                                   public override void Configure(IRawEndpointBuilder builder) => builder.Get("/also-here");
 
@@ -320,7 +320,7 @@ public sealed class RawEndpointEmissionTests
                               public sealed record CreateThingCommand : IRequest<string>;
 
                               [Post("/things")]
-                              public sealed class CreateThingEndpoint : RawEndpoint<CreateThingCommand, string>
+                              public sealed partial class CreateThingEndpoint : RawEndpoint<CreateThingCommand, string>
                               {
                                   public override ValueTask<BindResult<CreateThingCommand>> BindAsync(HttpContext context)
                                       => ValueTask.FromResult(BindResult<CreateThingCommand>.Success(new CreateThingCommand()));
@@ -348,7 +348,7 @@ public sealed class RawEndpointEmissionTests
                               namespace TestNs;
 
                               [Post("/things")]
-                              public sealed class CreateThingEndpoint : RawEndpoint
+                              public sealed partial class CreateThingEndpoint : RawEndpoint
                               {
                                   public override ValueTask<IResult> HandleAsync(HttpContext context, CancellationToken cancellationToken)
                                       => ValueTask.FromResult(TypedResults.Ok("made") as IResult);
@@ -378,7 +378,7 @@ public sealed class RawEndpointEmissionTests
                               public sealed record TickQuery : IStreamRequest<int>;
 
                               [Get("/ticks")]
-                              public sealed class TickEndpoint : RawEndpoint<TickQuery, int>
+                              public sealed partial class TickEndpoint : RawEndpoint<TickQuery, int>
                               {
                                   public override ValueTask<BindResult<TickQuery>> BindAsync(HttpContext context)
                                       => ValueTask.FromResult(BindResult<TickQuery>.Success(new TickQuery()));
@@ -428,7 +428,7 @@ public sealed class RawEndpointEmissionTests
                               }
 
                               [Get("/messy")]
-                              public sealed class MessyEndpoint : RawEndpoint<MessyQuery, string>
+                              public sealed partial class MessyEndpoint : RawEndpoint<MessyQuery, string>
                               {
                                   public override ValueTask<BindResult<MessyQuery>> BindAsync(HttpContext context)
                                       => ValueTask.FromResult(BindResult<MessyQuery>.Success(new MessyQuery()));

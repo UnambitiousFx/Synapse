@@ -13,7 +13,7 @@ whole endpoint — one attribute, one class declaration, no method body:
 public sealed record GetTaskQuery(Guid TaskId) : IRequest<TaskDto>;
 
 [Get("/tasks/{taskId:guid}")]
-public sealed class GetTaskEndpoint : Endpoint<GetTaskQuery, TaskDto>;
+public sealed partial class GetTaskEndpoint : Endpoint<GetTaskQuery, TaskDto>;
 ```
 
 That is a complete, working `GET /tasks/{taskId}`. The route value is bound to `TaskId`, the query is
@@ -52,7 +52,7 @@ Use it for the CRUD and query surface of an application — which in practice is
 
 ```csharp
 [Get("/health")]
-public sealed class HealthEndpoint : RawEndpoint
+public sealed partial class HealthEndpoint : RawEndpoint
 {
     public override ValueTask<IResult> HandleAsync(
         HttpContext ctx, CancellationToken ct) => …
@@ -116,7 +116,7 @@ tasks.MapGet("/{id:guid}", async (
 
 ```csharp title="With Endpoints: the shape is generated"
 [Get("/tasks/{taskId:guid}")]
-public sealed class GetTaskEndpoint : Endpoint<GetTaskQuery, TaskDto>;
+public sealed partial class GetTaskEndpoint : Endpoint<GetTaskQuery, TaskDto>;
 ```
 
 Nothing is given up in exchange. The status code and response shape stay fully controllable —

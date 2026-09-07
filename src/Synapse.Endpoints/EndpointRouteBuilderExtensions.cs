@@ -1,6 +1,5 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
-using UnambitiousFx.Synapse.Endpoints.Binding;
 using UnambitiousFx.Synapse.Endpoints.Internal;
 
 namespace UnambitiousFx.Synapse.Endpoints;
@@ -15,31 +14,22 @@ public static class EndpointRouteBuilderExtensions
     /// <typeparam name="TEndpoint">The endpoint type.</typeparam>
     /// <param name="endpoints">The route builder.</param>
     /// <returns>The route handler builder, for further configuration.</returns>
-    /// <exception cref="InvalidOperationException">
-    ///     The endpoint declares a group via <c>InGroupAttribute</c> but no group factory was
-    ///     registered for it.
-    /// </exception>
+    /// <exception cref="ArgumentNullException"><paramref name="endpoints" /> is <see langword="null" />.</exception>
+    /// <remarks>
+    ///     The group factory is dereferenced unchecked: <see cref="EndpointMetadata" />'s only
+    ///     group-carrying constructor takes the type and the factory together, so a metadata carrying
+    ///     one without the other cannot be built.
+    /// </remarks>
     public static RouteHandlerBuilder MapEndpoint<TEndpoint>(this IEndpointRouteBuilder endpoints)
         where TEndpoint : EndpointBase, new()
     {
         ArgumentNullException.ThrowIfNull(endpoints);
 
         var endpoint = new TEndpoint();
-        var metadata = endpoint.ResolveMetadata(EndpointRegistry.TryGetMetadata<TEndpoint>());
-        var target = endpoints;
-
-        if (metadata.GroupType is not null)
-        {
-            if (metadata.GroupFactory is null)
-            {
-                throw new InvalidOperationException(
-                    $"Endpoint '{typeof(TEndpoint).Name}' declares group '{metadata.GroupType.Name}' but no " +
-                    "group factory was registered. The Synapse.Endpoints analyzer emits the factory alongside " +
-                    "the route metadata; verify it is enabled for the assembly declaring this endpoint.");
-            }
-
-            target = GroupCache.Resolve(endpoints, metadata.GroupType, metadata.GroupFactory);
-        }
+        var metadata = endpoint.Metadata;
+        var target = metadata.GroupType is not null
+            ? GroupCache.Resolve(endpoints, metadata.GroupType, metadata.GroupFactory!)
+            : endpoints;
 
         return EndpointMapper.Map(target, endpoint.CreateDescriptor(metadata));
     }

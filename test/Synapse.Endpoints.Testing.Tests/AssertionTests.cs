@@ -1,10 +1,9 @@
 using Microsoft.AspNetCore.Http;
-using UnambitiousFx.Synapse.Endpoints.Binding;
 using UnambitiousFx.Synapse.Endpoints.Testing.Assertions;
 
 namespace UnambitiousFx.Synapse.Endpoints.Testing.Tests;
 
-public sealed class AssertionTests
+public sealed partial class AssertionTests
 {
     [Fact]
     public async Task Status_WhenItMatches_DoesNotThrow()
@@ -202,12 +201,12 @@ public sealed class AssertionTests
     private static async Task<EndpointResponse> Respond<TEndpoint>(string url)
         where TEndpoint : EndpointBase, new()
     {
-        EndpointRegistry.RegisterMetadata<TEndpoint>(new EndpointMetadata(["GET"], url));
         using var harness = EndpointHarness.Create<TEndpoint>();
         return await harness.Get(url).SendAsync(TestContext.Current.CancellationToken);
     }
 
-    internal sealed class OkEndpoint : RawEndpoint
+    [Get("/ok")]
+    internal sealed partial class OkEndpoint : RawEndpoint
     {
         public override ValueTask<IResult> HandleAsync(HttpContext context,
             CancellationToken cancellationToken)
@@ -216,7 +215,8 @@ public sealed class AssertionTests
         }
     }
 
-    internal sealed class CreatedEndpoint : RawEndpoint
+    [Get("/created")]
+    internal sealed partial class CreatedEndpoint : RawEndpoint
     {
         public override ValueTask<IResult> HandleAsync(HttpContext context,
             CancellationToken cancellationToken)
@@ -225,7 +225,8 @@ public sealed class AssertionTests
         }
     }
 
-    internal sealed class NoContentEndpoint : RawEndpoint
+    [Get("/no-content")]
+    internal sealed partial class NoContentEndpoint : RawEndpoint
     {
         public override ValueTask<IResult> HandleAsync(HttpContext context,
             CancellationToken cancellationToken)
@@ -234,7 +235,8 @@ public sealed class AssertionTests
         }
     }
 
-    internal sealed class NotFoundEndpoint : RawEndpoint
+    [Get("/not-found")]
+    internal sealed partial class NotFoundEndpoint : RawEndpoint
     {
         public override ValueTask<IResult> HandleAsync(HttpContext context,
             CancellationToken cancellationToken)
@@ -243,7 +245,8 @@ public sealed class AssertionTests
         }
     }
 
-    internal sealed class ProblemEndpoint : RawEndpoint
+    [Get("/problem")]
+    internal sealed partial class ProblemEndpoint : RawEndpoint
     {
         public override ValueTask<IResult> HandleAsync(HttpContext context,
             CancellationToken cancellationToken)

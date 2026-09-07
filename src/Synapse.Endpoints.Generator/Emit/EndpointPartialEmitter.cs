@@ -6,13 +6,16 @@ using UnambitiousFx.Synapse.Endpoints.Generator.Model;
 namespace UnambitiousFx.Synapse.Endpoints.Generator.Emit;
 
 /// <summary>
-///     Renders one endpoint's generated file: its class reopened as a partial, holding the binding
-///     and the metadata the tier declares as overridable hooks.
+///     Renders one endpoint's generated file: its class reopened as a partial, holding its route
+///     metadata and — for the tiers whose binding is generated — the binding and the OpenAPI hooks.
 /// </summary>
 /// <remarks>
 ///     One file per endpoint, not one per bound type. Two endpoints binding the same message each
 ///     get their own binding resolved from their own route and verb, which is why SYNE013 no longer
 ///     exists — see the design at docs/superpowers/specs/2026-09-07-endpoint-partial-generation-design.md.
+///     Emitted for every endpoint kind, including the hand-bound and free-form ones: they bind
+///     themselves, but <c>EndpointBase.CreateMetadata</c> is abstract, so every endpoint needs the
+///     metadata override and therefore has to be reopenable.
 /// </remarks>
 internal static class EndpointPartialEmitter
 {
@@ -47,10 +50,14 @@ internal static class EndpointPartialEmitter
 
     /// <summary>Renders one endpoint's generated partial.</summary>
     /// <param name="endpoint">The endpoint to emit for.</param>
-    /// <param name="boundType">What it binds, and the properties resolved from its own route and verb.</param>
+    /// <param name="boundType">
+    ///     What it binds, and the properties resolved from its own route and verb, or
+    ///     <see langword="null" /> for a kind whose binding is not generated — in which case only the
+    ///     metadata override is emitted.
+    /// </param>
     /// <returns>The generated source.</returns>
     internal static SourceText Emit(EndpointTarget endpoint,
-        BoundTypeInfo boundType)
+        BoundTypeInfo? boundType)
     {
         var declaration = endpoint.Declaration;
         var builder = new StringBuilder();
@@ -85,8 +92,13 @@ internal static class EndpointPartialEmitter
         // emitted and warned about.
         var modifier = declaration.IsSealed ? "override" : "sealed override";
 
-        EmitBindAsync(builder, boundType, indent + "    ", modifier);
-        EmitMetadata(builder, boundType, indent + "    ", modifier);
+        if (boundType is not null)
+        {
+            EmitBindAsync(builder, boundType, indent + "    ", modifier);
+            EmitMetadata(builder, boundType, indent + "    ", modifier);
+            builder.AppendLine();
+        }
+
         EmitCreateMetadata(builder, endpoint, indent + "    ", modifier);
 
         builder.AppendLine($"{indent}}}");
@@ -173,15 +185,13 @@ internal static class EndpointPartialEmitter
     }
 
     /// <summary>
-    ///     Renders the <c>CreateMetadata</c> override, built exactly as
-    ///     <see cref="EndpointGroupEmitter.EmitRegistrations" /> builds its <c>EndpointMetadata</c>
-    ///     construction — same escaping, same group-type-and-factory pair — because both describe the
-    ///     same route.
+    ///     Renders the <c>CreateMetadata</c> override that <c>MapEndpoint&lt;TEndpoint&gt;()</c> reads.
     /// </summary>
     /// <remarks>
-    ///     Not consumed anywhere yet: <c>EndpointBase.ResolveMetadata</c> prefers the registry's
-    ///     metadata until the registry itself is deleted. This emits it early so the 145 call sites
-    ///     that still register metadata by hand can migrate off the registry incrementally.
+    ///     Always emitted, even when the endpoint carries no route attribute: the member is abstract on
+    ///     <c>EndpointBase</c>, so omitting it would leave the endpoint unimplemented. Empty verbs and
+    ///     an empty route are the honest answer for an endpoint that declares its route inside
+    ///     <c>Configure</c>, which the generator cannot see — the builder supplies both at startup.
     /// </remarks>
     private static void EmitCreateMetadata(StringBuilder builder,
         EndpointTarget endpoint,
@@ -202,7 +212,6 @@ internal static class EndpointPartialEmitter
             ? string.Empty
             : $", typeof({endpoint.GroupFullName}), static () => new {endpoint.GroupFullName}()";
 
-        builder.AppendLine();
         builder.AppendLine($"{indent}/// <inheritdoc />");
         builder.AppendLine($"{indent}protected {modifier} {EndpointsNamespace}.EndpointMetadata CreateMetadata()");
         builder.AppendLine($"{indent}{{");

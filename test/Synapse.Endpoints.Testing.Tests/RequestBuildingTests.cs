@@ -1,17 +1,15 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
-using UnambitiousFx.Synapse.Endpoints.Binding;
 
 namespace UnambitiousFx.Synapse.Endpoints.Testing.Tests;
 
-public sealed class RequestBuildingTests
+public sealed partial class RequestBuildingTests
 {
     [Fact]
     public async Task Query_WhenSet_IsVisibleToTheEndpoint()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<EchoInputEndpoint>(new EndpointMetadata(["GET"], "/echo"));
         using var harness = EndpointHarness.Create<EchoInputEndpoint>();
 
         // Act
@@ -25,7 +23,6 @@ public sealed class RequestBuildingTests
     public async Task Get_WhenTheUrlCarriesItsOwnQueryString_IsVisibleToTheEndpoint()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<EchoInputEndpoint>(new EndpointMetadata(["GET"], "/echo"));
         using var harness = EndpointHarness.Create<EchoInputEndpoint>();
 
         // Act
@@ -39,7 +36,6 @@ public sealed class RequestBuildingTests
     public async Task Header_WhenSet_IsVisibleToTheEndpoint()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<EchoInputEndpoint>(new EndpointMetadata(["GET"], "/echo"));
         using var harness = EndpointHarness.Create<EchoInputEndpoint>();
 
         // Act
@@ -53,7 +49,6 @@ public sealed class RequestBuildingTests
     public async Task JsonBody_WhenSet_IsReadableAsJsonByTheEndpoint()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<EchoBodyEndpoint>(new EndpointMetadata(["POST"], "/echo-body"));
         using var harness = EndpointHarness.Create<EchoBodyEndpoint>();
 
         // Act
@@ -69,7 +64,6 @@ public sealed class RequestBuildingTests
     public async Task Body_WhenSet_IsReadableVerbatimByTheEndpoint()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<EchoRawBodyEndpoint>(new EndpointMetadata(["POST"], "/echo-raw"));
         using var harness = EndpointHarness.Create<EchoRawBodyEndpoint>();
 
         // Act
@@ -85,7 +79,6 @@ public sealed class RequestBuildingTests
         // Arrange — every FormBindingHarnessTests case uses "hello", a value needing no encoding at
         // all, so a broken encoder would pass every one of them. This reads the raw request instead
         // of going through a form binder: the point is to test the builder, not the parser.
-        EndpointRegistry.RegisterMetadata<EchoRawBodyEndpoint>(new EndpointMetadata(["POST"], "/echo-raw"));
         using var harness = EndpointHarness.Create<EchoRawBodyEndpoint>();
 
         // Act
@@ -104,7 +97,6 @@ public sealed class RequestBuildingTests
         // string early, which corrupts the header rather than merely the file name. This reads the
         // raw request instead of going through a form binder: the point is to test the builder, not
         // the parser.
-        EndpointRegistry.RegisterMetadata<EchoRawBodyEndpoint>(new EndpointMetadata(["POST"], "/echo-raw"));
         using var harness = EndpointHarness.Create<EchoRawBodyEndpoint>();
 
         // MultipartBody's boundary is a fixed, undocumented implementation detail, duplicated here
@@ -133,7 +125,6 @@ public sealed class RequestBuildingTests
         // using different options (a hardcoded, default-cased JsonSerializerOptions, say) would not
         // throw - System.Text.Json just leaves the unmatched property at its default, so the
         // assertion below would see null instead of "widgets".
-        EndpointRegistry.RegisterMetadata<EchoSnakeCaseEndpoint>(new EndpointMetadata(["GET"], "/echo-snake"));
         using var harness = EndpointHarness.Create<EchoSnakeCaseEndpoint>(options =>
             options.Services.ConfigureHttpJsonOptions(json =>
                 json.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower));
@@ -157,7 +148,8 @@ public sealed class RequestBuildingTests
         public string? SearchTerm { get; set; }
     }
 
-    internal sealed class EchoInputEndpoint : RawEndpoint
+    [Get("/echo")]
+    internal sealed partial class EchoInputEndpoint : RawEndpoint
     {
         public override ValueTask<IResult> HandleAsync(HttpContext context,
             CancellationToken cancellationToken)
@@ -170,7 +162,8 @@ public sealed class RequestBuildingTests
         }
     }
 
-    internal sealed class EchoSnakeCaseEndpoint : RawEndpoint
+    [Get("/echo-snake")]
+    internal sealed partial class EchoSnakeCaseEndpoint : RawEndpoint
     {
         public override ValueTask<IResult> HandleAsync(HttpContext context,
             CancellationToken cancellationToken)
@@ -179,7 +172,8 @@ public sealed class RequestBuildingTests
         }
     }
 
-    internal sealed class EchoBodyEndpoint : RawEndpoint
+    [Post("/echo-body")]
+    internal sealed partial class EchoBodyEndpoint : RawEndpoint
     {
         public override async ValueTask<IResult> HandleAsync(HttpContext context,
             CancellationToken cancellationToken)
@@ -189,7 +183,8 @@ public sealed class RequestBuildingTests
         }
     }
 
-    internal sealed class EchoRawBodyEndpoint : RawEndpoint
+    [Post("/echo-raw")]
+    internal sealed partial class EchoRawBodyEndpoint : RawEndpoint
     {
         public override async ValueTask<IResult> HandleAsync(HttpContext context,
             CancellationToken cancellationToken)

@@ -145,7 +145,7 @@ public sealed record TagReportQuery(int Page, int Size = 20) : IRequest<TagRepor
 }
 
 [Get("/reports")]
-public sealed class TagReportEndpoint : Endpoint<TagReportQuery, TagReportDto>;
+public sealed partial class TagReportEndpoint : Endpoint<TagReportQuery, TagReportDto>;
 ```
 
 ```bash

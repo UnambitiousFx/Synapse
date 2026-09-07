@@ -167,7 +167,8 @@ enforcement, no outbox. It is for endpoints that genuinely have no domain messag
 Two base classes in `src/Synapse.Endpoints`, siblings of `MappedEndpoint<…>` under
 `BoundEndpoint<TBound>` — not under `RawEndpoint<TRequest, TResponse>`, whose `IRequest<TResponse>`
 constraint is the thing being dropped. Each supplies the same two seams every bound tier supplies:
-`BindBoundAsync` takes the generated binder from `EndpointRegistry`, and `ProduceResultAsync` runs
+`BindBoundAsync` calls the `BindAsync` generated into the endpoint's own partial, and
+`ProduceResultAsync` runs
 `ExecuteAsync` and maps its `Result`. The lifecycle order, the hooks and the processors are inherited
 unchanged, so the new tier cannot drift from the others.
 

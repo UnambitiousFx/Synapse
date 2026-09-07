@@ -33,7 +33,7 @@ public sealed record PurgeTasksCommand(IReadOnlyList<string> Tags) : IRequest;
 ///     </para>
 /// </remarks>
 [Delete("/ops/tasks")]
-public sealed class PurgeTasksEndpoint : RawEndpoint<PurgeTasksCommand>
+public sealed partial class PurgeTasksEndpoint : RawEndpoint<PurgeTasksCommand>
 {
     /// <inheritdoc />
     public override void Configure(IEndpointBuilder builder)

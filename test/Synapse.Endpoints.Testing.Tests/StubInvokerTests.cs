@@ -5,13 +5,12 @@ using UnambitiousFx.Synapse.Endpoints.Binding;
 
 namespace UnambitiousFx.Synapse.Endpoints.Testing.Tests;
 
-public sealed class StubInvokerTests
+public sealed partial class StubInvokerTests
 {
     [Fact]
     public async Task SendAsync_WhenTheStubSucceeds_ReturnsTheMappedSuccess()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<GreetEndpoint>(new EndpointMetadata(["GET"], "/greet"));
         using var harness = EndpointHarness.Create<GreetEndpoint>(options =>
             options.Handle<GreetQuery, string>(_ => Result.Success("hello")));
 
@@ -28,7 +27,6 @@ public sealed class StubInvokerTests
     {
         // Arrange: the point of stubbing IInvoker rather than IHttpInvoker - the 404 below is
         // written by the real DefaultFailureHttpMapper, not by the harness.
-        EndpointRegistry.RegisterMetadata<GreetEndpoint>(new EndpointMetadata(["GET"], "/greet"));
         using var harness = EndpointHarness.Create<GreetEndpoint>(options =>
             options.Handle<GreetQuery, string>(_ => Result.FailNotFound<string>("Greeting", "1")));
 
@@ -43,7 +41,6 @@ public sealed class StubInvokerTests
     public async Task SendAsync_ForAVoidCommand_ReturnsNoContent()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<PurgeEndpoint>(new EndpointMetadata(["DELETE"], "/purge"));
         using var harness = EndpointHarness.Create<PurgeEndpoint>(options =>
             options.Handle<PurgeCommand>(_ => Result.Success()));
 
@@ -58,7 +55,6 @@ public sealed class StubInvokerTests
     public async Task SendAsync_WhenTheStubIsAsynchronous_IsAwaited()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<GreetEndpoint>(new EndpointMetadata(["GET"], "/greet"));
         using var harness = EndpointHarness.Create<GreetEndpoint>(options =>
             options.Handle<GreetQuery, string>(async (_, token) =>
             {
@@ -77,7 +73,6 @@ public sealed class StubInvokerTests
     public async Task SendAsync_WhenNoHandlerIsStubbed_ThrowsNamingTheHandleCallThatFixesIt()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<GreetEndpoint>(new EndpointMetadata(["GET"], "/greet"));
         using var harness = EndpointHarness.Create<GreetEndpoint>();
 
         // Act
@@ -93,7 +88,6 @@ public sealed class StubInvokerTests
     public async Task SendAsync_WhenTheStubbedResponseTypeIsWrong_ThrowsNamingTheExpectedType()
     {
         // Arrange: GreetQuery is dispatched as IRequest<string>, but the stub returns Result<int>.
-        EndpointRegistry.RegisterMetadata<GreetEndpoint>(new EndpointMetadata(["GET"], "/greet"));
         using var harness = EndpointHarness.Create<GreetEndpoint>(options =>
             options.Handle<GreetQuery, int>(_ => Result.Success(1)));
 
@@ -109,7 +103,8 @@ public sealed class StubInvokerTests
 
     internal sealed record PurgeCommand : IRequest;
 
-    internal sealed class GreetEndpoint : RawEndpoint<GreetQuery, string>
+    [Get("/greet")]
+    internal sealed partial class GreetEndpoint : RawEndpoint<GreetQuery, string>
     {
         public override ValueTask<BindResult<GreetQuery>> BindAsync(HttpContext context)
         {
@@ -117,7 +112,8 @@ public sealed class StubInvokerTests
         }
     }
 
-    internal sealed class PurgeEndpoint : RawEndpoint<PurgeCommand>
+    [Delete("/purge")]
+    internal sealed partial class PurgeEndpoint : RawEndpoint<PurgeCommand>
     {
         public override ValueTask<BindResult<PurgeCommand>> BindAsync(HttpContext context)
         {

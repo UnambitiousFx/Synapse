@@ -13,7 +13,7 @@ the request's `Accept` header, and the endpoint declaration is as short as any o
 public sealed record StreamTasksQuery : IStreamRequest<TaskDto>;
 
 [Get("/tasks/stream")]
-public sealed class StreamTasksEndpoint : StreamEndpoint<StreamTasksQuery, TaskDto>;
+public sealed partial class StreamTasksEndpoint : StreamEndpoint<StreamTasksQuery, TaskDto>;
 ```
 
 ```csharp title="The handler yields items as they arrive"
@@ -85,7 +85,7 @@ public sealed record TaskOrError
 
 ```csharp
 [Get("/tasks/stream")]
-public sealed class StreamTasksEndpoint : StreamEndpoint<StreamTasksQuery, TaskDto>
+public sealed partial class StreamTasksEndpoint : StreamEndpoint<StreamTasksQuery, TaskDto>
 {
     public override void Configure(IStreamEndpointBuilder builder)
     {

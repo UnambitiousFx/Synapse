@@ -13,16 +13,15 @@ namespace UnambitiousFx.Synapse.Endpoints.Tests;
 /// <summary>
 ///     The free-form low level: the endpoint gets the context and returns its own result.
 /// </summary>
-public sealed class RawEndpointTests
+public sealed partial class RawEndpointTests
 {
     [Fact]
     public async Task Invoke_ExecutesTheResultTheHandlerReturned()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<TeapotEndpoint>(new EndpointMetadata(["GET"], "/teapot"));
         var context = NewContext();
-        var descriptor = ((EndpointBase)new TeapotEndpoint())
-            .CreateDescriptor(EndpointRegistry.GetMetadata<TeapotEndpoint>());
+        var endpoint = new TeapotEndpoint();
+        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Act
         await descriptor.InvokeAsync(context);
@@ -35,7 +34,6 @@ public sealed class RawEndpointTests
     public async Task Invoke_PassesTheHttpContextAndTheRequestCancellationToken()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<EchoHeaderEndpoint>(new EndpointMetadata(["GET"], "/echo-header"));
         var context = NewContext();
         context.Request.Headers["X-Trace"] = "abc123";
         using var aborted = new CancellationTokenSource();
@@ -43,7 +41,7 @@ public sealed class RawEndpointTests
 
         var endpoint = new EchoHeaderEndpoint();
         var descriptor = ((EndpointBase)endpoint)
-            .CreateDescriptor(EndpointRegistry.GetMetadata<EchoHeaderEndpoint>());
+            .CreateDescriptor(endpoint.Metadata);
 
         // Act
         await descriptor.InvokeAsync(context);
@@ -58,12 +56,11 @@ public sealed class RawEndpointTests
     {
         // Arrange — endpoints are startup singletons with no constructor injection, so a low-level
         // handler's only route to a dependency is context.Service<T>().
-        EndpointRegistry.RegisterMetadata<GreetingEndpoint>(new EndpointMetadata(["GET"], "/greeting"));
         var context = NewContext(services => services.AddSingleton(new Greeter("hi there")));
 
         var endpoint = new GreetingEndpoint();
         var descriptor = ((EndpointBase)endpoint)
-            .CreateDescriptor(EndpointRegistry.GetMetadata<GreetingEndpoint>());
+            .CreateDescriptor(endpoint.Metadata);
 
         // Act
         await descriptor.InvokeAsync(context);
@@ -75,12 +72,9 @@ public sealed class RawEndpointTests
     [Fact]
     public void CreateDescriptor_TakesTheRouteFromTheAttribute()
     {
-        // Arrange
-        EndpointRegistry.RegisterMetadata<TeapotEndpoint>(new EndpointMetadata(["GET"], "/teapot"));
-
         // Act
-        var descriptor = ((EndpointBase)new TeapotEndpoint())
-            .CreateDescriptor(EndpointRegistry.GetMetadata<TeapotEndpoint>());
+        var endpoint = new TeapotEndpoint();
+        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Assert
         Assert.Equal("/teapot", descriptor.Route);
@@ -90,12 +84,9 @@ public sealed class RawEndpointTests
     [Fact]
     public void CreateDescriptor_TakesTheRouteFromConfigure_WhenTheAttributeDeclaredNone()
     {
-        // Arrange
-        EndpointRegistry.RegisterMetadata<ConfiguredRouteEndpoint>(new EndpointMetadata([], string.Empty));
-
         // Act
-        var descriptor = ((EndpointBase)new ConfiguredRouteEndpoint())
-            .CreateDescriptor(EndpointRegistry.GetMetadata<ConfiguredRouteEndpoint>());
+        var endpoint = new ConfiguredRouteEndpoint();
+        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Assert
         Assert.Equal("/computed", descriptor.Route);
@@ -106,12 +97,11 @@ public sealed class RawEndpointTests
     public void CreateDescriptor_WithNoRouteAnywhere_ThrowsActionably()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<RoutelessEndpoint>(new EndpointMetadata([], string.Empty));
+        var endpoint = new RoutelessEndpoint();
 
         // Act
-        var exception = Assert.Throws<InvalidOperationException>(() =>
-            ((EndpointBase)new RoutelessEndpoint())
-            .CreateDescriptor(EndpointRegistry.GetMetadata<RoutelessEndpoint>()));
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata));
 
         // Assert — the same message the high level gives, because both resolve the route in one place.
         Assert.Contains("declares no route", exception.Message);
@@ -121,7 +111,6 @@ public sealed class RawEndpointTests
     public void Map_DeclaresOnlyTheMetadataTheEndpointAskedFor()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<DeclaringEndpoint>(new EndpointMetadata(["POST"], "/declared"));
         var app = WebApplication.CreateSlimBuilder().Build();
 
         // Act
@@ -148,7 +137,6 @@ public sealed class RawEndpointTests
         // Arrange — nothing can be inferred for a hand-written handler, and in particular no 400 is
         // declared: unlike the higher tiers, a low-level endpoint binds nothing, so it does not
         // necessarily have a 400 to advertise.
-        EndpointRegistry.RegisterMetadata<TeapotEndpoint>(new EndpointMetadata(["GET"], "/teapot"));
         var app = WebApplication.CreateSlimBuilder().Build();
 
         // Act
@@ -194,6 +182,7 @@ public sealed class RawEndpointTests
         internal string Text { get; }
     }
 
+    [Get("/teapot")]
     internal sealed partial class TeapotEndpoint : RawEndpoint
     {
         public override ValueTask<IResult> HandleAsync(HttpContext context,
@@ -203,6 +192,7 @@ public sealed class RawEndpointTests
         }
     }
 
+    [Get("/echo-header")]
     internal sealed partial class EchoHeaderEndpoint : RawEndpoint
     {
         internal string? SeenHeader { get; private set; }
@@ -218,6 +208,7 @@ public sealed class RawEndpointTests
         }
     }
 
+    [Get("/greeting")]
     internal sealed partial class GreetingEndpoint : RawEndpoint
     {
         internal string? SeenGreeting { get; private set; }
@@ -237,10 +228,9 @@ public sealed class RawEndpointTests
     public async Task Invoke_WhenTheHandlerReturnsNull_ThrowsNamingTheEndpointAndTheRemedy()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<NullResultEndpoint>(new EndpointMetadata(["GET"], "/null-result"));
         var context = NewContext();
-        var descriptor = ((EndpointBase)new NullResultEndpoint())
-            .CreateDescriptor(EndpointRegistry.GetMetadata<NullResultEndpoint>());
+        var endpoint = new NullResultEndpoint();
+        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Act
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(
@@ -269,6 +259,7 @@ public sealed class RawEndpointTests
         Assert.Contains("has not been mapped", exception.Message);
     }
 
+    [Get("/null-result")]
     internal sealed partial class NullResultEndpoint : RawEndpoint
     {
         public override ValueTask<IResult> HandleAsync(HttpContext context,
@@ -311,6 +302,7 @@ public sealed class RawEndpointTests
         }
     }
 
+    [Post("/declared")]
     internal sealed partial class DeclaringEndpoint : RawEndpoint
     {
         public override void Configure(IRawEndpointBuilder builder)

@@ -167,9 +167,9 @@ public sealed class PartialEmissionTests
         // BindAsync unimplemented (CS0534) and this source would not compile.
         //
         // Both nested types are internal, not private. That is not a limitation of this emitter:
-        // SynapseEndpointGroup.g.cs and SynapseEndpointRegistrations.g.cs are still emitted at
-        // namespace scope and name every endpoint type, so a private endpoint is unreachable from
-        // them (CS0122) — and an internal endpoint may not derive from Endpoint<TPrivate, string>
+        // SynapseEndpointGroup.g.cs is still emitted at namespace scope and names every endpoint
+        // type, so a private endpoint is unreachable from it (CS0122) — and an internal endpoint may
+        // not derive from Endpoint<TPrivate, string>
         // either, because C# requires a base type to be at least as accessible as the class
         // (CS9338). Task 3's widening of ~86 nested test fixtures therefore stands.
         const string source = """

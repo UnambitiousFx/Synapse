@@ -17,7 +17,6 @@ public sealed partial class FormBindingHarnessTests
         // Arrange — the whole design rests on a custom IAcceptsMetadata driving the consumes
         // matcher policy. A null RequestType is how we decline to describe a schema we defer;
         // this asserts that declining costs nothing at the matcher.
-        EndpointRegistry.RegisterMetadata<ProbeEndpoint>(new EndpointMetadata(["POST"], "/probe"));
         using var harness = EndpointHarness.Create<ProbeEndpoint>();
 
         // Act
@@ -33,7 +32,6 @@ public sealed partial class FormBindingHarnessTests
     public async Task SendAsync_WhenAnEndpointDeclaresFormContentTypes_AcceptsUrlEncoded()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<ProbeEndpoint>(new EndpointMetadata(["POST"], "/probe"));
         using var harness = EndpointHarness.Create<ProbeEndpoint>();
 
         // Act
@@ -50,8 +48,6 @@ public sealed partial class FormBindingHarnessTests
     {
         // Arrange — spec §6 case 1 is a file plus a field plus a route value; routing and multipart
         // parsing coexisting on one live request is a runtime property no emission test can assert.
-        EndpointRegistry.RegisterMetadata<UploadEndpoint>(
-            new EndpointMetadata(["POST"], "/tasks/{taskId}/uploads"));
         using var harness = EndpointHarness.Create<UploadEndpoint>(options =>
             options.Handle<UploadCommand, string>(command =>
                 Result.Success($"{command.TaskId}:{command.File.FileName}:{command.Caption}")));
@@ -71,7 +67,6 @@ public sealed partial class FormBindingHarnessTests
     public async Task SendAsync_WithUrlEncodedFields_BindsThemToo()
     {
         // Arrange — both form content types bind, not only multipart.
-        EndpointRegistry.RegisterMetadata<CaptionEndpoint>(new EndpointMetadata(["POST"], "/captions"));
         using var harness = EndpointHarness.Create<CaptionEndpoint>(options =>
             options.Handle<CaptionCommand, string>(command => Result.Success(command.Caption)));
 
@@ -89,8 +84,6 @@ public sealed partial class FormBindingHarnessTests
     public async Task SendAsync_WithAnEmptyMultipartBody_Reports400NamingBothMissingFields()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<UploadEndpoint>(
-            new EndpointMetadata(["POST"], "/tasks/{taskId}/uploads"));
         using var harness = EndpointHarness.Create<UploadEndpoint>();
         var taskId = Guid.Parse("11111111-1111-1111-1111-111111111111");
 
@@ -111,8 +104,6 @@ public sealed partial class FormBindingHarnessTests
     public async Task SendAsync_WithAJsonBodyToAFormEndpoint_Answers415BeforeTheBinderRuns()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<UploadEndpoint>(
-            new EndpointMetadata(["POST"], "/tasks/{taskId}/uploads"));
         using var harness = EndpointHarness.Create<UploadEndpoint>();
         var taskId = Guid.Parse("11111111-1111-1111-1111-111111111111");
 
@@ -129,7 +120,6 @@ public sealed partial class FormBindingHarnessTests
     public async Task SendAsync_WithOneBadElement_ReportsItsIndexAndStillBindsTheOthers()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<SearchEndpoint>(new EndpointMetadata(["GET"], "/search"));
         using var harness = EndpointHarness.Create<SearchEndpoint>();
 
         // Act
@@ -145,7 +135,6 @@ public sealed partial class FormBindingHarnessTests
     public async Task SendAsync_WithNoRepeatedKeyAtAll_BindsAnEmptyCollectionAndSucceeds()
     {
         // Arrange — HTTP cannot send zero values under a key, so absence is not a failure.
-        EndpointRegistry.RegisterMetadata<SearchEndpoint>(new EndpointMetadata(["GET"], "/search"));
         using var harness = EndpointHarness.Create<SearchEndpoint>(options =>
             options.Handle<SearchQuery, int>(query => Result.Success(query.Statuses.Length)));
 
@@ -164,7 +153,6 @@ public sealed partial class FormBindingHarnessTests
         // closing delimiter. ASP.NET Core throws IOException for it, which used to escape the binder
         // as a 500. And the reason the form read builds has to survive being retyped onto the message
         // type, or the response says nothing a caller can act on.
-        EndpointRegistry.RegisterMetadata<CaptionEndpoint>(new EndpointMetadata(["POST"], "/captions"));
         using var harness = EndpointHarness.Create<CaptionEndpoint>();
 
         // Act
@@ -186,7 +174,6 @@ public sealed partial class FormBindingHarnessTests
         // the one malformed shape the consumes matcher hands to the binder. ReadFormAsync's guidance
         // is the whole value of the response, and a constant "could not be read as a form" threw it
         // away.
-        EndpointRegistry.RegisterMetadata<CaptionEndpoint>(new EndpointMetadata(["POST"], "/captions"));
         using var harness = EndpointHarness.Create<CaptionEndpoint>();
 
         // Act
@@ -208,7 +195,8 @@ public sealed partial class FormBindingHarnessTests
         public bool IsOptional => false;
     }
 
-    internal sealed class ProbeEndpoint : RawEndpoint
+    [Post("/probe")]
+    internal sealed partial class ProbeEndpoint : RawEndpoint
     {
         public override void Configure(IRawEndpointBuilder builder)
         {

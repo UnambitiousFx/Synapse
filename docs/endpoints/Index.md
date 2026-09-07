@@ -83,16 +83,27 @@ feature's open questions.
 7. **016–017** are polish, and 017 may reasonably be closed as "working as intended".
 
 Diagnostic IDs are pre-allocated across the specs so implementation order does not matter — next
-free is `SYNE031`:
+free is `SYNE033`:
 
 | Spec | IDs |
 |---|---|
-| 008 | `SYNE020`–`SYNE021` |
+| 008 | `SYNE031`–`SYNE032` |
 | 009 | `SYNE022` |
 | 010 | `SYNE023` |
 | 011 + 015 | `SYNE024`–`SYNE026` |
 | 012 + 013 | `SYNE027`–`SYNE028` |
 | 014 | `SYNE029`–`SYNE030` |
+
+`SYNE020`–`SYNE021` were taken by the endpoint-partial-generation work (`EndpointMustBePartial` and
+`BindAsyncIsGenerated`), so 008 was moved off them rather than left to collide; 009–014 keep the IDs
+they were given, because moving them would churn a planning document for nothing.
+
+**`SYNE013` is retired and must not be reused.** It was the shared-binder conflict rule, deleted when
+each endpoint got its own generated binding. A consumer still carrying a `NoWarn` for it would
+silently suppress whatever unrelated rule inherited the number.
+
+Keep this table current when a rule ships: it claimed `SYNE019` was free while `InferredFormBinding`
+already held it, and the endpoint-partial-generation plan had to be corrected mid-flight as a result.
 
 001–007 and 018 are shipped: the OpenAPI document no longer lies about what an endpoint can return, the most
 common optional parameter is expressible on the collector, an endpoint can be exercised without a

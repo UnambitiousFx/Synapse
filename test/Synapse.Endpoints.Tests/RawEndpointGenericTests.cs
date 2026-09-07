@@ -14,14 +14,12 @@ namespace UnambitiousFx.Synapse.Endpoints.Tests;
 ///     The mediator-bound middle level: binding is hand-written, everything downstream of it is the
 ///     same code the high level runs.
 /// </summary>
-public sealed class RawEndpointGenericTests
+public sealed partial class RawEndpointGenericTests
 {
     [Fact]
     public async Task Invoke_WithHandWrittenBinding_DispatchesTheBoundMessage()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<LookupEndpoint>(new EndpointMetadata(["GET"], "/lookup/{id}"));
-
         LookupQuery? dispatched = null;
         var invoker = Substitute.For<IHttpInvoker>();
         invoker.InvokeAsync(Arg.Any<IRequest<string>>(), Arg.Any<Func<string, IResult>>(),
@@ -35,8 +33,8 @@ public sealed class RawEndpointGenericTests
         var context = NewContext(invoker);
         context.Request.RouteValues["id"] = "42";
 
-        var descriptor = ((EndpointBase)new LookupEndpoint())
-            .CreateDescriptor(EndpointRegistry.GetMetadata<LookupEndpoint>());
+        var endpoint = new LookupEndpoint();
+        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Act
         await descriptor.InvokeAsync(context);
@@ -52,14 +50,13 @@ public sealed class RawEndpointGenericTests
     {
         // Arrange — two bad query values in one request. This is the whole point of the collector:
         // the caller learns about both at once instead of fixing one and rediscovering the other.
-        EndpointRegistry.RegisterMetadata<LookupEndpoint>(new EndpointMetadata(["GET"], "/lookup/{id}"));
 
         var invoker = Substitute.For<IHttpInvoker>();
         var context = NewContext(invoker);
         context.Request.QueryString = new QueryString("?page=nope");
 
-        var descriptor = ((EndpointBase)new LookupEndpoint())
-            .CreateDescriptor(EndpointRegistry.GetMetadata<LookupEndpoint>());
+        var endpoint = new LookupEndpoint();
+        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Act
         await descriptor.InvokeAsync(context);
@@ -79,16 +76,14 @@ public sealed class RawEndpointGenericTests
     public async Task Invoke_WithDeclarativeCreated_Returns201AndALocationHeader()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<CreateEndpoint>(new EndpointMetadata(["POST"], "/things"));
-
         var invoker = Substitute.For<IHttpInvoker>();
         invoker.InvokeAsync(Arg.Any<IRequest<string>>(), Arg.Any<Func<string, IResult>>(),
                 Arg.Any<CancellationToken>())
             .Returns(call => ValueTask.FromResult(call.Arg<Func<string, IResult>>()("abc")));
 
         var context = NewContext(invoker);
-        var descriptor = ((EndpointBase)new CreateEndpoint())
-            .CreateDescriptor(EndpointRegistry.GetMetadata<CreateEndpoint>());
+        var endpoint = new CreateEndpoint();
+        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Act
         await descriptor.InvokeAsync(context);
@@ -102,16 +97,14 @@ public sealed class RawEndpointGenericTests
     public async Task Invoke_WithAnOnSuccessOverride_UsesIt()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<OverridingEndpoint>(new EndpointMetadata(["GET"], "/overridden"));
-
         var invoker = Substitute.For<IHttpInvoker>();
         invoker.InvokeAsync(Arg.Any<IRequest<string>>(), Arg.Any<Func<string, IResult>>(),
                 Arg.Any<CancellationToken>())
             .Returns(call => ValueTask.FromResult(call.Arg<Func<string, IResult>>()("x")));
 
         var context = NewContext(invoker);
-        var descriptor = ((EndpointBase)new OverridingEndpoint())
-            .CreateDescriptor(EndpointRegistry.GetMetadata<OverridingEndpoint>());
+        var endpoint = new OverridingEndpoint();
+        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Act
         await descriptor.InvokeAsync(context);
@@ -124,8 +117,6 @@ public sealed class RawEndpointGenericTests
     public async Task Invoke_ForTheVoidArity_Returns204ByDefault()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<DeleteEndpoint>(new EndpointMetadata(["DELETE"], "/things/{id}"));
-
         var invoker = Substitute.For<IHttpInvoker>();
         invoker.InvokeAsync(Arg.Any<IRequest>(), Arg.Any<Func<IResult>>(), Arg.Any<CancellationToken>())
             .Returns(call => ValueTask.FromResult(call.Arg<Func<IResult>>()()));
@@ -133,8 +124,8 @@ public sealed class RawEndpointGenericTests
         var context = NewContext(invoker);
         context.Request.RouteValues["id"] = "7";
 
-        var descriptor = ((EndpointBase)new DeleteEndpoint())
-            .CreateDescriptor(EndpointRegistry.GetMetadata<DeleteEndpoint>());
+        var endpoint = new DeleteEndpoint();
+        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Act
         await descriptor.InvokeAsync(context);
@@ -171,6 +162,7 @@ public sealed class RawEndpointGenericTests
 
     internal sealed record LookupQuery(int Id, int? Page) : IRequest<string>;
 
+    [Get("/lookup/{id}")]
     internal sealed partial class LookupEndpoint : RawEndpoint<LookupQuery, string>
     {
         public override ValueTask<BindResult<LookupQuery>> BindAsync(HttpContext context)
@@ -187,6 +179,7 @@ public sealed class RawEndpointGenericTests
 
     internal sealed record CreateCommand : IRequest<string>;
 
+    [Post("/things")]
     internal sealed partial class CreateEndpoint : RawEndpoint<CreateCommand, string>
     {
         public override void Configure(IEndpointBuilder<string> builder)
@@ -202,6 +195,7 @@ public sealed class RawEndpointGenericTests
 
     internal sealed record OverridingQuery : IRequest<string>;
 
+    [Get("/overridden")]
     internal sealed partial class OverridingEndpoint : RawEndpoint<OverridingQuery, string>
     {
         public override ValueTask<BindResult<OverridingQuery>> BindAsync(HttpContext context)
@@ -218,6 +212,7 @@ public sealed class RawEndpointGenericTests
 
     internal sealed record DeleteCommand(int Id) : IRequest;
 
+    [Delete("/things/{id}")]
     internal sealed partial class DeleteEndpoint : RawEndpoint<DeleteCommand>
     {
         public override ValueTask<BindResult<DeleteCommand>> BindAsync(HttpContext context)

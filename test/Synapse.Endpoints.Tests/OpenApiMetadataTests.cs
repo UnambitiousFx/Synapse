@@ -17,7 +17,6 @@ public sealed partial class OpenApiMetadataTests
     public void CreateDescriptor_ForRequestWithResponse_DeclaresAcceptsAndProduces()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<MetaEndpoint>(new EndpointMetadata(["POST"], "/meta"));
         var app = WebApplication.CreateSlimBuilder().Build();
 
         // Act
@@ -39,7 +38,6 @@ public sealed partial class OpenApiMetadataTests
     public void CreateDescriptor_ForBodylessVerb_DeclaresNoAcceptsMetadata()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<BodylessMetaEndpoint>(new EndpointMetadata(["GET"], "/meta-get"));
         var app = WebApplication.CreateSlimBuilder().Build();
 
         // Act
@@ -55,18 +53,17 @@ public sealed partial class OpenApiMetadataTests
     // Pins the wider bodyless set. docs/docs/endpoints/reference/base-classes.mdx points at [HttpEndpoint("OPTIONS", …)] as
     // the way to declare the verbs with no dedicated attribute, and neither OPTIONS nor TRACE carries
     // a request body — but both used to be treated as body-carrying, declaring Accepts for a body no
-    // such request can send (and, on the generator side, emitting a read for it).
-    [Theory]
-    [InlineData("OPTIONS")]
-    [InlineData("TRACE")]
-    public void CreateDescriptor_ForOptionsOrTraceVerb_DeclaresNoAcceptsMetadata(string verb)
+    // such request can send (and, on the generator side, emitting a read for it). Two facts rather
+    // than a theory over the verb: the verb is a property of the endpoint type now, so it cannot come
+    // from an [InlineData].
+    [Fact]
+    public void CreateDescriptor_ForOptionsVerb_DeclaresNoAcceptsMetadata()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<BodylessMetaEndpoint>(new EndpointMetadata([verb], "/meta-bodyless"));
         var app = WebApplication.CreateSlimBuilder().Build();
 
         // Act
-        app.MapEndpoint<BodylessMetaEndpoint>();
+        app.MapEndpoint<OptionsMetaEndpoint>();
 
         // Assert
         var endpoint = ((IEndpointRouteBuilder)app).DataSources
@@ -75,37 +72,26 @@ public sealed partial class OpenApiMetadataTests
         Assert.Null(endpoint.Metadata.GetMetadata<IAcceptsMetadata>());
     }
 
-    // Settles the multi-verb question the bodyless check leaves open, deliberately and while it is
-    // still free to settle: the rule is "all declared verbs are bodyless", not "any of them is". An
-    // endpoint serving both GET and POST really does accept a JSON body on one of them, so Accepts is
-    // the accurate declaration; under "any" it would have been silently omitted. Nothing in the
-    // public API can currently produce more than one verb (a route attribute carries a single method,
-    // and EndpointBuilder.Route assigns a single-element array), so this test reaches past the
-    // builder and constructs the metadata directly — it pins the decision for whoever adds multi-verb
-    // support, and would otherwise be untestable.
     [Fact]
-    public void CreateDescriptor_ForMultiVerbEndpointMixingBodylessAndBodyCarrying_DeclaresAcceptsMetadata()
+    public void CreateDescriptor_ForTraceVerb_DeclaresNoAcceptsMetadata()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<MultiVerbMetaEndpoint>(
-            new EndpointMetadata(["GET", "POST"], "/meta-multi"));
         var app = WebApplication.CreateSlimBuilder().Build();
 
         // Act
-        app.MapEndpoint<MultiVerbMetaEndpoint>();
+        app.MapEndpoint<TraceMetaEndpoint>();
 
         // Assert
         var endpoint = ((IEndpointRouteBuilder)app).DataSources
             .SelectMany(source => source.Endpoints)
             .Single();
-        Assert.NotNull(endpoint.Metadata.GetMetadata<IAcceptsMetadata>());
+        Assert.Null(endpoint.Metadata.GetMetadata<IAcceptsMetadata>());
     }
 
     [Fact]
     public void CreateDescriptor_ForEndpointConfiguredCreated_Declares201NotDefault200()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<CreatedMetaEndpoint>(new EndpointMetadata(["POST"], "/meta-created"));
         var app = WebApplication.CreateSlimBuilder().Build();
 
         // Act
@@ -130,7 +116,6 @@ public sealed partial class OpenApiMetadataTests
     public void CreateDescriptor_ForMappedEndpointConfiguredCreated_Declares201NotDefault200()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<CreatedMappedEndpoint>(new EndpointMetadata(["POST"], "/meta-mapped-created"));
         var app = WebApplication.CreateSlimBuilder().Build();
 
         // Act
@@ -157,7 +142,6 @@ public sealed partial class OpenApiMetadataTests
     public void CreateDescriptor_ForEndpointWithNoResponse_Declares204NotDefault200()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<VoidMetaEndpoint>(new EndpointMetadata(["POST"], "/meta-void"));
         var app = WebApplication.CreateSlimBuilder().Build();
 
         // Act
@@ -189,8 +173,6 @@ public sealed partial class OpenApiMetadataTests
     public void CreateDescriptor_ForSelfHandledEndpoint_DeclaresTheSameMetadataAsTheDispatchingTier()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<SelfHandledMetaEndpoint>(
-            new EndpointMetadata(["POST"], "/meta-self-handled"));
         var app = WebApplication.CreateSlimBuilder().Build();
 
         // Act
@@ -217,8 +199,6 @@ public sealed partial class OpenApiMetadataTests
     public void CreateDescriptor_ForSelfHandledEndpointWithNoResponse_Declares204NotDefault200()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<SelfHandledVoidMetaEndpoint>(
-            new EndpointMetadata(["POST"], "/meta-self-handled-void"));
         var app = WebApplication.CreateSlimBuilder().Build();
 
         // Act
@@ -237,7 +217,6 @@ public sealed partial class OpenApiMetadataTests
     public void CreateDescriptor_ForStreamEndpoint_DeclaresJsonAndEventStreamProduces()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<StreamMetaEndpoint>(new EndpointMetadata(["GET"], "/meta-stream"));
         var app = WebApplication.CreateSlimBuilder().Build();
 
         // Act
@@ -262,8 +241,6 @@ public sealed partial class OpenApiMetadataTests
     public void CreateDescriptor_ForStreamEndpointOnABodyCarryingVerb_DeclaresAcceptsMetadata()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<PostStreamMetaEndpoint>(
-            new EndpointMetadata(["POST"], "/meta-stream-post"));
         var app = WebApplication.CreateSlimBuilder().Build();
 
         // Act
@@ -284,8 +261,6 @@ public sealed partial class OpenApiMetadataTests
     public void CreateDescriptor_ForStreamEndpointOnABodylessVerb_DeclaresNoAcceptsMetadata()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<StreamMetaEndpoint>(
-            new EndpointMetadata(["GET"], "/meta-stream-bodyless"));
         var app = WebApplication.CreateSlimBuilder().Build();
 
         // Act
@@ -306,8 +281,6 @@ public sealed partial class OpenApiMetadataTests
     public void CreateDescriptor_ForABodyCarryingVerbWhoseBinderReadsNoBody_DeclaresNoAcceptsMetadata()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<NoBodyMetaEndpoint>(
-            new EndpointMetadata(["POST"], "/meta-no-body"));
         var app = WebApplication.CreateSlimBuilder().Build();
 
         // Act
@@ -326,8 +299,6 @@ public sealed partial class OpenApiMetadataTests
     public void CreateDescriptor_ForAHandBoundEndpointOnAPost_StillDeclaresAcceptsMetadata()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<HandBoundMetaEndpoint>(
-            new EndpointMetadata(["POST"], "/meta-hand-bound"));
         var app = WebApplication.CreateSlimBuilder().Build();
 
         // Act
@@ -347,7 +318,6 @@ public sealed partial class OpenApiMetadataTests
     public void CreateDescriptor_ForABinderReportingAFormBody_DeclaresBothFormContentTypesAndNoSchema()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<FormEndpoint>(new EndpointMetadata(["POST"], "/uploads"));
         var app = WebApplication.CreateSlimBuilder().Build();
 
         // Act
@@ -393,8 +363,6 @@ public sealed partial class OpenApiMetadataTests
     {
         // Arrange
         BodylessMapperEndpoint.UseNoContent = noContent;
-        EndpointRegistry.RegisterMetadata<BodylessMapperEndpoint>(
-            new EndpointMetadata(["GET"], "/meta-bodyless-mapper"));
         var app = WebApplication.CreateSlimBuilder().Build();
 
         // Act
@@ -417,8 +385,6 @@ public sealed partial class OpenApiMetadataTests
     public void CreateDescriptor_ForASuccessMapperWithABody_StillDeclaresTheResponseType()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<CreatedMapperEndpoint>(
-            new EndpointMetadata(["GET"], "/meta-created-mapper"));
         var app = WebApplication.CreateSlimBuilder().Build();
 
         // Act
@@ -443,8 +409,6 @@ public sealed partial class OpenApiMetadataTests
     public void CreateDescriptor_DeclaresTheValidationProblemItActuallySendsForA400()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<BodylessMetaEndpoint>(
-            new EndpointMetadata(["GET"], "/meta-problem-shape"));
         var app = WebApplication.CreateSlimBuilder().Build();
 
         // Act
@@ -461,6 +425,7 @@ public sealed partial class OpenApiMetadataTests
         Assert.Equal(["application/problem+json"], badRequest.ContentTypes);
     }
 
+    [Get("/meta-bodyless-mapper")]
     internal sealed partial class BodylessMapperEndpoint : Endpoint<BodylessMetaQuery, string>
     {
         internal static bool UseNoContent { get; set; }
@@ -478,6 +443,7 @@ public sealed partial class OpenApiMetadataTests
         }
     }
 
+    [Get("/meta-created-mapper")]
     internal sealed partial class CreatedMapperEndpoint : Endpoint<BodylessMetaQuery, string>
     {
         public override void Configure(IEndpointBuilder<string> builder)
@@ -491,20 +457,21 @@ public sealed partial class OpenApiMetadataTests
 
     internal sealed record BodylessMetaQuery : IRequest<string>;
 
+    [Get("/meta-get")]
     internal sealed partial class BodylessMetaEndpoint : Endpoint<BodylessMetaQuery, string>;
 
-    internal sealed record MultiVerbMetaQuery : IRequest<string>
-    {
-        public string Title { get; init; } = "";
-    }
+    // OPTIONS and TRACE have no dedicated verb attribute, so they are declared through
+    // [HttpEndpoint(...)] — the route these two carry is arbitrary, since each test maps only its own
+    // endpoint. One type per verb, because an endpoint's verb is now part of the endpoint.
+    [HttpEndpoint("OPTIONS", "/meta-options")]
+    internal sealed partial class OptionsMetaEndpoint : Endpoint<BodylessMetaQuery, string>;
 
-    // A single attribute verb is all the generator can see; the multi-verb metadata the test needs is
-    // registered directly, and this attribute is only what makes the binding read a body at all.
-    [Post("/meta-multi")]
-    internal sealed partial class MultiVerbMetaEndpoint : Endpoint<MultiVerbMetaQuery, string>;
+    [HttpEndpoint("TRACE", "/meta-trace")]
+    internal sealed partial class TraceMetaEndpoint : Endpoint<BodylessMetaQuery, string>;
 
     internal sealed record CreatedMetaCommand : IRequest<string>;
 
+    [Post("/meta-created")]
     internal sealed partial class CreatedMetaEndpoint : Endpoint<CreatedMetaCommand, string>
     {
         public override void Configure(IEndpointBuilder<string> builder)
@@ -541,15 +508,18 @@ public sealed partial class OpenApiMetadataTests
 
     internal sealed record VoidMetaCommand : IRequest;
 
+    [Post("/meta-void")]
     internal sealed partial class VoidMetaEndpoint : Endpoint<VoidMetaCommand>;
 
     internal sealed record NoBodyMetaQuery : IRequest<string>;
 
+    [Post("/meta-no-body")]
     internal sealed partial class NoBodyMetaEndpoint : Endpoint<NoBodyMetaQuery, string>;
 
     internal sealed record HandBoundMetaCommand : IRequest<string>;
 
-    internal sealed class HandBoundMetaEndpoint : RawEndpoint<HandBoundMetaCommand, string>
+    [Post("/meta-hand-bound")]
+    internal sealed partial class HandBoundMetaEndpoint : RawEndpoint<HandBoundMetaCommand, string>
     {
         public override ValueTask<BindResult<HandBoundMetaCommand>> BindAsync(HttpContext context)
         {
@@ -560,6 +530,7 @@ public sealed partial class OpenApiMetadataTests
 
     internal sealed record StreamMetaQuery : IStreamRequest<int>;
 
+    [Get("/meta-stream")]
     internal sealed partial class StreamMetaEndpoint : StreamEndpoint<StreamMetaQuery, int>;
 
     internal sealed record PostStreamMetaQuery : IStreamRequest<int>
@@ -580,8 +551,6 @@ public sealed partial class OpenApiMetadataTests
     public void CreateDescriptor_ForAnEndpointDeclaringAProblemResponse_DeclaresTheProblemBody()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<FailureAwareEndpoint>(
-            new EndpointMetadata(["GET"], "/meta-failure-problem"));
         var app = WebApplication.CreateSlimBuilder().Build();
 
         // Act
@@ -602,8 +571,6 @@ public sealed partial class OpenApiMetadataTests
     public void CreateDescriptor_ForAnEndpointDeclaringATypedFailureBody_DeclaresThatType()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<FailureAwareEndpoint>(
-            new EndpointMetadata(["GET"], "/meta-failure-typed"));
         var app = WebApplication.CreateSlimBuilder().Build();
 
         // Act
@@ -627,8 +594,6 @@ public sealed partial class OpenApiMetadataTests
     public void CreateDescriptor_ForADeclaredStatusWithNoBody_DeclaresItAsVoidRatherThanSkippingIt()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<FailureAwareEndpoint>(
-            new EndpointMetadata(["GET"], "/meta-failure-bodyless"));
         var app = WebApplication.CreateSlimBuilder().Build();
 
         // Act
@@ -652,8 +617,6 @@ public sealed partial class OpenApiMetadataTests
     public void CreateDescriptor_ForADeclaredValidationProblem_DeclaresTheErrorsDictionaryBody()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<FailureAwareEndpoint>(
-            new EndpointMetadata(["GET"], "/meta-failure-validation"));
         var app = WebApplication.CreateSlimBuilder().Build();
 
         // Act
@@ -676,8 +639,6 @@ public sealed partial class OpenApiMetadataTests
     public void CreateDescriptor_ForAnEndpointDeclaringFailureResponses_StillDeclaresTheSuccessResponse()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<FailureAwareEndpoint>(
-            new EndpointMetadata(["GET"], "/meta-failure-success"));
         var app = WebApplication.CreateSlimBuilder().Build();
 
         // Act
@@ -699,8 +660,6 @@ public sealed partial class OpenApiMetadataTests
     public void CreateDescriptor_ForAVoidEndpointDeclaringAProblemResponse_DeclaresIt()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<FailureAwareVoidEndpoint>(
-            new EndpointMetadata(["POST"], "/meta-failure-void"));
         var app = WebApplication.CreateSlimBuilder().Build();
 
         // Act
@@ -720,8 +679,6 @@ public sealed partial class OpenApiMetadataTests
     public void CreateDescriptor_ForAMappedEndpointDeclaringAProblemResponse_DeclaresIt()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<FailureAwareMappedEndpoint>(
-            new EndpointMetadata(["POST"], "/meta-failure-mapped"));
         var app = WebApplication.CreateSlimBuilder().Build();
 
         // Act
@@ -741,8 +698,6 @@ public sealed partial class OpenApiMetadataTests
     public void CreateDescriptor_ForAHandBoundEndpointDeclaringAProblemResponse_DeclaresIt()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<FailureAwareHandBoundEndpoint>(
-            new EndpointMetadata(["POST"], "/meta-failure-hand-bound"));
         var app = WebApplication.CreateSlimBuilder().Build();
 
         // Act
@@ -762,8 +717,6 @@ public sealed partial class OpenApiMetadataTests
     public void CreateDescriptor_ForAStreamEndpointDeclaringAProblemResponse_DeclaresIt()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<FailureAwareStreamEndpoint>(
-            new EndpointMetadata(["GET"], "/meta-failure-stream"));
         var app = WebApplication.CreateSlimBuilder().Build();
 
         // Act
@@ -785,8 +738,6 @@ public sealed partial class OpenApiMetadataTests
     public void CreateDescriptor_ForARawEndpointDeclaringProblemResponses_DeclaresThem()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<FailureAwareRawEndpoint>(
-            new EndpointMetadata(["GET"], "/meta-failure-raw"));
         var app = WebApplication.CreateSlimBuilder().Build();
 
         // Act
@@ -809,6 +760,7 @@ public sealed partial class OpenApiMetadataTests
     // Chained on purpose: the whole chain compiles only while every declaration returns
     // IEndpointBuilder<string> rather than widening to the non-generic IEndpointBuilder, which is what
     // lets the response-shaping Ok() at the end still be in reach.
+    [Get("/meta-failure")]
     internal sealed partial class FailureAwareEndpoint : Endpoint<BodylessMetaQuery, string>
     {
         public override void Configure(IEndpointBuilder<string> builder)
@@ -821,6 +773,7 @@ public sealed partial class OpenApiMetadataTests
         }
     }
 
+    [Post("/meta-failure-void")]
     internal sealed partial class FailureAwareVoidEndpoint : Endpoint<VoidMetaCommand>
     {
         public override void Configure(IEndpointBuilder builder)
@@ -850,7 +803,8 @@ public sealed partial class OpenApiMetadataTests
         }
     }
 
-    internal sealed class FailureAwareHandBoundEndpoint : RawEndpoint<HandBoundMetaCommand, string>
+    [Post("/meta-failure-hand-bound")]
+    internal sealed partial class FailureAwareHandBoundEndpoint : RawEndpoint<HandBoundMetaCommand, string>
     {
         public override ValueTask<BindResult<HandBoundMetaCommand>> BindAsync(HttpContext context)
         {
@@ -866,6 +820,7 @@ public sealed partial class OpenApiMetadataTests
 
     internal sealed record FailureAwareStreamQuery : IStreamRequest<int>;
 
+    [Get("/meta-failure-stream")]
     internal sealed partial class FailureAwareStreamEndpoint : StreamEndpoint<FailureAwareStreamQuery, int>
     {
         public override void Configure(IStreamEndpointBuilder builder)
@@ -874,7 +829,8 @@ public sealed partial class OpenApiMetadataTests
         }
     }
 
-    internal sealed class FailureAwareRawEndpoint : RawEndpoint
+    [Get("/meta-failure-raw")]
+    internal sealed partial class FailureAwareRawEndpoint : RawEndpoint
     {
         public override void Configure(IRawEndpointBuilder builder)
         {
@@ -961,11 +917,12 @@ public sealed partial class OpenApiMetadataTests
     internal sealed record FormProbeCommand : IRequest<string>;
 
     /// <summary>
-    ///     Declares a form body through the hook a generated binding will override in a later commit.
-    ///     Exercises the verb narrowing in its single home on RawEndpoint rather than the copies that
-    ///     used to sit on both Endpoint arities.
+    ///     Declares a form body through the hook a generated binding overrides. Exercises the verb
+    ///     narrowing in its single home on RawEndpoint rather than the copies that used to sit on both
+    ///     Endpoint arities. Abstract, so the two verbs below can share it: discovery skips abstract
+    ///     classes, so it declares no route of its own.
     /// </summary>
-    internal sealed class FormProbeEndpoint : RawEndpoint<FormProbeCommand, string>
+    internal abstract partial class FormProbeEndpointBase : RawEndpoint<FormProbeCommand, string>
     {
         public override ValueTask<BindResult<FormProbeCommand>> BindAsync(HttpContext context)
         {
@@ -975,33 +932,43 @@ public sealed partial class OpenApiMetadataTests
         protected override RequestBodyKind BoundBodyKind => RequestBodyKind.Form;
     }
 
-    [Theory]
-    [InlineData("POST", true)]
-    [InlineData("GET", false)]
-    public void CreateDescriptor_WithFormBoundBodyKind_DeclaresAFormBodyOnlyOnVerbsThatCarryOne(
-        string verb,
-        bool expectsFormBody)
+    [Post("/form-probe-post")]
+    internal sealed partial class PostFormProbeEndpoint : FormProbeEndpointBase;
+
+    [Get("/form-probe-get")]
+    internal sealed partial class GetFormProbeEndpoint : FormProbeEndpointBase;
+
+    // Two facts rather than a theory over the verb: the verb is declared on the endpoint type, so it
+    // cannot come from an [InlineData].
+    [Fact]
+    public void CreateDescriptor_WithFormBoundBodyKindOnPost_DeclaresAFormBody()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<FormProbeEndpoint>(new EndpointMetadata([verb], "/form-probe"));
         var app = WebApplication.CreateSlimBuilder().Build();
 
         // Act
-        app.MapEndpoint<FormProbeEndpoint>();
+        app.MapEndpoint<PostFormProbeEndpoint>();
 
         // Assert
         var endpoint = ((IEndpointRouteBuilder)app).DataSources
             .SelectMany(source => source.Endpoints)
             .Single();
-        var formBody = endpoint.Metadata.GetMetadata<FormRequestMetadata>();
+        Assert.NotNull(endpoint.Metadata.GetMetadata<FormRequestMetadata>());
+    }
 
-        if (expectsFormBody)
-        {
-            Assert.NotNull(formBody);
-        }
-        else
-        {
-            Assert.Null(formBody);
-        }
+    [Fact]
+    public void CreateDescriptor_WithFormBoundBodyKindOnGet_DeclaresNoFormBody()
+    {
+        // Arrange
+        var app = WebApplication.CreateSlimBuilder().Build();
+
+        // Act
+        app.MapEndpoint<GetFormProbeEndpoint>();
+
+        // Assert
+        var endpoint = ((IEndpointRouteBuilder)app).DataSources
+            .SelectMany(source => source.Endpoints)
+            .Single();
+        Assert.Null(endpoint.Metadata.GetMetadata<FormRequestMetadata>());
     }
 }

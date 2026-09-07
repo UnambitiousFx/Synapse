@@ -54,7 +54,7 @@ rejection avoid deserializing a body it is about to discard.
 
 ```csharp
 [Post("/tasks")]
-public sealed class CreateTaskEndpoint : Endpoint<CreateTaskCommand, TaskCreated>
+public sealed partial class CreateTaskEndpoint : Endpoint<CreateTaskCommand, TaskCreated>
 {
     protected override ValueTask<IResult?> OnBeforeHandleAsync(CreateTaskCommand request,
         HttpContext context, CancellationToken cancellationToken)

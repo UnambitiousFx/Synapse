@@ -11,7 +11,7 @@ an `IResult`. Nothing is bound, dispatched or mapped for you.
 
 ```csharp
 [Get("/health")]
-public sealed class HealthEndpoint : RawEndpoint
+public sealed partial class HealthEndpoint : RawEndpoint
 {
     public override ValueTask<IResult> HandleAsync(HttpContext context, CancellationToken ct)
     {
@@ -53,7 +53,7 @@ namespace TaskApi.Features.Ops;
 public sealed record HealthDto(string Status, int Tasks);
 
 [Get("/health")]
-public sealed class HealthEndpoint : RawEndpoint
+public sealed partial class HealthEndpoint : RawEndpoint
 {
     // Nothing about a hand-written handler can be inferred, so what it produces is declared here.
     public override void Configure(IRawEndpointBuilder builder)

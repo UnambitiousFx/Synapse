@@ -19,10 +19,10 @@ If the default is what you want, write nothing:
 
 ```csharp
 [Get("/tasks")]
-public sealed class ListTasksEndpoint : Endpoint<ListTasksQuery, IReadOnlyList<TaskDto>>;
+public sealed partial class ListTasksEndpoint : Endpoint<ListTasksQuery, IReadOnlyList<TaskDto>>;
 
 [Delete("/tasks/{taskId:guid}")]
-public sealed class DeleteTaskEndpoint : Endpoint<DeleteTaskCommand>;
+public sealed partial class DeleteTaskEndpoint : Endpoint<DeleteTaskCommand>;
 ```
 
 ## Changing it declaratively
@@ -31,7 +31,7 @@ Override `Configure` and say what the endpoint produces:
 
 ```csharp
 [Post("/tasks")]
-public sealed class CreateTaskEndpoint : Endpoint<CreateTaskCommand, TaskCreated>
+public sealed partial class CreateTaskEndpoint : Endpoint<CreateTaskCommand, TaskCreated>
 {
     public override void Configure(IEndpointBuilder<TaskCreated> builder)
     {
@@ -83,7 +83,7 @@ Override `OnSuccess` for anything the vocabulary cannot express. It receives the
 
 ```csharp
 [Get("/tasks/{taskId:guid}")]
-public sealed class GetTaskEndpoint : Endpoint<GetTaskQuery, TaskDto>
+public sealed partial class GetTaskEndpoint : Endpoint<GetTaskQuery, TaskDto>
 {
     public override IResult OnSuccess(TaskDto response, HttpContext context)
     {

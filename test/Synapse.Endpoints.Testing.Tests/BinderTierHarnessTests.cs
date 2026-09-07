@@ -1,7 +1,6 @@
 using Microsoft.AspNetCore.Http;
 using UnambitiousFx.Functional;
 using UnambitiousFx.Synapse.Abstractions;
-using UnambitiousFx.Synapse.Endpoints.Binding;
 
 namespace UnambitiousFx.Synapse.Endpoints.Testing.Tests;
 
@@ -11,7 +10,6 @@ public sealed partial class BinderTierHarnessTests
     public async Task SendAsync_ForAnEndpointWithAResponse_BindsDispatchesAndMaps()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<LookupEndpoint>(new EndpointMetadata(["GET"], "/lookup/{id}"));
         using var harness = EndpointHarness.Create<LookupEndpoint>(options =>
             options.Handle<LookupQuery, string>(query => Result.Success($"found:{query.Id}")));
 
@@ -27,7 +25,6 @@ public sealed partial class BinderTierHarnessTests
     public async Task SendAsync_ForAVoidEndpoint_DispatchesAndReturnsNoContent()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<RetireEndpoint>(new EndpointMetadata(["DELETE"], "/retire"));
         using var harness = EndpointHarness.Create<RetireEndpoint>(options =>
             options.Handle<RetireCommand>(_ => Result.Success()));
 
@@ -43,8 +40,6 @@ public sealed partial class BinderTierHarnessTests
     {
         // Arrange — a real bad value rather than a stubbed failure: the binding is generated now, so
         // the only way to make it fail is to send something it cannot parse.
-        EndpointRegistry.RegisterMetadata<RejectingEndpoint>(
-            new EndpointMetadata(["GET"], "/rejecting/{taskId}"));
         using var harness = EndpointHarness.Create<RejectingEndpoint>();
 
         // Act
@@ -60,8 +55,6 @@ public sealed partial class BinderTierHarnessTests
     public async Task SendAsync_ForAMappedEndpoint_MapsBothWays()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<TranslateEndpoint>(
-            new EndpointMetadata(["POST"], "/translate/{text}"));
         using var harness = EndpointHarness.Create<TranslateEndpoint>(options =>
             options.Handle<TranslateCommand, TranslateResult>(
                 command => Result.Success(new TranslateResult(command.Text.ToUpperInvariant()))));

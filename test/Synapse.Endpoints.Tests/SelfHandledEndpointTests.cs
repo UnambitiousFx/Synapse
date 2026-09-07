@@ -6,7 +6,6 @@ using UnambitiousFx.Functional;
 using UnambitiousFx.Functional.Failures;
 using UnambitiousFx.Synapse.Abstractions;
 using UnambitiousFx.Synapse.AspNetCore;
-using UnambitiousFx.Synapse.Endpoints.Binding;
 using UnambitiousFx.Synapse.Endpoints.Builders;
 
 namespace UnambitiousFx.Synapse.Endpoints.Tests;
@@ -17,8 +16,6 @@ public sealed partial class SelfHandledEndpointTests
     public async Task Invoke_WithRequestThatIsNotAMessage_RunsExecuteAsyncAndWritesItsResponse()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<ProbeEndpoint>(new EndpointMetadata(["GET"], "/health/{probe}"));
-
         var services = new ServiceCollection();
         services.AddSynapseAspNetCore();
         services.AddLogging();
@@ -26,8 +23,8 @@ public sealed partial class SelfHandledEndpointTests
         context.Response.Body = new MemoryStream();
         context.Request.RouteValues["probe"] = "live";
 
-        var descriptor = ((EndpointBase)new ProbeEndpoint())
-            .CreateDescriptor(EndpointRegistry.GetMetadata<ProbeEndpoint>());
+        var endpoint = new ProbeEndpoint();
+        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Act
         await descriptor.InvokeAsync(context);
@@ -50,9 +47,6 @@ public sealed partial class SelfHandledEndpointTests
         // Arrange: the same NotFoundFailure, once returned by a self-handled endpoint and once
         // returned by a handler behind Endpoint<TRequest, TResponse>. Both run against the real
         // HttpInvoker and the real DefaultFailureHttpMapper, so any difference is the tier's.
-        EndpointRegistry.RegisterMetadata<MissingProbeEndpoint>(new EndpointMetadata(["GET"], "/missing"));
-        EndpointRegistry.RegisterMetadata<DispatchedMissingProbeEndpoint>(
-            new EndpointMetadata(["GET"], "/missing-dispatched"));
 
         var mediator = Substitute.For<IInvoker>();
         mediator.InvokeAsync(Arg.Any<MissingProbeCommand>(), Arg.Any<CancellationToken>())
@@ -66,9 +60,9 @@ public sealed partial class SelfHandledEndpointTests
 
         // Act
         var selfHandled = await InvokeAsync(new MissingProbeEndpoint(),
-            EndpointRegistry.GetMetadata<MissingProbeEndpoint>(), provider);
+            new MissingProbeEndpoint().Metadata, provider);
         var dispatched = await InvokeAsync(new DispatchedMissingProbeEndpoint(),
-            EndpointRegistry.GetMetadata<DispatchedMissingProbeEndpoint>(), provider);
+            new DispatchedMissingProbeEndpoint().Metadata, provider);
 
         // Assert
         Assert.Equal(StatusCodes.Status404NotFound, selfHandled.StatusCode);
@@ -81,16 +75,13 @@ public sealed partial class SelfHandledEndpointTests
     public async Task Invoke_WithConfiguredCreatedMapping_UsesItInsteadOfOnSuccess()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<CreatedProbeEndpoint>(
-            new EndpointMetadata(["POST"], "/probes/{probe}"));
-
         var services = new ServiceCollection();
         services.AddSynapseAspNetCore();
         services.AddLogging();
 
         // Act
         var response = await InvokeAsync(new CreatedProbeEndpoint(),
-            EndpointRegistry.GetMetadata<CreatedProbeEndpoint>(), services.BuildServiceProvider(), probe: "live");
+            new CreatedProbeEndpoint().Metadata, services.BuildServiceProvider(), probe: "live");
 
         // Assert
         Assert.Equal(StatusCodes.Status201Created, response.StatusCode);
@@ -100,16 +91,13 @@ public sealed partial class SelfHandledEndpointTests
     public async Task Invoke_WithOverriddenOnSuccess_WritesTheResultThatOverrideReturns()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<AcceptedProbeEndpoint>(
-            new EndpointMetadata(["POST"], "/probes-accepted/{probe}"));
-
         var services = new ServiceCollection();
         services.AddSynapseAspNetCore();
         services.AddLogging();
 
         // Act
         var response = await InvokeAsync(new AcceptedProbeEndpoint(),
-            EndpointRegistry.GetMetadata<AcceptedProbeEndpoint>(), services.BuildServiceProvider(), probe: "live");
+            new AcceptedProbeEndpoint().Metadata, services.BuildServiceProvider(), probe: "live");
 
         // Assert
         Assert.Equal(StatusCodes.Status202Accepted, response.StatusCode);
@@ -121,7 +109,6 @@ public sealed partial class SelfHandledEndpointTests
         // Arrange — no stub rejects this; the generated binding does. RejectingProbeQuery's Probe has
         // no route parameter to read on GET /probes-rejected, so it binds from the query string and is
         // required there, and the request below sends none.
-        EndpointRegistry.RegisterMetadata<RejectingProbeEndpoint>(new EndpointMetadata(["GET"], "/probes-rejected"));
 
         var services = new ServiceCollection();
         services.AddSynapseAspNetCore();
@@ -130,7 +117,7 @@ public sealed partial class SelfHandledEndpointTests
 
         // Act
         var response = await InvokeAsync(endpoint,
-            EndpointRegistry.GetMetadata<RejectingProbeEndpoint>(), services.BuildServiceProvider());
+            new RejectingProbeEndpoint().Metadata, services.BuildServiceProvider());
 
         // Assert
         Assert.Equal(StatusCodes.Status400BadRequest, response.StatusCode);
@@ -141,9 +128,6 @@ public sealed partial class SelfHandledEndpointTests
     public async Task Invoke_WhenOnBeforeHandleAsyncShortCircuits_DoesNotRunExecuteAsync()
     {
         // Arrange
-        EndpointRegistry.RegisterMetadata<ShortCircuitProbeEndpoint>(
-            new EndpointMetadata(["GET"], "/probes-short-circuit/{probe}"));
-
         var services = new ServiceCollection();
         services.AddSynapseAspNetCore();
         services.AddLogging();
@@ -151,7 +135,7 @@ public sealed partial class SelfHandledEndpointTests
 
         // Act
         var response = await InvokeAsync(endpoint,
-            EndpointRegistry.GetMetadata<ShortCircuitProbeEndpoint>(), services.BuildServiceProvider(),
+            new ShortCircuitProbeEndpoint().Metadata, services.BuildServiceProvider(),
             probe: "live");
 
         // Assert

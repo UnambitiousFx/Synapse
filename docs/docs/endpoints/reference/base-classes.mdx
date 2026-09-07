@@ -30,7 +30,7 @@ If a behaviour must wrap the work, the route has a message whether or not it loo
 ## The inheritance chain
 
 ```
-EndpointBase
+EndpointBase                                      CreateMetadata — generated into your partial
  └── RawEndpoint                                  HandleAsync(HttpContext, CancellationToken) → IResult
      └── BoundEndpoint<TBound>                    sealed HandleAsync — the eight-step order
          ├── RawEndpoint<TRequest>                + BindAsync, dispatch, 204 default
@@ -61,9 +61,9 @@ cannot drift apart without the compiler saying so.
 | `RawEndpoint<…>` | `IEndpointBuilder<TResponse>` | **Required** — `BindAsync` | Optional |
 | `RawEndpoint` | `IRawEndpointBuilder` | — | **Required** — `HandleAsync` returns it |
 
-\* The generator emits `BindAsync` as an `override` on the endpoint's own `partial` class — the class
-must actually be declared `partial` (and every type enclosing it, if nested) or there is nowhere for
-the generator to put it. See [`SYNE020`](#shape-requirements) below.
+\* The generator emits `BindAsync` as an `override` on the endpoint's own `partial` class. Every
+endpoint must be `partial`, including the two `RawEndpoint` rows: their binding is their own, but their
+route metadata is generated into them the same way. See [`SYNE020`](#shape-requirements) below.
 
 Two of those builders are narrowed on purpose. `IRawEndpointBuilder` and `IStreamEndpointBuilder` omit
 the success-mapping methods, because neither tier consults a success mapper — a low-level endpoint
@@ -90,12 +90,14 @@ reported as [`SYNE010`](./diagnostics).
 An `abstract` endpoint class never fires it: discovery skips abstract classes outright, so an abstract
 intermediate base shared by several endpoints is a supported pattern.
 
-On a tier whose binding is generated (every tier above except `RawEndpoint<…>` and `RawEndpoint`), the
-endpoint class — and every type enclosing it, if it is nested — must also be declared `partial`, so the
-generator has somewhere to emit `BindAsync` into. Missing it is reported as
-[`SYNE020`](./diagnostics), naming the specific type that needs the keyword. Without analyzers running
-at all, there is no `SYNE020` to see and the build fails on the compiler's own `CS0534` instead, naming
-`RawEndpoint<...>` — a base class the author never wrote; see [Preview status](./preview#risks).
+Every endpoint class — and every type enclosing it, if it is nested — must also be declared `partial`,
+so the generator has somewhere to emit into. That applies at every tier, `RawEndpoint<…>` and
+`RawEndpoint` included: those two write their own `BindAsync`, but `EndpointBase.CreateMetadata` is
+abstract and its implementation is generated from the endpoint's route attributes, so they need the
+keyword just as much. Missing it is reported as [`SYNE020`](./diagnostics), naming the specific type
+that needs the keyword. Without analyzers running at all, there is no `SYNE020` to see and the build
+fails on the compiler's own `CS0534` instead, naming `EndpointBase` (and, on the generated tiers,
+`RawEndpoint<...>`) — base classes the author never wrote; see [Preview status](./preview#risks).
 
 ```csharp
 // Supported: shared configuration, never mapped itself.
@@ -142,7 +144,7 @@ and throws if two Synapse endpoints claim the same HTTP method and route.
 
 ```csharp
 [HttpEndpoint("HEAD", "/tasks")]
-public sealed class HeadTasksEndpoint : Endpoint<ListTasksQuery, IReadOnlyList<TaskDto>>;
+public sealed partial class HeadTasksEndpoint : Endpoint<ListTasksQuery, IReadOnlyList<TaskDto>>;
 ```
 
 An endpoint may also declare its route in `Configure` instead of by attribute — see

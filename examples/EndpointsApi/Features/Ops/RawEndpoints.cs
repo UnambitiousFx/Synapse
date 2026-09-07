@@ -23,7 +23,7 @@ public sealed record HealthDto(string Status, int Tasks);
 ///     to work with.
 /// </remarks>
 [Get("/health")]
-public sealed class HealthEndpoint : RawEndpoint
+public sealed partial class HealthEndpoint : RawEndpoint
 {
     /// <inheritdoc />
     /// <remarks>
@@ -76,7 +76,7 @@ public sealed class HealthEndpoint : RawEndpoint
 ///     </para>
 /// </remarks>
 [Get("/reports")]
-public sealed class TagReportEndpoint : RawEndpoint<TagReportQuery, TagReportDto>
+public sealed partial class TagReportEndpoint : RawEndpoint<TagReportQuery, TagReportDto>
 {
     /// <inheritdoc />
     public override void Configure(IEndpointBuilder<TagReportDto> builder)

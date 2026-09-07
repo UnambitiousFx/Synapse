@@ -2301,10 +2301,12 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
         var ns = rootNamespace;
         var ordered = endpoints.OrderBy(e => e.EndpointFullName, StringComparer.Ordinal).ToArray();
 
-        // SYNE020 — must be reported before anything below is emitted: the binding is emitted into
-        // the endpoint's own class, which requires it (and every enclosing type) to be reopenable as
-        // partial.
-        foreach (var endpoint in ordered.Where(static e => e.Kind.HasGeneratedBinder()))
+        // SYNE020 — must be reported before anything below is emitted: the metadata (and, for the
+        // generated tiers, the binding) is emitted into the endpoint's own class, which requires it
+        // (and every enclosing type) to be reopenable as partial. Reported for every kind, not only
+        // the ones with a generated binding: EndpointBase.CreateMetadata is abstract, so a
+        // hand-bound or free-form endpoint needs its generated override just as much.
+        foreach (var endpoint in ordered)
         {
             var location = endpoint.Location?.ToLocation() ?? Location.None;
 
@@ -2326,14 +2328,16 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
         // uses it first.
         ReportMissingJsonRegistrations(context, ordered, jsonContext);
 
-        // Every kind with a generated binding takes it from a partial on the endpoint itself. Two
-        // endpoints binding one message each resolve their own binding from their own route and verb,
-        // which is why SYNE013 is gone — and why nothing is keyed by message type any more. Raw
-        // endpoints bind by hand and have no BoundTypeFullName, so they are filtered out.
-        foreach (var endpoint in ordered.Where(static e => e.Kind.HasGeneratedBinder()))
+        // Every endpoint gets a partial on itself, carrying its route metadata. Two endpoints binding
+        // one message each resolve their own binding from their own route and verb, which is why
+        // SYNE013 is gone — and why nothing is keyed by message type any more. Raw endpoints bind by
+        // hand and have no BoundTypeFullName, so they get the metadata and nothing else.
+        foreach (var endpoint in ordered)
         {
-            var boundType = new BoundTypeInfo(endpoint.BoundTypeFullName, endpoint.BoundProperties,
-                endpoint.HasParameterlessConstructor, endpoint.PrimaryConstructorParameters);
+            var boundType = endpoint.Kind.HasGeneratedBinder()
+                ? new BoundTypeInfo(endpoint.BoundTypeFullName, endpoint.BoundProperties,
+                    endpoint.HasParameterlessConstructor, endpoint.PrimaryConstructorParameters)
+                : null;
 
             context.AddSource(
                 EndpointPartialEmitter.HintName(endpoint.Declaration),
@@ -2341,8 +2345,6 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
         }
 
         context.AddSource("SynapseEndpointGroup.g.cs", EndpointGroupEmitter.EmitGroup(ns, ordered));
-        context.AddSource("SynapseEndpointRegistrations.g.cs",
-            EndpointGroupEmitter.EmitRegistrations(ns, ordered));
     }
 
     /// <summary>

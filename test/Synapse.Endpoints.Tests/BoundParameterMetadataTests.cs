@@ -74,7 +74,6 @@ public sealed partial class BoundParameterMetadataTests
         // Arrange & Act — map through the real routing stack so the real routing stack applies the
         // metadata, the same way OpenApiMetadataTests does; EndpointHarness exposes no Endpoint
         // property to read route metadata off of.
-        EndpointRegistry.RegisterMetadata<SearchTasksEndpoint>(new EndpointMetadata(["GET"], "/search-tasks"));
         var app = WebApplication.CreateSlimBuilder().Build();
         app.MapEndpoint<SearchTasksEndpoint>();
         var endpoint = ((IEndpointRouteBuilder)app).DataSources
@@ -97,7 +96,6 @@ public sealed partial class BoundParameterMetadataTests
     public void MappedEndpoint_WithNoBoundParameters_CarriesNoMetadata()
     {
         // Arrange & Act
-        EndpointRegistry.RegisterMetadata<NoParametersEndpoint>(new EndpointMetadata(["GET"], "/no-parameters"));
         var app = WebApplication.CreateSlimBuilder().Build();
         app.MapEndpoint<NoParametersEndpoint>();
         var endpoint = ((IEndpointRouteBuilder)app).DataSources

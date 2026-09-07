@@ -134,31 +134,32 @@ setup, for instance. Add the generator as your own analyzer reference in that ca
                   OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
 ```
 
-Without it, every `EndpointRegistry.GetMetadata<T>()` call throws at startup with a message pointing
-at exactly this.
+Without it, the endpoint's binding and route metadata are never generated, and the build fails on the
+compiler's own `CS0534` for the unimplemented members rather than at startup.
 
-## The generated binder moved; the registry's metadata half remains
+## There is no registry, and no module initializer
 
-Every generated tier's `BindAsync` is now an `override` emitted directly into the endpoint's own
-`partial` class, per endpoint — there is no longer a single `SynapseEndpointBinders.g.cs` file holding
-one binder per message type for the trimmer to reason about, and no lookup at request time either.
-`SynapseEndpointRegistrations.g.cs` is still emitted, with its `[ModuleInitializer]` still running at
-startup — but it now registers only endpoint *route metadata*, because the binder half of what it used
-to populate is gone. `EndpointRegistry` survives for the same reason, holding metadata only.
+Every endpoint's binding *and* its route metadata are `override`s emitted directly into the endpoint's
+own `partial` class. There is no `SynapseEndpointBinders.g.cs` holding one binder per message type, no
+`SynapseEndpointRegistrations.g.cs`, no `[ModuleInitializer]` running at startup, and no
+`EndpointRegistry` for either to populate. The only file the generator still emits at assembly scope is
+`SynapseEndpointGroup.g.cs`, which is a list of `MapEndpoint<T>()` calls you invoke explicitly.
 
-That distinction matters for the trimming argument this design was built on: removing the module
-initializer's binder registration was expected to let the trimmer drop the binder for an endpoint
-that is discovered but never actually mapped. Measured on `examples/EndpointsApi`
-(`dotnet publish -c Release -r osx-arm64`, Native AOT) against the commit immediately before generated
-bindings started moving into partials, the published binary was 12,516,304 bytes before this change
-and 12,516,240 bytes after — a 64-byte difference, indistinguishable from noise, on an application
-where every discovered endpoint is already mapped. The module initializer still runs, unconditionally
-registering every endpoint's route metadata into `EndpointRegistry` before anything is mapped, so
-`EndpointRegistry` and that metadata stay reachable regardless of what a given application actually
-maps. Only the binder half of what the initializer used to populate is gone. The metadata half — and
-with it, whatever the trimmer could do once nothing roots it — is what removing `EndpointRegistry` and
-the module initializer entirely is expected to unlock; that is a later change, and the measurement
-belongs there, not here.
+That was the trimming argument this design was built on: with nothing rooting every discovered
+endpoint's metadata before `Main` runs, the trimmer should be free to drop an endpoint an application
+never maps. **Measured, it did not pay off.** On `examples/EndpointsApi`
+(`dotnet publish -c Release -r osx-arm64`, Native AOT), against `94c1937` — the commit immediately
+before generated bindings started moving into partials — the published binary is **12,516,304 bytes
+both before and after**: a difference of exactly zero. Inside it, `__managedcode` shrank by 3,136 bytes
+and the whole `__TEXT` segment's contents by 11,692 bytes (~0.1%), which the linker's page padding
+absorbs entirely.
+
+Two reasons, and the first is the honest one: `examples/EndpointsApi` maps every endpoint it declares,
+so there was never an unmapped endpoint for the trimmer to drop. The saving this change unlocks is
+available only to an application that declares endpoints it does not map — an unusual shape. Second,
+what the initializer rooted was small to begin with: a route string, a verb array and a `typeof` per
+endpoint. Take the AOT benefit of removing the registry as *not demonstrated*; the reasons to prefer
+generated metadata are the compile-time guarantee and the deleted startup failure modes, not size.
 
 ## Verifying a publish
 

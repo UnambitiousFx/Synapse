@@ -112,7 +112,7 @@ malformed, or sent with no `Content-Type` — comes back as a failure instead, s
 
 ```csharp
 [Post("/webhooks/github")]
-public sealed class GitHubWebhookEndpoint : RawEndpoint
+public sealed partial class GitHubWebhookEndpoint : RawEndpoint
 {
     public override void Configure(IRawEndpointBuilder builder)
     {
@@ -170,7 +170,7 @@ quieter failure than an exception and easy to mistake for "the caller sent nothi
 
 ```csharp
 [Post("/tasks/{taskId:guid}/attachments")]
-public sealed class UploadAttachmentEndpoint : RawEndpoint
+public sealed partial class UploadAttachmentEndpoint : RawEndpoint
 {
     public override void Configure(IRawEndpointBuilder builder)
     {

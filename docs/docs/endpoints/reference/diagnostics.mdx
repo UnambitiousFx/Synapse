@@ -28,7 +28,7 @@ The bundled analyzer reports these at build time. Errors stop the build; warning
 | `SYNE017` | Warning | A property binds from the request form — via `[FromForm]`, or because its type is a file (`IFormFile`, etc.) with no attribute at all — on a bodyless verb (`GET`/`DELETE`/`HEAD`/`OPTIONS`/`TRACE`), so it can never bind | Remove `[FromForm]` or the file typing, change the verb, or accept the property will always be missing |
 | `SYNE018` | Error | One message has both form-bound properties and body-bound properties. A request is either multipart form or JSON, never both, so whichever the binder reads, the other group can never bind | Move the body-bound properties to `[FromForm]`, or split them onto a request that does not also bind from the form |
 | `SYNE019` | Info | A message became form-bound purely by inference — an `IFormFile`-typed property with no `[FromForm]` anywhere on the message — and at least one other property followed it to the form as a result | Add `[FromForm]` to the file property to state the intent explicitly, which silences this; the endpoint itself is already correct |
-| `SYNE020` | Error | The endpoint class — or a type enclosing it — is not declared `partial`, so the generator has nowhere to emit the binding | Declare the named type `partial`. Reported per type missing the keyword, so a nested endpoint's error names the type to actually fix — see [Shape requirements](./base-classes#shape-requirements) |
+| `SYNE020` | Error | The endpoint class — or a type enclosing it — is not declared `partial`, so the generator has nowhere to emit its route metadata (and, on a generated tier, its binding). Applies at every tier, `RawEndpoint<…>` and `RawEndpoint` included | Declare the named type `partial`. Reported per type missing the keyword, so a nested endpoint's error names the type to actually fix — see [Shape requirements](./base-classes#shape-requirements) |
 | `SYNE021` | Error | A tier whose binding is generated (`Endpoint<…>`, `StreamEndpoint<…>`, `MappedEndpoint<…>`, `SelfHandledEndpoint<…>`) also declares `BindAsync` by hand | Remove the hand-written `BindAsync` — it collides with the generated one as `CS0111` — or derive from `RawEndpoint<…>` to write the binding by hand instead |
 
 ## Grouped by what they are about
@@ -63,5 +63,5 @@ suppressed by kind rather than reported and ignored:
 | Level | Applies | Suppressed |
 |---|---|---|
 | `Endpoint<…>`, `StreamEndpoint<…>`, `MappedEndpoint<…>` | All of them | — |
-| `RawEndpoint<TRequest>` / `RawEndpoint<TRequest, TResponse>` | `SYNE003`, `SYNE004`, `SYNE005`, `SYNE008`, `SYNE009`, `SYNE010` | `SYNE001`, `SYNE002`, `SYNE007`, `SYNE011`, `SYNE012`, `SYNE014`, `SYNE015`, `SYNE016`, `SYNE017`, `SYNE018`, `SYNE019`, `SYNE020`, `SYNE021` |
-| `RawEndpoint` | `SYNE008` (call sites), `SYNE009`, `SYNE010` | Everything else |
+| `RawEndpoint<TRequest>` / `RawEndpoint<TRequest, TResponse>` | `SYNE003`, `SYNE004`, `SYNE005`, `SYNE008`, `SYNE009`, `SYNE010`, `SYNE020` | `SYNE001`, `SYNE002`, `SYNE007`, `SYNE011`, `SYNE012`, `SYNE014`, `SYNE015`, `SYNE016`, `SYNE017`, `SYNE018`, `SYNE019`, `SYNE021` |
+| `RawEndpoint` | `SYNE008` (call sites), `SYNE009`, `SYNE010`, `SYNE020` | Everything else |
