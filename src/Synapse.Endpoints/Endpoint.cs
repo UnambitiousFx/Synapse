@@ -31,29 +31,16 @@ public abstract class Endpoint<TRequest> : RawEndpoint<TRequest>
     }
 
     /// <inheritdoc />
-    /// <remarks>
-    ///     The generated binder reports whether it deserializes the message, which is what decides
-    ///     this — a verb that carries a body but whose every property binds from the route, query or a
-    ///     header reads nothing. See <c>docs/known-issues/067</c>.
-    /// </remarks>
-    private protected sealed override RequestBodyKind DeclaredRequestBody(string[] httpMethods)
-    {
-        // Narrowing only, exactly as before: a bodyless verb declares nothing whatever the binder
-        // says, including the explicit-[FromBody]-on-a-GET shape SYNE007 warns about. What the binder
-        // adds is *which* body — a form-bound message reads one, but not a JSON one.
-        return base.DeclaredRequestBody(httpMethods) == RequestBodyKind.None
-            ? RequestBodyKind.None
-            : _binder?.BodyKind ?? RequestBodyKind.Json;
-    }
+    protected sealed override RequestBodyKind BoundBodyKind => _binder?.BodyKind ?? RequestBodyKind.Json;
 
     /// <inheritdoc />
-    private protected sealed override IReadOnlyList<BoundParameterMetadata> DeclaredParameters()
+    protected sealed override IReadOnlyList<BoundParameterMetadata> DeclaredParameters()
     {
         return _binder?.Parameters ?? [];
     }
 
     /// <inheritdoc />
-    private protected sealed override IReadOnlyList<FormFieldMetadata> DeclaredFormFields()
+    protected sealed override IReadOnlyList<FormFieldMetadata> DeclaredFormFields()
     {
         return _binder?.FormFields ?? [];
     }

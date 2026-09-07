@@ -1085,4 +1085,51 @@ public sealed class OpenApiMetadataTests
         Assert.Empty(metadata.Fields);
         Assert.Equal(2, metadata.ContentTypes.Count);
     }
+
+    private sealed record FormProbeCommand : IRequest<string>;
+
+    /// <summary>
+    ///     Declares a form body through the hook a generated binding will override in a later commit.
+    ///     Exercises the verb narrowing in its single home on RawEndpoint rather than the copies that
+    ///     used to sit on both Endpoint arities.
+    /// </summary>
+    private sealed class FormProbeEndpoint : RawEndpoint<FormProbeCommand, string>
+    {
+        public override ValueTask<BindResult<FormProbeCommand>> BindAsync(HttpContext context)
+        {
+            return new(BindResult<FormProbeCommand>.Success(new FormProbeCommand()));
+        }
+
+        protected override RequestBodyKind BoundBodyKind => RequestBodyKind.Form;
+    }
+
+    [Theory]
+    [InlineData("POST", true)]
+    [InlineData("GET", false)]
+    public void CreateDescriptor_WithFormBoundBodyKind_DeclaresAFormBodyOnlyOnVerbsThatCarryOne(
+        string verb,
+        bool expectsFormBody)
+    {
+        // Arrange
+        EndpointRegistry.RegisterMetadata<FormProbeEndpoint>(new EndpointMetadata([verb], "/form-probe"));
+        var app = WebApplication.CreateSlimBuilder().Build();
+
+        // Act
+        app.MapEndpoint<FormProbeEndpoint>();
+
+        // Assert
+        var endpoint = ((IEndpointRouteBuilder)app).DataSources
+            .SelectMany(source => source.Endpoints)
+            .Single();
+        var formBody = endpoint.Metadata.GetMetadata<FormRequestMetadata>();
+
+        if (expectsFormBody)
+        {
+            Assert.NotNull(formBody);
+        }
+        else
+        {
+            Assert.Null(formBody);
+        }
+    }
 }

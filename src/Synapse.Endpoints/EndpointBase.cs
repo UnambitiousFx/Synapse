@@ -48,13 +48,20 @@ public abstract class EndpointBase
     ///     empty when the endpoint binds by hand.
     /// </summary>
     /// <remarks>
-    ///     Returns the list rather than the binder because the binder's type argument differs by
-    ///     tier — <c>MappedEndpoint</c> binds <c>THttpRequest</c> where the others bind
-    ///     <c>TRequest</c> — so no single binder-returning signature fits all of them. Mirrors
-    ///     <c>DeclaredRequestBody</c>, which returns a value for the same reason. Empty is the
-    ///     honest answer for a hand-written <c>BindAsync</c>: it declares no parameters.
+    ///     <para>
+    ///         Returns the list rather than the binder because the binder's type argument differs by
+    ///         tier — <c>MappedEndpoint</c> binds <c>THttpRequest</c> where the others bind
+    ///         <c>TRequest</c> — so no single binder-returning signature fits all of them. Mirrors
+    ///         <c>DeclaredRequestBody</c>, which returns a value for the same reason. Empty is the
+    ///         honest answer for a hand-written <c>BindAsync</c>: it declares no parameters.
+    ///     </para>
+    ///     <para>
+    ///         <c>protected</c>, not <c>private protected</c>: the override is generated into the
+    ///         endpoint's own partial class, which lives in the consumer's assembly, where a
+    ///         <c>private protected</c> member is unreachable.
+    ///     </para>
     /// </remarks>
-    private protected virtual IReadOnlyList<Internal.BoundParameterMetadata> DeclaredParameters()
+    protected virtual IReadOnlyList<Internal.BoundParameterMetadata> DeclaredParameters()
     {
         return [];
     }
@@ -62,7 +69,12 @@ public abstract class EndpointBase
     /// <summary>
     ///     The form fields and file parts this endpoint's binder reads, or empty when it reads none.
     /// </summary>
-    private protected virtual IReadOnlyList<Internal.FormFieldMetadata> DeclaredFormFields()
+    /// <remarks>
+    ///     <c>protected</c>, not <c>private protected</c>: the override is generated into the
+    ///     endpoint's own partial class, which lives in the consumer's assembly, where a
+    ///     <c>private protected</c> member is unreachable.
+    /// </remarks>
+    protected virtual IReadOnlyList<Internal.FormFieldMetadata> DeclaredFormFields()
     {
         return [];
     }

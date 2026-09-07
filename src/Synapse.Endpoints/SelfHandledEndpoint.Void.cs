@@ -87,25 +87,16 @@ public abstract class SelfHandledEndpoint<TRequest> : BoundEndpoint<TRequest>
     }
 
     /// <inheritdoc />
-    /// <remarks>The generated binder over <typeparamref name="TRequest" /> knows the answer.</remarks>
-    private protected sealed override RequestBodyKind DeclaredRequestBody(string[] httpMethods)
-    {
-        // Narrowing only, exactly as before: a bodyless verb declares nothing whatever the binder
-        // says, including the explicit-[FromBody]-on-a-GET shape SYNE007 warns about. What the binder
-        // adds is *which* body — a form-bound message reads one, but not a JSON one.
-        return base.DeclaredRequestBody(httpMethods) == RequestBodyKind.None
-            ? RequestBodyKind.None
-            : _binder?.BodyKind ?? RequestBodyKind.Json;
-    }
+    protected sealed override RequestBodyKind BoundBodyKind => _binder?.BodyKind ?? RequestBodyKind.Json;
 
     /// <inheritdoc />
-    private protected sealed override IReadOnlyList<BoundParameterMetadata> DeclaredParameters()
+    protected sealed override IReadOnlyList<BoundParameterMetadata> DeclaredParameters()
     {
         return _binder?.Parameters ?? [];
     }
 
     /// <inheritdoc />
-    private protected sealed override IReadOnlyList<FormFieldMetadata> DeclaredFormFields()
+    protected sealed override IReadOnlyList<FormFieldMetadata> DeclaredFormFields()
     {
         return _binder?.FormFields ?? [];
     }

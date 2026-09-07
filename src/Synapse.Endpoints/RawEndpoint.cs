@@ -52,19 +52,29 @@ public abstract class RawEndpoint : EndpointBase
     public abstract ValueTask<IResult> HandleAsync(HttpContext context,
         CancellationToken cancellationToken);
 
+    /// <summary>The kind of body this endpoint's binding reads, before the verb narrows it.</summary>
+    /// <remarks>
+    ///     A generated binding overrides this with a compile-time constant. The default is
+    ///     <see cref="RequestBodyKind.Json" /> because a hand-written <c>BindAsync</c> may read a body
+    ///     on any verb that carries one.
+    /// </remarks>
+    protected virtual RequestBodyKind BoundBodyKind => RequestBodyKind.Json;
+
     /// <summary>What this endpoint declares it accepts as a request body.</summary>
     /// <param name="httpMethods">The endpoint's declared HTTP methods.</param>
     /// <returns>The kind of body to declare, or <see cref="RequestBodyKind.None" /> to declare nothing.</returns>
     /// <remarks>
-    ///     The verb is all this tier has to go on, and it is the right answer here: the binding is
-    ///     hand-written, so the author may read a body on any verb that carries one. The tiers with a
-    ///     generated binder know better and override this — see <c>docs/known-issues/067</c>.
+    ///     Narrowing only: a bodyless verb declares nothing whatever the binding says, including the
+    ///     explicit-[FromBody]-on-a-GET shape SYNE007 warns about. What the binding adds is *which*
+    ///     body — a form-bound message reads one, but not a JSON one. See docs/known-issues/067.
+    ///     The verbs are resolved at startup, not compile time, because an endpoint may declare its
+    ///     route (and therefore its verb) inside Configure — the shape SYNE014 reports.
     /// </remarks>
-    private protected virtual RequestBodyKind DeclaredRequestBody(string[] httpMethods)
+    protected RequestBodyKind DeclaredRequestBody(string[] httpMethods)
     {
         return HttpMethodHelpers.AllVerbsAreBodyless(httpMethods)
             ? RequestBodyKind.None
-            : RequestBodyKind.Json;
+            : BoundBodyKind;
     }
 
     /// <summary>
