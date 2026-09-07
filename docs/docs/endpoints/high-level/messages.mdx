@@ -434,17 +434,22 @@ The same benchmark carries a `RawEndpointHandWrittenBinding` arm — the identic
 bound by hand instead of by the generated binder — which measures the same allocation as the generated
 one. **Dropping a tier buys control over the binding, not speed.**
 
-## One message, one binder
+## Sharing a message across endpoints
 
-`EndpointRegistry.RegisterBinder` is keyed by message type, so exactly one binder is ever generated
-per message — built from whichever endpoint sorts first ordinally by fully-qualified name — however
-many endpoints share that type.
+Each endpoint's binding is generated as an `override` on that endpoint's own class, resolved from
+*its own* route and verb — not looked up from a shared table keyed by message type. Two endpoints can
+therefore bind the same message type and resolve it correctly even when their routes or verbs differ:
+a `GET /tasks/{taskId}` and a `POST /tasks/{taskId}/archive` sharing a message with an unattributed
+`Note` property resolve that property differently — the query string for the bodyless `GET`, the JSON
+body for the body-carrying `POST` (rule 5) — because each endpoint's binder is emitted from that
+endpoint's own analysis of its own verb, not borrowed from whichever endpoint happened to sort first.
 
-Two endpoints sharing a message with *identical* routes and verbs is harmless: the resolved bindings
-are identical too. Give them different routes or verbs and only the first endpoint's resolution is
-correct, which [`SYNE013`](../reference/diagnostics) warns about. It is a real standing limitation of
-the current design, and the diagnostic warns rather than fixes — give each endpoint its own message
-type.
+This used to be a real limitation, tracked as `SYNE013`: a single binder was generated per message
+type, keyed by the type alone, and built from whichever endpoint sorted first ordinally by
+fully-qualified name — so a second endpoint whose route or verb resolved a property differently
+silently bound through the first one's resolution instead of its own. Moving binding generation onto
+each endpoint's own `partial` class removed the shared table that limitation depended on, so
+`SYNE013` no longer exists as a diagnostic — there is nothing left for it to warn about.
 
 ## Next
 

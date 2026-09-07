@@ -134,6 +134,10 @@ The predicate is now one thing — does any property bind from the body — and 
   the type really reaches the serializer.
 - `IEndpointBinder<TRequest>` gains `bool ReadsRequestBody`, a default interface member returning
   `true` so hand-written binders are unaffected. Generated binders state the answer explicitly.
+  (`IEndpointBinder` itself was removed once binding generation moved onto each endpoint's own
+  `partial` class; the member this bullet describes now lives as `RawEndpoint.BoundBodyKind`, an
+  overridden property rather than an interface member — see
+  [Messages & binding](../docs/endpoints/high-level/messages.mdx).)
 - `RawEndpoint` gains a `DeclaredRequestBody` hook, defaulting to today's verb test. `Endpoint<…>`,
   `MappedEndpoint` and `StreamEndpoint` override it to require **both** that the verb carries a body
   and that the binder reads one — narrowing only, so no endpoint that declared nothing before starts

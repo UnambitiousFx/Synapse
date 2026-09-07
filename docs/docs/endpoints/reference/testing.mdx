@@ -88,13 +88,16 @@ public async Task SendAsync_ForARawEndpoint_RunsConfigureExactlyOnce()
 }
 ```
 
-:::note `EndpointRegistry.RegisterMetadata`/`RegisterBinder` are internal test plumbing
-The package's own tests define endpoints by hand, without the analyzer, so they register an
-endpoint's route metadata (and sometimes its binder) themselves before mapping it. A real endpoint —
-declared with `[Get]`/`[Post]`/… and built through NuGet — already has that metadata generated for
-it; you never call `EndpointRegistry.RegisterMetadata` yourself. It only appears in the examples
-below because they are drawn from the harness's own test suite, which needs it for its hand-rolled
-fixtures.
+:::note `EndpointRegistry.RegisterMetadata` is internal test plumbing
+A handful of the package's own tests declare a `RawEndpoint` with no route attribute at all — there is
+nothing for the analyzer to read a route from, so nothing registers its metadata either — and register
+it by hand before mapping it. A real endpoint — declared with `[Get]`/`[Post]`/… and built through
+NuGet — already has that metadata generated for it; you never call `EndpointRegistry.RegisterMetadata`
+yourself. It only appears in the examples below because they are drawn from the harness's own test
+suite, which needs it for those attribute-less fixtures. Binding itself has no equivalent hand-rolled
+path any more: every generated tier's `BindAsync` is emitted straight into the endpoint's own
+`partial` class, so a test endpoint that wants a generated binding gets one the same way an
+application's endpoint does — by carrying a route attribute and being declared `partial`.
 :::
 
 **Route constraints apply**, because the real route matcher is doing the work — a value the endpoint's
@@ -337,12 +340,17 @@ name escaped per RFC 2183/6266 quoted-string rules. Both exist side by side beca
 must read either content type identically: `FormBody` is what exercises the request shape
 `MultipartBody` does not need a file to demonstrate.
 
+From `test/Synapse.Endpoints.Testing.Tests/FormBindingHarnessTests.cs` — `UploadEndpoint` carries
+`[Post("/tasks/{taskId}/uploads")]` and is declared `partial`, so its binding is the analyzer's, not
+the test's; only its route metadata is registered by hand, and only because this fixture lives
+outside the assembly `MapSynapseEndpoints` would normally discover it from:
+
 ```csharp
 [Fact]
 public async Task SendAsync_WithAMultipartUpload_BindsTheFileAndTheFieldAndTheRouteValue()
 {
-    // Arrange
-    EndpointRegistry.RegisterBinder(new UploadBinder());
+    // Arrange — spec §6 case 1 is a file plus a field plus a route value; routing and multipart
+    // parsing coexisting on one live request is a runtime property no emission test can assert.
     EndpointRegistry.RegisterMetadata<UploadEndpoint>(
         new EndpointMetadata(["POST"], "/tasks/{taskId}/uploads"));
     using var harness = EndpointHarness.Create<UploadEndpoint>(options =>
@@ -484,9 +492,15 @@ used below, where the message itself is not worth pinning.
 
 ## Testing the binding
 
-This is the half that previously needed a request over a socket: `BindAsync` throws on an unmapped
-instance (see `docs/known-issues/056`), so nothing could exercise it without a host. From
-`examples/EndpointsApi.Tests/HarnessTests.cs`:
+Binding is still a half that needs the harness rather than a bare unit test on the endpoint instance
+— but not for the reason `docs/known-issues/056` originally gave. That report's `_binder!` half is
+gone along with `IEndpointBinder` itself: every generated tier's `BindAsync` is now an `override`
+requiring nothing looked up, so there is no unmapped-binder null to guard against any more. What
+still throws on an unmapped instance is `ProduceResultAsync`'s `Mapped(_configuration)` — `Configure`
+only runs once, at map time, so a `CreateTaskEndpoint` constructed and invoked directly still has no
+configuration to read. The harness maps the endpoint for real before either method runs, which is
+what makes it — rather than a bare `new CreateTaskEndpoint()` — the way to exercise binding in
+isolation. From `examples/EndpointsApi.Tests/HarnessTests.cs`:
 
 ```csharp
 [Fact]
@@ -518,25 +532,27 @@ error back to a field, and it has simply not been fixed yet. Not every binding f
 this — a route or query value that fails to parse genuinely is keyed by its own field, as
 `WithError("taskId", "The route value is not a valid Guid.")` above shows, and as
 `SendAsync_WhenBindingFails_Returns400WithTheFieldThatFailed`
-(`test/Synapse.Endpoints.Testing.Tests/BinderTierHarnessTests.cs`) shows again against a hand-written
-binder:
+(`test/Synapse.Endpoints.Testing.Tests/BinderTierHarnessTests.cs`) shows again — against the generated
+binder itself this time, rather than a stub, since a real bad route value is now the only way to make
+a generated binding fail:
 
 ```csharp
 [Fact]
 public async Task SendAsync_WhenBindingFails_Returns400WithTheFieldThatFailed()
 {
-    // Arrange
-    EndpointRegistry.RegisterBinder(new RejectingBinder());
-    EndpointRegistry.RegisterMetadata<RejectingEndpoint>(new EndpointMetadata(["GET"], "/rejecting"));
+    // Arrange — a real bad value rather than a stubbed failure: the binding is generated now, so
+    // the only way to make it fail is to send something it cannot parse.
+    EndpointRegistry.RegisterMetadata<RejectingEndpoint>(
+        new EndpointMetadata(["GET"], "/rejecting/{taskId}"));
     using var harness = EndpointHarness.Create<RejectingEndpoint>();
 
     // Act
-    var response = await harness.Get("/rejecting").SendAsync(TestContext.Current.CancellationToken);
+    var response = await harness.Get("/rejecting/not-a-guid").SendAsync(TestContext.Current.CancellationToken);
 
     // Assert
     Assert.Equal(StatusCodes.Status400BadRequest, response.StatusCode);
     var problem = response.ReadValidationProblem();
-    Assert.Equal("The route value is not a valid Guid.", Assert.Single(problem.Errors["taskId"]));
+    Assert.Equal("The route value is not a valid System.Guid.", Assert.Single(problem.Errors["taskId"]));
 }
 ```
 
@@ -555,7 +571,6 @@ Asking for `text/event-stream` switches the transport, from `test/Synapse.Endpoi
 public async Task SendAsync_WhenAcceptIsEventStream_MaterialisesTheStreamAsServerSentEvents()
 {
     // Arrange
-    EndpointRegistry.RegisterBinder(new TickerBinder());
     EndpointRegistry.RegisterMetadata<TickerEndpoint>(new EndpointMetadata(["GET"], "/ticks"));
     using var harness = EndpointHarness.Create<TickerEndpoint>(options =>
         options.HandleStream<TickerQuery, Tick>(_ => [new Tick(7)]));
@@ -579,7 +594,6 @@ public async Task SendAsync_WhenAnItemFails_SkipsItAndStreamsTheRest()
 {
     // Arrange: the skip is IHttpInvoker.InvokeStreamAsync's behaviour, and the harness keeps
     // that real - so the failing item disappears here exactly as it does on the wire.
-    EndpointRegistry.RegisterBinder(new TickerBinder());
     EndpointRegistry.RegisterMetadata<TickerEndpoint>(new EndpointMetadata(["GET"], "/ticks"));
     using var harness = EndpointHarness.Create<TickerEndpoint>(options =>
         options.HandleStream<TickerQuery, Tick>(_ => Ticks()));

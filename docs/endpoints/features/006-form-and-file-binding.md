@@ -124,7 +124,10 @@ public bool FormFile(string name, out IFormFile file);
 
 Generator work: a property typed `IFormFile` / `IFormFileCollection`, or annotated `[FromForm]`,
 binds from the form; the endpoint then declares `Accepts<TRequest>("multipart/form-data")` instead
-of `application/json`, and `IEndpointBinder<T>.ReadsRequestBody` must stay accurate.
+of `application/json`. (As shipped, this landed as an `override` of `RawEndpoint.BoundBodyKind` — a
+compile-time constant emitted onto the endpoint's own `partial` class alongside its generated
+`BindAsync` — rather than through a separate binder interface: see
+[Messages & binding](../../docs/endpoints/high-level/messages.mdx).)
 
 ### With the proposal
 

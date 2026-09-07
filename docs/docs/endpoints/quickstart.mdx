@@ -153,7 +153,10 @@ public sealed class CreateTaskCommandHandler : IRequestHandler<CreateTaskCommand
 
 ### 3. The endpoints
 
-Here is the whole point. Three routes, no method bodies.
+Here is the whole point. Three routes, no method bodies — and every class declared `partial`, because
+the analyzer needs to reopen each one to emit its `BindAsync`. Forget it and the analyzer reports
+[`SYNE020`](./reference/diagnostics) naming the class to fix — see
+[Shape requirements](./reference/base-classes#shape-requirements).
 
 ```csharp title="Features/Tasks/Endpoints.cs"
 using UnambitiousFx.Synapse.Endpoints;
@@ -163,15 +166,15 @@ namespace TaskApi.Features.Tasks;
 
 /// <summary>GET /tasks — nothing to configure.</summary>
 [Get("/tasks")]
-public sealed class ListTasksEndpoint : Endpoint<ListTasksQuery, IReadOnlyList<TaskDto>>;
+public sealed partial class ListTasksEndpoint : Endpoint<ListTasksQuery, IReadOnlyList<TaskDto>>;
 
 /// <summary>GET /tasks/{taskId} — TaskId binds from the route by name.</summary>
 [Get("/tasks/{taskId:guid}")]
-public sealed class GetTaskEndpoint : Endpoint<GetTaskQuery, TaskDto>;
+public sealed partial class GetTaskEndpoint : Endpoint<GetTaskQuery, TaskDto>;
 
 /// <summary>POST /tasks — Title binds from the JSON body; responds 201 with a Location.</summary>
 [Post("/tasks")]
-public sealed class CreateTaskEndpoint : Endpoint<CreateTaskCommand, TaskCreated>
+public sealed partial class CreateTaskEndpoint : Endpoint<CreateTaskCommand, TaskCreated>
 {
     public override void Configure(IEndpointBuilder<TaskCreated> builder)
     {

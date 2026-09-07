@@ -83,10 +83,12 @@ public sealed class GetTaskEndpoint : Endpoint<GetTaskQuery, TaskDto>
 [Get("/v1/tasks/{taskId:guid}")]
 public sealed class GetTaskV1Endpoint : Endpoint<GetTaskQuery, TaskDto>
 {
-    // The same Configure, retyped — and the two must be kept in step by hand. If the routes ever
-    // resolve their properties differently (one names the parameter {id}, the other {taskId}),
-    // SYNE013 warns that only one binder is emitted for GetTaskQuery and the other endpoint binds
-    // through it.
+    // The same Configure, retyped — and the two must be kept in step by hand. Each endpoint's binding
+    // is generated separately from its own route now, so a mismatched parameter name (one endpoint
+    // says {id}, the other {taskId}) is no longer the shared-binder hazard SYNE013 used to warn
+    // about — the endpoint whose route parameter has nothing to bind to (GetTaskQuery has no `Id`
+    // property) fails its own build with SYNE001 instead, an Error rather than a Warning nobody
+    // sharing the type was ever forced to act on.
     public override void Configure(IEndpointBuilder<TaskDto> builder) =>
         builder.ProducesProblem(StatusCodes.Status404NotFound).Name("GetTaskV1");
 }
