@@ -87,4 +87,95 @@ public sealed class PartialDiagnosticTests
         // Assert
         Assert.DoesNotContain(diagnostics, d => d.Id == "SYNE020");
     }
+
+    [Fact]
+    public void Generate_ForHandWrittenBindAsyncOnGeneratedTier_ReportsSyne021()
+    {
+        // Arrange
+        const string source = """
+                              using System.Threading.Tasks;
+                              using Microsoft.AspNetCore.Http;
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+                              using UnambitiousFx.Synapse.Endpoints.Binding;
+
+                              namespace TestNs;
+
+                              public sealed record ProbeQuery : IRequest<string>;
+
+                              [Get("/probes")]
+                              public sealed partial class ProbeEndpoint : Endpoint<ProbeQuery, string>
+                              {
+                                  public override ValueTask<BindResult<ProbeQuery>> BindAsync(HttpContext context)
+                                  {
+                                      return new(BindResult<ProbeQuery>.Success(new ProbeQuery()));
+                                  }
+                              }
+                              """;
+
+        // Act
+        var diagnostics = GeneratorHarness.GetDiagnostics(source);
+
+        // Assert — without SYNE021 the only feedback is CS0111 against invisible generated code.
+        var reported = Assert.Single(diagnostics, d => d.Id == "SYNE021");
+        Assert.Equal(DiagnosticSeverity.Error, reported.Severity);
+        Assert.Contains("RawEndpoint", reported.GetMessage());
+    }
+
+    [Fact]
+    public void Generate_ForGeneratedTierWithNoHandWrittenBindAsync_ReportsNoSyne021()
+    {
+        // Arrange — the ordinary case, and the one that pins the diagnostic to a *declared* BindAsync
+        // rather than to the tier. Without it, an implementation reporting SYNE021 for every endpoint
+        // with a generated binder would still pass both of the other two tests.
+        const string source = """
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+
+                              namespace TestNs;
+
+                              public sealed record ProbeQuery : IRequest<string>;
+
+                              [Get("/probes")]
+                              public sealed partial class ProbeEndpoint : Endpoint<ProbeQuery, string>;
+                              """;
+
+        // Act
+        var diagnostics = GeneratorHarness.GetDiagnostics(source);
+
+        // Assert
+        Assert.DoesNotContain(diagnostics, d => d.Id == "SYNE021");
+    }
+
+    [Fact]
+    public void Generate_ForHandWrittenBindAsyncOnRawTier_ReportsNoSyne021()
+    {
+        // Arrange — RawEndpoint<...> exists precisely so BindAsync can be written by hand.
+        const string source = """
+                              using System.Threading.Tasks;
+                              using Microsoft.AspNetCore.Http;
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+                              using UnambitiousFx.Synapse.Endpoints.Binding;
+
+                              namespace TestNs;
+
+                              public sealed record ProbeQuery : IRequest<string>;
+
+                              [Get("/probes")]
+                              public sealed class ProbeEndpoint : RawEndpoint<ProbeQuery, string>
+                              {
+                                  public override ValueTask<BindResult<ProbeQuery>> BindAsync(HttpContext context)
+                                  {
+                                      return new(BindResult<ProbeQuery>.Success(new ProbeQuery()));
+                                  }
+                              }
+                              """;
+
+        // Act
+        var diagnostics = GeneratorHarness.GetDiagnostics(source);
+
+        // Assert
+        Assert.DoesNotContain(diagnostics, d => d.Id == "SYNE021");
+    }
 }

@@ -21,3 +21,4 @@ SYNE017 | Synapse.Endpoints | Warning | Form-bound property on a bodyless verb
 SYNE018 | Synapse.Endpoints | Error | Message binds from both the form and the JSON body
 SYNE019 | Synapse.Endpoints | Info | Message is form-bound by inference
 SYNE020 | Synapse.Endpoints | Error | Endpoint (or a type enclosing it) is not declared partial
+SYNE021 | Synapse.Endpoints | Error | BindAsync is generated for this endpoint tier

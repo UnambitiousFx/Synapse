@@ -206,6 +206,19 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
                     new EquatableArray<ConstructorParameterModel>(Array.Empty<ConstructorParameterModel>());
             }
 
+            // SYNE021 — Members, not syntax: an expression-bodied, block-bodied or partial-split
+            // declaration all reach the symbol the same way. Matches the tolerance noted at
+            // DeclaresOnSuccessOverride above. Only tiers with a generated binder are checked — the
+            // three Raw kinds exist precisely so BindAsync can be written by hand.
+            if (kind.Value.HasGeneratedBinder() &&
+                symbol.GetMembers("BindAsync").Any(static member => member is IMethodSymbol))
+            {
+                diagnostics.Add(new DiagnosticInfo(
+                    EndpointDiagnostics.BindAsyncIsGenerated,
+                    location,
+                    new EquatableArray<string>([symbol.Name])));
+            }
+
             // SYNE005 — only Endpoint<TRequest> / Endpoint<TRequest,TResponse> dispatch a single
             // response; StreamEndpoint and MappedEndpoint are unaffected (Mapped's bound type is the
             // HTTP DTO, not the dispatched message, so this check does not apply to it).

@@ -484,4 +484,17 @@ internal static class EndpointDiagnostics
         Category,
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
+
+    /// <summary>
+    ///     SYNE021: an endpoint on a tier whose binding is generated also declares <c>BindAsync</c> by
+    ///     hand. The two collide as CS0111 against generated code the author cannot see, so this names
+    ///     the tier that exists for hand-written binding instead.
+    /// </summary>
+    internal static readonly DiagnosticDescriptor BindAsyncIsGenerated = new(
+        "SYNE021",
+        "BindAsync is generated for this endpoint tier",
+        "'{0}' declares 'BindAsync', but its binding is generated. Derive from 'RawEndpoint<...>' to write the binding by hand.",
+        Category,
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
 }
