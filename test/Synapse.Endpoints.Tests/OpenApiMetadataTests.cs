@@ -130,7 +130,6 @@ public sealed partial class OpenApiMetadataTests
     public void CreateDescriptor_ForMappedEndpointConfiguredCreated_Declares201NotDefault200()
     {
         // Arrange
-        EndpointRegistry.RegisterBinder(new CreatedMappedRequestBinder());
         EndpointRegistry.RegisterMetadata<CreatedMappedEndpoint>(new EndpointMetadata(["POST"], "/meta-mapped-created"));
         var app = WebApplication.CreateSlimBuilder().Build();
 
@@ -190,7 +189,6 @@ public sealed partial class OpenApiMetadataTests
     public void CreateDescriptor_ForSelfHandledEndpoint_DeclaresTheSameMetadataAsTheDispatchingTier()
     {
         // Arrange
-        EndpointRegistry.RegisterBinder(new SelfHandledMetaBinder());
         EndpointRegistry.RegisterMetadata<SelfHandledMetaEndpoint>(
             new EndpointMetadata(["POST"], "/meta-self-handled"));
         var app = WebApplication.CreateSlimBuilder().Build();
@@ -219,7 +217,6 @@ public sealed partial class OpenApiMetadataTests
     public void CreateDescriptor_ForSelfHandledEndpointWithNoResponse_Declares204NotDefault200()
     {
         // Arrange
-        EndpointRegistry.RegisterBinder(new SelfHandledVoidMetaBinder());
         EndpointRegistry.RegisterMetadata<SelfHandledVoidMetaEndpoint>(
             new EndpointMetadata(["POST"], "/meta-self-handled-void"));
         var app = WebApplication.CreateSlimBuilder().Build();
@@ -240,7 +237,6 @@ public sealed partial class OpenApiMetadataTests
     public void CreateDescriptor_ForStreamEndpoint_DeclaresJsonAndEventStreamProduces()
     {
         // Arrange
-        EndpointRegistry.RegisterBinder(new StreamMetaBinder());
         EndpointRegistry.RegisterMetadata<StreamMetaEndpoint>(new EndpointMetadata(["GET"], "/meta-stream"));
         var app = WebApplication.CreateSlimBuilder().Build();
 
@@ -266,7 +262,6 @@ public sealed partial class OpenApiMetadataTests
     public void CreateDescriptor_ForStreamEndpointOnABodyCarryingVerb_DeclaresAcceptsMetadata()
     {
         // Arrange
-        EndpointRegistry.RegisterBinder(new PostStreamMetaBinder());
         EndpointRegistry.RegisterMetadata<PostStreamMetaEndpoint>(
             new EndpointMetadata(["POST"], "/meta-stream-post"));
         var app = WebApplication.CreateSlimBuilder().Build();
@@ -289,7 +284,6 @@ public sealed partial class OpenApiMetadataTests
     public void CreateDescriptor_ForStreamEndpointOnABodylessVerb_DeclaresNoAcceptsMetadata()
     {
         // Arrange
-        EndpointRegistry.RegisterBinder(new StreamMetaBinder());
         EndpointRegistry.RegisterMetadata<StreamMetaEndpoint>(
             new EndpointMetadata(["GET"], "/meta-stream-bodyless"));
         var app = WebApplication.CreateSlimBuilder().Build();
@@ -545,14 +539,6 @@ public sealed partial class OpenApiMetadataTests
         }
     }
 
-    private sealed class CreatedMappedRequestBinder : IEndpointBinder<CreatedMappedRequest>
-    {
-        public ValueTask<BindResult<CreatedMappedRequest>> BindAsync(HttpContext context)
-        {
-            return ValueTask.FromResult(BindResult<CreatedMappedRequest>.Success(new CreatedMappedRequest("thing")));
-        }
-    }
-
     internal sealed record VoidMetaCommand : IRequest;
 
     internal sealed partial class VoidMetaEndpoint : Endpoint<VoidMetaCommand>;
@@ -576,26 +562,16 @@ public sealed partial class OpenApiMetadataTests
 
     internal sealed partial class StreamMetaEndpoint : StreamEndpoint<StreamMetaQuery, int>;
 
-    private sealed class StreamMetaBinder : IEndpointBinder<StreamMetaQuery>
+    internal sealed record PostStreamMetaQuery : IStreamRequest<int>
     {
-        public ValueTask<BindResult<StreamMetaQuery>> BindAsync(HttpContext context)
-        {
-            return ValueTask.FromResult(BindResult<StreamMetaQuery>.Success(new StreamMetaQuery()));
-        }
+        // Body-bound, because the endpoint's verb carries one and nothing else claims the property.
+        // That is what makes the generated binding report RequestBodyKind.Json, and so what makes
+        // this tier declare an Accepts — the stub this replaced reported Json from a default instead.
+        public string Filter { get; init; } = "";
     }
 
-    internal sealed record PostStreamMetaQuery : IStreamRequest<int>;
-
+    [Post("/meta-stream-post")]
     internal sealed partial class PostStreamMetaEndpoint : StreamEndpoint<PostStreamMetaQuery, int>;
-
-    private sealed class PostStreamMetaBinder : IEndpointBinder<PostStreamMetaQuery>
-    {
-        public ValueTask<BindResult<PostStreamMetaQuery>> BindAsync(HttpContext context)
-        {
-            return ValueTask.FromResult(
-                BindResult<PostStreamMetaQuery>.Success(new PostStreamMetaQuery()));
-        }
-    }
     // docs/endpoints/features/001: the document listed the success status and the binding 400 and
     // nothing else, so every status the registered IFailureHttpMapper really writes was absent — and
     // the high tier could not add one even by hand, because Produces lived on IRawEndpointBuilder
@@ -744,7 +720,6 @@ public sealed partial class OpenApiMetadataTests
     public void CreateDescriptor_ForAMappedEndpointDeclaringAProblemResponse_DeclaresIt()
     {
         // Arrange
-        EndpointRegistry.RegisterBinder(new CreatedMappedRequestBinder());
         EndpointRegistry.RegisterMetadata<FailureAwareMappedEndpoint>(
             new EndpointMetadata(["POST"], "/meta-failure-mapped"));
         var app = WebApplication.CreateSlimBuilder().Build();
@@ -787,7 +762,6 @@ public sealed partial class OpenApiMetadataTests
     public void CreateDescriptor_ForAStreamEndpointDeclaringAProblemResponse_DeclaresIt()
     {
         // Arrange
-        EndpointRegistry.RegisterBinder(new FailureAwareStreamBinder());
         EndpointRegistry.RegisterMetadata<FailureAwareStreamEndpoint>(
             new EndpointMetadata(["GET"], "/meta-failure-stream"));
         var app = WebApplication.CreateSlimBuilder().Build();
@@ -900,15 +874,6 @@ public sealed partial class OpenApiMetadataTests
         }
     }
 
-    private sealed class FailureAwareStreamBinder : IEndpointBinder<FailureAwareStreamQuery>
-    {
-        public ValueTask<BindResult<FailureAwareStreamQuery>> BindAsync(HttpContext context)
-        {
-            return ValueTask.FromResult(
-                BindResult<FailureAwareStreamQuery>.Success(new FailureAwareStreamQuery()));
-        }
-    }
-
     internal sealed class FailureAwareRawEndpoint : RawEndpoint
     {
         public override void Configure(IRawEndpointBuilder builder)
@@ -938,15 +903,6 @@ public sealed partial class OpenApiMetadataTests
         }
     }
 
-    private sealed class SelfHandledMetaBinder : IEndpointBinder<SelfHandledMetaRequest>
-    {
-        public ValueTask<BindResult<SelfHandledMetaRequest>> BindAsync(HttpContext context)
-        {
-            return ValueTask.FromResult(
-                BindResult<SelfHandledMetaRequest>.Success(new SelfHandledMetaRequest("thing")));
-        }
-    }
-
     internal sealed record SelfHandledVoidMetaRequest(string Name);
 
     [Post("/meta-self-handled-void")]
@@ -958,15 +914,6 @@ public sealed partial class OpenApiMetadataTests
             CancellationToken cancellationToken)
         {
             return ValueTask.FromResult(UnambitiousFx.Functional.Result.Success());
-        }
-    }
-
-    private sealed class SelfHandledVoidMetaBinder : IEndpointBinder<SelfHandledVoidMetaRequest>
-    {
-        public ValueTask<BindResult<SelfHandledVoidMetaRequest>> BindAsync(HttpContext context)
-        {
-            return ValueTask.FromResult(
-                BindResult<SelfHandledVoidMetaRequest>.Success(new SelfHandledVoidMetaRequest("thing")));
         }
     }
 

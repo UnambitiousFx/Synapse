@@ -22,8 +22,8 @@ namespace UnambitiousFx.Synapse.Endpoints;
 ///         conventions can express — a header that has to be split, a legacy query-string shape, a
 ///         value that needs normalising before it becomes part of the message. Everything downstream of
 ///         <see cref="BindAsync" /> is identical to <see cref="Endpoint{TRequest,TResponse}" />, which
-///         differs from this class in exactly one respect: it takes its binder from the generated
-///         registry instead of asking you for one.
+///         differs from this class in exactly one respect: the analyzer writes its
+///         <see cref="BindAsync" /> for it instead of asking you for one.
 ///     </para>
 ///     <para>
 ///         Read the request with the extension methods in

@@ -11,7 +11,6 @@ public sealed partial class StreamHarnessTests
     public async Task SendAsync_ForAStreamEndpoint_MaterialisesTheStreamAsAJsonArray()
     {
         // Arrange
-        EndpointRegistry.RegisterBinder(new TickerBinder());
         EndpointRegistry.RegisterMetadata<TickerEndpoint>(new EndpointMetadata(["GET"], "/ticks"));
         using var harness = EndpointHarness.Create<TickerEndpoint>(options =>
             options.HandleStream<TickerQuery, Tick>(_ => [new Tick(1), new Tick(2)]));
@@ -29,7 +28,6 @@ public sealed partial class StreamHarnessTests
     public async Task SendAsync_WhenAcceptIsEventStream_MaterialisesTheStreamAsServerSentEvents()
     {
         // Arrange
-        EndpointRegistry.RegisterBinder(new TickerBinder());
         EndpointRegistry.RegisterMetadata<TickerEndpoint>(new EndpointMetadata(["GET"], "/ticks"));
         using var harness = EndpointHarness.Create<TickerEndpoint>(options =>
             options.HandleStream<TickerQuery, Tick>(_ => [new Tick(7)]));
@@ -48,7 +46,6 @@ public sealed partial class StreamHarnessTests
     {
         // Arrange: the skip is IHttpInvoker.InvokeStreamAsync's behaviour, and the harness keeps
         // that real - so the failing item disappears here exactly as it does on the wire.
-        EndpointRegistry.RegisterBinder(new TickerBinder());
         EndpointRegistry.RegisterMetadata<TickerEndpoint>(new EndpointMetadata(["GET"], "/ticks"));
         using var harness = EndpointHarness.Create<TickerEndpoint>(options =>
             options.HandleStream<TickerQuery, Tick>(_ => Ticks()));
@@ -74,13 +71,6 @@ public sealed partial class StreamHarnessTests
 
     internal sealed record TickerQuery : IStreamRequest<Tick>;
 
+    [Get("/ticks")]
     internal sealed partial class TickerEndpoint : StreamEndpoint<TickerQuery, Tick>;
-
-    private sealed class TickerBinder : IEndpointBinder<TickerQuery>
-    {
-        public ValueTask<BindResult<TickerQuery>> BindAsync(HttpContext context)
-        {
-            return ValueTask.FromResult(BindResult<TickerQuery>.Success(new TickerQuery()));
-        }
-    }
 }

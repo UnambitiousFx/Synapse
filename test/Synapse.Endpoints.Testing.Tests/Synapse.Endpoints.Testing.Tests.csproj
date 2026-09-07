@@ -1,17 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-    <PropertyGroup>
-        <!--
-            SYNE014: several fixtures here deliberately register their route/verb dynamically via
-            EndpointRegistry.RegisterMetadata rather than a route attribute, specifically to exercise
-            that path, so the generator can never see a verb for them at compile time. The generated
-            binder SYNE014 warns about is never the one that runs anyway: each of these tests overwrites
-            BinderHolder<T>.Instance with its own hand-written binder after the module initializer sets
-            it, so the assumed-bodyless resolution the diagnostic flags has no runtime effect here.
-        -->
-        <NoWarn>$(NoWarn);SYNE014</NoWarn>
-    </PropertyGroup>
-
     <ItemGroup>
         <FrameworkReference Include="Microsoft.AspNetCore.App" />
     </ItemGroup>

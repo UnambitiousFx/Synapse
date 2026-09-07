@@ -142,14 +142,16 @@ public abstract class BoundEndpoint<TBound> : RawEndpoint
                    "change it.");
     }
 
-    /// <summary>Binds the request, using whatever binder this tier supplies.</summary>
+    /// <summary>Binds the request, using whatever <c>BindAsync</c> this tier declares.</summary>
     /// <param name="context">The HTTP context.</param>
     /// <returns>The bound value, or the failures preventing it.</returns>
     /// <remarks>
-    ///     The one step of the entry sequence that genuinely differs per tier: the two
-    ///     <c>RawEndpoint&lt;…&gt;</c> tiers expose <c>BindAsync</c> for the author to write, while
-    ///     <see cref="MappedEndpoint{THttpRequest,TRequest,TResponse,THttpResponse}" /> and
-    ///     <see cref="StreamEndpoint{TRequest,TItem}" /> take a generated binder from the registry.
+    ///     Every tier forwards to a public abstract <c>BindAsync</c>; what differs is who implements
+    ///     it. The two <c>RawEndpoint&lt;…&gt;</c> tiers leave it to the author, while the generated
+    ///     tiers have it emitted into the endpoint's own <c>partial</c>. It stays a per-tier member
+    ///     rather than moving here because the bound type is the tier's, not this class's:
+    ///     <see cref="MappedEndpoint{THttpRequest,TRequest,TResponse,THttpResponse}" /> binds a wire
+    ///     DTO where the others bind the message.
     /// </remarks>
     private protected abstract ValueTask<BindResult<TBound>> BindBoundAsync(HttpContext context);
 

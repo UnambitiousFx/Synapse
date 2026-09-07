@@ -151,11 +151,9 @@ internal readonly record struct EndpointTarget
     /// <remarks>
     ///     Resolution depends on the endpoint's own route template and HTTP verb (rules 3 and 4 of
     ///     the binding-source table), not on the type alone — which is why the binding is emitted per
-    ///     endpoint, into the endpoint's own partial class, rather than once per bound type. The kinds
-    ///     that still take a binder from the registry keep the old limitation until they are migrated:
-    ///     for those, one binder is emitted per bound type, built from whichever endpoint sorts first
-    ///     by <see cref="EndpointFullName" />, and every other endpoint sharing the type silently
-    ///     binds using that resolution instead of its own.
+    ///     endpoint, into the endpoint's own partial class, rather than once per bound type. Two
+    ///     endpoints sharing one message therefore each bind by their own resolution; nothing is keyed
+    ///     by bound type any more.
     /// </remarks>
     public EquatableArray<BindablePropertyModel> BoundProperties { get; }
 

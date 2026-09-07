@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -16,7 +17,6 @@ public sealed partial class MappedEndpointTests
     public async Task Invoke_WithMappedContracts_BindsHttpDtoAndReturnsMappedResponse()
     {
         // Arrange
-        EndpointRegistry.RegisterBinder(new CreateBodyBinder());
         EndpointRegistry.RegisterMetadata<CreateEndpoint>(new EndpointMetadata(["POST"], "/things"));
 
         var invoker = Substitute.For<IHttpInvoker>();
@@ -26,8 +26,7 @@ public sealed partial class MappedEndpointTests
         var services = new ServiceCollection();
         services.AddSingleton(invoker);
         services.AddLogging();
-        var context = new DefaultHttpContext { RequestServices = services.BuildServiceProvider() };
-        context.Response.Body = new MemoryStream();
+        var context = NewJsonBodyContext(services, """{"name":"thing"}""");
 
         var descriptor = ((EndpointBase)new CreateEndpoint())
             .CreateDescriptor(EndpointRegistry.GetMetadata<CreateEndpoint>());
@@ -42,8 +41,8 @@ public sealed partial class MappedEndpointTests
     [Fact]
     public async Task Invoke_WhenBindingFails_Returns400BeforeInvokerIsCalled()
     {
-        // Arrange
-        EndpointRegistry.RegisterBinder(new FailingBodyBinder());
+        // Arrange — no body and no content type, which is what the generated binding rejects: this
+        // tier binds CreateBody from the JSON body, so a bodyless POST cannot produce one.
         EndpointRegistry.RegisterMetadata<FailingEndpoint>(new EndpointMetadata(["POST"], "/things-fail"));
 
         var invoker = Substitute.For<IHttpInvoker>();
@@ -73,7 +72,6 @@ public sealed partial class MappedEndpointTests
         // and real DefaultFailureHttpMapper are exercised. This is the path the generic onSuccess
         // overload takes; inspection says it returns onSuccess(value!) directly with no wrapping, but
         // Task 8 showed inspection alone can miss a wrapper, so this proves it through the real pipeline.
-        EndpointRegistry.RegisterBinder(new CreatedBodyBinder());
         EndpointRegistry.RegisterMetadata<CreatedEndpoint>(new EndpointMetadata(["POST"], "/things-created"));
 
         var mediator = Substitute.For<IInvoker>();
@@ -84,8 +82,7 @@ public sealed partial class MappedEndpointTests
         services.AddSingleton(mediator);
         services.AddSynapseAspNetCore();
         services.AddLogging();
-        var context = new DefaultHttpContext { RequestServices = services.BuildServiceProvider() };
-        context.Response.Body = new MemoryStream();
+        var context = NewJsonBodyContext(services, """{"name":"thing"}""");
 
         var descriptor = ((EndpointBase)new CreatedEndpoint())
             .CreateDescriptor(EndpointRegistry.GetMetadata<CreatedEndpoint>());
@@ -104,6 +101,23 @@ public sealed partial class MappedEndpointTests
             TestContext.Current.CancellationToken);
         Assert.NotNull(body);
         Assert.Equal("thing-42", body!.Id);
+    }
+
+    /// <summary>
+    ///     A context carrying <paramref name="body" /> as a JSON request body, which is what the
+    ///     generated binding for this tier reads: <c>CreateBody</c> has no route or query source, so
+    ///     a <c>[Post]</c> resolves its property to the body.
+    /// </summary>
+    private static DefaultHttpContext NewJsonBodyContext(IServiceCollection services,
+        string body)
+    {
+        var bytes = Encoding.UTF8.GetBytes(body);
+        var context = new DefaultHttpContext { RequestServices = services.BuildServiceProvider() };
+        context.Request.Body = new MemoryStream(bytes);
+        context.Request.ContentLength = bytes.Length;
+        context.Request.ContentType = "application/json";
+        context.Response.Body = new MemoryStream();
+        return context;
     }
 
     internal sealed record CreateBody(string Name);
@@ -126,14 +140,6 @@ public sealed partial class MappedEndpointTests
         }
     }
 
-    private sealed class CreateBodyBinder : IEndpointBinder<CreateBody>
-    {
-        public ValueTask<BindResult<CreateBody>> BindAsync(HttpContext context)
-        {
-            return ValueTask.FromResult(BindResult<CreateBody>.Success(new CreateBody("thing")));
-        }
-    }
-
     internal sealed record FailingCreateCommand(string Name) : IRequest<int>;
 
     internal sealed record FailingCreateResponse(string Id);
@@ -149,14 +155,6 @@ public sealed partial class MappedEndpointTests
         public override FailingCreateResponse ToResponse(int response)
         {
             return new FailingCreateResponse(response.ToString());
-        }
-    }
-
-    private sealed class FailingBodyBinder : IEndpointBinder<CreateBody>
-    {
-        public ValueTask<BindResult<CreateBody>> BindAsync(HttpContext context)
-        {
-            return ValueTask.FromResult(BindResult<CreateBody>.Failure("name", "is required."));
         }
     }
 
@@ -180,14 +178,6 @@ public sealed partial class MappedEndpointTests
         public override void Configure(IEndpointBuilder<CreatedResponse> builder)
         {
             builder.Created(response => $"/things/{response.Id.Split('-')[1]}");
-        }
-    }
-
-    private sealed class CreatedBodyBinder : IEndpointBinder<CreateBody>
-    {
-        public ValueTask<BindResult<CreateBody>> BindAsync(HttpContext context)
-        {
-            return ValueTask.FromResult(BindResult<CreateBody>.Success(new CreateBody("thing")));
         }
     }
 }

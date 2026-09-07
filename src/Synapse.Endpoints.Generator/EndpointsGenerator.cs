@@ -1528,9 +1528,9 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
             setter.DeclaredAccessibility is Accessibility.Private or Accessibility.Protected
                 or Accessibility.ProtectedAndInternal)
         {
-            // The generated binder is a sibling class, not a subclass, so a setter only reachable
-            // from within the type (private) or from a derived type (protected / private protected)
-            // is not assignable from generated code.
+            // The generated binding lives in the endpoint's class, not in the message's, so a setter
+            // only reachable from within the declaring type (private) or from a type derived from it
+            // (protected / private protected) is not assignable from generated code.
             return (false, false);
         }
 
@@ -2313,14 +2313,11 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
         // uses it first.
         ReportMissingJsonRegistrations(context, ordered, jsonContext);
 
-        // Migrated kinds take their binding from a partial on the endpoint itself; the rest still come
-        // from the registry until Task 5 moves them. Two endpoints binding one message now each resolve
-        // their own binding, which is why SYNE013 is gone.
-        var migrated = ordered
-            .Where(static e => e.Kind is EndpointKind.Void or EndpointKind.Value)
-            .ToArray();
-
-        foreach (var endpoint in migrated)
+        // Every kind with a generated binding takes it from a partial on the endpoint itself. Two
+        // endpoints binding one message each resolve their own binding from their own route and verb,
+        // which is why SYNE013 is gone — and why nothing is keyed by message type any more. Raw
+        // endpoints bind by hand and have no BoundTypeFullName, so they are filtered out.
+        foreach (var endpoint in ordered.Where(static e => e.Kind.HasGeneratedBinder()))
         {
             var boundType = new BoundTypeInfo(endpoint.BoundTypeFullName, endpoint.BoundProperties,
                 endpoint.HasParameterlessConstructor, endpoint.PrimaryConstructorParameters);
@@ -2330,35 +2327,9 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
                 EndpointPartialEmitter.Emit(endpoint, boundType));
         }
 
-        // The kinds still keyed by message type. Only one binder is emitted per distinct bound type:
-        // the group's first endpoint by EndpointFullName (see `ordered` above) wins, and that
-        // endpoint's own route/verb resolution is what the shared binder uses — silently, for every
-        // other endpoint bound to the same type. See EndpointTarget.BoundProperties for the known
-        // limitation this creates, which disappears per kind as Task 5 migrates it. The resulting
-        // array is then re-ordered by bound-type name purely for deterministic emission order.
-        // Raw endpoints are registered and mapped like any other, but they have no generated binder,
-        // so they must not reach the grouping — an empty BoundTypeFullName would otherwise become a
-        // group of its own and emit a binder for nothing.
-        var legacyTypeGroups = ordered
-            .Where(static e => e.Kind.HasGeneratedBinder() &&
-                               e.Kind is not (EndpointKind.Void or EndpointKind.Value))
-            .GroupBy(static e => e.BoundTypeFullName, StringComparer.Ordinal)
-            .ToArray();
-
-        var boundTypes = legacyTypeGroups
-            .Select(g =>
-            {
-                var first = g.First();
-                return new BoundTypeInfo(first.BoundTypeFullName, first.BoundProperties,
-                    first.HasParameterlessConstructor, first.PrimaryConstructorParameters);
-            })
-            .OrderBy(t => t.TypeFullName, StringComparer.Ordinal)
-            .ToArray();
-
         context.AddSource("SynapseEndpointGroup.g.cs", EndpointGroupEmitter.EmitGroup(ns, ordered));
         context.AddSource("SynapseEndpointRegistrations.g.cs",
-            EndpointGroupEmitter.EmitRegistrations(ns, ordered, boundTypes));
-        context.AddSource("SynapseEndpointBinders.g.cs", BinderEmitter.Emit(ns, boundTypes));
+            EndpointGroupEmitter.EmitRegistrations(ns, ordered));
     }
 
     /// <summary>

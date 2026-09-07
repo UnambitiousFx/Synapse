@@ -11,7 +11,6 @@ public sealed partial class SelfHandledHarnessTests
     public async Task SendAsync_ForASelfHandledEndpoint_RunsItWithNoHandlerStubbed()
     {
         // Arrange: no options.Handle<…> call, because there is no message to stub.
-        EndpointRegistry.RegisterBinder(new ProbeBinder());
         EndpointRegistry.RegisterMetadata<ProbeEndpoint>(new EndpointMetadata(["GET"], "/health/{probe}"));
         using var harness = EndpointHarness.Create<ProbeEndpoint>();
 
@@ -29,7 +28,6 @@ public sealed partial class SelfHandledHarnessTests
     public async Task SendAsync_WhenASelfHandledEndpointFails_MapsItThroughTheRealFailureMapper()
     {
         // Arrange
-        EndpointRegistry.RegisterBinder(new MissingProbeBinder());
         EndpointRegistry.RegisterMetadata<MissingProbeEndpoint>(new EndpointMetadata(["GET"], "/health-missing"));
         using var harness = EndpointHarness.Create<MissingProbeEndpoint>();
 
@@ -44,6 +42,7 @@ public sealed partial class SelfHandledHarnessTests
 
     internal sealed record ProbeDto(string Probe);
 
+    [Get("/health/{probe}")]
     internal sealed partial class ProbeEndpoint : SelfHandledEndpoint<ProbeQuery, ProbeDto>
     {
         public override ValueTask<Result<ProbeDto>> ExecuteAsync(ProbeQuery request,
@@ -54,18 +53,11 @@ public sealed partial class SelfHandledHarnessTests
         }
     }
 
-    private sealed class ProbeBinder : IEndpointBinder<ProbeQuery>
-    {
-        public ValueTask<BindResult<ProbeQuery>> BindAsync(HttpContext context)
-        {
-            return context.TryGetRoute("probe", out var probe)
-                ? ValueTask.FromResult(BindResult<ProbeQuery>.Success(new ProbeQuery(probe!)))
-                : ValueTask.FromResult(BindResult<ProbeQuery>.Failure("probe", "is required."));
-        }
-    }
+    // A constructor default, so the generated binding succeeds with no request input: this test's
+    // subject is the failure mapping, not the binding.
+    internal sealed record MissingProbeQuery(string Probe = "live");
 
-    internal sealed record MissingProbeQuery(string Probe);
-
+    [Get("/health-missing")]
     internal sealed partial class MissingProbeEndpoint : SelfHandledEndpoint<MissingProbeQuery, ProbeDto>
     {
         public override ValueTask<Result<ProbeDto>> ExecuteAsync(MissingProbeQuery request,
@@ -73,14 +65,6 @@ public sealed partial class SelfHandledHarnessTests
             CancellationToken cancellationToken)
         {
             return ValueTask.FromResult(Result.Failure<ProbeDto>(new NotFoundFailure("Probe", request.Probe)));
-        }
-    }
-
-    private sealed class MissingProbeBinder : IEndpointBinder<MissingProbeQuery>
-    {
-        public ValueTask<BindResult<MissingProbeQuery>> BindAsync(HttpContext context)
-        {
-            return ValueTask.FromResult(BindResult<MissingProbeQuery>.Success(new MissingProbeQuery("live")));
         }
     }
 }

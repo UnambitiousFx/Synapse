@@ -37,13 +37,22 @@ public abstract class MappedEndpoint<THttpRequest, TRequest, TResponse, THttpRes
     where THttpResponse : notnull
 {
     private EndpointConfiguration<THttpResponse>? _configuration;
-    private IEndpointBinder<THttpRequest>? _binder;
 
     /// <summary>Configures the endpoint. Called once at startup.</summary>
     /// <param name="builder">The endpoint builder, typed on the HTTP response.</param>
     public virtual void Configure(IEndpointBuilder<THttpResponse> builder)
     {
     }
+
+    /// <summary>Binds the request onto the HTTP request DTO.</summary>
+    /// <param name="context">The HTTP context.</param>
+    /// <returns>The bound DTO, or the failures preventing it.</returns>
+    /// <remarks>
+    ///     Typed on <typeparamref name="THttpRequest" />, not on the message: this tier binds the wire
+    ///     DTO and <see cref="ToRequest" /> is what turns it into a message. Implemented by the
+    ///     generated partial, so an endpoint the analyzer never saw does not compile.
+    /// </remarks>
+    public abstract ValueTask<BindResult<THttpRequest>> BindAsync(HttpContext context);
 
     /// <summary>Maps the bound HTTP request onto the CQRS message.</summary>
     /// <param name="request">The bound HTTP request DTO.</param>
@@ -74,7 +83,7 @@ public abstract class MappedEndpoint<THttpRequest, TRequest, TResponse, THttpRes
     /// <inheritdoc />
     private protected sealed override ValueTask<BindResult<THttpRequest>> BindBoundAsync(HttpContext context)
     {
-        return Mapped(_binder).BindAsync(context);
+        return BindAsync(context);
     }
 
     /// <inheritdoc />
@@ -97,21 +106,6 @@ public abstract class MappedEndpoint<THttpRequest, TRequest, TResponse, THttpRes
             cancellationToken);
     }
 
-    /// <inheritdoc />
-    protected sealed override RequestBodyKind BoundBodyKind => _binder?.BodyKind ?? RequestBodyKind.Json;
-
-    /// <inheritdoc />
-    protected sealed override IReadOnlyList<BoundParameterMetadata> DeclaredParameters()
-    {
-        return _binder?.Parameters ?? [];
-    }
-
-    /// <inheritdoc />
-    protected sealed override IReadOnlyList<FormFieldMetadata> DeclaredFormFields()
-    {
-        return _binder?.FormFields ?? [];
-    }
-
     internal sealed override RawEndpointPlan CreatePlan(EndpointMetadata metadata)
     {
         var builder = new EndpointBuilder<THttpResponse>(metadata);
@@ -119,7 +113,6 @@ public abstract class MappedEndpoint<THttpRequest, TRequest, TResponse, THttpRes
         var configuration = builder.Build();
         _configuration = configuration;
         ConfiguredProcessors = configuration.Processors;
-        _binder = EndpointRegistry.GetBinder<THttpRequest>();
 
         return new RawEndpointPlan
         {

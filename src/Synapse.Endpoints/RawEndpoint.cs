@@ -22,7 +22,7 @@ namespace UnambitiousFx.Synapse.Endpoints;
 ///         The helpers a handler needs are extension methods on <see cref="HttpContext" /> in
 ///         <c>UnambitiousFx.Synapse.Endpoints.Binding</c>: typed route, query and header readers,
 ///         <c>BodyAsync</c>, and <c>Validate</c> for accumulating several bad inputs into one
-///         <c>400</c>. The generated binders of the high level call the very same primitives.
+///         <c>400</c>. The generated bindings of the high level call the very same primitives.
 ///     </para>
 ///     <para>
 ///         Endpoints are stateless singletons: one instance is created at startup,

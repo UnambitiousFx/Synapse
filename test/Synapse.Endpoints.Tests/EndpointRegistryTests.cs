@@ -1,46 +1,38 @@
-using Microsoft.AspNetCore.Http;
 using UnambitiousFx.Synapse.Abstractions;
 using UnambitiousFx.Synapse.Endpoints.Binding;
 
 namespace UnambitiousFx.Synapse.Endpoints.Tests;
 
-public sealed class EndpointRegistryTests
+/// <summary>
+///     What the registry still holds: route metadata. The two binder tests that used to live here are
+///     gone with the binder half of it — a binding is now an <c>override</c> the compiler requires, so
+///     there is no lookup left to test and no "not registered" state left to reach.
+/// </summary>
+public sealed partial class EndpointRegistryTests
 {
     [Fact]
-    public void GetBinder_WhenRegistered_ReturnsTheRegisteredBinder()
+    public void GetMetadata_WhenRegistered_ReturnsTheRegisteredMetadata()
     {
         // Arrange
-        var binder = new StubBinder();
-        EndpointRegistry.RegisterBinder(binder);
+        var metadata = new EndpointMetadata(["GET"], "/registry-probe");
+        EndpointRegistry.RegisterMetadata<ProbeEndpoint>(metadata);
 
         // Act
-        var resolved = EndpointRegistry.GetBinder<RegisteredRequest>();
+        var resolved = EndpointRegistry.GetMetadata<ProbeEndpoint>();
 
         // Assert
-        Assert.Same(binder, resolved);
+        Assert.Same(metadata, resolved);
     }
 
     [Fact]
-    public void GetBinder_WhenNotRegistered_ThrowsMentioningTheAnalyzer()
+    public void RegisterMetadata_WithNullMetadata_Throws()
     {
-        // Arrange & Act
-        var exception = Assert.Throws<InvalidOperationException>(
-            () => EndpointRegistry.GetBinder<UnregisteredRequest>());
-
-        // Assert
-        Assert.Contains("UnregisteredRequest", exception.Message);
-        Assert.Contains("analyzer", exception.Message, StringComparison.OrdinalIgnoreCase);
+        // Arrange, Act & Assert
+        Assert.Throws<ArgumentNullException>(() => EndpointRegistry.RegisterMetadata<ProbeEndpoint>(null!));
     }
 
-    private sealed record RegisteredRequest : IRequest;
+    internal sealed record ProbeQuery : IRequest<string>;
 
-    private sealed record UnregisteredRequest : IRequest;
-
-    private sealed class StubBinder : IEndpointBinder<RegisteredRequest>
-    {
-        public ValueTask<BindResult<RegisteredRequest>> BindAsync(HttpContext context)
-        {
-            return ValueTask.FromResult(BindResult<RegisteredRequest>.Success(new RegisteredRequest()));
-        }
-    }
+    [Get("/registry-probe")]
+    internal sealed partial class ProbeEndpoint : Endpoint<ProbeQuery, string>;
 }

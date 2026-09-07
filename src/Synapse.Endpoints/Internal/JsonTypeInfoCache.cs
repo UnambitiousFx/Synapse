@@ -14,9 +14,8 @@ namespace UnambitiousFx.Synapse.Endpoints.Internal;
 /// </summary>
 /// <remarks>
 ///     Use this wherever there is no object with the application's own lifetime to hang a
-///     <see cref="JsonTypeInfoCache{T}" /> on — notably from generated binders, which reach
-///     <c>BindingHelpers</c> through a static call and whose <c>IEndpointBinder</c> instances live in
-///     a process-wide registry rather than per application.
+///     <see cref="JsonTypeInfoCache{T}" /> on — notably from a generated binding, which reads the
+///     body through a static <c>BindingHelpers</c> call with no instance of its own to cache on.
 /// </remarks>
 internal static class HttpJsonTypeInfo
 {

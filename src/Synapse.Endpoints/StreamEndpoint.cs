@@ -33,7 +33,6 @@ public abstract class StreamEndpoint<TRequest, TItem> : BoundEndpoint<TRequest>
     where TItem : notnull
 {
     private readonly JsonTypeInfoCache<TItem> _itemJson = new();
-    private IEndpointBinder<TRequest>? _binder;
 
     /// <summary>Configures the endpoint. Called once at startup.</summary>
     /// <param name="builder">The endpoint builder.</param>
@@ -48,6 +47,16 @@ public abstract class StreamEndpoint<TRequest, TItem> : BoundEndpoint<TRequest>
     {
     }
 
+    /// <summary>Binds the request onto the streaming request to dispatch.</summary>
+    /// <param name="context">The HTTP context.</param>
+    /// <returns>The bound request, or the failures preventing it.</returns>
+    /// <remarks>
+    ///     Implemented by the generated partial, which is why an endpoint the analyzer never saw does
+    ///     not compile: the binding is an <c>override</c> the compiler requires rather than a binder
+    ///     looked up at startup.
+    /// </remarks>
+    public abstract ValueTask<BindResult<TRequest>> BindAsync(HttpContext context);
+
     /// <summary>Not used at this level; configure through the typed overload instead.</summary>
     /// <param name="builder">Unused.</param>
     public sealed override void Configure(IRawEndpointBuilder builder)
@@ -57,7 +66,7 @@ public abstract class StreamEndpoint<TRequest, TItem> : BoundEndpoint<TRequest>
     /// <inheritdoc />
     private protected sealed override ValueTask<BindResult<TRequest>> BindBoundAsync(HttpContext context)
     {
-        return Mapped(_binder).BindAsync(context);
+        return BindAsync(context);
     }
 
     /// <inheritdoc />
@@ -82,27 +91,11 @@ public abstract class StreamEndpoint<TRequest, TItem> : BoundEndpoint<TRequest>
         return new ValueTask<IResult>(result);
     }
 
-    /// <inheritdoc />
-    protected sealed override RequestBodyKind BoundBodyKind => _binder?.BodyKind ?? RequestBodyKind.Json;
-
-    /// <inheritdoc />
-    protected sealed override IReadOnlyList<BoundParameterMetadata> DeclaredParameters()
-    {
-        return _binder?.Parameters ?? [];
-    }
-
-    /// <inheritdoc />
-    protected sealed override IReadOnlyList<FormFieldMetadata> DeclaredFormFields()
-    {
-        return _binder?.FormFields ?? [];
-    }
-
     internal sealed override RawEndpointPlan CreatePlan(EndpointMetadata metadata)
     {
         var builder = new StreamEndpointBuilder(metadata);
         Configure(builder);
         var plan = builder.Build();
-        _binder = EndpointRegistry.GetBinder<TRequest>();
         ConfiguredProcessors = plan.Processors;
 
         return new RawEndpointPlan

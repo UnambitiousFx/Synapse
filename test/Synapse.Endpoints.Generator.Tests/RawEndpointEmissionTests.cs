@@ -58,16 +58,15 @@ public sealed class RawEndpointEmissionTests
     }
 
     [Fact]
-    public void Generate_ForAFreeFormEndpoint_RegistersMetadataButNoBinder()
+    public void Generate_ForAFreeFormEndpoint_RegistersMetadataButNoBinding()
     {
         // Act
         var files = GeneratorHarness.GetFiles(FreeFormEndpoint);
         var registrations = files["SynapseEndpointRegistrations.g.cs"];
 
-        // Assert — the route still has to be registered, but there is no bound type to bind, so
-        // neither a registry binder nor a per-endpoint binding partial is emitted.
+        // Assert — the route still has to be registered, but there is no bound type to bind, so no
+        // per-endpoint binding partial is emitted.
         Assert.Contains("RegisterMetadata<global::TestNs.HealthEndpoint>", registrations);
-        Assert.DoesNotContain("RegisterBinder", registrations);
         Assert.DoesNotContain(files.Keys, key => key.EndsWith(".Synapse.g.cs", StringComparison.Ordinal));
         GeneratorHarness.AssertGeneratedCompiles(FreeFormEndpoint);
     }
@@ -138,12 +137,12 @@ public sealed class RawEndpointEmissionTests
                               """;
 
         // Act
-        var registrations = GeneratorHarness.GetFile(source, "SynapseEndpointRegistrations.g.cs");
+        var files = GeneratorHarness.GetFiles(source);
 
-        // Assert — the endpoint supplies its own BindAsync, so generating one would be dead code that
-        // could not even be registered (RegisterBinder is keyed by message type).
-        Assert.Contains("RegisterMetadata<global::TestNs.LookupEndpoint>", registrations);
-        Assert.DoesNotContain("RegisterBinder", registrations);
+        // Assert — the endpoint supplies its own BindAsync, so generating one would not merely be
+        // dead code: it would collide with the author's own member.
+        Assert.Contains("RegisterMetadata<global::TestNs.LookupEndpoint>", files["SynapseEndpointRegistrations.g.cs"]);
+        Assert.DoesNotContain(files.Keys, key => key.EndsWith(".Synapse.g.cs", StringComparison.Ordinal));
         GeneratorHarness.AssertGeneratedCompiles(source);
     }
 

@@ -60,14 +60,14 @@ public sealed partial class BinderTierHarnessTests
     public async Task SendAsync_ForAMappedEndpoint_MapsBothWays()
     {
         // Arrange
-        EndpointRegistry.RegisterBinder(new WireBinder());
-        EndpointRegistry.RegisterMetadata<TranslateEndpoint>(new EndpointMetadata(["POST"], "/translate"));
+        EndpointRegistry.RegisterMetadata<TranslateEndpoint>(
+            new EndpointMetadata(["POST"], "/translate/{text}"));
         using var harness = EndpointHarness.Create<TranslateEndpoint>(options =>
             options.Handle<TranslateCommand, TranslateResult>(
                 command => Result.Success(new TranslateResult(command.Text.ToUpperInvariant()))));
 
         // Act
-        var response = await harness.Post("/translate").SendAsync(TestContext.Current.CancellationToken);
+        var response = await harness.Post("/translate/hello!").SendAsync(TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(StatusCodes.Status200OK, response.StatusCode);
@@ -105,6 +105,9 @@ public sealed partial class BinderTierHarnessTests
 
     internal sealed record TranslateResult(string Text);
 
+    // The route carries the wire DTO's Text so the generated binding reads it from there rather than
+    // from a JSON body this test does not send.
+    [Post("/translate/{text}")]
     internal sealed partial class TranslateEndpoint
         : MappedEndpoint<WireRequest, TranslateCommand, TranslateResult, WireResponse>
     {
@@ -116,14 +119,6 @@ public sealed partial class BinderTierHarnessTests
         public override WireResponse ToResponse(TranslateResult response)
         {
             return new WireResponse(response.Text);
-        }
-    }
-
-    private sealed class WireBinder : IEndpointBinder<WireRequest>
-    {
-        public ValueTask<BindResult<WireRequest>> BindAsync(HttpContext context)
-        {
-            return ValueTask.FromResult(BindResult<WireRequest>.Success(new WireRequest("hello!")));
         }
     }
 }

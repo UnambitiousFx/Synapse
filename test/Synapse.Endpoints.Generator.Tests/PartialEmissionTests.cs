@@ -21,18 +21,101 @@ public sealed class PartialEmissionTests
                                     public sealed partial class ProbeEndpoint : Endpoint<ProbeQuery, string>;
                                     """;
 
+    private const string StreamTier = """
+                                      using UnambitiousFx.Synapse.Abstractions;
+                                      using UnambitiousFx.Synapse.Endpoints;
+
+                                      namespace TestNs;
+
+                                      public sealed record ProbeStream : IStreamRequest<string>;
+
+                                      [Get("/probes")]
+                                      public sealed partial class ProbeEndpoint
+                                          : StreamEndpoint<ProbeStream, string>;
+                                      """;
+
+    private const string MappedTier = """
+                                      using UnambitiousFx.Synapse.Abstractions;
+                                      using UnambitiousFx.Synapse.Endpoints;
+
+                                      namespace TestNs;
+
+                                      public sealed record ProbeDto(string Name);
+                                      public sealed record ProbeQuery(string Name) : IRequest<string>;
+
+                                      [Get("/probes/{name}")]
+                                      public sealed partial class ProbeEndpoint
+                                          : MappedEndpoint<ProbeDto, ProbeQuery, string, string>
+                                      {
+                                          public override ProbeQuery ToRequest(ProbeDto request)
+                                              => new(request.Name);
+
+                                          public override string ToResponse(string response)
+                                              => response;
+                                      }
+                                      """;
+
+    private const string SelfHandledTier = """
+                                           using System.Threading;
+                                           using System.Threading.Tasks;
+                                           using Microsoft.AspNetCore.Http;
+                                           using UnambitiousFx.Functional;
+                                           using UnambitiousFx.Synapse.Abstractions;
+                                           using UnambitiousFx.Synapse.Endpoints;
+
+                                           namespace TestNs;
+
+                                           public sealed record ProbeQuery : IRequest<string>;
+
+                                           [Get("/probes")]
+                                           public sealed partial class ProbeEndpoint
+                                               : SelfHandledEndpoint<ProbeQuery, string>
+                                           {
+                                               public override ValueTask<Result<string>> ExecuteAsync(
+                                                   ProbeQuery request,
+                                                   HttpContext context,
+                                                   CancellationToken cancellationToken)
+                                                   => new(Result.Success("ok"));
+                                           }
+                                           """;
+
+    private const string SelfHandledVoidTier = """
+                                               using System.Threading;
+                                               using System.Threading.Tasks;
+                                               using Microsoft.AspNetCore.Http;
+                                               using UnambitiousFx.Functional;
+                                               using UnambitiousFx.Synapse.Abstractions;
+                                               using UnambitiousFx.Synapse.Endpoints;
+
+                                               namespace TestNs;
+
+                                               public sealed record ProbeCommand : IRequest;
+
+                                               [Post("/probes")]
+                                               public sealed partial class ProbeEndpoint
+                                                   : SelfHandledEndpoint<ProbeCommand>
+                                               {
+                                                   public override ValueTask<Result> ExecuteAsync(
+                                                       ProbeCommand request,
+                                                       HttpContext context,
+                                                       CancellationToken cancellationToken)
+                                                       => new(Result.Success());
+                                               }
+                                               """;
+
     [Fact]
     public void Generate_ForTopLevelEndpoint_ReopensTheClassInItsOwnNamespace()
     {
         // Arrange — see TopLevel.
 
         // Act
-        var generated = GeneratorHarness.GetEndpointFile(TopLevel);
+        var files = GeneratorHarness.GetFiles(TopLevel);
 
-        // Assert — the endpoint's own namespace, not the root namespace, and no companion type.
+        // Assert — the endpoint's own namespace, not the root namespace, and no companion file.
+        var generated = files["TestNs.ProbeEndpoint.Synapse.g.cs"];
         Assert.Contains("namespace TestNs;", generated);
         Assert.Contains("partial class ProbeEndpoint", generated);
-        Assert.DoesNotContain("IEndpointBinder", generated);
+        Assert.DoesNotContain("SynapseEndpointBinders.g.cs", files.Keys);
         GeneratorHarness.AssertGeneratedCompiles(TopLevel);
     }
 
@@ -203,6 +286,31 @@ public sealed class PartialEmissionTests
         Assert.Contains("TryGetRoute", files["TestNs.RouteProbeEndpoint.Synapse.g.cs"]);
         Assert.Contains("TryGetQuery", files["TestNs.QueryProbeEndpoint.Synapse.g.cs"]);
         Assert.DoesNotContain(diagnostics, d => d.Id == "SYNE013");
+        GeneratorHarness.AssertGeneratedCompiles(source);
+    }
+
+    [Theory]
+    [InlineData(nameof(StreamTier))]
+    [InlineData(nameof(MappedTier))]
+    [InlineData(nameof(SelfHandledTier))]
+    [InlineData(nameof(SelfHandledVoidTier))]
+    public void Generate_ForEveryGeneratedTier_EmitsAPartialAndNoBinderFile(string tier)
+    {
+        // Arrange — the four tiers migrated in this task, each satisfying its own abstract members.
+        var source = tier switch
+        {
+            nameof(StreamTier) => StreamTier,
+            nameof(MappedTier) => MappedTier,
+            nameof(SelfHandledTier) => SelfHandledTier,
+            _ => SelfHandledVoidTier
+        };
+
+        // Act
+        var files = GeneratorHarness.GetFiles(source);
+
+        // Assert — no type-keyed binder file survives for any generated tier.
+        Assert.Contains("TestNs.ProbeEndpoint.Synapse.g.cs", files.Keys);
+        Assert.DoesNotContain("SynapseEndpointBinders.g.cs", files.Keys);
         GeneratorHarness.AssertGeneratedCompiles(source);
     }
 }

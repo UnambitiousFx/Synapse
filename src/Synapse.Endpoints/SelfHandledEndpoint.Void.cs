@@ -26,7 +26,6 @@ namespace UnambitiousFx.Synapse.Endpoints;
 /// </remarks>
 public abstract class SelfHandledEndpoint<TRequest> : BoundEndpoint<TRequest>
 {
-    private IEndpointBinder<TRequest>? _binder;
     private EndpointConfiguration<Unit>? _configuration;
 
     /// <summary>Configures the endpoint. Called once at startup.</summary>
@@ -34,6 +33,12 @@ public abstract class SelfHandledEndpoint<TRequest> : BoundEndpoint<TRequest>
     public virtual void Configure(IEndpointBuilder builder)
     {
     }
+
+    /// <summary>Binds the request onto the contract <see cref="ExecuteAsync" /> answers.</summary>
+    /// <param name="context">The HTTP context.</param>
+    /// <returns>The bound request, or the failures preventing it.</returns>
+    /// <remarks>See <see cref="SelfHandledEndpoint{TRequest,TResponse}.BindAsync" />.</remarks>
+    public abstract ValueTask<BindResult<TRequest>> BindAsync(HttpContext context);
 
     /// <summary>Answers the bound request.</summary>
     /// <param name="request">The bound request.</param>
@@ -63,7 +68,7 @@ public abstract class SelfHandledEndpoint<TRequest> : BoundEndpoint<TRequest>
     /// <inheritdoc />
     private protected sealed override ValueTask<BindResult<TRequest>> BindBoundAsync(HttpContext context)
     {
-        return Mapped(_binder).BindAsync(context);
+        return BindAsync(context);
     }
 
     /// <inheritdoc />
@@ -86,21 +91,6 @@ public abstract class SelfHandledEndpoint<TRequest> : BoundEndpoint<TRequest>
         return await result.AsHttpBuilder(context.RequestServices.GetRequiredService<IFailureHttpMapper>());
     }
 
-    /// <inheritdoc />
-    protected sealed override RequestBodyKind BoundBodyKind => _binder?.BodyKind ?? RequestBodyKind.Json;
-
-    /// <inheritdoc />
-    protected sealed override IReadOnlyList<BoundParameterMetadata> DeclaredParameters()
-    {
-        return _binder?.Parameters ?? [];
-    }
-
-    /// <inheritdoc />
-    protected sealed override IReadOnlyList<FormFieldMetadata> DeclaredFormFields()
-    {
-        return _binder?.FormFields ?? [];
-    }
-
     internal sealed override RawEndpointPlan CreatePlan(EndpointMetadata metadata)
     {
         var builder = new EndpointBuilder<Unit>(metadata);
@@ -108,7 +98,6 @@ public abstract class SelfHandledEndpoint<TRequest> : BoundEndpoint<TRequest>
         var configuration = builder.Build();
         _configuration = configuration;
         ConfiguredProcessors = configuration.Processors;
-        _binder = EndpointRegistry.GetBinder<TRequest>();
 
         return new RawEndpointPlan
         {

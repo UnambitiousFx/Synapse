@@ -18,7 +18,6 @@ public sealed partial class StreamEndpointTests
     public async Task Invoke_NegotiatesContentType(string? accept, string expectedContentType)
     {
         // Arrange
-        EndpointRegistry.RegisterBinder(new TickBinder());
         EndpointRegistry.RegisterMetadata<TickEndpoint>(new EndpointMetadata(["GET"], "/ticks"));
 
         var invoker = Substitute.For<IHttpInvoker>();
@@ -59,7 +58,6 @@ public sealed partial class StreamEndpointTests
     public async Task Invoke_WithJsonAccept_WritesExactJsonArrayBody()
     {
         // Arrange
-        EndpointRegistry.RegisterBinder(new ArrayBinder());
         EndpointRegistry.RegisterMetadata<ArrayEndpoint>(new EndpointMetadata(["GET"], "/array-ticks"));
 
         var invoker = Substitute.For<IHttpInvoker>();
@@ -100,7 +98,6 @@ public sealed partial class StreamEndpointTests
     public async Task Invoke_WithEventStreamAccept_WritesServerSentEventBody()
     {
         // Arrange
-        EndpointRegistry.RegisterBinder(new SseBinder());
         EndpointRegistry.RegisterMetadata<SseEndpoint>(new EndpointMetadata(["GET"], "/sse-ticks"));
 
         var invoker = Substitute.For<IHttpInvoker>();
@@ -184,7 +181,6 @@ public sealed partial class StreamEndpointTests
     public void CreateDescriptor_ForAStreamEndpointDeclaringItsRouteInConfigure_ResolvesIt()
     {
         // Arrange
-        EndpointRegistry.RegisterBinder(new TickBinder());
         EndpointRegistry.RegisterMetadata<ConfiguredStreamEndpoint>(
             new EndpointMetadata([], string.Empty));
 
@@ -209,37 +205,13 @@ public sealed partial class StreamEndpointTests
 
     internal sealed partial class TickEndpoint : StreamEndpoint<TickQuery, int>;
 
-    private sealed class TickBinder : IEndpointBinder<TickQuery>
-    {
-        public ValueTask<BindResult<TickQuery>> BindAsync(HttpContext context)
-        {
-            return ValueTask.FromResult(BindResult<TickQuery>.Success(new TickQuery()));
-        }
-    }
-
     internal sealed record ArrayQuery : IStreamRequest<int>;
 
     internal sealed partial class ArrayEndpoint : StreamEndpoint<ArrayQuery, int>;
 
-    private sealed class ArrayBinder : IEndpointBinder<ArrayQuery>
-    {
-        public ValueTask<BindResult<ArrayQuery>> BindAsync(HttpContext context)
-        {
-            return ValueTask.FromResult(BindResult<ArrayQuery>.Success(new ArrayQuery()));
-        }
-    }
-
     internal sealed record SseQuery : IStreamRequest<int>;
 
     internal sealed partial class SseEndpoint : StreamEndpoint<SseQuery, int>;
-
-    private sealed class SseBinder : IEndpointBinder<SseQuery>
-    {
-        public ValueTask<BindResult<SseQuery>> BindAsync(HttpContext context)
-        {
-            return ValueTask.FromResult(BindResult<SseQuery>.Success(new SseQuery()));
-        }
-    }
 }
 
 // SYNE008 (unused before the generator ran here) checks every request/response type against the
@@ -260,6 +232,7 @@ public sealed partial class StreamEndpointTests
 [JsonSerializable(typeof(OpenApiMetadataTests.CreatedMappedRequest))]
 [JsonSerializable(typeof(OpenApiMetadataTests.MetaQuery))]
 [JsonSerializable(typeof(OpenApiMetadataTests.MultiVerbMetaQuery))]
+[JsonSerializable(typeof(OpenApiMetadataTests.PostStreamMetaQuery))]
 [JsonSerializable(typeof(OpenApiMetadataTests.SelfHandledMetaRequest))]
 [JsonSerializable(typeof(OpenApiMetadataTests.SelfHandledVoidMetaRequest))]
 [JsonSerializable(typeof(SelfHandledEndpointTests.AcceptedProbeQuery))]

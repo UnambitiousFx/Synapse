@@ -14,11 +14,10 @@ public sealed partial class SelfHandledEndpointVoidTests
     public async Task Invoke_WithNoResponse_RunsExecuteAsyncAndAnswers204()
     {
         // Arrange
-        EndpointRegistry.RegisterBinder(new PurgeRequestBinder());
         EndpointRegistry.RegisterMetadata<PurgeEndpoint>(new EndpointMetadata(["DELETE"], "/cache/{key}"));
 
         var endpoint = new PurgeEndpoint();
-        var context = Context();
+        var context = Context("stale");
 
         // Act
         await ((EndpointBase)endpoint)
@@ -34,10 +33,10 @@ public sealed partial class SelfHandledEndpointVoidTests
     public async Task Invoke_WhenExecuteAsyncFails_MapsTheFailureThroughTheRegisteredMapper()
     {
         // Arrange
-        EndpointRegistry.RegisterBinder(new ConflictedRequestBinder());
-        EndpointRegistry.RegisterMetadata<ConflictedEndpoint>(new EndpointMetadata(["DELETE"], "/cache-conflict"));
+        EndpointRegistry.RegisterMetadata<ConflictedEndpoint>(
+            new EndpointMetadata(["DELETE"], "/cache-conflict/{key}"));
 
-        var context = Context();
+        var context = Context("stale");
 
         // Act
         await ((EndpointBase)new ConflictedEndpoint())
@@ -48,15 +47,14 @@ public sealed partial class SelfHandledEndpointVoidTests
         Assert.Equal(StatusCodes.Status409Conflict, context.Response.StatusCode);
     }
 
-
     [Fact]
     public async Task Invoke_WithConfiguredStatusCode_UsesItInsteadOfOnSuccess()
     {
         // Arrange
-        EndpointRegistry.RegisterBinder(new QueuedRequestBinder());
-        EndpointRegistry.RegisterMetadata<QueuedEndpoint>(new EndpointMetadata(["POST"], "/cache/rebuild"));
+        EndpointRegistry.RegisterMetadata<QueuedEndpoint>(
+            new EndpointMetadata(["POST"], "/cache/rebuild/{key}"));
 
-        var context = Context();
+        var context = Context("stale");
 
         // Act
         await ((EndpointBase)new QueuedEndpoint())
@@ -67,17 +65,23 @@ public sealed partial class SelfHandledEndpointVoidTests
         Assert.Equal(StatusCodes.Status202Accepted, context.Response.StatusCode);
     }
 
-    private static DefaultHttpContext Context()
+    /// <summary>A request carrying <paramref name="key" /> as its <c>key</c> route value.</summary>
+    /// <param name="key">The route value every endpoint here binds its <c>Key</c> from.</param>
+    /// <returns>The context to invoke against.</returns>
+    private static DefaultHttpContext Context(string key)
     {
         var services = new ServiceCollection();
         services.AddSynapseAspNetCore();
         services.AddLogging();
 
-        return new DefaultHttpContext
+        var context = new DefaultHttpContext
         {
             RequestServices = services.BuildServiceProvider(),
             Response = { Body = new MemoryStream() }
         };
+        context.Request.RouteValues["key"] = key;
+
+        return context;
     }
 
     internal sealed record PurgeRequest(string Key);
@@ -96,17 +100,9 @@ public sealed partial class SelfHandledEndpointVoidTests
         }
     }
 
-    private sealed class PurgeRequestBinder : IEndpointBinder<PurgeRequest>
-    {
-        public ValueTask<BindResult<PurgeRequest>> BindAsync(HttpContext context)
-        {
-            return ValueTask.FromResult(BindResult<PurgeRequest>.Success(new PurgeRequest("stale")));
-        }
-    }
-
     internal sealed record ConflictedRequest(string Key);
 
-    [Delete("/cache-conflict")]
+    [Delete("/cache-conflict/{key}")]
     internal sealed partial class ConflictedEndpoint : SelfHandledEndpoint<ConflictedRequest>
     {
         public override ValueTask<Result> ExecuteAsync(ConflictedRequest request,
@@ -117,17 +113,9 @@ public sealed partial class SelfHandledEndpointVoidTests
         }
     }
 
-    private sealed class ConflictedRequestBinder : IEndpointBinder<ConflictedRequest>
-    {
-        public ValueTask<BindResult<ConflictedRequest>> BindAsync(HttpContext context)
-        {
-            return ValueTask.FromResult(BindResult<ConflictedRequest>.Success(new ConflictedRequest("stale")));
-        }
-    }
-
     internal sealed record QueuedRequest(string Key);
 
-    [Post("/cache/rebuild")]
+    [Post("/cache/rebuild/{key}")]
     internal sealed partial class QueuedEndpoint : SelfHandledEndpoint<QueuedRequest>
     {
         public override void Configure(IEndpointBuilder builder)
@@ -140,14 +128,6 @@ public sealed partial class SelfHandledEndpointVoidTests
             CancellationToken cancellationToken)
         {
             return ValueTask.FromResult(Result.Success());
-        }
-    }
-
-    private sealed class QueuedRequestBinder : IEndpointBinder<QueuedRequest>
-    {
-        public ValueTask<BindResult<QueuedRequest>> BindAsync(HttpContext context)
-        {
-            return ValueTask.FromResult(BindResult<QueuedRequest>.Success(new QueuedRequest("stale")));
         }
     }
 }

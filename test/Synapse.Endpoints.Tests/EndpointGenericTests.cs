@@ -67,7 +67,7 @@ public sealed partial class EndpointGenericTests
     internal sealed record FailingQuery : IRequest<string>;
 
     /// <summary>
-    ///     A hand-written failing binding. Was a stubbed IEndpointBinder registered against
+    ///     A hand-written failing binding. Was a stubbed binder registered against
     ///     Endpoint&lt;FailingQuery, string&gt;; the binding is generated now, so the failure is
     ///     expressed at the tier that exists for hand-written binding. Behaviourally identical — the
     ///     two tiers differ only in where BindAsync comes from.

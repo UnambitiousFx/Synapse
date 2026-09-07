@@ -98,8 +98,7 @@ internal static class EndpointPartialEmitter
     }
 
     /// <summary>
-    ///     Renders the <c>BindAsync</c> override, whose body is the same binding
-    ///     <see cref="BinderEmitter" /> renders for the tiers that still take one from the registry.
+    ///     Renders the <c>BindAsync</c> override, whose body <see cref="BinderEmitter" /> renders.
     /// </summary>
     private static void EmitBindAsync(StringBuilder builder,
         BoundTypeInfo boundType,

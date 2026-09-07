@@ -309,15 +309,16 @@ public sealed partial class EndpointLifecycleTests
         // Arrange: the hook runs around binding, and binding is what produces a DTO — so it sees
         // THttpRequest, not the message ToRequest maps it onto.
         Order.Clear();
-        EndpointRegistry.RegisterBinder(new MappedTracingBinder());
         EndpointRegistry.RegisterMetadata<MappedTracingEndpoint>(
-            new EndpointMetadata(["POST"], "/mapped-trace"));
+            new EndpointMetadata(["POST"], "/mapped-trace/{id}"));
 
         var context = ContextWith(services =>
         {
             services.AddScoped<TracingPreProcessor>();
             services.AddScoped<TracingPostProcessor>();
         }, Ok());
+
+        context.Request.RouteValues["id"] = "wire-1";
 
         var descriptor = ((EndpointBase)new MappedTracingEndpoint())
             .CreateDescriptor(EndpointRegistry.GetMetadata<MappedTracingEndpoint>());
@@ -326,9 +327,12 @@ public sealed partial class EndpointLifecycleTests
         await descriptor.InvokeAsync(context);
 
         // Assert
+        // No "bind" entry: this tier's binding is generated, so nothing appends to Order as it
+        // runs. That binding sits between the pre-processor and the before-hook is asserted on the
+        // hand-written tier instead (HandleAsync_WithEveryHookAndProcessor_RunsTheDocumentedOrder),
+        // over the same BoundEndpoint.RunLifecycleAsync every tier shares.
         Assert.Equal(
-            ["pre-processor", "bind", "before-hook:wire-1", "dispatch", "after-hook",
-             "post-processor"],
+            ["pre-processor", "before-hook:wire-1", "dispatch", "after-hook", "post-processor"],
             Order);
     }
 
@@ -336,9 +340,9 @@ public sealed partial class EndpointLifecycleTests
     public async Task HandleAsync_OnTheMappedTier_RunsTheExitStepsOnABindFailure()
     {
         // Arrange: same regression guard as the void tier, for the tier whose bound type is the
-        // wire DTO rather than the message.
+        // wire DTO rather than the message. The failure is a real one — this endpoint binds
+        // TraceWireRequest from the JSON body of a POST, and the request below carries none.
         Order.Clear();
-        EndpointRegistry.RegisterBinder(new FailingMappedTracingBinder());
         EndpointRegistry.RegisterMetadata<MappedBindFailingEndpoint>(
             new EndpointMetadata(["POST"], "/mapped-bind-fail"));
 
@@ -362,7 +366,6 @@ public sealed partial class EndpointLifecycleTests
     {
         // Arrange
         Order.Clear();
-        EndpointRegistry.RegisterBinder(new MappedTracingBinder());
         EndpointRegistry.RegisterMetadata<MappedRejectingEndpoint>(
             new EndpointMetadata(["POST"], "/mapped-reject"));
 
@@ -378,9 +381,10 @@ public sealed partial class EndpointLifecycleTests
         // Act
         await descriptor.InvokeAsync(context);
 
-        // Assert
+        // Assert — the 403 is itself the evidence that binding did not run: this endpoint binds its
+        // wire DTO from a JSON body the request does not carry, so a binding that ran would have
+        // answered 400 instead.
         Assert.Equal(StatusCodes.Status403Forbidden, context.Response.StatusCode);
-        Assert.DoesNotContain("bind", Order);
         Assert.Contains("after-hook", Order);
         Assert.Contains("post-processor", Order);
     }
@@ -391,7 +395,6 @@ public sealed partial class EndpointLifecycleTests
         // Arrange: a stream's result is the negotiated writer, so a post-processor can still set a
         // header — it runs before the writer executes.
         Order.Clear();
-        EndpointRegistry.RegisterBinder(new StreamTracingBinder());
         EndpointRegistry.RegisterMetadata<StreamTracingEndpoint>(
             new EndpointMetadata(["GET"], "/stream-trace"));
 
@@ -412,7 +415,8 @@ public sealed partial class EndpointLifecycleTests
         await descriptor.InvokeAsync(context);
 
         // Assert
-        Assert.Equal(["pre-processor", "bind", "before-hook", "after-hook"], Order);
+        // No "bind" entry — see HandleAsync_OnTheMappedTier_HandsTheBeforeHookTheWireDto.
+        Assert.Equal(["pre-processor", "before-hook", "after-hook"], Order);
         Assert.Equal("tenant-1", context.Response.Headers["X-Tenant"]);
 
         static async IAsyncEnumerable<string> Items()
@@ -427,13 +431,17 @@ public sealed partial class EndpointLifecycleTests
     {
         // Arrange: same regression guard as the other tiers, for the tier whose result is the
         // negotiated writer rather than a value FinishAsync's post-processors can inspect further.
+        // The failure is a real one: the route declares a Guid and the request sends a segment that
+        // is not one, which is the only way to make a generated binding fail on a tier with no
+        // hand-written equivalent.
         Order.Clear();
-        EndpointRegistry.RegisterBinder(new FailingStreamTracingBinder());
         EndpointRegistry.RegisterMetadata<StreamBindFailingEndpoint>(
-            new EndpointMetadata(["GET"], "/stream-bind-fail"));
+            new EndpointMetadata(["GET"], "/stream-bind-fail/{id}"));
 
         var context = ContextWith(services => services.AddScoped<TracingPostProcessor>(),
             Substitute.For<IHttpInvoker>());
+
+        context.Request.RouteValues["id"] = "not-a-guid";
 
         var descriptor = ((EndpointBase)new StreamBindFailingEndpoint())
             .CreateDescriptor(EndpointRegistry.GetMetadata<StreamBindFailingEndpoint>());
@@ -453,7 +461,6 @@ public sealed partial class EndpointLifecycleTests
     {
         // Arrange
         Order.Clear();
-        EndpointRegistry.RegisterBinder(new StreamTracingBinder());
         EndpointRegistry.RegisterMetadata<StreamRejectingEndpoint>(
             new EndpointMetadata(["GET"], "/stream-reject"));
 
@@ -469,9 +476,10 @@ public sealed partial class EndpointLifecycleTests
         // Act
         await descriptor.InvokeAsync(context);
 
-        // Assert
+        // Assert — "bind" is no longer in Order for either outcome on this tier, so the exit steps
+        // are what this pins; that a short circuit skips binding is asserted on the hand-written
+        // tier, whose BindAsync can record itself.
         Assert.Equal(StatusCodes.Status403Forbidden, context.Response.StatusCode);
-        Assert.DoesNotContain("bind", Order);
         Assert.Contains("after-hook", Order);
         Assert.Contains("post-processor", Order);
     }
@@ -604,7 +612,7 @@ public sealed partial class EndpointLifecycleTests
     }
 
     /// <summary>
-    ///     A hand-written failing binding. Was a stubbed IEndpointBinder registered against
+    ///     A hand-written failing binding. Was a stubbed binder registered against
     ///     Endpoint&lt;TraceQuery, string&gt;; the binding is generated now, so the failure is
     ///     expressed at the tier that exists for hand-written binding.
     /// </summary>
@@ -746,16 +754,10 @@ public sealed partial class EndpointLifecycleTests
         public string Id { get; init; } = "wire-1";
     }
 
-    private sealed class MappedTracingBinder : IEndpointBinder<TraceWireRequest>
-    {
-        public ValueTask<BindResult<TraceWireRequest>> BindAsync(HttpContext context)
-        {
-            Order.Add("bind");
-            return ValueTask.FromResult(BindResult<TraceWireRequest>.Success(new TraceWireRequest()));
-        }
-    }
-
-    [Post("/mapped-trace")]
+    // The route carries the wire DTO's Id, so the generated binding produces a DTO with a value this
+    // test can recognise in the hook. A bodyless POST could not: on a body-carrying verb an
+    // unannotated property binds from the body, and this test sends none.
+    [Post("/mapped-trace/{id}")]
     internal sealed partial class MappedTracingEndpoint
         : MappedEndpoint<TraceWireRequest, TraceQuery, string, string>
     {
@@ -787,16 +789,6 @@ public sealed partial class EndpointLifecycleTests
         {
             Order.Add("after-hook");
             return new ValueTask<IResult>(result);
-        }
-    }
-
-    private sealed class FailingMappedTracingBinder : IEndpointBinder<TraceWireRequest>
-    {
-        public ValueTask<BindResult<TraceWireRequest>> BindAsync(HttpContext context)
-        {
-            Order.Add("bind");
-            return ValueTask.FromResult(
-                BindResult<TraceWireRequest>.Failure("id", "is not a valid Guid."));
         }
     }
 
@@ -864,15 +856,6 @@ public sealed partial class EndpointLifecycleTests
 
     internal sealed record TraceStream : IStreamRequest<string>;
 
-    private sealed class StreamTracingBinder : IEndpointBinder<TraceStream>
-    {
-        public ValueTask<BindResult<TraceStream>> BindAsync(HttpContext context)
-        {
-            Order.Add("bind");
-            return ValueTask.FromResult(BindResult<TraceStream>.Success(new TraceStream()));
-        }
-    }
-
     internal sealed partial class StreamTracingEndpoint : StreamEndpoint<TraceStream, string>
     {
         public override void Configure(IStreamEndpointBuilder builder)
@@ -896,23 +879,22 @@ public sealed partial class EndpointLifecycleTests
         }
     }
 
-    private sealed class FailingStreamTracingBinder : IEndpointBinder<TraceStream>
-    {
-        public ValueTask<BindResult<TraceStream>> BindAsync(HttpContext context)
-        {
-            Order.Add("bind");
-            return ValueTask.FromResult(BindResult<TraceStream>.Failure("id", "is not a valid Guid."));
-        }
-    }
+    /// <summary>
+    ///     Streams a request carrying a <see cref="System.Guid" /> route value, so a non-GUID segment
+    ///     makes its generated binding fail. Its own message type, not <c>TraceStream</c>: the other
+    ///     two stream fixtures need a binding that succeeds with no request input at all.
+    /// </summary>
+    internal sealed record TraceStreamById(Guid Id) : IStreamRequest<string>;
 
-    internal sealed partial class StreamBindFailingEndpoint : StreamEndpoint<TraceStream, string>
+    [Get("/stream-bind-fail/{id}")]
+    internal sealed partial class StreamBindFailingEndpoint : StreamEndpoint<TraceStreamById, string>
     {
         public override void Configure(IStreamEndpointBuilder builder)
         {
             builder.PostProcessor<TracingPostProcessor>();
         }
 
-        protected override ValueTask<IResult> OnBindFailedAsync(BindResult<TraceStream> bound,
+        protected override ValueTask<IResult> OnBindFailedAsync(BindResult<TraceStreamById> bound,
             HttpContext context, CancellationToken cancellationToken)
         {
             Order.Add("bind-failed-hook");

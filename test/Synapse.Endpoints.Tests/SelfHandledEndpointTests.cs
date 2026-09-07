@@ -17,7 +17,6 @@ public sealed partial class SelfHandledEndpointTests
     public async Task Invoke_WithRequestThatIsNotAMessage_RunsExecuteAsyncAndWritesItsResponse()
     {
         // Arrange
-        EndpointRegistry.RegisterBinder(new ProbeQueryBinder("live"));
         EndpointRegistry.RegisterMetadata<ProbeEndpoint>(new EndpointMetadata(["GET"], "/health/{probe}"));
 
         var services = new ServiceCollection();
@@ -25,6 +24,7 @@ public sealed partial class SelfHandledEndpointTests
         services.AddLogging();
         var context = new DefaultHttpContext { RequestServices = services.BuildServiceProvider() };
         context.Response.Body = new MemoryStream();
+        context.Request.RouteValues["probe"] = "live";
 
         var descriptor = ((EndpointBase)new ProbeEndpoint())
             .CreateDescriptor(EndpointRegistry.GetMetadata<ProbeEndpoint>());
@@ -50,7 +50,6 @@ public sealed partial class SelfHandledEndpointTests
         // Arrange: the same NotFoundFailure, once returned by a self-handled endpoint and once
         // returned by a handler behind Endpoint<TRequest, TResponse>. Both run against the real
         // HttpInvoker and the real DefaultFailureHttpMapper, so any difference is the tier's.
-        EndpointRegistry.RegisterBinder(new MissingProbeQueryBinder());
         EndpointRegistry.RegisterMetadata<MissingProbeEndpoint>(new EndpointMetadata(["GET"], "/missing"));
         EndpointRegistry.RegisterMetadata<DispatchedMissingProbeEndpoint>(
             new EndpointMetadata(["GET"], "/missing-dispatched"));
@@ -82,8 +81,8 @@ public sealed partial class SelfHandledEndpointTests
     public async Task Invoke_WithConfiguredCreatedMapping_UsesItInsteadOfOnSuccess()
     {
         // Arrange
-        EndpointRegistry.RegisterBinder(new CreatedProbeQueryBinder());
-        EndpointRegistry.RegisterMetadata<CreatedProbeEndpoint>(new EndpointMetadata(["POST"], "/probes"));
+        EndpointRegistry.RegisterMetadata<CreatedProbeEndpoint>(
+            new EndpointMetadata(["POST"], "/probes/{probe}"));
 
         var services = new ServiceCollection();
         services.AddSynapseAspNetCore();
@@ -91,7 +90,7 @@ public sealed partial class SelfHandledEndpointTests
 
         // Act
         var response = await InvokeAsync(new CreatedProbeEndpoint(),
-            EndpointRegistry.GetMetadata<CreatedProbeEndpoint>(), services.BuildServiceProvider());
+            EndpointRegistry.GetMetadata<CreatedProbeEndpoint>(), services.BuildServiceProvider(), probe: "live");
 
         // Assert
         Assert.Equal(StatusCodes.Status201Created, response.StatusCode);
@@ -101,8 +100,8 @@ public sealed partial class SelfHandledEndpointTests
     public async Task Invoke_WithOverriddenOnSuccess_WritesTheResultThatOverrideReturns()
     {
         // Arrange
-        EndpointRegistry.RegisterBinder(new AcceptedProbeQueryBinder());
-        EndpointRegistry.RegisterMetadata<AcceptedProbeEndpoint>(new EndpointMetadata(["POST"], "/probes-accepted"));
+        EndpointRegistry.RegisterMetadata<AcceptedProbeEndpoint>(
+            new EndpointMetadata(["POST"], "/probes-accepted/{probe}"));
 
         var services = new ServiceCollection();
         services.AddSynapseAspNetCore();
@@ -110,7 +109,7 @@ public sealed partial class SelfHandledEndpointTests
 
         // Act
         var response = await InvokeAsync(new AcceptedProbeEndpoint(),
-            EndpointRegistry.GetMetadata<AcceptedProbeEndpoint>(), services.BuildServiceProvider());
+            EndpointRegistry.GetMetadata<AcceptedProbeEndpoint>(), services.BuildServiceProvider(), probe: "live");
 
         // Assert
         Assert.Equal(StatusCodes.Status202Accepted, response.StatusCode);
@@ -119,8 +118,9 @@ public sealed partial class SelfHandledEndpointTests
     [Fact]
     public async Task Invoke_WhenBindingFails_Answers400WithoutRunningExecuteAsync()
     {
-        // Arrange
-        EndpointRegistry.RegisterBinder(new RejectingProbeQueryBinder());
+        // Arrange — no stub rejects this; the generated binding does. RejectingProbeQuery's Probe has
+        // no route parameter to read on GET /probes-rejected, so it binds from the query string and is
+        // required there, and the request below sends none.
         EndpointRegistry.RegisterMetadata<RejectingProbeEndpoint>(new EndpointMetadata(["GET"], "/probes-rejected"));
 
         var services = new ServiceCollection();
@@ -141,9 +141,8 @@ public sealed partial class SelfHandledEndpointTests
     public async Task Invoke_WhenOnBeforeHandleAsyncShortCircuits_DoesNotRunExecuteAsync()
     {
         // Arrange
-        EndpointRegistry.RegisterBinder(new ShortCircuitProbeQueryBinder());
         EndpointRegistry.RegisterMetadata<ShortCircuitProbeEndpoint>(
-            new EndpointMetadata(["GET"], "/probes-short-circuit"));
+            new EndpointMetadata(["GET"], "/probes-short-circuit/{probe}"));
 
         var services = new ServiceCollection();
         services.AddSynapseAspNetCore();
@@ -152,7 +151,8 @@ public sealed partial class SelfHandledEndpointTests
 
         // Act
         var response = await InvokeAsync(endpoint,
-            EndpointRegistry.GetMetadata<ShortCircuitProbeEndpoint>(), services.BuildServiceProvider());
+            EndpointRegistry.GetMetadata<ShortCircuitProbeEndpoint>(), services.BuildServiceProvider(),
+            probe: "live");
 
         // Assert
         Assert.Equal(StatusCodes.Status304NotModified, response.StatusCode);
@@ -164,13 +164,27 @@ public sealed partial class SelfHandledEndpointTests
         return new NotFoundFailure("Probe", "live");
     }
 
+    /// <summary>Invokes one endpoint and returns what it wrote.</summary>
+    /// <param name="endpoint">The endpoint under test.</param>
+    /// <param name="metadata">Its route metadata.</param>
+    /// <param name="provider">The request services.</param>
+    /// <param name="probe">
+    ///     The <c>probe</c> route value, for the endpoints whose generated binding reads one. Null
+    ///     leaves the route empty, which is what the rejecting endpoint's 400 needs.
+    /// </param>
     private static async Task<(int StatusCode, string? ContentType, string Body)> InvokeAsync(
         EndpointBase endpoint,
         EndpointMetadata metadata,
-        IServiceProvider provider)
+        IServiceProvider provider,
+        string? probe = null)
     {
         var context = new DefaultHttpContext { RequestServices = provider };
         context.Response.Body = new MemoryStream();
+
+        if (probe is not null)
+        {
+            context.Request.RouteValues["probe"] = probe;
+        }
 
         await endpoint.CreateDescriptor(metadata).InvokeAsync(context);
 
@@ -194,22 +208,9 @@ public sealed partial class SelfHandledEndpointTests
         }
     }
 
-    private sealed class ProbeQueryBinder : IEndpointBinder<ProbeQuery>
-    {
-        private readonly string _probe;
-
-        public ProbeQueryBinder(string probe)
-        {
-            _probe = probe;
-        }
-
-        public ValueTask<BindResult<ProbeQuery>> BindAsync(HttpContext context)
-        {
-            return ValueTask.FromResult(BindResult<ProbeQuery>.Success(new ProbeQuery(_probe)));
-        }
-    }
-
-    internal sealed record MissingProbeQuery(string Probe);
+    // A constructor default, for the same reason MissingProbeCommand has one: the generated binding
+    // has no route or query value to read on GET /missing, and the failure mapping is the subject.
+    internal sealed record MissingProbeQuery(string Probe = "live");
 
     // A constructor default, so the generated binding on the dispatching endpoint succeeds with no
     // request input at all: the value is irrelevant here, the failure mapping is the subject.
@@ -229,17 +230,9 @@ public sealed partial class SelfHandledEndpointTests
     [Get("/missing-dispatched")]
     internal sealed partial class DispatchedMissingProbeEndpoint : Endpoint<MissingProbeCommand, ProbeDto>;
 
-    private sealed class MissingProbeQueryBinder : IEndpointBinder<MissingProbeQuery>
-    {
-        public ValueTask<BindResult<MissingProbeQuery>> BindAsync(HttpContext context)
-        {
-            return ValueTask.FromResult(BindResult<MissingProbeQuery>.Success(new MissingProbeQuery("live")));
-        }
-    }
-
     internal sealed record CreatedProbeQuery(string Probe);
 
-    [Post("/probes")]
+    [Post("/probes/{probe}")]
     internal sealed partial class CreatedProbeEndpoint : SelfHandledEndpoint<CreatedProbeQuery, ProbeDto>
     {
         public override void Configure(IEndpointBuilder<ProbeDto> builder)
@@ -255,17 +248,9 @@ public sealed partial class SelfHandledEndpointTests
         }
     }
 
-    private sealed class CreatedProbeQueryBinder : IEndpointBinder<CreatedProbeQuery>
-    {
-        public ValueTask<BindResult<CreatedProbeQuery>> BindAsync(HttpContext context)
-        {
-            return ValueTask.FromResult(BindResult<CreatedProbeQuery>.Success(new CreatedProbeQuery("live")));
-        }
-    }
-
     internal sealed record AcceptedProbeQuery(string Probe);
 
-    [Post("/probes-accepted")]
+    [Post("/probes-accepted/{probe}")]
     internal sealed partial class AcceptedProbeEndpoint : SelfHandledEndpoint<AcceptedProbeQuery, ProbeDto>
     {
         public override Microsoft.AspNetCore.Http.IResult OnSuccess(ProbeDto response,
@@ -279,14 +264,6 @@ public sealed partial class SelfHandledEndpointTests
             CancellationToken cancellationToken)
         {
             return ValueTask.FromResult(Result.Success(new ProbeDto(request.Probe)));
-        }
-    }
-
-    private sealed class AcceptedProbeQueryBinder : IEndpointBinder<AcceptedProbeQuery>
-    {
-        public ValueTask<BindResult<AcceptedProbeQuery>> BindAsync(HttpContext context)
-        {
-            return ValueTask.FromResult(BindResult<AcceptedProbeQuery>.Success(new AcceptedProbeQuery("live")));
         }
     }
 
@@ -306,17 +283,9 @@ public sealed partial class SelfHandledEndpointTests
         }
     }
 
-    private sealed class RejectingProbeQueryBinder : IEndpointBinder<RejectingProbeQuery>
-    {
-        public ValueTask<BindResult<RejectingProbeQuery>> BindAsync(HttpContext context)
-        {
-            return ValueTask.FromResult(BindResult<RejectingProbeQuery>.Failure("probe", "is required."));
-        }
-    }
-
     internal sealed record ShortCircuitProbeQuery(string Probe);
 
-    [Get("/probes-short-circuit")]
+    [Get("/probes-short-circuit/{probe}")]
     internal sealed partial class ShortCircuitProbeEndpoint : SelfHandledEndpoint<ShortCircuitProbeQuery, ProbeDto>
     {
         public bool Ran { get; private set; }
@@ -336,15 +305,6 @@ public sealed partial class SelfHandledEndpointTests
         {
             Ran = true;
             return ValueTask.FromResult(Result.Success(new ProbeDto(request.Probe)));
-        }
-    }
-
-    private sealed class ShortCircuitProbeQueryBinder : IEndpointBinder<ShortCircuitProbeQuery>
-    {
-        public ValueTask<BindResult<ShortCircuitProbeQuery>> BindAsync(HttpContext context)
-        {
-            return ValueTask.FromResult(
-                BindResult<ShortCircuitProbeQuery>.Success(new ShortCircuitProbeQuery("live")));
         }
     }
 }

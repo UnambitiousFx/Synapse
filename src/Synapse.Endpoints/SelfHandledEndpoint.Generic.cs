@@ -24,7 +24,7 @@ namespace UnambitiousFx.Synapse.Endpoints;
 /// <remarks>
 ///     <para>
 ///         The tier for a route with no domain message behind it — a lookup, a health projection, a
-///         lightweight read model. It keeps the generated binder, the declarative response builder and
+///         lightweight read model. It keeps the generated binding, the declarative response builder and
 ///         the automatic OpenAPI metadata of <see cref="Endpoint{TRequest,TResponse}" />, and replaces
 ///         dispatch with <see cref="ExecuteAsync" />.
 ///     </para>
@@ -50,7 +50,6 @@ namespace UnambitiousFx.Synapse.Endpoints;
 public abstract class SelfHandledEndpoint<TRequest, TResponse> : BoundEndpoint<TRequest>
     where TResponse : notnull
 {
-    private IEndpointBinder<TRequest>? _binder;
     private EndpointConfiguration<TResponse>? _configuration;
 
     /// <summary>Configures the endpoint. Called once at startup.</summary>
@@ -58,6 +57,16 @@ public abstract class SelfHandledEndpoint<TRequest, TResponse> : BoundEndpoint<T
     public virtual void Configure(IEndpointBuilder<TResponse> builder)
     {
     }
+
+    /// <summary>Binds the request onto the contract <see cref="ExecuteAsync" /> answers.</summary>
+    /// <param name="context">The HTTP context.</param>
+    /// <returns>The bound request, or the failures preventing it.</returns>
+    /// <remarks>
+    ///     Implemented by the generated partial, so an endpoint the analyzer never saw does not
+    ///     compile: the binding is an <c>override</c> the compiler requires rather than a binder looked
+    ///     up at startup.
+    /// </remarks>
+    public abstract ValueTask<BindResult<TRequest>> BindAsync(HttpContext context);
 
     /// <summary>Answers the bound request.</summary>
     /// <param name="request">The bound request.</param>
@@ -97,7 +106,7 @@ public abstract class SelfHandledEndpoint<TRequest, TResponse> : BoundEndpoint<T
     /// <inheritdoc />
     private protected sealed override ValueTask<BindResult<TRequest>> BindBoundAsync(HttpContext context)
     {
-        return Mapped(_binder).BindAsync(context);
+        return BindAsync(context);
     }
 
     /// <inheritdoc />
@@ -121,21 +130,6 @@ public abstract class SelfHandledEndpoint<TRequest, TResponse> : BoundEndpoint<T
         return await result.AsHttpBuilder(context.RequestServices.GetRequiredService<IFailureHttpMapper>());
     }
 
-    /// <inheritdoc />
-    protected sealed override RequestBodyKind BoundBodyKind => _binder?.BodyKind ?? RequestBodyKind.Json;
-
-    /// <inheritdoc />
-    protected sealed override IReadOnlyList<BoundParameterMetadata> DeclaredParameters()
-    {
-        return _binder?.Parameters ?? [];
-    }
-
-    /// <inheritdoc />
-    protected sealed override IReadOnlyList<FormFieldMetadata> DeclaredFormFields()
-    {
-        return _binder?.FormFields ?? [];
-    }
-
     internal sealed override RawEndpointPlan CreatePlan(EndpointMetadata metadata)
     {
         var builder = new EndpointBuilder<TResponse>(metadata);
@@ -143,7 +137,6 @@ public abstract class SelfHandledEndpoint<TRequest, TResponse> : BoundEndpoint<T
         var configuration = builder.Build();
         _configuration = configuration;
         ConfiguredProcessors = configuration.Processors;
-        _binder = EndpointRegistry.GetBinder<TRequest>();
 
         return new RawEndpointPlan
         {

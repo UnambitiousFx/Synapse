@@ -57,10 +57,10 @@ public sealed class SelfHandledEndpointEmissionTests
                                         """;
 
     [Fact]
-    public void Generate_ForSelfHandledEndpoint_EmitsABinderForARequestThatIsNotAMessage()
+    public void Generate_ForSelfHandledEndpoint_EmitsABindingForARequestThatIsNotAMessage()
     {
         // Act
-        var generated = GeneratorHarness.GetFile(ValueEndpoint, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(ValueEndpoint);
 
         // Assert
         Assert.Contains("global::TestNs.ProbeQuery", generated);
@@ -69,10 +69,10 @@ public sealed class SelfHandledEndpointEmissionTests
     }
 
     [Fact]
-    public void Generate_ForSelfHandledVoidEndpoint_EmitsABinderForARequestThatIsNotAMessage()
+    public void Generate_ForSelfHandledVoidEndpoint_EmitsABindingForARequestThatIsNotAMessage()
     {
         // Act
-        var generated = GeneratorHarness.GetFile(VoidEndpoint, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(VoidEndpoint);
 
         // Assert
         Assert.Contains("global::TestNs.PurgeRequest", generated);

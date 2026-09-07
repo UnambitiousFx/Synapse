@@ -22,7 +22,7 @@ public abstract class EndpointBase
     /// <returns>The state.</returns>
     /// <exception cref="InvalidOperationException">The endpoint has not been mapped.</exception>
     /// <remarks>
-    ///     The binder and the resolved configuration are created when the endpoint is mapped, so a
+    ///     The resolved configuration is created when the endpoint is mapped, so a
     ///     handler invoked before that has nothing to work with. Calling <c>HandleAsync</c> or
     ///     <c>BindAsync</c> directly — the natural way to try to unit-test an endpoint, and possible
     ///     because both are public — used to dereference a null field and produce a bare
@@ -44,16 +44,15 @@ public abstract class EndpointBase
     }
 
     /// <summary>
-    ///     The non-body inputs this endpoint's binder reads, for OpenAPI parameter declaration, or
+    ///     The non-body inputs this endpoint's binding reads, for OpenAPI parameter declaration, or
     ///     empty when the endpoint binds by hand.
     /// </summary>
     /// <remarks>
     ///     <para>
-    ///         Returns the list rather than the binder because the binder's type argument differs by
-    ///         tier — <c>MappedEndpoint</c> binds <c>THttpRequest</c> where the others bind
-    ///         <c>TRequest</c> — so no single binder-returning signature fits all of them. Mirrors
-    ///         <c>DeclaredRequestBody</c>, which returns a value for the same reason. Empty is the
-    ///         honest answer for a hand-written <c>BindAsync</c>: it declares no parameters.
+    ///         Declared here, on the untyped base, rather than on each tier: the list is the same shape
+    ///         whatever the tier binds, so one declaration serves all of them. Mirrors
+    ///         <c>DeclaredRequestBody</c>. Empty is the honest answer for a hand-written
+    ///         <c>BindAsync</c>: it declares no parameters.
     ///     </para>
     ///     <para>
     ///         <c>protected</c>, not <c>private protected</c>: the override is generated into the
@@ -67,7 +66,7 @@ public abstract class EndpointBase
     }
 
     /// <summary>
-    ///     The form fields and file parts this endpoint's binder reads, or empty when it reads none.
+    ///     The form fields and file parts this endpoint's binding reads, or empty when it reads none.
     /// </summary>
     /// <remarks>
     ///     <c>protected</c>, not <c>private protected</c>: the override is generated into the
