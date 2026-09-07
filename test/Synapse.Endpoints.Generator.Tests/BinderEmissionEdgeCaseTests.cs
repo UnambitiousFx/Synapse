@@ -30,7 +30,7 @@ public sealed class BinderEmissionEdgeCaseTests
                               }
 
                               [Get("/settables/{name}")]
-                              public sealed class SettableEndpoint : Endpoint<SettableCommand>;
+                              public sealed partial class SettableEndpoint : Endpoint<SettableCommand>;
                               """;
 
         // Act
@@ -64,7 +64,7 @@ public sealed class BinderEmissionEdgeCaseTests
                               }
 
                               [Get("/settables/{name}")]
-                              public sealed class SettableEndpoint : Endpoint<SettableCommand>;
+                              public sealed partial class SettableEndpoint : Endpoint<SettableCommand>;
                               """;
 
         // Act
@@ -96,7 +96,7 @@ public sealed class BinderEmissionEdgeCaseTests
                               }
 
                               [Get("/search")]
-                              public sealed class SearchEndpoint : Endpoint<SearchQuery, int>;
+                              public sealed partial class SearchEndpoint : Endpoint<SearchQuery, int>;
                               """;
 
         // Act
@@ -126,7 +126,7 @@ public sealed class BinderEmissionEdgeCaseTests
                               }
 
                               [Get("/days/{day}")]
-                              public sealed class DayEndpoint : Endpoint<DayQuery, int>;
+                              public sealed partial class DayEndpoint : Endpoint<DayQuery, int>;
                               """;
 
         // Act
@@ -159,7 +159,7 @@ public sealed class BinderEmissionEdgeCaseTests
                               }
 
                               [Post("/initonly")]
-                              public sealed class InitOnlyEndpoint : Endpoint<InitOnlyClassCommand>;
+                              public sealed partial class InitOnlyEndpoint : Endpoint<InitOnlyClassCommand>;
                               """;
 
         // Act
@@ -191,7 +191,7 @@ public sealed class BinderEmissionEdgeCaseTests
                               }
 
                               [Get("/mixed/{id}")]
-                              public sealed class MixedEndpoint : Endpoint<MixedCommand>;
+                              public sealed partial class MixedEndpoint : Endpoint<MixedCommand>;
                               """;
 
         // Act
@@ -222,7 +222,7 @@ public sealed class BinderEmissionEdgeCaseTests
                               public sealed record GetTaskQuery(Guid TaskId) : IRequest<int>;
 
                               [Get("/tasks/{taskId:guid}")]
-                              public sealed class GetTaskEndpoint : Endpoint<GetTaskQuery, int>;
+                              public sealed partial class GetTaskEndpoint : Endpoint<GetTaskQuery, int>;
                               """;
 
         // Act
@@ -254,7 +254,7 @@ public sealed class BinderEmissionEdgeCaseTests
                               }
 
                               [Get("/mixedshape/{id}")]
-                              public sealed class MixedShapeEndpoint : Endpoint<MixedShapeQuery, int>;
+                              public sealed partial class MixedShapeEndpoint : Endpoint<MixedShapeQuery, int>;
                               """;
 
         // Act
@@ -292,7 +292,7 @@ public sealed class BinderEmissionEdgeCaseTests
                               }
 
                               [Get("/handwritten")]
-                              public sealed class HandWrittenEndpoint : Endpoint<HandWrittenQuery, int>;
+                              public sealed partial class HandWrittenEndpoint : Endpoint<HandWrittenQuery, int>;
                               """;
 
         // Act
@@ -329,7 +329,7 @@ public sealed class BinderEmissionEdgeCaseTests
                               }
 
                               [Get("/handwritten")]
-                              public sealed class HandWrittenEndpoint : Endpoint<HandWrittenQuery, int>;
+                              public sealed partial class HandWrittenEndpoint : Endpoint<HandWrittenQuery, int>;
                               """;
 
         // Act
@@ -366,10 +366,10 @@ public sealed class BinderEmissionEdgeCaseTests
                               }
 
                               [Get("/a/{value}")]
-                              public sealed class AEndpoint : Endpoint<SharedCommand>;
+                              public sealed partial class AEndpoint : Endpoint<SharedCommand>;
 
                               [Post("/b")]
-                              public sealed class BEndpoint : Endpoint<SharedCommand>;
+                              public sealed partial class BEndpoint : Endpoint<SharedCommand>;
                               """;
 
         // Act
@@ -416,7 +416,7 @@ public sealed class BinderEmissionEdgeCaseTests
                               }
 
                               [Get("/noparse")]
-                              public sealed class NoTryParseEndpoint : Endpoint<NoTryParseQuery, int>;
+                              public sealed partial class NoTryParseEndpoint : Endpoint<NoTryParseQuery, int>;
                               """;
 
         // Act
@@ -453,7 +453,7 @@ public sealed class BinderEmissionEdgeCaseTests
                                   public string? Filter { get; init; }
                               }
 
-                              public sealed class ComputedEndpoint : Endpoint<ComputedQuery, int>
+                              public sealed partial class ComputedEndpoint : Endpoint<ComputedQuery, int>
                               {
                                   public override void Configure(IEndpointBuilder<int> builder)
                                   {
@@ -494,7 +494,7 @@ public sealed class BinderEmissionEdgeCaseTests
 
                               public sealed record ThingDto(int Id);
 
-                              public sealed class ComputedEndpoint : Endpoint<ComputedQuery, ThingDto>
+                              public sealed partial class ComputedEndpoint : Endpoint<ComputedQuery, ThingDto>
                               {
                                   public override void Configure(IEndpointBuilder<ThingDto> builder)
                                   {
@@ -538,7 +538,7 @@ public sealed class BinderEmissionEdgeCaseTests
                        }
 
                        [HttpEndpoint("{{verb}}", "/probe")]
-                       public sealed class ProbeEndpoint : Endpoint<ProbeQuery, int>;
+                       public sealed partial class ProbeEndpoint : Endpoint<ProbeQuery, int>;
                        """;
 
         // Act
@@ -570,7 +570,7 @@ public sealed class BinderEmissionEdgeCaseTests
                        }
 
                        [HttpEndpoint("{{verb}}", "/submit")]
-                       public sealed class SubmitEndpoint : Endpoint<SubmitCommand, int>;
+                       public sealed partial class SubmitEndpoint : Endpoint<SubmitCommand, int>;
                        """;
 
         // Act
@@ -603,7 +603,7 @@ public sealed class BinderEmissionEdgeCaseTests
                        }
 
                        [HttpEndpoint("{{verb}}", "/things/{thingId:guid}/archive")]
-                       public sealed class ArchiveEndpoint : Endpoint<ArchiveCommand, int>;
+                       public sealed partial class ArchiveEndpoint : Endpoint<ArchiveCommand, int>;
                        """;
 
         // Act
@@ -630,7 +630,7 @@ public sealed class BinderEmissionEdgeCaseTests
                               public sealed record CompactCommand : IRequest<int>;
 
                               [Post("/compact")]
-                              public sealed class CompactEndpoint : Endpoint<CompactCommand, int>;
+                              public sealed partial class CompactEndpoint : Endpoint<CompactCommand, int>;
                               """;
 
         // Act
@@ -661,7 +661,7 @@ public sealed class BinderEmissionEdgeCaseTests
                               }
 
                               [Post("/things/{thingId:guid}/archive")]
-                              public sealed class ArchiveEndpoint : Endpoint<ArchiveCommand, int>;
+                              public sealed partial class ArchiveEndpoint : Endpoint<ArchiveCommand, int>;
                               """;
 
         // Act
@@ -688,7 +688,7 @@ public sealed class BinderEmissionEdgeCaseTests
                               public sealed record ArchiveCommand(global::System.Guid ThingId) : IRequest<int>;
 
                               [Post("/things/{thingId:guid}/archive")]
-                              public sealed class ArchiveEndpoint : Endpoint<ArchiveCommand, int>;
+                              public sealed partial class ArchiveEndpoint : Endpoint<ArchiveCommand, int>;
                               """;
 
         // Act
@@ -720,7 +720,7 @@ public sealed class BinderEmissionEdgeCaseTests
                               }
 
                               [Post("/things/{thingId:guid}/title")]
-                              public sealed class RetitleEndpoint : Endpoint<RetitleCommand, int>;
+                              public sealed partial class RetitleEndpoint : Endpoint<RetitleCommand, int>;
                               """;
 
         // Act
@@ -749,7 +749,7 @@ public sealed class BinderEmissionEdgeCaseTests
                               }
 
                               [Post("/things/{thingId:guid}/archive")]
-                              public sealed class ArchiveEndpoint : Endpoint<ArchiveCommand, int>;
+                              public sealed partial class ArchiveEndpoint : Endpoint<ArchiveCommand, int>;
                               """;
 
         // Act
@@ -775,7 +775,7 @@ public sealed class BinderEmissionEdgeCaseTests
                               }
 
                               [Post("/things")]
-                              public sealed class CreateEndpoint : Endpoint<CreateCommand, int>;
+                              public sealed partial class CreateEndpoint : Endpoint<CreateCommand, int>;
                               """;
 
         // Act
@@ -823,7 +823,7 @@ public sealed class BinderConstructionShapeTests
                                               public sealed record GetTask(TaskId TaskId) : IRequest;
 
                                               [Get("/tasks/{taskId}")]
-                                              public sealed class GetTaskEndpoint : Endpoint<GetTask>;
+                                              public sealed partial class GetTaskEndpoint : Endpoint<GetTask>;
                                               """;
 
     [Fact]
@@ -869,7 +869,7 @@ public sealed class BinderConstructionShapeTests
                               }
 
                               [Get("/things/{id}")]
-                              public sealed class GetThingEndpoint : Endpoint<GetThing>;
+                              public sealed partial class GetThingEndpoint : Endpoint<GetThing>;
                               """;
 
         // Act
@@ -901,7 +901,7 @@ public sealed class BinderConstructionShapeTests
                               }
 
                               [Get("/tasks/{taskId}")]
-                              public sealed class GetTaskEndpoint : Endpoint<GetTaskQuery>;
+                              public sealed partial class GetTaskEndpoint : Endpoint<GetTaskQuery>;
                               """;
 
         // Act
@@ -937,7 +937,7 @@ public sealed class BinderConstructionShapeTests
                        }
 
                        [Get("/queries")]
-                       public sealed class QueryEndpoint : Endpoint<Query>;
+                       public sealed partial class QueryEndpoint : Endpoint<Query>;
                        """;
 
         // Act
@@ -964,7 +964,7 @@ public sealed class BinderConstructionShapeTests
                               public sealed record ListUsers(int Page = 1, string? Sort = "name") : IRequest;
 
                               [Get("/users")]
-                              public sealed class ListUsersEndpoint : Endpoint<ListUsers>;
+                              public sealed partial class ListUsersEndpoint : Endpoint<ListUsers>;
                               """;
 
         // Act
@@ -1003,7 +1003,7 @@ public sealed class BinderConstructionShapeTests
                                   using UnambitiousFx.Synapse.Endpoints;
 
                                   [Get("/q")]
-                                  public sealed class QEndpoint : Endpoint<TestNs.Q>;
+                                  public sealed partial class QEndpoint : Endpoint<TestNs.Q>;
                               }
                               """;
 
@@ -1045,7 +1045,7 @@ public sealed class BinderConstructionShapeTests
                               namespace TestNs;
 
                               [Get("/externals")]
-                              public sealed class ExternalEndpoint : Endpoint<ExternalQuery>;
+                              public sealed partial class ExternalEndpoint : Endpoint<ExternalQuery>;
                               """;
 
         // Act

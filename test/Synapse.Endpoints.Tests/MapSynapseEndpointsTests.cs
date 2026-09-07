@@ -7,7 +7,7 @@ using UnambitiousFx.Synapse.Endpoints.Builders;
 
 namespace UnambitiousFx.Synapse.Endpoints.Tests;
 
-public sealed class MapSynapseEndpointsTests
+public sealed partial class MapSynapseEndpointsTests
 {
     [Fact]
     public void MapSynapseEndpoints_WhenTwoEndpointsShareVerbAndRoute_Throws()
@@ -153,7 +153,7 @@ public sealed class MapSynapseEndpointsTests
 
     private sealed record ForeignDupQuery : IRequest<string>;
 
-    private sealed class ForeignDupEndpoint : Endpoint<ForeignDupQuery, string>;
+    private sealed partial class ForeignDupEndpoint : Endpoint<ForeignDupQuery, string>;
 
     private sealed class ForeignDupBinder : IEndpointBinder<ForeignDupQuery>
     {
@@ -174,7 +174,7 @@ public sealed class MapSynapseEndpointsTests
 
     private sealed record MixedDupFirstQuery : IRequest<string>;
 
-    private sealed class MixedDupFirstEndpoint : Endpoint<MixedDupFirstQuery, string>;
+    private sealed partial class MixedDupFirstEndpoint : Endpoint<MixedDupFirstQuery, string>;
 
     private sealed class MixedDupFirstBinder : IEndpointBinder<MixedDupFirstQuery>
     {
@@ -186,7 +186,7 @@ public sealed class MapSynapseEndpointsTests
 
     private sealed record MixedDupSecondQuery : IRequest<string>;
 
-    private sealed class MixedDupSecondEndpoint : Endpoint<MixedDupSecondQuery, string>;
+    private sealed partial class MixedDupSecondEndpoint : Endpoint<MixedDupSecondQuery, string>;
 
     private sealed class MixedDupSecondBinder : IEndpointBinder<MixedDupSecondQuery>
     {
@@ -207,7 +207,7 @@ public sealed class MapSynapseEndpointsTests
 
     private sealed record FirstDupQuery : IRequest<string>;
 
-    private sealed class FirstDupEndpoint : Endpoint<FirstDupQuery, string>;
+    private sealed partial class FirstDupEndpoint : Endpoint<FirstDupQuery, string>;
 
     private sealed class FirstDupBinder : IEndpointBinder<FirstDupQuery>
     {
@@ -219,7 +219,7 @@ public sealed class MapSynapseEndpointsTests
 
     private sealed record SecondDupQuery : IRequest<string>;
 
-    private sealed class SecondDupEndpoint : Endpoint<SecondDupQuery, string>;
+    private sealed partial class SecondDupEndpoint : Endpoint<SecondDupQuery, string>;
 
     private sealed class SecondDupBinder : IEndpointBinder<SecondDupQuery>
     {
@@ -240,7 +240,7 @@ public sealed class MapSynapseEndpointsTests
 
     private sealed record HappyFirstQuery : IRequest<string>;
 
-    private sealed class HappyFirstEndpoint : Endpoint<HappyFirstQuery, string>;
+    private sealed partial class HappyFirstEndpoint : Endpoint<HappyFirstQuery, string>;
 
     private sealed class HappyFirstBinder : IEndpointBinder<HappyFirstQuery>
     {
@@ -252,7 +252,7 @@ public sealed class MapSynapseEndpointsTests
 
     private sealed record HappySecondQuery : IRequest<string>;
 
-    private sealed class HappySecondEndpoint : Endpoint<HappySecondQuery, string>;
+    private sealed partial class HappySecondEndpoint : Endpoint<HappySecondQuery, string>;
 
     private sealed class HappySecondBinder : IEndpointBinder<HappySecondQuery>
     {
@@ -272,7 +272,7 @@ public sealed class MapSynapseEndpointsTests
 
     private sealed record ChainQuery : IRequest<string>;
 
-    private sealed class ChainEndpoint : Endpoint<ChainQuery, string>;
+    private sealed partial class ChainEndpoint : Endpoint<ChainQuery, string>;
 
     private sealed class ChainBinder : IEndpointBinder<ChainQuery>
     {
@@ -301,7 +301,7 @@ public sealed class MapSynapseEndpointsTests
 
     private sealed record GroupDupFirstQuery : IRequest<string>;
 
-    private sealed class GroupDupFirstEndpoint : Endpoint<GroupDupFirstQuery, string>;
+    private sealed partial class GroupDupFirstEndpoint : Endpoint<GroupDupFirstQuery, string>;
 
     private sealed class GroupDupFirstBinder : IEndpointBinder<GroupDupFirstQuery>
     {
@@ -313,7 +313,7 @@ public sealed class MapSynapseEndpointsTests
 
     private sealed record GroupDupSecondQuery : IRequest<string>;
 
-    private sealed class GroupDupSecondEndpoint : Endpoint<GroupDupSecondQuery, string>;
+    private sealed partial class GroupDupSecondEndpoint : Endpoint<GroupDupSecondQuery, string>;
 
     private sealed class GroupDupSecondBinder : IEndpointBinder<GroupDupSecondQuery>
     {

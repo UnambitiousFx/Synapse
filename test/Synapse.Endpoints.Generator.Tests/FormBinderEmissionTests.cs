@@ -19,7 +19,7 @@ public sealed class FormBinderEmissionTests
                                        }
 
                                        [Post("/uploads")]
-                                       public sealed class UploadEndpoint : Endpoint<UploadCommand>;
+                                       public sealed partial class UploadEndpoint : Endpoint<UploadCommand>;
                                        """;
 
     [Fact]
@@ -80,7 +80,7 @@ public sealed class FormBinderEmissionTests
                               }
 
                               [Post("/tasks/{taskId:guid}/attachments")]
-                              public sealed class UploadEndpoint : Endpoint<UploadCommand>;
+                              public sealed partial class UploadEndpoint : Endpoint<UploadCommand>;
                               """;
 
         // Act
@@ -112,7 +112,7 @@ public sealed class FormBinderEmissionTests
                               }
 
                               [Post("/things")]
-                              public sealed class CreateEndpoint : Endpoint<CreateCommand>;
+                              public sealed partial class CreateEndpoint : Endpoint<CreateCommand>;
                               """;
 
         // Act
@@ -143,7 +143,7 @@ public sealed class FormBinderEmissionTests
                               }
 
                               [Post("/uploads")]
-                              public sealed class UploadEndpoint : Endpoint<UploadCommand>;
+                              public sealed partial class UploadEndpoint : Endpoint<UploadCommand>;
                               """;
 
         // Act
@@ -183,7 +183,7 @@ public sealed class FormBinderEmissionTests
                                   using UnambitiousFx.Synapse.Endpoints;
 
                                   [Post("/uploads")]
-                                  public sealed class UploadEndpoint : Endpoint<TestNs.UploadCommand>;
+                                  public sealed partial class UploadEndpoint : Endpoint<TestNs.UploadCommand>;
                               }
                               """;
 
@@ -211,7 +211,7 @@ public sealed class FormBinderEmissionTests
                               }
 
                               [Post("/things")]
-                              public sealed class CreateEndpoint : Endpoint<CreateCommand>;
+                              public sealed partial class CreateEndpoint : Endpoint<CreateCommand>;
                               """;
 
         // Act
@@ -240,7 +240,7 @@ public sealed class FormBinderEmissionTests
                               }
 
                               [Post("/uploads")]
-                              public sealed class UploadEndpoint : Endpoint<UploadCommand>;
+                              public sealed partial class UploadEndpoint : Endpoint<UploadCommand>;
                               """;
 
         // Act
@@ -274,7 +274,7 @@ public sealed class FormBinderEmissionTests
                               }
 
                               [Post("/uploads")]
-                              public sealed class UploadEndpoint : Endpoint<UploadCommand>;
+                              public sealed partial class UploadEndpoint : Endpoint<UploadCommand>;
                               """;
 
         // Act
@@ -307,7 +307,7 @@ public sealed class FormBinderEmissionTests
                               }
 
                               [Post("/uploads")]
-                              public sealed class UploadEndpoint : Endpoint<UploadCommand>;
+                              public sealed partial class UploadEndpoint : Endpoint<UploadCommand>;
                               """;
 
         // Act
@@ -340,7 +340,7 @@ public sealed class FormBinderEmissionTests
                        }
 
                        [Post("/uploads")]
-                       public sealed class UploadEndpoint : Endpoint<UploadCommand>;
+                       public sealed partial class UploadEndpoint : Endpoint<UploadCommand>;
                        """;
 
         // Act
@@ -374,7 +374,7 @@ public sealed class FormBinderEmissionTests
                               }
 
                               [Post("/uploads")]
-                              public sealed class UploadEndpoint : Endpoint<UploadCommand>;
+                              public sealed partial class UploadEndpoint : Endpoint<UploadCommand>;
                               """;
 
         // Act
@@ -422,7 +422,7 @@ public sealed class FormBinderEmissionTests
                               }
 
                               [Post("/uploads")]
-                              public sealed class UploadEndpoint : Endpoint<UploadCommand>;
+                              public sealed partial class UploadEndpoint : Endpoint<UploadCommand>;
                               """;
 
         // Act
@@ -451,7 +451,7 @@ public sealed class FormBinderEmissionTests
                               }
 
                               [Post("/uploads")]
-                              public sealed class UploadEndpoint : Endpoint<UploadCommand>;
+                              public sealed partial class UploadEndpoint : Endpoint<UploadCommand>;
                               """;
 
         // Act
@@ -484,7 +484,7 @@ public sealed class FormBinderEmissionTests
                               public partial class AppJsonContext : JsonSerializerContext;
 
                               [Post("/uploads")]
-                              public sealed class UploadEndpoint : Endpoint<UploadCommand>;
+                              public sealed partial class UploadEndpoint : Endpoint<UploadCommand>;
                               """;
 
         // Act
@@ -520,7 +520,7 @@ public sealed class FormBinderEmissionTests
                               }
 
                               [Post("/uploads")]
-                              public sealed class UploadEndpoint : Endpoint<UploadCommand>;
+                              public sealed partial class UploadEndpoint : Endpoint<UploadCommand>;
                               """;
 
         // Act
@@ -555,7 +555,7 @@ public sealed class FormBinderEmissionTests
                               }
 
                               [Post("/uploads")]
-                              public sealed class UploadEndpoint : Endpoint<UploadCommand>;
+                              public sealed partial class UploadEndpoint : Endpoint<UploadCommand>;
                               """;
 
         // Act
@@ -586,7 +586,7 @@ public sealed class FormBinderEmissionTests
                               }
 
                               [Post("/uploads")]
-                              public sealed class UploadEndpoint : Endpoint<UploadCommand>;
+                              public sealed partial class UploadEndpoint : Endpoint<UploadCommand>;
                               """;
 
         // Act & Assert
@@ -616,7 +616,7 @@ public sealed class FormBinderEmissionTests
                               }
 
                               [Post("/uploads")]
-                              public sealed class UploadEndpoint : Endpoint<UploadCommand>;
+                              public sealed partial class UploadEndpoint : Endpoint<UploadCommand>;
                               """;
 
         // Act

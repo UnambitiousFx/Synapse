@@ -28,7 +28,7 @@ public sealed class FormDiagnosticTests
                        }
 
                        [{{verb}}("/things")]
-                       public sealed class ThingEndpoint : Endpoint<ThingCommand>;
+                       public sealed partial class ThingEndpoint : Endpoint<ThingCommand>;
                        """;
 
         // Act
@@ -65,7 +65,7 @@ public sealed class FormDiagnosticTests
                               }
 
                               [Get("/things")]
-                              public sealed class ThingEndpoint : Endpoint<ThingQuery>;
+                              public sealed partial class ThingEndpoint : Endpoint<ThingQuery>;
                               """;
 
         // Act
@@ -94,7 +94,7 @@ public sealed class FormDiagnosticTests
                               }
 
                               [Post("/uploads")]
-                              public sealed class UploadEndpoint : Endpoint<UploadCommand>;
+                              public sealed partial class UploadEndpoint : Endpoint<UploadCommand>;
                               """;
 
         // Act
@@ -123,7 +123,7 @@ public sealed class FormDiagnosticTests
                               }
 
                               [Post("/uploads")]
-                              public sealed class UploadEndpoint : Endpoint<UploadCommand>;
+                              public sealed partial class UploadEndpoint : Endpoint<UploadCommand>;
                               """;
 
         // Act
@@ -152,7 +152,7 @@ public sealed class FormDiagnosticTests
                               }
 
                               [Post("/uploads")]
-                              public sealed class UploadEndpoint : Endpoint<UploadCommand>;
+                              public sealed partial class UploadEndpoint : Endpoint<UploadCommand>;
                               """;
 
         // Act
@@ -182,7 +182,7 @@ public sealed class FormDiagnosticTests
                               }
 
                               [Post("/uploads")]
-                              public sealed class UploadEndpoint : Endpoint<UploadCommand>;
+                              public sealed partial class UploadEndpoint : Endpoint<UploadCommand>;
                               """;
 
         // Act
@@ -209,7 +209,7 @@ public sealed class FormDiagnosticTests
                               }
 
                               [Post("/uploads")]
-                              public sealed class UploadEndpoint : Endpoint<UploadCommand>;
+                              public sealed partial class UploadEndpoint : Endpoint<UploadCommand>;
                               """;
 
         // Act

@@ -482,4 +482,23 @@ internal static class EndpointDiagnostics
         Category,
         DiagnosticSeverity.Info,
         isEnabledByDefault: true);
+
+    /// <summary>
+    ///     SYNE020: the endpoint class — or a type enclosing it — is not declared <c>partial</c>, so
+    ///     the generator cannot reopen it to emit the binding. Reported per type that is missing the
+    ///     keyword, so a nested endpoint's error names the type the author must actually change.
+    /// </summary>
+    /// <remarks>
+    ///     Fires alongside the compiler's CS0534 for the unimplemented <c>BindAsync</c>. That error
+    ///     names <c>RawEndpoint&lt;...&gt;</c> — a base class the author never wrote — so this
+    ///     diagnostic exists to name the fix. With analyzers disabled there is no diagnostic at all and
+    ///     CS0534 stands alone; see docs/docs/endpoints/reference/preview.mdx.
+    /// </remarks>
+    internal static readonly DiagnosticDescriptor EndpointMustBePartial = new(
+        "SYNE020",
+        "Endpoint must be declared partial",
+        "'{0}' must be declared 'partial' so the analyzer can emit its binding into it",
+        Category,
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
 }

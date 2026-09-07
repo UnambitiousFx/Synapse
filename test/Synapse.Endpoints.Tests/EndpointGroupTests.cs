@@ -7,7 +7,7 @@ using UnambitiousFx.Synapse.Endpoints.Builders;
 
 namespace UnambitiousFx.Synapse.Endpoints.Tests;
 
-public sealed class EndpointGroupTests
+public sealed partial class EndpointGroupTests
 {
     [Fact]
     public void MapEndpoint_WhenEndpointDeclaresAGroup_PrefixesTheRoute()
@@ -89,7 +89,7 @@ public sealed class EndpointGroupTests
 
     private sealed record GroupedQuery : IRequest<string>;
 
-    private sealed class GroupedEndpoint : Endpoint<GroupedQuery, string>;
+    private sealed partial class GroupedEndpoint : Endpoint<GroupedQuery, string>;
 
     private sealed class GroupedBinder : IEndpointBinder<GroupedQuery>
     {
@@ -112,7 +112,7 @@ public sealed class EndpointGroupTests
 
     private sealed record SharedFirstQuery : IRequest<string>;
 
-    private sealed class SharedFirstEndpoint : Endpoint<SharedFirstQuery, string>;
+    private sealed partial class SharedFirstEndpoint : Endpoint<SharedFirstQuery, string>;
 
     private sealed class SharedFirstBinder : IEndpointBinder<SharedFirstQuery>
     {
@@ -124,7 +124,7 @@ public sealed class EndpointGroupTests
 
     private sealed record SharedSecondQuery : IRequest<string>;
 
-    private sealed class SharedSecondEndpoint : Endpoint<SharedSecondQuery, string>;
+    private sealed partial class SharedSecondEndpoint : Endpoint<SharedSecondQuery, string>;
 
     private sealed class SharedSecondBinder : IEndpointBinder<SharedSecondQuery>
     {
@@ -136,7 +136,7 @@ public sealed class EndpointGroupTests
 
     private sealed record NoFactoryQuery : IRequest<string>;
 
-    private sealed class NoFactoryEndpoint : Endpoint<NoFactoryQuery, string>;
+    private sealed partial class NoFactoryEndpoint : Endpoint<NoFactoryQuery, string>;
 
     private sealed class NoFactoryBinder : IEndpointBinder<NoFactoryQuery>
     {

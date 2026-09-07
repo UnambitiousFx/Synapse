@@ -9,7 +9,7 @@ using UnambitiousFx.Synapse.Endpoints.Builders;
 
 namespace UnambitiousFx.Synapse.Endpoints.Tests;
 
-public sealed class EndpointVoidTests
+public sealed partial class EndpointVoidTests
 {
     [Fact]
     public async Task Invoke_WithDefaultConfiguration_Returns204()
@@ -130,7 +130,7 @@ public sealed class EndpointVoidTests
 
     private sealed record PingCommand : IRequest;
 
-    private sealed class PingEndpoint : Endpoint<PingCommand>;
+    private sealed partial class PingEndpoint : Endpoint<PingCommand>;
 
     private sealed class PingBinder : IEndpointBinder<PingCommand>
     {
@@ -142,7 +142,7 @@ public sealed class EndpointVoidTests
 
     private sealed record ConflictPingCommand : IRequest;
 
-    private sealed class ConflictPingEndpoint : Endpoint<ConflictPingCommand>;
+    private sealed partial class ConflictPingEndpoint : Endpoint<ConflictPingCommand>;
 
     private sealed class ConflictPingBinder : IEndpointBinder<ConflictPingCommand>
     {
@@ -154,7 +154,7 @@ public sealed class EndpointVoidTests
 
     private sealed record AcceptedPingCommand : IRequest;
 
-    private sealed class AcceptedPingEndpoint : Endpoint<AcceptedPingCommand>
+    private sealed partial class AcceptedPingEndpoint : Endpoint<AcceptedPingCommand>
     {
         public override void Configure(IEndpointBuilder builder)
         {
@@ -172,7 +172,7 @@ public sealed class EndpointVoidTests
 
     private sealed record FailingPingCommand : IRequest;
 
-    private sealed class FailingPingEndpoint : Endpoint<FailingPingCommand>
+    private sealed partial class FailingPingEndpoint : Endpoint<FailingPingCommand>
     {
         public override void Configure(IEndpointBuilder builder)
         {

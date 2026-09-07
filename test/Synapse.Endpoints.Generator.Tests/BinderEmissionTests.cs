@@ -20,7 +20,7 @@ public sealed class BinderEmissionTests
                               }
 
                               [Put("/things/{thingId:guid}")]
-                              public sealed class UpdateThingEndpoint : Endpoint<UpdateThingCommand>;
+                              public sealed partial class UpdateThingEndpoint : Endpoint<UpdateThingCommand>;
                               """;
 
         // Act
@@ -55,7 +55,7 @@ public sealed class BinderEmissionTests
                               }
 
                               [Get("/things")]
-                              public sealed class ListThingsEndpoint : Endpoint<ListThingsQuery, int>;
+                              public sealed partial class ListThingsEndpoint : Endpoint<ListThingsQuery, int>;
                               """;
 
         // Act
@@ -83,7 +83,7 @@ public sealed class BinderEmissionTests
                               }
 
                               [Post("/things")]
-                              public sealed class CreateThingEndpoint : Endpoint<CreateThingCommand>;
+                              public sealed partial class CreateThingEndpoint : Endpoint<CreateThingCommand>;
                               """;
 
         // Act
@@ -109,7 +109,7 @@ public sealed class BinderEmissionTests
                               }
 
                               [Patch("/things")]
-                              public sealed class PatchThingEndpoint : Endpoint<PatchThingCommand>;
+                              public sealed partial class PatchThingEndpoint : Endpoint<PatchThingCommand>;
                               """;
 
         // Act
@@ -136,7 +136,7 @@ public sealed class BinderEmissionTests
                               }
 
                               [Get("/things/{id}")]
-                              public sealed class ThingEndpoint : Endpoint<ThingQuery, int>;
+                              public sealed partial class ThingEndpoint : Endpoint<ThingQuery, int>;
                               """;
 
         // Act & Assert

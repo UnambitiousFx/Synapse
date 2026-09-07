@@ -15,7 +15,7 @@ public sealed record UploadAttachmentCommand : IRequest<string>
 
 /// <summary>Uploads one attachment. A form-bound endpoint with a mixed file/field schema.</summary>
 [Post("/attachments")]
-public sealed class UploadAttachmentEndpoint : Endpoint<UploadAttachmentCommand, string>;
+public sealed partial class UploadAttachmentEndpoint : Endpoint<UploadAttachmentCommand, string>;
 
 /// <summary>A message holding every file under one field name.</summary>
 public sealed record UploadManyCommand : IRequest<string>
@@ -26,7 +26,7 @@ public sealed record UploadManyCommand : IRequest<string>
 
 /// <summary>Uploads many attachments at once. Exercises the file-collection schema.</summary>
 [Post("/attachments/many")]
-public sealed class UploadManyEndpoint : Endpoint<UploadManyCommand, string>;
+public sealed partial class UploadManyEndpoint : Endpoint<UploadManyCommand, string>;
 
 /// <summary>A plain JSON-bound message, with nothing form-bound at all.</summary>
 public sealed record CreateTaskCommand : IRequest<TaskDto>
@@ -37,4 +37,4 @@ public sealed record CreateTaskCommand : IRequest<TaskDto>
 
 /// <summary>Creates a task. The control for the JSON path: the form pass must leave it untouched.</summary>
 [Post("/tasks")]
-public sealed class CreateTaskEndpoint : Endpoint<CreateTaskCommand, TaskDto>;
+public sealed partial class CreateTaskEndpoint : Endpoint<CreateTaskCommand, TaskDto>;

@@ -24,7 +24,7 @@ public sealed class RouteDiagnosticTests
                               public sealed record GetThingQuery : IRequest<int>;
 
                               [Get("/things/{thingId}")]
-                              public sealed class GetThingEndpoint : Endpoint<GetThingQuery, int>;
+                              public sealed partial class GetThingEndpoint : Endpoint<GetThingQuery, int>;
                               """;
 
         // Act
@@ -51,7 +51,7 @@ public sealed class RouteDiagnosticTests
                               }
 
                               [Get("/things/{thingId}")]
-                              public sealed class GetThingEndpoint : Endpoint<GetThingQuery, int>;
+                              public sealed partial class GetThingEndpoint : Endpoint<GetThingQuery, int>;
                               """;
 
         // Act
@@ -76,7 +76,7 @@ public sealed class RouteDiagnosticTests
                               public sealed record TickQuery : IRequest<int>, IStreamRequest<int>;
 
                               [Get("/ticks")]
-                              public sealed class TickEndpoint : Endpoint<TickQuery, int>;
+                              public sealed partial class TickEndpoint : Endpoint<TickQuery, int>;
                               """;
 
         // Act
@@ -99,7 +99,7 @@ public sealed class RouteDiagnosticTests
                               public sealed record TickQuery : IStreamRequest<int>;
 
                               [Get("/ticks")]
-                              public sealed class TickEndpoint : StreamEndpoint<TickQuery, int>;
+                              public sealed partial class TickEndpoint : StreamEndpoint<TickQuery, int>;
                               """;
 
         // Act
@@ -130,7 +130,7 @@ public sealed class RouteDiagnosticTests
 
                               [Get("/things/{thingId}")]
                               [InGroup<NotAGroup>]
-                              public sealed class GetThingEndpoint : Endpoint<GetThingQuery, int>;
+                              public sealed partial class GetThingEndpoint : Endpoint<GetThingQuery, int>;
                               """;
 
         // Act
@@ -165,7 +165,7 @@ public sealed class RouteDiagnosticTests
 
                               [Get("/things/{thingId}")]
                               [InGroup<MyGroup>]
-                              public sealed class GetThingEndpoint : Endpoint<GetThingQuery, int>;
+                              public sealed partial class GetThingEndpoint : Endpoint<GetThingQuery, int>;
                               """;
 
         // Act
@@ -192,7 +192,7 @@ public sealed class RouteDiagnosticTests
                               }
 
                               [Get("/things/{thingId}")]
-                              public sealed class GetThingEndpoint : Endpoint<GetThingQuery, int>
+                              public sealed partial class GetThingEndpoint : Endpoint<GetThingQuery, int>
                               {
                                   public override void Configure(IEndpointBuilder<int> builder)
                                   {
@@ -226,7 +226,7 @@ public sealed class RouteDiagnosticTests
                               }
 
                               [Get("/things/{thingId}")]
-                              public sealed class GetThingEndpoint : Endpoint<GetThingQuery, int>
+                              public sealed partial class GetThingEndpoint : Endpoint<GetThingQuery, int>
                               {
                                   public override void Configure(IEndpointBuilder<int> builder)
                                   {
@@ -258,7 +258,7 @@ public sealed class RouteDiagnosticTests
                               }
 
                               [Get("/things/{thingId}")]
-                              public sealed class GetThingEndpoint<T> : Endpoint<GetThingQuery, int>;
+                              public sealed partial class GetThingEndpoint<T> : Endpoint<GetThingQuery, int>;
                               """;
 
         // Act
@@ -286,7 +286,7 @@ public sealed class RouteDiagnosticTests
                               public sealed class Outer<T>
                               {
                                   [Get("/things/{thingId}")]
-                                  public sealed class GetThingEndpoint : Endpoint<GetThingQuery, int>;
+                                  public sealed partial class GetThingEndpoint : Endpoint<GetThingQuery, int>;
                               }
                               """;
 
@@ -313,7 +313,7 @@ public sealed class RouteDiagnosticTests
                               }
 
                               [Get("/things/{thingId}")]
-                              public sealed class GetThingEndpoint : Endpoint<GetThingQuery, int>
+                              public sealed partial class GetThingEndpoint : Endpoint<GetThingQuery, int>
                               {
                                   public GetThingEndpoint(int seed)
                                   {
@@ -344,7 +344,7 @@ public sealed class RouteDiagnosticTests
                               }
 
                               [Get("/things/{thingId}")]
-                              public sealed class GetThingEndpoint : Endpoint<GetThingQuery, int>
+                              public sealed partial class GetThingEndpoint : Endpoint<GetThingQuery, int>
                               {
                                   public GetThingEndpoint()
                                   {
@@ -377,7 +377,7 @@ public sealed class RouteDiagnosticTests
                               }
 
                               [Get("/things/{thingId}")]
-                              public sealed class GetThingEndpoint<T> : Endpoint<GetThingQuery, int>;
+                              public sealed partial class GetThingEndpoint<T> : Endpoint<GetThingQuery, int>;
                               """;
 
         // Act
@@ -414,7 +414,7 @@ public sealed class RouteDiagnosticTests
 
                               [Get("/things/{thingId}")]
                               [InGroup<MyGroup>]
-                              public sealed class GetThingEndpoint : Endpoint<GetThingQuery, int>
+                              public sealed partial class GetThingEndpoint : Endpoint<GetThingQuery, int>
                               {
                                   public override void Configure(IEndpointBuilder<int> builder)
                                   {
@@ -428,7 +428,7 @@ public sealed class RouteDiagnosticTests
                               }
 
                               [Delete("/things/{thingId}")]
-                              public sealed class DeleteThingEndpoint : Endpoint<DeleteThingCommand>;
+                              public sealed partial class DeleteThingEndpoint : Endpoint<DeleteThingCommand>;
 
                               public sealed record TickQuery : IStreamRequest<int>
                               {
@@ -436,14 +436,14 @@ public sealed class RouteDiagnosticTests
                               }
 
                               [Get("/ticks/{count}")]
-                              public sealed class TickEndpoint : StreamEndpoint<TickQuery, int>;
+                              public sealed partial class TickEndpoint : StreamEndpoint<TickQuery, int>;
 
                               public sealed record HttpThingRequest(int ThingId);
                               public sealed record CreateThingCommand(int ThingId) : IRequest<int>;
                               public sealed record HttpThingResponse(int Id);
 
                               [Post("/things")]
-                              public sealed class CreateThingEndpoint
+                              public sealed partial class CreateThingEndpoint
                                   : MappedEndpoint<HttpThingRequest, CreateThingCommand, int, HttpThingResponse>
                               {
                                   public override CreateThingCommand ToRequest(HttpThingRequest request) =>
@@ -482,7 +482,7 @@ public sealed class RouteDiagnosticTests
                                   public string? Filter { get; init; }
                               }
 
-                              public sealed class ComputedEndpoint : Endpoint<ComputedQuery, int>
+                              public sealed partial class ComputedEndpoint : Endpoint<ComputedQuery, int>
                               {
                                   public override void Configure(IEndpointBuilder<int> builder)
                                   {
@@ -520,7 +520,7 @@ public sealed class RouteDiagnosticTests
                                   [NotBound] public int Ignored { get; init; }
                               }
 
-                              public sealed class ComputedEndpoint : Endpoint<ComputedQuery, int>
+                              public sealed partial class ComputedEndpoint : Endpoint<ComputedQuery, int>
                               {
                                   public override void Configure(IEndpointBuilder<int> builder)
                                   {
@@ -551,7 +551,7 @@ public sealed class RouteDiagnosticTests
 
                               public sealed record PingQuery : IRequest<int>;
 
-                              public sealed class PingEndpoint : Endpoint<PingQuery, int>
+                              public sealed partial class PingEndpoint : Endpoint<PingQuery, int>
                               {
                                   public override void Configure(IEndpointBuilder<int> builder)
                                   {
@@ -586,7 +586,7 @@ public sealed class RouteDiagnosticTests
                               }
 
                               [Get("/things")]
-                              public sealed class ListThingsEndpoint : Endpoint<ListThingsQuery, int>;
+                              public sealed partial class ListThingsEndpoint : Endpoint<ListThingsQuery, int>;
                               """;
 
         // Act

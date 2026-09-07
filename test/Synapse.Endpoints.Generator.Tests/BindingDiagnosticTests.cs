@@ -29,7 +29,7 @@ public sealed class BindingDiagnosticTests
                               }
 
                               [Get("/things/{id}")]
-                              public sealed class GetThingEndpoint : Endpoint<GetThingQuery, int>;
+                              public sealed partial class GetThingEndpoint : Endpoint<GetThingQuery, int>;
                               """;
 
         // Act
@@ -57,7 +57,7 @@ public sealed class BindingDiagnosticTests
                               }
 
                               [Get("/search")]
-                              public sealed class SearchEndpoint : Endpoint<SearchQuery, int>;
+                              public sealed partial class SearchEndpoint : Endpoint<SearchQuery, int>;
                               """;
 
         // Act
@@ -87,7 +87,7 @@ public sealed class BindingDiagnosticTests
                               }
 
                               [Post("/things")]
-                              public sealed class CreateThingEndpoint : Endpoint<CreateThingCommand>;
+                              public sealed partial class CreateThingEndpoint : Endpoint<CreateThingCommand>;
                               """;
 
         // Act
@@ -114,7 +114,7 @@ public sealed class BindingDiagnosticTests
                               }
 
                               [Post("/uploads")]
-                              public sealed class UploadEndpoint : Endpoint<UploadCommand>;
+                              public sealed partial class UploadEndpoint : Endpoint<UploadCommand>;
                               """;
 
         // Act
@@ -142,7 +142,7 @@ public sealed class BindingDiagnosticTests
                               }
 
                               [Get("/things/{id}")]
-                              public sealed class GetThingEndpoint : Endpoint<GetThingQuery, int>;
+                              public sealed partial class GetThingEndpoint : Endpoint<GetThingQuery, int>;
                               """;
 
         // Act
@@ -170,7 +170,7 @@ public sealed class BindingDiagnosticTests
                               }
 
                               [Get("/things")]
-                              public sealed class GetThingEndpoint : Endpoint<GetThingQuery, int>;
+                              public sealed partial class GetThingEndpoint : Endpoint<GetThingQuery, int>;
                               """;
 
         // Act
@@ -197,7 +197,7 @@ public sealed class BindingDiagnosticTests
                               }
 
                               [Post("/things")]
-                              public sealed class CreateThingEndpoint : Endpoint<CreateThingCommand, int>;
+                              public sealed partial class CreateThingEndpoint : Endpoint<CreateThingCommand, int>;
                               """;
 
         // Act
@@ -225,7 +225,7 @@ public sealed class BindingDiagnosticTests
                               }
 
                               [Get("/things/{id}")]
-                              public sealed class GetThingEndpoint : Endpoint<GetThingQuery, int>;
+                              public sealed partial class GetThingEndpoint : Endpoint<GetThingQuery, int>;
                               """;
 
         // Act
@@ -252,7 +252,7 @@ public sealed class BindingDiagnosticTests
                               }
 
                               [Get("/things/{id}")]
-                              public sealed class GetThingEndpoint : Endpoint<GetThingQuery, int>;
+                              public sealed partial class GetThingEndpoint : Endpoint<GetThingQuery, int>;
                               """;
 
         // Act
@@ -279,7 +279,7 @@ public sealed class BindingDiagnosticTests
                               }
 
                               [Get("/things/{id}")]
-                              public sealed class GetThingEndpoint : Endpoint<GetThingQuery, int>;
+                              public sealed partial class GetThingEndpoint : Endpoint<GetThingQuery, int>;
                               """;
 
         // Act
@@ -308,7 +308,7 @@ public sealed class BindingDiagnosticTests
                               }
 
                               [Post("/things")]
-                              public sealed class CreateThingEndpoint : Endpoint<CreateThingCommand>;
+                              public sealed partial class CreateThingEndpoint : Endpoint<CreateThingCommand>;
                               """;
 
         // Act
@@ -336,7 +336,7 @@ public sealed class BindingDiagnosticTests
                               }
 
                               [Get("/odd/{thing}")]
-                              public sealed class OddEndpoint : Endpoint<OddQuery, int>;
+                              public sealed partial class OddEndpoint : Endpoint<OddQuery, int>;
                               """;
 
         // Act
@@ -377,7 +377,7 @@ public sealed class BindingDiagnosticTests
                         }
 
                         [Get("/odd/{thing}")]
-                        public sealed class OddEndpoint : Endpoint<OddQuery, int>;
+                        public sealed partial class OddEndpoint : Endpoint<OddQuery, int>;
                         """;
 
         // Act
@@ -405,10 +405,10 @@ public sealed class BindingDiagnosticTests
                               }
 
                               [Get("/a/{value}")]
-                              public sealed class AEndpoint : Endpoint<SharedCommand>;
+                              public sealed partial class AEndpoint : Endpoint<SharedCommand>;
 
                               [Post("/b")]
-                              public sealed class BEndpoint : Endpoint<SharedCommand>;
+                              public sealed partial class BEndpoint : Endpoint<SharedCommand>;
                               """;
 
         // Act
@@ -443,10 +443,10 @@ public sealed class BindingDiagnosticTests
                               }
 
                               [Get("/a")]
-                              public sealed class AEndpoint : Endpoint<SharedQuery, int>;
+                              public sealed partial class AEndpoint : Endpoint<SharedQuery, int>;
 
                               [Get("/b")]
-                              public sealed class BEndpoint : Endpoint<SharedQuery, int>;
+                              public sealed partial class BEndpoint : Endpoint<SharedQuery, int>;
                               """;
 
         // Act
@@ -472,7 +472,7 @@ public sealed class BindingDiagnosticTests
                               }
 
                               [Get("/things/{id}")]
-                              public sealed class GetThingEndpoint : Endpoint<GetThingQuery, int>;
+                              public sealed partial class GetThingEndpoint : Endpoint<GetThingQuery, int>;
                               """;
 
         // Act

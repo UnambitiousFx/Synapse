@@ -20,7 +20,7 @@ public sealed class EndpointGroupEmissionTests
                               }
 
                               [Get("/things/{id}")]
-                              public sealed class GetThingEndpoint : Endpoint<GetThingQuery, string>;
+                              public sealed partial class GetThingEndpoint : Endpoint<GetThingQuery, string>;
                               """;
 
         // Act
@@ -54,7 +54,7 @@ public sealed class EndpointGroupEmissionTests
                               }
 
                               [Get("/things/{id}")]
-                              public sealed class GetThingEndpoint : Endpoint<GetThingQuery, string>;
+                              public sealed partial class GetThingEndpoint : Endpoint<GetThingQuery, string>;
                               """;
 
         // Act & Assert — compiles the emitted SynapseEndpointGroup.g.cs (and its siblings) with
@@ -80,7 +80,7 @@ public sealed class EndpointGroupEmissionTests
                               }
 
                               [Get("/things/{id}")]
-                              public sealed class GetThingEndpoint : Endpoint<GetThingQuery, string>;
+                              public sealed partial class GetThingEndpoint : Endpoint<GetThingQuery, string>;
                               """;
 
         // Act
@@ -125,11 +125,11 @@ public sealed class EndpointGroupEmissionTests
                               public sealed record MappedCommand(string Name) : IRequest<int>;
                               public sealed record HttpOut(string Id);
 
-                              [Post("/void")]   public sealed class VoidEndpoint : Endpoint<VoidCommand>;
-                              [Get("/value")]   public sealed class ValueEndpoint : Endpoint<ValueQuery, int>;
-                              [Get("/ticks")]   public sealed class TickEndpoint : StreamEndpoint<TickQuery, int>;
+                              [Post("/void")]   public sealed partial class VoidEndpoint : Endpoint<VoidCommand>;
+                              [Get("/value")]   public sealed partial class ValueEndpoint : Endpoint<ValueQuery, int>;
+                              [Get("/ticks")]   public sealed partial class TickEndpoint : StreamEndpoint<TickQuery, int>;
                               [Post("/mapped")]
-                              public sealed class MappedThingEndpoint : MappedEndpoint<HttpBody, MappedCommand, int, HttpOut>
+                              public sealed partial class MappedThingEndpoint : MappedEndpoint<HttpBody, MappedCommand, int, HttpOut>
                               {
                                   public override MappedCommand ToRequest(HttpBody request) => new(request.Name);
                                   public override HttpOut ToResponse(int response) => new(response.ToString());
@@ -168,7 +168,7 @@ public sealed class EndpointGroupEmissionTests
                       public sealed record WeirdQuery : IRequest<string>;
 
                       [Get({routeLiteral})]
-                      public sealed class WeirdRouteEndpoint : Endpoint<WeirdQuery, string>;
+                      public sealed partial class WeirdRouteEndpoint : Endpoint<WeirdQuery, string>;
                       """;
 
         // Act
@@ -207,7 +207,7 @@ public sealed class EndpointGroupEmissionTests
 
                               [Get("/things/{id}")]
                               [InGroup<MyGroup>]
-                              public sealed class GroupedEndpoint : Endpoint<GroupedQuery, string>;
+                              public sealed partial class GroupedEndpoint : Endpoint<GroupedQuery, string>;
                               """;
 
         // Act
@@ -242,7 +242,7 @@ public sealed class EndpointGroupEmissionTests
                               public sealed record PingQuery : IRequest<int>;
 
                               [Get("/ping")]
-                              public sealed class PingEndpoint : Endpoint<PingQuery, int>;
+                              public sealed partial class PingEndpoint : Endpoint<PingQuery, int>;
                               """;
 
         // Act
@@ -269,7 +269,7 @@ public sealed class EndpointGroupEmissionTests
                               public sealed record PingQuery : IRequest<int>;
 
                               [Get("/ping")]
-                              public sealed class PingEndpoint : Endpoint<PingQuery, int>;
+                              public sealed partial class PingEndpoint : Endpoint<PingQuery, int>;
                               """;
 
         // Act

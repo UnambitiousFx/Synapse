@@ -3,7 +3,7 @@ using UnambitiousFx.Synapse.Abstractions;
 
 namespace UnambitiousFx.Synapse.Endpoints.Tests;
 
-public sealed class BoundEndpointTests
+public sealed partial class BoundEndpointTests
 {
     [Theory]
     [InlineData(typeof(RawEndpoint<PingCommand>))]
@@ -74,5 +74,5 @@ public sealed class BoundEndpointTests
 
     public sealed record PingStream : IStreamRequest<string>;
 
-    private sealed class UnmappedEndpoint : Endpoint<PingQuery, string>;
+    private sealed partial class UnmappedEndpoint : Endpoint<PingQuery, string>;
 }

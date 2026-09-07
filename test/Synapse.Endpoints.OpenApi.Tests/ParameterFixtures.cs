@@ -31,7 +31,7 @@ public sealed record SearchTasksQuery : IRequest<IReadOnlyList<TaskDto>>
 
 /// <summary>Searches tasks. Reads only the query string.</summary>
 [Get("/tasks/search")]
-public sealed class SearchTasksEndpoint : Endpoint<SearchTasksQuery, IReadOnlyList<TaskDto>>;
+public sealed partial class SearchTasksEndpoint : Endpoint<SearchTasksQuery, IReadOnlyList<TaskDto>>;
 
 /// <summary>A query bound from the route and a header.</summary>
 public sealed record GetTaskQuery : IRequest<TaskDto>
@@ -50,7 +50,7 @@ public sealed record GetTaskQuery : IRequest<TaskDto>
 ///     <c>/tasks/{taskId}</c> while the template is <c>/tasks/{taskId:guid}</c>.
 /// </remarks>
 [Get("/tasks/{taskId:guid}")]
-public sealed class GetTaskEndpoint : Endpoint<GetTaskQuery, TaskDto>;
+public sealed partial class GetTaskEndpoint : Endpoint<GetTaskQuery, TaskDto>;
 
 /// <summary>A query whose route-bound property is nullable, so its binder reports it optional.</summary>
 /// <remarks>
@@ -66,4 +66,4 @@ public sealed record PeekTaskQuery : IRequest<TaskDto>
 
 /// <summary>Peeks at one task. The nullable-route-property case.</summary>
 [Get("/tasks/{taskId:guid}/peek")]
-public sealed class PeekTaskEndpoint : Endpoint<PeekTaskQuery, TaskDto>;
+public sealed partial class PeekTaskEndpoint : Endpoint<PeekTaskQuery, TaskDto>;

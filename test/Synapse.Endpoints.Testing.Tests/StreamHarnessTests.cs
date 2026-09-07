@@ -5,7 +5,7 @@ using UnambitiousFx.Synapse.Endpoints.Binding;
 
 namespace UnambitiousFx.Synapse.Endpoints.Testing.Tests;
 
-public sealed class StreamHarnessTests
+public sealed partial class StreamHarnessTests
 {
     [Fact]
     public async Task SendAsync_ForAStreamEndpoint_MaterialisesTheStreamAsAJsonArray()
@@ -74,7 +74,7 @@ public sealed class StreamHarnessTests
 
     private sealed record TickerQuery : IStreamRequest<Tick>;
 
-    private sealed class TickerEndpoint : StreamEndpoint<TickerQuery, Tick>;
+    private sealed partial class TickerEndpoint : StreamEndpoint<TickerQuery, Tick>;
 
     private sealed class TickerBinder : IEndpointBinder<TickerQuery>
     {

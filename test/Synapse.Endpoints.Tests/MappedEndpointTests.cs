@@ -10,7 +10,7 @@ using UnambitiousFx.Synapse.Endpoints.Builders;
 
 namespace UnambitiousFx.Synapse.Endpoints.Tests;
 
-public sealed class MappedEndpointTests
+public sealed partial class MappedEndpointTests
 {
     [Fact]
     public async Task Invoke_WithMappedContracts_BindsHttpDtoAndReturnsMappedResponse()
@@ -112,7 +112,7 @@ public sealed class MappedEndpointTests
 
     private sealed record CreateResponse(string Id);
 
-    private sealed class CreateEndpoint : MappedEndpoint<CreateBody, CreateCommand, int, CreateResponse>
+    private sealed partial class CreateEndpoint : MappedEndpoint<CreateBody, CreateCommand, int, CreateResponse>
     {
         public override CreateCommand ToRequest(CreateBody request)
         {
@@ -137,7 +137,7 @@ public sealed class MappedEndpointTests
 
     private sealed record FailingCreateResponse(string Id);
 
-    private sealed class FailingEndpoint : MappedEndpoint<CreateBody, FailingCreateCommand, int, FailingCreateResponse>
+    private sealed partial class FailingEndpoint : MappedEndpoint<CreateBody, FailingCreateCommand, int, FailingCreateResponse>
     {
         public override FailingCreateCommand ToRequest(CreateBody request)
         {
@@ -162,7 +162,7 @@ public sealed class MappedEndpointTests
 
     private sealed record CreatedResponse(string Id);
 
-    private sealed class CreatedEndpoint : MappedEndpoint<CreateBody, CreatedCommand, int, CreatedResponse>
+    private sealed partial class CreatedEndpoint : MappedEndpoint<CreateBody, CreatedCommand, int, CreatedResponse>
     {
         public override CreatedCommand ToRequest(CreateBody request)
         {

@@ -11,7 +11,7 @@ using UnambitiousFx.Synapse.Endpoints.Internal;
 
 namespace UnambitiousFx.Synapse.Endpoints.Tests;
 
-public sealed class OpenApiMetadataTests
+public sealed partial class OpenApiMetadataTests
 {
     [Fact]
     public void CreateDescriptor_ForRequestWithResponse_DeclaresAcceptsAndProduces()
@@ -401,7 +401,7 @@ public sealed class OpenApiMetadataTests
 
     private sealed record FormRequest : IRequest<string>;
 
-    private sealed class FormEndpoint : Endpoint<FormRequest, string>;
+    private sealed partial class FormEndpoint : Endpoint<FormRequest, string>;
 
     private sealed class FormBinder : IEndpointBinder<FormRequest>
     {
@@ -497,7 +497,7 @@ public sealed class OpenApiMetadataTests
         Assert.Equal(["application/problem+json"], badRequest.ContentTypes);
     }
 
-    private sealed class BodylessMapperEndpoint : Endpoint<BodylessMetaQuery, string>
+    private sealed partial class BodylessMapperEndpoint : Endpoint<BodylessMetaQuery, string>
     {
         internal static bool UseNoContent { get; set; }
 
@@ -514,7 +514,7 @@ public sealed class OpenApiMetadataTests
         }
     }
 
-    private sealed class CreatedMapperEndpoint : Endpoint<BodylessMetaQuery, string>
+    private sealed partial class CreatedMapperEndpoint : Endpoint<BodylessMetaQuery, string>
     {
         public override void Configure(IEndpointBuilder<string> builder)
         {
@@ -522,7 +522,7 @@ public sealed class OpenApiMetadataTests
         }
     }
 
-    private sealed class MetaEndpoint : Endpoint<MetaQuery, string>;
+    private sealed partial class MetaEndpoint : Endpoint<MetaQuery, string>;
 
     private sealed class MetaBinder : IEndpointBinder<MetaQuery>
     {
@@ -534,7 +534,7 @@ public sealed class OpenApiMetadataTests
 
     private sealed record BodylessMetaQuery : IRequest<string>;
 
-    private sealed class BodylessMetaEndpoint : Endpoint<BodylessMetaQuery, string>;
+    private sealed partial class BodylessMetaEndpoint : Endpoint<BodylessMetaQuery, string>;
 
     private sealed class BodylessMetaBinder : IEndpointBinder<BodylessMetaQuery>
     {
@@ -546,7 +546,7 @@ public sealed class OpenApiMetadataTests
 
     private sealed record MultiVerbMetaQuery : IRequest<string>;
 
-    private sealed class MultiVerbMetaEndpoint : Endpoint<MultiVerbMetaQuery, string>;
+    private sealed partial class MultiVerbMetaEndpoint : Endpoint<MultiVerbMetaQuery, string>;
 
     private sealed class MultiVerbMetaBinder : IEndpointBinder<MultiVerbMetaQuery>
     {
@@ -558,7 +558,7 @@ public sealed class OpenApiMetadataTests
 
     private sealed record CreatedMetaCommand : IRequest<string>;
 
-    private sealed class CreatedMetaEndpoint : Endpoint<CreatedMetaCommand, string>
+    private sealed partial class CreatedMetaEndpoint : Endpoint<CreatedMetaCommand, string>
     {
         public override void Configure(IEndpointBuilder<string> builder)
         {
@@ -580,7 +580,7 @@ public sealed class OpenApiMetadataTests
 
     private sealed record CreatedMappedResponse(string Id);
 
-    private sealed class CreatedMappedEndpoint
+    private sealed partial class CreatedMappedEndpoint
         : MappedEndpoint<CreatedMappedRequest, CreatedMappedCommand, int, CreatedMappedResponse>
     {
         public override CreatedMappedCommand ToRequest(CreatedMappedRequest request)
@@ -609,7 +609,7 @@ public sealed class OpenApiMetadataTests
 
     private sealed record VoidMetaCommand : IRequest;
 
-    private sealed class VoidMetaEndpoint : Endpoint<VoidMetaCommand>;
+    private sealed partial class VoidMetaEndpoint : Endpoint<VoidMetaCommand>;
 
     private sealed class VoidMetaBinder : IEndpointBinder<VoidMetaCommand>
     {
@@ -621,7 +621,7 @@ public sealed class OpenApiMetadataTests
 
     private sealed record NoBodyMetaQuery : IRequest<string>;
 
-    private sealed class NoBodyMetaEndpoint : Endpoint<NoBodyMetaQuery, string>;
+    private sealed partial class NoBodyMetaEndpoint : Endpoint<NoBodyMetaQuery, string>;
 
     private sealed class NoBodyMetaBinder : IEndpointBinder<NoBodyMetaQuery>
     {
@@ -646,7 +646,7 @@ public sealed class OpenApiMetadataTests
 
     private sealed record StreamMetaQuery : IStreamRequest<int>;
 
-    private sealed class StreamMetaEndpoint : StreamEndpoint<StreamMetaQuery, int>;
+    private sealed partial class StreamMetaEndpoint : StreamEndpoint<StreamMetaQuery, int>;
 
     private sealed class StreamMetaBinder : IEndpointBinder<StreamMetaQuery>
     {
@@ -658,7 +658,7 @@ public sealed class OpenApiMetadataTests
 
     private sealed record PostStreamMetaQuery : IStreamRequest<int>;
 
-    private sealed class PostStreamMetaEndpoint : StreamEndpoint<PostStreamMetaQuery, int>;
+    private sealed partial class PostStreamMetaEndpoint : StreamEndpoint<PostStreamMetaQuery, int>;
 
     private sealed class PostStreamMetaBinder : IEndpointBinder<PostStreamMetaQuery>
     {
@@ -913,7 +913,7 @@ public sealed class OpenApiMetadataTests
     // Chained on purpose: the whole chain compiles only while every declaration returns
     // IEndpointBuilder<string> rather than widening to the non-generic IEndpointBuilder, which is what
     // lets the response-shaping Ok() at the end still be in reach.
-    private sealed class FailureAwareEndpoint : Endpoint<BodylessMetaQuery, string>
+    private sealed partial class FailureAwareEndpoint : Endpoint<BodylessMetaQuery, string>
     {
         public override void Configure(IEndpointBuilder<string> builder)
         {
@@ -925,7 +925,7 @@ public sealed class OpenApiMetadataTests
         }
     }
 
-    private sealed class FailureAwareVoidEndpoint : Endpoint<VoidMetaCommand>
+    private sealed partial class FailureAwareVoidEndpoint : Endpoint<VoidMetaCommand>
     {
         public override void Configure(IEndpointBuilder builder)
         {
@@ -934,7 +934,7 @@ public sealed class OpenApiMetadataTests
         }
     }
 
-    private sealed class FailureAwareMappedEndpoint
+    private sealed partial class FailureAwareMappedEndpoint
         : MappedEndpoint<CreatedMappedRequest, CreatedMappedCommand, int, CreatedMappedResponse>
     {
         public override CreatedMappedCommand ToRequest(CreatedMappedRequest request)
@@ -969,7 +969,7 @@ public sealed class OpenApiMetadataTests
 
     private sealed record FailureAwareStreamQuery : IStreamRequest<int>;
 
-    private sealed class FailureAwareStreamEndpoint : StreamEndpoint<FailureAwareStreamQuery, int>
+    private sealed partial class FailureAwareStreamEndpoint : StreamEndpoint<FailureAwareStreamQuery, int>
     {
         public override void Configure(IStreamEndpointBuilder builder)
         {
@@ -1003,7 +1003,7 @@ public sealed class OpenApiMetadataTests
 
     private sealed record SelfHandledMetaRequest(string Name);
 
-    private sealed class SelfHandledMetaEndpoint : SelfHandledEndpoint<SelfHandledMetaRequest, string>
+    private sealed partial class SelfHandledMetaEndpoint : SelfHandledEndpoint<SelfHandledMetaRequest, string>
     {
         public override ValueTask<UnambitiousFx.Functional.Result<string>> ExecuteAsync(
             SelfHandledMetaRequest request,
@@ -1025,7 +1025,7 @@ public sealed class OpenApiMetadataTests
 
     private sealed record SelfHandledVoidMetaRequest(string Name);
 
-    private sealed class SelfHandledVoidMetaEndpoint : SelfHandledEndpoint<SelfHandledVoidMetaRequest>
+    private sealed partial class SelfHandledVoidMetaEndpoint : SelfHandledEndpoint<SelfHandledVoidMetaRequest>
     {
         public override ValueTask<UnambitiousFx.Functional.Result> ExecuteAsync(
             SelfHandledVoidMetaRequest request,

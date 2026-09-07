@@ -7,7 +7,7 @@ using UnambitiousFx.Synapse.Endpoints.Internal;
 
 namespace UnambitiousFx.Synapse.Endpoints.Tests;
 
-public sealed class BoundParameterMetadataTests
+public sealed partial class BoundParameterMetadataTests
 {
     [Fact]
     public void BoundParametersMetadata_WithParameters_ExposesThem()
@@ -110,7 +110,7 @@ public sealed class BoundParameterMetadataTests
 
     private sealed record SearchTasksQuery : IRequest<string>;
 
-    private sealed class SearchTasksEndpoint : Endpoint<SearchTasksQuery, string>;
+    private sealed partial class SearchTasksEndpoint : Endpoint<SearchTasksQuery, string>;
 
     // A hand-written binder, not a generated one: this test's subject is the tier's attachment of
     // whatever the binder declares, not what the generator emits — that is the generator project's
@@ -161,7 +161,7 @@ public sealed class BoundParameterMetadataTests
 
     private sealed record NoParametersQuery : IRequest<string>;
 
-    private sealed class NoParametersEndpoint : Endpoint<NoParametersQuery, string>;
+    private sealed partial class NoParametersEndpoint : Endpoint<NoParametersQuery, string>;
 
     // Overrides neither Parameters nor FormFields, so the tier's { Count: > 0 } guard should skip
     // WithMetadata entirely rather than attaching an empty BoundParametersMetadata.

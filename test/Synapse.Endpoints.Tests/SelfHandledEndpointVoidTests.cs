@@ -8,7 +8,7 @@ using UnambitiousFx.Synapse.Endpoints.Builders;
 
 namespace UnambitiousFx.Synapse.Endpoints.Tests;
 
-public sealed class SelfHandledEndpointVoidTests
+public sealed partial class SelfHandledEndpointVoidTests
 {
     [Fact]
     public async Task Invoke_WithNoResponse_RunsExecuteAsyncAndAnswers204()
@@ -82,7 +82,7 @@ public sealed class SelfHandledEndpointVoidTests
 
     private sealed record PurgeRequest(string Key);
 
-    private sealed class PurgeEndpoint : SelfHandledEndpoint<PurgeRequest>
+    private sealed partial class PurgeEndpoint : SelfHandledEndpoint<PurgeRequest>
     {
         public string? Purged { get; private set; }
 
@@ -105,7 +105,7 @@ public sealed class SelfHandledEndpointVoidTests
 
     private sealed record ConflictedRequest(string Key);
 
-    private sealed class ConflictedEndpoint : SelfHandledEndpoint<ConflictedRequest>
+    private sealed partial class ConflictedEndpoint : SelfHandledEndpoint<ConflictedRequest>
     {
         public override ValueTask<Result> ExecuteAsync(ConflictedRequest request,
             HttpContext context,
@@ -125,7 +125,7 @@ public sealed class SelfHandledEndpointVoidTests
 
     private sealed record QueuedRequest(string Key);
 
-    private sealed class QueuedEndpoint : SelfHandledEndpoint<QueuedRequest>
+    private sealed partial class QueuedEndpoint : SelfHandledEndpoint<QueuedRequest>
     {
         public override void Configure(IEndpointBuilder builder)
         {

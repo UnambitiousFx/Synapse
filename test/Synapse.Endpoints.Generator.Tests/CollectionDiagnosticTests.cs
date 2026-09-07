@@ -24,7 +24,7 @@ public sealed class CollectionDiagnosticTests
                               }
 
                               [Get("/search")]
-                              public sealed class SearchEndpoint : Endpoint<SearchQuery, int>;
+                              public sealed partial class SearchEndpoint : Endpoint<SearchQuery, int>;
                               """;
 
         // Act
@@ -56,7 +56,7 @@ public sealed class CollectionDiagnosticTests
                               }
 
                               [Get("/search")]
-                              public sealed class SearchEndpoint : Endpoint<SearchQuery, int>;
+                              public sealed partial class SearchEndpoint : Endpoint<SearchQuery, int>;
                               """;
 
         // Act
@@ -91,7 +91,7 @@ public sealed class CollectionDiagnosticTests
                               }
 
                               [Get("/search")]
-                              public sealed class SearchEndpoint : Endpoint<SearchQuery, int>;
+                              public sealed partial class SearchEndpoint : Endpoint<SearchQuery, int>;
                               """;
 
         // Act
@@ -130,7 +130,7 @@ public sealed class CollectionDiagnosticTests
                               }
 
                               [Get("/search")]
-                              public sealed class SearchEndpoint : Endpoint<SearchQuery, int>;
+                              public sealed partial class SearchEndpoint : Endpoint<SearchQuery, int>;
                               """;
 
         // Act
@@ -160,7 +160,7 @@ public sealed class CollectionDiagnosticTests
                               }
 
                               [Get("/search")]
-                              public sealed class SearchEndpoint : Endpoint<SearchQuery, int>;
+                              public sealed partial class SearchEndpoint : Endpoint<SearchQuery, int>;
                               """;
 
         // Act

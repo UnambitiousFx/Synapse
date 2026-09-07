@@ -11,7 +11,7 @@ using UnambitiousFx.Synapse.Endpoints.Builders;
 
 namespace UnambitiousFx.Synapse.Endpoints.Tests;
 
-public sealed class SelfHandledEndpointTests
+public sealed partial class SelfHandledEndpointTests
 {
     [Fact]
     public async Task Invoke_WithRequestThatIsNotAMessage_RunsExecuteAsyncAndWritesItsResponse()
@@ -187,7 +187,7 @@ public sealed class SelfHandledEndpointTests
 
     private sealed record ProbeDto(string Probe);
 
-    private sealed class ProbeEndpoint : SelfHandledEndpoint<ProbeQuery, ProbeDto>
+    private sealed partial class ProbeEndpoint : SelfHandledEndpoint<ProbeQuery, ProbeDto>
     {
         public override ValueTask<Result<ProbeDto>> ExecuteAsync(ProbeQuery request,
             HttpContext context,
@@ -216,7 +216,7 @@ public sealed class SelfHandledEndpointTests
 
     private sealed record MissingProbeCommand(string Probe) : IRequest<ProbeDto>;
 
-    private sealed class MissingProbeEndpoint : SelfHandledEndpoint<MissingProbeQuery, ProbeDto>
+    private sealed partial class MissingProbeEndpoint : SelfHandledEndpoint<MissingProbeQuery, ProbeDto>
     {
         public override ValueTask<Result<ProbeDto>> ExecuteAsync(MissingProbeQuery request,
             HttpContext context,
@@ -226,7 +226,7 @@ public sealed class SelfHandledEndpointTests
         }
     }
 
-    private sealed class DispatchedMissingProbeEndpoint : Endpoint<MissingProbeCommand, ProbeDto>;
+    private sealed partial class DispatchedMissingProbeEndpoint : Endpoint<MissingProbeCommand, ProbeDto>;
 
     private sealed class MissingProbeQueryBinder : IEndpointBinder<MissingProbeQuery>
     {
@@ -246,7 +246,7 @@ public sealed class SelfHandledEndpointTests
 
     private sealed record CreatedProbeQuery(string Probe);
 
-    private sealed class CreatedProbeEndpoint : SelfHandledEndpoint<CreatedProbeQuery, ProbeDto>
+    private sealed partial class CreatedProbeEndpoint : SelfHandledEndpoint<CreatedProbeQuery, ProbeDto>
     {
         public override void Configure(IEndpointBuilder<ProbeDto> builder)
         {
@@ -271,7 +271,7 @@ public sealed class SelfHandledEndpointTests
 
     private sealed record AcceptedProbeQuery(string Probe);
 
-    private sealed class AcceptedProbeEndpoint : SelfHandledEndpoint<AcceptedProbeQuery, ProbeDto>
+    private sealed partial class AcceptedProbeEndpoint : SelfHandledEndpoint<AcceptedProbeQuery, ProbeDto>
     {
         public override Microsoft.AspNetCore.Http.IResult OnSuccess(ProbeDto response,
             HttpContext context)
@@ -297,7 +297,7 @@ public sealed class SelfHandledEndpointTests
 
     private sealed record RejectingProbeQuery(string Probe);
 
-    private sealed class RejectingProbeEndpoint : SelfHandledEndpoint<RejectingProbeQuery, ProbeDto>
+    private sealed partial class RejectingProbeEndpoint : SelfHandledEndpoint<RejectingProbeQuery, ProbeDto>
     {
         public bool Ran { get; private set; }
 
@@ -320,7 +320,7 @@ public sealed class SelfHandledEndpointTests
 
     private sealed record ShortCircuitProbeQuery(string Probe);
 
-    private sealed class ShortCircuitProbeEndpoint : SelfHandledEndpoint<ShortCircuitProbeQuery, ProbeDto>
+    private sealed partial class ShortCircuitProbeEndpoint : SelfHandledEndpoint<ShortCircuitProbeQuery, ProbeDto>
     {
         public bool Ran { get; private set; }
 

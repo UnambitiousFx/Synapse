@@ -29,7 +29,7 @@ public sealed record StreamSearchTasksQuery : IStreamRequest<TaskDto>
 /// </remarks>
 [Post("/stream/search")]
 [InGroup<TasksGroup>]
-public sealed class StreamSearchTasksEndpoint : StreamEndpoint<StreamSearchTasksQuery, TaskDto>;
+public sealed partial class StreamSearchTasksEndpoint : StreamEndpoint<StreamSearchTasksQuery, TaskDto>;
 
 /// <summary>Handles <see cref="StreamSearchTasksQuery" />.</summary>
 /// <remarks>

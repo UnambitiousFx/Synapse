@@ -99,7 +99,8 @@ internal readonly record struct EndpointTarget
         EquatableArray<ConstructorParameterModel> primaryConstructorParameters,
         string? jsonRequestTypeName,
         string? jsonResponseTypeName,
-        EquatableArray<JsonCallSite> jsonCallSites)
+        EquatableArray<JsonCallSite> jsonCallSites,
+        EndpointDeclaration declaration)
     {
         EndpointFullName = endpointFullName;
         BoundTypeFullName = boundTypeFullName;
@@ -114,6 +115,7 @@ internal readonly record struct EndpointTarget
         JsonRequestTypeName = jsonRequestTypeName;
         JsonResponseTypeName = jsonResponseTypeName;
         JsonCallSites = jsonCallSites;
+        Declaration = declaration;
     }
 
     /// <summary>Fully-qualified name of the endpoint class.</summary>
@@ -206,4 +208,7 @@ internal readonly record struct EndpointTarget
     ///     the low-level kinds, whose JSON-relevant types cannot be read off a base class.
     /// </summary>
     public EquatableArray<JsonCallSite> JsonCallSites { get; }
+
+    /// <summary>How the endpoint class is declared, for reopening it as a partial.</summary>
+    public EndpointDeclaration Declaration { get; }
 }

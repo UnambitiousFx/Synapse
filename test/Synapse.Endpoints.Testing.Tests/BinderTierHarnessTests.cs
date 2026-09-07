@@ -5,7 +5,7 @@ using UnambitiousFx.Synapse.Endpoints.Binding;
 
 namespace UnambitiousFx.Synapse.Endpoints.Testing.Tests;
 
-public sealed class BinderTierHarnessTests
+public sealed partial class BinderTierHarnessTests
 {
     [Fact]
     public async Task SendAsync_ForAnEndpointWithAResponse_BindsDispatchesAndMaps()
@@ -80,7 +80,7 @@ public sealed class BinderTierHarnessTests
         public string Id { get; init; } = string.Empty;
     }
 
-    private sealed class LookupEndpoint : Endpoint<LookupQuery, string>;
+    private sealed partial class LookupEndpoint : Endpoint<LookupQuery, string>;
 
     private sealed class LookupBinder : IEndpointBinder<LookupQuery>
     {
@@ -93,7 +93,7 @@ public sealed class BinderTierHarnessTests
 
     private sealed record RetireCommand : IRequest;
 
-    private sealed class RetireEndpoint : Endpoint<RetireCommand>;
+    private sealed partial class RetireEndpoint : Endpoint<RetireCommand>;
 
     private sealed class RetireBinder : IEndpointBinder<RetireCommand>
     {
@@ -105,7 +105,7 @@ public sealed class BinderTierHarnessTests
 
     private sealed record RejectingQuery : IRequest<string>;
 
-    private sealed class RejectingEndpoint : Endpoint<RejectingQuery, string>;
+    private sealed partial class RejectingEndpoint : Endpoint<RejectingQuery, string>;
 
     private sealed class RejectingBinder : IEndpointBinder<RejectingQuery>
     {
@@ -124,7 +124,7 @@ public sealed class BinderTierHarnessTests
 
     private sealed record TranslateResult(string Text);
 
-    private sealed class TranslateEndpoint
+    private sealed partial class TranslateEndpoint
         : MappedEndpoint<WireRequest, TranslateCommand, TranslateResult, WireResponse>
     {
         public override TranslateCommand ToRequest(WireRequest request)

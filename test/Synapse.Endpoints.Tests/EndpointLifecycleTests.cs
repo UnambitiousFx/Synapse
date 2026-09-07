@@ -8,7 +8,7 @@ using UnambitiousFx.Synapse.Endpoints.Builders;
 
 namespace UnambitiousFx.Synapse.Endpoints.Tests;
 
-public sealed class EndpointLifecycleTests
+public sealed partial class EndpointLifecycleTests
 {
     private static readonly List<string> Order = [];
 
@@ -536,7 +536,7 @@ public sealed class EndpointLifecycleTests
         }
     }
 
-    private sealed class TracingEndpoint : Endpoint<TraceQuery, string>
+    private sealed partial class TracingEndpoint : Endpoint<TraceQuery, string>
     {
         public override void Configure(IEndpointBuilder<string> builder)
         {
@@ -589,7 +589,7 @@ public sealed class EndpointLifecycleTests
         }
     }
 
-    private sealed class ScopeCapturingEndpoint : Endpoint<TraceQuery, string>
+    private sealed partial class ScopeCapturingEndpoint : Endpoint<TraceQuery, string>
     {
         public override void Configure(IEndpointBuilder<string> builder)
         {
@@ -597,7 +597,7 @@ public sealed class EndpointLifecycleTests
         }
     }
 
-    private sealed class ShortCircuitingEndpoint : Endpoint<TraceQuery, string>
+    private sealed partial class ShortCircuitingEndpoint : Endpoint<TraceQuery, string>
     {
         public override void Configure(IEndpointBuilder<string> builder)
         {
@@ -611,7 +611,7 @@ public sealed class EndpointLifecycleTests
         }
     }
 
-    private sealed class RejectingEndpoint : Endpoint<TraceQuery, string>
+    private sealed partial class RejectingEndpoint : Endpoint<TraceQuery, string>
     {
         public override void Configure(IEndpointBuilder<string> builder)
         {
@@ -619,7 +619,7 @@ public sealed class EndpointLifecycleTests
         }
     }
 
-    private sealed class BindFailingEndpoint : Endpoint<TraceQuery, string>
+    private sealed partial class BindFailingEndpoint : Endpoint<TraceQuery, string>
     {
         public override void Configure(IEndpointBuilder<string> builder)
         {
@@ -641,7 +641,7 @@ public sealed class EndpointLifecycleTests
         }
     }
 
-    private sealed class BindReplacingEndpoint : Endpoint<TraceQuery, string>
+    private sealed partial class BindReplacingEndpoint : Endpoint<TraceQuery, string>
     {
         protected override ValueTask<IResult> OnBindFailedAsync(BindResult<TraceQuery> bound,
             HttpContext context, CancellationToken cancellationToken)
@@ -651,7 +651,7 @@ public sealed class EndpointLifecycleTests
         }
     }
 
-    private sealed class HeaderStampingEndpoint : Endpoint<TraceQuery, string>
+    private sealed partial class HeaderStampingEndpoint : Endpoint<TraceQuery, string>
     {
         public override void Configure(IEndpointBuilder<string> builder)
         {
@@ -670,7 +670,7 @@ public sealed class EndpointLifecycleTests
         }
     }
 
-    private sealed class VoidTracingEndpoint : Endpoint<TraceCommand>
+    private sealed partial class VoidTracingEndpoint : Endpoint<TraceCommand>
     {
         public override void Configure(IEndpointBuilder builder)
         {
@@ -702,7 +702,7 @@ public sealed class EndpointLifecycleTests
         }
     }
 
-    private sealed class VoidBindFailingEndpoint : Endpoint<TraceCommand>
+    private sealed partial class VoidBindFailingEndpoint : Endpoint<TraceCommand>
     {
         public override void Configure(IEndpointBuilder builder)
         {
@@ -724,7 +724,7 @@ public sealed class EndpointLifecycleTests
         }
     }
 
-    private sealed class VoidRejectingEndpoint : Endpoint<TraceCommand>
+    private sealed partial class VoidRejectingEndpoint : Endpoint<TraceCommand>
     {
         public override void Configure(IEndpointBuilder builder)
         {
@@ -754,7 +754,7 @@ public sealed class EndpointLifecycleTests
         }
     }
 
-    private sealed class MappedTracingEndpoint
+    private sealed partial class MappedTracingEndpoint
         : MappedEndpoint<TraceWireRequest, TraceQuery, string, string>
     {
         public override void Configure(IEndpointBuilder<string> builder)
@@ -798,7 +798,7 @@ public sealed class EndpointLifecycleTests
         }
     }
 
-    private sealed class MappedBindFailingEndpoint
+    private sealed partial class MappedBindFailingEndpoint
         : MappedEndpoint<TraceWireRequest, TraceQuery, string, string>
     {
         public override void Configure(IEndpointBuilder<string> builder)
@@ -831,7 +831,7 @@ public sealed class EndpointLifecycleTests
         }
     }
 
-    private sealed class MappedRejectingEndpoint
+    private sealed partial class MappedRejectingEndpoint
         : MappedEndpoint<TraceWireRequest, TraceQuery, string, string>
     {
         public override void Configure(IEndpointBuilder<string> builder)
@@ -869,7 +869,7 @@ public sealed class EndpointLifecycleTests
         }
     }
 
-    private sealed class StreamTracingEndpoint : StreamEndpoint<TraceStream, string>
+    private sealed partial class StreamTracingEndpoint : StreamEndpoint<TraceStream, string>
     {
         public override void Configure(IStreamEndpointBuilder builder)
         {
@@ -901,7 +901,7 @@ public sealed class EndpointLifecycleTests
         }
     }
 
-    private sealed class StreamBindFailingEndpoint : StreamEndpoint<TraceStream, string>
+    private sealed partial class StreamBindFailingEndpoint : StreamEndpoint<TraceStream, string>
     {
         public override void Configure(IStreamEndpointBuilder builder)
         {
@@ -923,7 +923,7 @@ public sealed class EndpointLifecycleTests
         }
     }
 
-    private sealed class StreamRejectingEndpoint : StreamEndpoint<TraceStream, string>
+    private sealed partial class StreamRejectingEndpoint : StreamEndpoint<TraceStream, string>
     {
         public override void Configure(IStreamEndpointBuilder builder)
         {

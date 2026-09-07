@@ -29,7 +29,7 @@ public sealed class NotBoundDiagnosticTests
                        }
 
                        [{{verb}}("/things")]
-                       public sealed class UpdateThingEndpoint : Endpoint<UpdateThingCommand>;
+                       public sealed partial class UpdateThingEndpoint : Endpoint<UpdateThingCommand>;
                        """;
 
         // Act
@@ -61,7 +61,7 @@ public sealed class NotBoundDiagnosticTests
                        }
 
                        [{{verb}}("/things")]
-                       public sealed class ListThingsEndpoint : Endpoint<ListThingsQuery, int>;
+                       public sealed partial class ListThingsEndpoint : Endpoint<ListThingsQuery, int>;
                        """;
 
         // Act
@@ -94,7 +94,7 @@ public sealed class NotBoundDiagnosticTests
                               }
 
                               [Get("/things")]
-                              public sealed class SearchThingsEndpoint : Endpoint<SearchThingsQuery, int>;
+                              public sealed partial class SearchThingsEndpoint : Endpoint<SearchThingsQuery, int>;
                               """;
 
         // Act
@@ -125,7 +125,7 @@ public sealed class NotBoundDiagnosticTests
                               }
 
                               [Post("/things")]
-                              public sealed class UpdateThingEndpoint : Endpoint<UpdateThingCommand>;
+                              public sealed partial class UpdateThingEndpoint : Endpoint<UpdateThingCommand>;
                               """;
 
         // Act
@@ -164,7 +164,7 @@ public sealed class NotBoundDiagnosticTests
                        }
 
                        [Post("/things")]
-                       public sealed class UpdateThingEndpoint : Endpoint<UpdateThingCommand>;
+                       public sealed partial class UpdateThingEndpoint : Endpoint<UpdateThingCommand>;
                        """;
 
         // Act
@@ -196,7 +196,7 @@ public sealed class NotBoundDiagnosticTests
                               }
 
                               [Get("/things")]
-                              public sealed class ListThingsEndpoint : Endpoint<ListThingsQuery, int>;
+                              public sealed partial class ListThingsEndpoint : Endpoint<ListThingsQuery, int>;
                               """;
 
         // Act
@@ -228,7 +228,7 @@ public sealed class NotBoundDiagnosticTests
                               }
 
                               [Get("/things/{thingId}")]
-                              public sealed class GetThingEndpoint : Endpoint<GetThingQuery, int>;
+                              public sealed partial class GetThingEndpoint : Endpoint<GetThingQuery, int>;
                               """;
 
         // Act

@@ -5,7 +5,7 @@ using UnambitiousFx.Synapse.Endpoints.Binding;
 
 namespace UnambitiousFx.Synapse.Endpoints.Testing.Tests;
 
-public sealed class SelfHandledHarnessTests
+public sealed partial class SelfHandledHarnessTests
 {
     [Fact]
     public async Task SendAsync_ForASelfHandledEndpoint_RunsItWithNoHandlerStubbed()
@@ -44,7 +44,7 @@ public sealed class SelfHandledHarnessTests
 
     private sealed record ProbeDto(string Probe);
 
-    private sealed class ProbeEndpoint : SelfHandledEndpoint<ProbeQuery, ProbeDto>
+    private sealed partial class ProbeEndpoint : SelfHandledEndpoint<ProbeQuery, ProbeDto>
     {
         public override ValueTask<Result<ProbeDto>> ExecuteAsync(ProbeQuery request,
             HttpContext context,
@@ -66,7 +66,7 @@ public sealed class SelfHandledHarnessTests
 
     private sealed record MissingProbeQuery(string Probe);
 
-    private sealed class MissingProbeEndpoint : SelfHandledEndpoint<MissingProbeQuery, ProbeDto>
+    private sealed partial class MissingProbeEndpoint : SelfHandledEndpoint<MissingProbeQuery, ProbeDto>
     {
         public override ValueTask<Result<ProbeDto>> ExecuteAsync(MissingProbeQuery request,
             HttpContext context,

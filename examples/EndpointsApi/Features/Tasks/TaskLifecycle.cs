@@ -43,7 +43,7 @@ public sealed record TaskArchived(Guid TaskId);
 /// </remarks>
 [Post("/{taskId:guid}/archive")]
 [InGroup<TasksGroup>]
-public sealed class ArchiveTaskEndpoint : Endpoint<ArchiveTaskCommand, TaskArchived>
+public sealed partial class ArchiveTaskEndpoint : Endpoint<ArchiveTaskCommand, TaskArchived>
 {
     /// <inheritdoc />
     public override void Configure(IEndpointBuilder<TaskArchived> builder)
@@ -74,7 +74,7 @@ public sealed record RetitleTaskCommand : IRequest<TaskDto>
 /// </remarks>
 [Put("/{taskId:guid}/title")]
 [InGroup<TasksGroup>]
-public sealed class RetitleTaskEndpoint : Endpoint<RetitleTaskCommand, TaskDto>
+public sealed partial class RetitleTaskEndpoint : Endpoint<RetitleTaskCommand, TaskDto>
 {
     /// <inheritdoc />
     public override void Configure(IEndpointBuilder<TaskDto> builder)
@@ -107,7 +107,7 @@ public sealed record CompactReport(int Examined);
 /// </remarks>
 [Post("/compact")]
 [InGroup<TasksGroup>]
-public sealed class CompactTasksEndpoint : Endpoint<CompactTasksCommand, CompactReport>
+public sealed partial class CompactTasksEndpoint : Endpoint<CompactTasksCommand, CompactReport>
 {
     /// <inheritdoc />
     public override void Configure(IEndpointBuilder<CompactReport> builder)

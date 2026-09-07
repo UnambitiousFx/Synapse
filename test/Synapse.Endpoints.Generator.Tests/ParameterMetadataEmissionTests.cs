@@ -21,7 +21,7 @@ public sealed class ParameterMetadataEmissionTests
             }
 
             [Get("/search")]
-            public sealed class SearchEndpoint : Endpoint<SearchQuery, string>;
+            public sealed partial class SearchEndpoint : Endpoint<SearchQuery, string>;
             """;
 
         // Act
@@ -51,7 +51,7 @@ public sealed class ParameterMetadataEmissionTests
             }
 
             [Get("/search")]
-            public sealed class SearchEndpoint : Endpoint<SearchQuery, string>;
+            public sealed partial class SearchEndpoint : Endpoint<SearchQuery, string>;
             """;
 
         // Act
@@ -77,7 +77,7 @@ public sealed class ParameterMetadataEmissionTests
             }
 
             [Get("/search")]
-            public sealed class SearchEndpoint : Endpoint<SearchQuery, string>;
+            public sealed partial class SearchEndpoint : Endpoint<SearchQuery, string>;
             """;
 
         // Act
@@ -106,7 +106,7 @@ public sealed class ParameterMetadataEmissionTests
             }
 
             [Get("/search")]
-            public sealed class SearchEndpoint : Endpoint<SearchQuery, string>;
+            public sealed partial class SearchEndpoint : Endpoint<SearchQuery, string>;
             """;
 
         // Act
@@ -138,7 +138,7 @@ public sealed class ParameterMetadataEmissionTests
             }
 
             [Get("/search")]
-            public sealed class SearchEndpoint : Endpoint<SearchQuery, string>;
+            public sealed partial class SearchEndpoint : Endpoint<SearchQuery, string>;
             """;
 
         // Act
@@ -162,7 +162,7 @@ public sealed class ParameterMetadataEmissionTests
             public sealed record ListUsers(int Page = 1) : IRequest<string>;
 
             [Get("/users")]
-            public sealed class ListUsersEndpoint : Endpoint<ListUsers, string>;
+            public sealed partial class ListUsersEndpoint : Endpoint<ListUsers, string>;
             """;
 
         // Act
@@ -191,7 +191,7 @@ public sealed class ParameterMetadataEmissionTests
             }
 
             [Get("/search")]
-            public sealed class SearchEndpoint : Endpoint<SearchQuery, string>;
+            public sealed partial class SearchEndpoint : Endpoint<SearchQuery, string>;
             """;
 
         // Act
@@ -218,7 +218,7 @@ public sealed class ParameterMetadataEmissionTests
             }
 
             [Get("/tasks/{taskId:guid}")]
-            public sealed class GetEndpoint : Endpoint<GetQuery, string>;
+            public sealed partial class GetEndpoint : Endpoint<GetQuery, string>;
             """;
 
         // Act
@@ -245,7 +245,7 @@ public sealed class ParameterMetadataEmissionTests
             }
 
             [Get("/search")]
-            public sealed class SearchEndpoint : Endpoint<SearchQuery, string>;
+            public sealed partial class SearchEndpoint : Endpoint<SearchQuery, string>;
             """;
 
         // Act
@@ -272,7 +272,7 @@ public sealed class ParameterMetadataEmissionTests
             }
 
             [Post("/tasks")]
-            public sealed class CreateEndpoint : Endpoint<CreateCommand, string>;
+            public sealed partial class CreateEndpoint : Endpoint<CreateCommand, string>;
             """;
 
         // Act
@@ -300,7 +300,7 @@ public sealed class ParameterMetadataEmissionTests
             }
 
             [Post("/attachments")]
-            public sealed class UploadEndpoint : Endpoint<UploadCommand, string>;
+            public sealed partial class UploadEndpoint : Endpoint<UploadCommand, string>;
             """;
 
         // Act
@@ -332,7 +332,7 @@ public sealed class ParameterMetadataEmissionTests
             }
 
             [Post("/attachments")]
-            public sealed class UploadEndpoint : Endpoint<UploadCommand, string>;
+            public sealed partial class UploadEndpoint : Endpoint<UploadCommand, string>;
             """;
 
         // Act
@@ -359,7 +359,7 @@ public sealed class ParameterMetadataEmissionTests
             }
 
             [Get("/search")]
-            public sealed class SearchEndpoint : Endpoint<SearchQuery, string>;
+            public sealed partial class SearchEndpoint : Endpoint<SearchQuery, string>;
             """;
 
         // Act

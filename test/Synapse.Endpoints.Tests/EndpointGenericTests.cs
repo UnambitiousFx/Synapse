@@ -9,7 +9,7 @@ using UnambitiousFx.Synapse.Endpoints.Builders;
 
 namespace UnambitiousFx.Synapse.Endpoints.Tests;
 
-public sealed class EndpointGenericTests
+public sealed partial class EndpointGenericTests
 {
     [Fact]
     public async Task Invoke_WithDefaultConfiguration_Returns200AndTheResponse()
@@ -79,7 +79,7 @@ public sealed class EndpointGenericTests
 
     private sealed record EchoQuery : IRequest<string>;
 
-    private sealed class EchoEndpoint : Endpoint<EchoQuery, string>;
+    private sealed partial class EchoEndpoint : Endpoint<EchoQuery, string>;
 
     private sealed class EchoBinder : IEndpointBinder<EchoQuery>
     {
@@ -91,7 +91,7 @@ public sealed class EndpointGenericTests
 
     private sealed record FailingQuery : IRequest<string>;
 
-    private sealed class FailingEndpoint : Endpoint<FailingQuery, string>;
+    private sealed partial class FailingEndpoint : Endpoint<FailingQuery, string>;
 
     private sealed class FailingBinder : IEndpointBinder<FailingQuery>
     {

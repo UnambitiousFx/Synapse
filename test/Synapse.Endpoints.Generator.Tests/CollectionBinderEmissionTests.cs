@@ -23,7 +23,7 @@ public sealed class CollectionBinderEmissionTests
                               }
 
                               [Get("/search")]
-                              public sealed class SearchEndpoint : Endpoint<SearchQuery, int>;
+                              public sealed partial class SearchEndpoint : Endpoint<SearchQuery, int>;
                               """;
 
         // Act
@@ -55,7 +55,7 @@ public sealed class CollectionBinderEmissionTests
                        }
 
                        [Get("/search")]
-                       public sealed class SearchEndpoint : Endpoint<SearchQuery, int>;
+                       public sealed partial class SearchEndpoint : Endpoint<SearchQuery, int>;
                        """;
 
         // Act
@@ -87,7 +87,7 @@ public sealed class CollectionBinderEmissionTests
                               }
 
                               [Get("/search")]
-                              public sealed class SearchEndpoint : Endpoint<SearchQuery, int>;
+                              public sealed partial class SearchEndpoint : Endpoint<SearchQuery, int>;
                               """;
 
         // Act
@@ -118,7 +118,7 @@ public sealed class CollectionBinderEmissionTests
                               }
 
                               [Get("/search")]
-                              public sealed class SearchEndpoint : Endpoint<SearchQuery, int>;
+                              public sealed partial class SearchEndpoint : Endpoint<SearchQuery, int>;
                               """;
 
         // Act
@@ -146,7 +146,7 @@ public sealed class CollectionBinderEmissionTests
                               }
 
                               [Get("/search")]
-                              public sealed class SearchEndpoint : Endpoint<SearchQuery, int>;
+                              public sealed partial class SearchEndpoint : Endpoint<SearchQuery, int>;
                               """;
 
         // Act
@@ -175,7 +175,7 @@ public sealed class CollectionBinderEmissionTests
                               }
 
                               [Get("/search/{Ids}")]
-                              public sealed class SearchEndpoint : Endpoint<SearchQuery, int>;
+                              public sealed partial class SearchEndpoint : Endpoint<SearchQuery, int>;
                               """;
 
         // Act
@@ -202,7 +202,7 @@ public sealed class CollectionBinderEmissionTests
                               }
 
                               [Get("/search")]
-                              public sealed class SearchEndpoint : Endpoint<SearchQuery, int>;
+                              public sealed partial class SearchEndpoint : Endpoint<SearchQuery, int>;
                               """;
 
         // Act
@@ -232,7 +232,7 @@ public sealed class CollectionBinderEmissionTests
                               }
 
                               [Post("/tags")]
-                              public sealed class TagEndpoint : Endpoint<TagCommand>;
+                              public sealed partial class TagEndpoint : Endpoint<TagCommand>;
                               """;
 
         // Act
@@ -263,7 +263,7 @@ public sealed class CollectionBinderEmissionTests
                               }
 
                               [Post("/statuses")]
-                              public sealed class StatusEndpoint : Endpoint<StatusCommand>;
+                              public sealed partial class StatusEndpoint : Endpoint<StatusCommand>;
                               """;
 
         // Act
@@ -292,7 +292,7 @@ public sealed class CollectionBinderEmissionTests
                               public sealed record SearchQuery(string[]? Tags) : IRequest<int>;
 
                               [Get("/search")]
-                              public sealed class SearchEndpoint : Endpoint<SearchQuery, int>;
+                              public sealed partial class SearchEndpoint : Endpoint<SearchQuery, int>;
                               """;
 
         // Act
@@ -323,7 +323,7 @@ public sealed class CollectionBinderEmissionTests
                               }
 
                               [Get("/search")]
-                              public sealed class SearchEndpoint : Endpoint<SearchQuery, int>;
+                              public sealed partial class SearchEndpoint : Endpoint<SearchQuery, int>;
                               """;
 
         // Act
@@ -354,7 +354,7 @@ public sealed class CollectionBinderEmissionTests
                               }
 
                               [Get("/search")]
-                              public sealed class SearchEndpoint : Endpoint<SearchQuery, int>;
+                              public sealed partial class SearchEndpoint : Endpoint<SearchQuery, int>;
                               """;
 
         // Act

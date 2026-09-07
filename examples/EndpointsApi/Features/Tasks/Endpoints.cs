@@ -7,7 +7,7 @@ namespace UnambitiousFx.Examples.EndpointsApi.Features.Tasks;
 /// <summary>Lists every task. No configuration needed.</summary>
 [Get("/")]
 [InGroup<TasksGroup>]
-public sealed class ListTasksEndpoint : Endpoint<ListTasksQuery, IReadOnlyList<TaskDto>>;
+public sealed partial class ListTasksEndpoint : Endpoint<ListTasksQuery, IReadOnlyList<TaskDto>>;
 
 /// <summary>Gets one task. TaskId binds from the route by name.</summary>
 /// <remarks>
@@ -20,7 +20,7 @@ public sealed class ListTasksEndpoint : Endpoint<ListTasksQuery, IReadOnlyList<T
 /// </remarks>
 [Get("/{taskId:guid}")]
 [InGroup<TasksGroup>]
-public sealed class GetTaskEndpoint : Endpoint<GetTaskQuery, TaskDto>
+public sealed partial class GetTaskEndpoint : Endpoint<GetTaskQuery, TaskDto>
 {
     /// <inheritdoc />
     public override void Configure(IEndpointBuilder<TaskDto> builder)
@@ -32,12 +32,12 @@ public sealed class GetTaskEndpoint : Endpoint<GetTaskQuery, TaskDto>
 /// <summary>Streams tasks; the transport is negotiated on Accept.</summary>
 [Get("/stream")]
 [InGroup<TasksGroup>]
-public sealed class StreamTasksEndpoint : StreamEndpoint<StreamTasksQuery, TaskDto>;
+public sealed partial class StreamTasksEndpoint : StreamEndpoint<StreamTasksQuery, TaskDto>;
 
 /// <summary>Creates a task, responding 201 with a Location header.</summary>
 [Post("/")]
 [InGroup<TasksGroup>]
-public sealed class CreateTaskEndpoint : Endpoint<CreateTaskCommand, TaskCreated>
+public sealed partial class CreateTaskEndpoint : Endpoint<CreateTaskCommand, TaskCreated>
 {
     /// <inheritdoc />
     public override void Configure(IEndpointBuilder<TaskCreated> builder)
@@ -55,7 +55,7 @@ public sealed class CreateTaskEndpoint : Endpoint<CreateTaskCommand, TaskCreated
 /// </remarks>
 [Put("/{taskId:guid}")]
 [InGroup<TasksGroup>]
-public sealed class UpdateTaskEndpoint : Endpoint<UpdateTaskCommand>
+public sealed partial class UpdateTaskEndpoint : Endpoint<UpdateTaskCommand>
 {
     /// <inheritdoc />
     public override void Configure(IEndpointBuilder builder)
@@ -67,7 +67,7 @@ public sealed class UpdateTaskEndpoint : Endpoint<UpdateTaskCommand>
 /// <summary>Deletes a task. Responds 204, or 404 when the id is unknown.</summary>
 [Delete("/{taskId:guid}")]
 [InGroup<TasksGroup>]
-public sealed class DeleteTaskEndpoint : Endpoint<DeleteTaskCommand>
+public sealed partial class DeleteTaskEndpoint : Endpoint<DeleteTaskCommand>
 {
     /// <inheritdoc />
     public override void Configure(IEndpointBuilder builder)
@@ -86,7 +86,7 @@ public sealed class DeleteTaskEndpoint : Endpoint<DeleteTaskCommand>
 ///     <c>SearchTasksQuery</c> for the binding side of the same story.
 /// </summary>
 [InGroup<TasksGroup>]
-public sealed class SearchTasksEndpoint : Endpoint<SearchTasksQuery, IReadOnlyList<TaskDto>>
+public sealed partial class SearchTasksEndpoint : Endpoint<SearchTasksQuery, IReadOnlyList<TaskDto>>
 {
     /// <inheritdoc />
     public override void Configure(IEndpointBuilder<IReadOnlyList<TaskDto>> builder)

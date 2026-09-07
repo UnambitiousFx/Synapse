@@ -8,7 +8,7 @@ using UnambitiousFx.Synapse.Endpoints.Builders;
 
 namespace UnambitiousFx.Synapse.Endpoints.Testing.Tests;
 
-public sealed class FormBindingHarnessTests
+public sealed partial class FormBindingHarnessTests
 {
     [Fact]
     public async Task SendAsync_WhenAnEndpointDeclaresOnlyFormContentTypes_AnswersJsonWith415()
@@ -265,7 +265,7 @@ public sealed class FormBindingHarnessTests
         }
     }
 
-    private sealed class UploadEndpoint : Endpoint<UploadCommand, string>;
+    private sealed partial class UploadEndpoint : Endpoint<UploadCommand, string>;
 
     // "Same three shapes as Upload*, file dropped" is written out rather than reusing UploadBinder:
     // UploadBinder's FormFile call would report a missing "file" on a fields-only request, which is
@@ -298,7 +298,7 @@ public sealed class FormBindingHarnessTests
         }
     }
 
-    private sealed class CaptionEndpoint : Endpoint<CaptionCommand, string>;
+    private sealed partial class CaptionEndpoint : Endpoint<CaptionCommand, string>;
 
     private enum TaskState
     {
@@ -330,5 +330,5 @@ public sealed class FormBindingHarnessTests
         }
     }
 
-    private sealed class SearchEndpoint : Endpoint<SearchQuery, int>;
+    private sealed partial class SearchEndpoint : Endpoint<SearchQuery, int>;
 }

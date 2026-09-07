@@ -63,7 +63,7 @@ public sealed record TaskPatched(Guid TaskId, string? Actor, DateTimeOffset Stam
 /// <summary>Renames a task through <c>PATCH</c>, the verb the other examples do not use.</summary>
 [Patch("/{taskId:guid}")]
 [InGroup<TasksGroup>]
-public sealed class PatchTaskEndpoint : Endpoint<PatchTaskCommand, TaskPatched>;
+public sealed partial class PatchTaskEndpoint : Endpoint<PatchTaskCommand, TaskPatched>;
 
 /// <summary>
 ///     Stamps <see cref="PatchTaskCommand.StampedAt" /> on its way to the handler.

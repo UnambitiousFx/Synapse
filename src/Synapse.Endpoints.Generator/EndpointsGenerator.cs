@@ -296,6 +296,8 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
                 d.Descriptor.DefaultSeverity == DiagnosticSeverity.Error &&
                 d.Descriptor.Id is not ("SYNE011" or "SYNE012"));
 
+            var declaration = ReadDeclaration(symbol, classDeclaration);
+
             EndpointTarget? target = hasBlockingError
                 ? null
                 : new EndpointTarget(
@@ -311,12 +313,49 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
                     primaryConstructorParameters,
                     jsonRequestTypeName,
                     jsonResponseTypeName,
-                    jsonCallSites);
+                    jsonCallSites,
+                    declaration);
 
             return new EndpointAnalysisResult(target, diagnosticInfos);
         }
 
         return null;
+    }
+
+    /// <summary>
+    ///     Reads how the endpoint is declared, so generated code can reopen it. Modifiers come from
+    ///     syntax rather than the symbol because <c>partial</c> is not a symbol-level fact.
+    /// </summary>
+    private static EndpointDeclaration ReadDeclaration(INamedTypeSymbol symbol,
+        ClassDeclarationSyntax syntax)
+    {
+        var enclosing = new List<string>();
+        var nonPartial = new List<string>();
+
+        for (var container = symbol.ContainingType; container is not null; container = container.ContainingType)
+        {
+            enclosing.Insert(0, container.Name);
+
+            var isPartial = container.DeclaringSyntaxReferences
+                .Select(static reference => reference.GetSyntax())
+                .OfType<TypeDeclarationSyntax>()
+                .Any(static declaration => declaration.Modifiers.Any(SyntaxKind.PartialKeyword));
+
+            if (!isPartial)
+            {
+                nonPartial.Insert(0, container.Name);
+            }
+        }
+
+        return new EndpointDeclaration(
+            symbol.ContainingNamespace.IsGlobalNamespace
+                ? string.Empty
+                : symbol.ContainingNamespace.ToDisplayString(),
+            symbol.Name,
+            syntax.Modifiers.Any(SyntaxKind.PartialKeyword),
+            syntax.Modifiers.Any(SyntaxKind.SealedKeyword),
+            EquatableArray<string>.From(enclosing),
+            EquatableArray<string>.From(nonPartial));
     }
 
     /// <summary>
@@ -2248,6 +2287,26 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
 
         var ns = rootNamespace;
         var ordered = endpoints.OrderBy(e => e.EndpointFullName, StringComparer.Ordinal).ToArray();
+
+        // SYNE020 — must be reported before anything below is emitted: a later task moves the
+        // generated binding into the endpoint's own class, which requires it (and every enclosing
+        // type) to already be reopenable as partial.
+        foreach (var endpoint in ordered.Where(static e => e.Kind.HasGeneratedBinder()))
+        {
+            var location = endpoint.Location?.ToLocation() ?? Location.None;
+
+            if (!endpoint.Declaration.IsPartial)
+            {
+                context.ReportDiagnostic(Diagnostic.Create(
+                    EndpointDiagnostics.EndpointMustBePartial, location, endpoint.Declaration.TypeName));
+            }
+
+            foreach (var enclosing in endpoint.Declaration.NonPartialEnclosingTypeNames)
+            {
+                context.ReportDiagnostic(Diagnostic.Create(
+                    EndpointDiagnostics.EndpointMustBePartial, location, enclosing));
+            }
+        }
 
         // SYNE008 — reported once per distinct missing type, not once per endpoint, anchored at
         // whichever endpoint (in the same deterministic order used everywhere else in this method)

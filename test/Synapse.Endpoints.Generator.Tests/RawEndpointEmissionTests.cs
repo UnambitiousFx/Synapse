@@ -45,7 +45,7 @@ public sealed class RawEndpointEmissionTests
                               public sealed record GetThingQuery : IRequest<string>;
 
                               [Get("/things")]
-                              public sealed class GetThingEndpoint : Endpoint<GetThingQuery, string>;
+                              public sealed partial class GetThingEndpoint : Endpoint<GetThingQuery, string>;
                               """;
 
         // Act
@@ -166,7 +166,7 @@ public sealed class RawEndpointEmissionTests
                               }
 
                               [Get("/things/{id}")]
-                              public sealed class GetThingEndpoint : Endpoint<GetThingQuery, string>;
+                              public sealed partial class GetThingEndpoint : Endpoint<GetThingQuery, string>;
                               """;
 
         // Act
@@ -462,7 +462,7 @@ public sealed class RawEndpointEmissionTests
                               }
 
                               [Get("/messy")]
-                              public sealed class MessyEndpoint : Endpoint<MessyQuery, string>;
+                              public sealed partial class MessyEndpoint : Endpoint<MessyQuery, string>;
                               """;
 
         // Act

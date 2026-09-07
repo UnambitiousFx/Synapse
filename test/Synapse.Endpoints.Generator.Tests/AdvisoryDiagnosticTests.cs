@@ -23,7 +23,7 @@ public sealed class AdvisoryDiagnosticTests
                               public sealed record CreateThingCommand : IRequest<int>;
 
                               [Post("/things")]
-                              public sealed class CreateThingEndpoint : Endpoint<CreateThingCommand, int>;
+                              public sealed partial class CreateThingEndpoint : Endpoint<CreateThingCommand, int>;
                               """;
 
         // Act
@@ -47,7 +47,7 @@ public sealed class AdvisoryDiagnosticTests
                               public sealed record CreateThingCommand : IRequest<int>;
 
                               [Post("/things")]
-                              public sealed class CreateThingEndpoint : Endpoint<CreateThingCommand, int>
+                              public sealed partial class CreateThingEndpoint : Endpoint<CreateThingCommand, int>
                               {
                                   public override void Configure(IEndpointBuilder<int> builder)
                                   {
@@ -77,7 +77,7 @@ public sealed class AdvisoryDiagnosticTests
                               public sealed record GetThingQuery : IRequest<int>;
 
                               [Get("/things")]
-                              public sealed class GetThingEndpoint : Endpoint<GetThingQuery, int>;
+                              public sealed partial class GetThingEndpoint : Endpoint<GetThingQuery, int>;
                               """;
 
         // Act
@@ -103,7 +103,7 @@ public sealed class AdvisoryDiagnosticTests
                               public sealed record CreateThingCommand : IRequest<int>;
 
                               [Post("/things")]
-                              public sealed class CreateThingEndpoint : Endpoint<CreateThingCommand, int>
+                              public sealed partial class CreateThingEndpoint : Endpoint<CreateThingCommand, int>
                               {
                                   public override void Configure(IEndpointBuilder<int> builder)
                                   {
@@ -139,7 +139,7 @@ public sealed class AdvisoryDiagnosticTests
                               public sealed record CreateThingCommand : IRequest<int>;
 
                               [Post("/things")]
-                              public sealed class CreateThingEndpoint : Endpoint<CreateThingCommand, int>
+                              public sealed partial class CreateThingEndpoint : Endpoint<CreateThingCommand, int>
                               {
                                   public override IResult OnSuccess(int response, HttpContext context)
                                   {
@@ -170,7 +170,7 @@ public sealed class AdvisoryDiagnosticTests
                               public sealed record CreateThingCommand : IRequest<int>;
 
                               [Post("/things")]
-                              public sealed class CreateThingEndpoint : Endpoint<CreateThingCommand, int>
+                              public sealed partial class CreateThingEndpoint : Endpoint<CreateThingCommand, int>
                               {
                                   public override void Configure(IEndpointBuilder<int> builder)
                                   {
@@ -201,7 +201,7 @@ public sealed class AdvisoryDiagnosticTests
                               public sealed record GetThingQuery : IRequest<ThingDto>;
 
                               [Get("/things")]
-                              public sealed class GetThingEndpoint : Endpoint<GetThingQuery, ThingDto>;
+                              public sealed partial class GetThingEndpoint : Endpoint<GetThingQuery, ThingDto>;
 
                               [JsonSerializable(typeof(GetThingQuery))]
                               internal sealed partial class AppJsonContext : JsonSerializerContext;
@@ -229,7 +229,7 @@ public sealed class AdvisoryDiagnosticTests
                               public sealed record GetThingQuery : IRequest<ThingDto>;
 
                               [Get("/things")]
-                              public sealed class GetThingEndpoint : Endpoint<GetThingQuery, ThingDto>;
+                              public sealed partial class GetThingEndpoint : Endpoint<GetThingQuery, ThingDto>;
                               """;
 
         // Act
@@ -254,7 +254,7 @@ public sealed class AdvisoryDiagnosticTests
                               public sealed record GetThingQuery : IRequest<ThingDto>;
 
                               [Get("/things")]
-                              public sealed class GetThingEndpoint : Endpoint<GetThingQuery, ThingDto>;
+                              public sealed partial class GetThingEndpoint : Endpoint<GetThingQuery, ThingDto>;
 
                               [JsonSerializable(typeof(GetThingQuery))]
                               [JsonSerializable(typeof(ThingDto))]
@@ -283,7 +283,7 @@ public sealed class AdvisoryDiagnosticTests
                               public sealed record GetThingQuery : IRequest<int>;
 
                               [Get("/things")]
-                              public sealed class GetThingEndpoint : Endpoint<GetThingQuery, int>;
+                              public sealed partial class GetThingEndpoint : Endpoint<GetThingQuery, int>;
 
                               [JsonSerializable(typeof(GetThingQuery))]
                               internal sealed partial class AppJsonContext : JsonSerializerContext;
@@ -316,7 +316,7 @@ public sealed class AdvisoryDiagnosticTests
                               }
 
                               [Get("/things")]
-                              public sealed class GetThingEndpoint : Endpoint<GetThingQuery, ThingDto>;
+                              public sealed partial class GetThingEndpoint : Endpoint<GetThingQuery, ThingDto>;
 
                               [JsonSerializable(typeof(ThingDto))]
                               internal sealed partial class AppJsonContext : JsonSerializerContext;
@@ -344,7 +344,7 @@ public sealed class AdvisoryDiagnosticTests
                               public sealed record CreateThingCommand(string Name) : IRequest<int>;
 
                               [Post("/things")]
-                              public sealed class CreateThingEndpoint : Endpoint<CreateThingCommand, int>;
+                              public sealed partial class CreateThingEndpoint : Endpoint<CreateThingCommand, int>;
 
                               [JsonSerializable(typeof(int))]
                               internal sealed partial class AppJsonContext : JsonSerializerContext;
@@ -378,7 +378,7 @@ public sealed class AdvisoryDiagnosticTests
                               public sealed record ListThingsQuery : IRequest<IReadOnlyList<ThingDto>>;
 
                               [Get("/things")]
-                              public sealed class ListThingsEndpoint : Endpoint<ListThingsQuery, IReadOnlyList<ThingDto>>;
+                              public sealed partial class ListThingsEndpoint : Endpoint<ListThingsQuery, IReadOnlyList<ThingDto>>;
 
                               [JsonSerializable(typeof(IReadOnlyList<ThingDto>))]
                               internal sealed partial class AppJsonContext : JsonSerializerContext;
@@ -409,7 +409,7 @@ public sealed class AdvisoryDiagnosticTests
                               public sealed record ListThingsQuery : IRequest<IReadOnlyList<ThingDto>>;
 
                               [Get("/things")]
-                              public sealed class ListThingsEndpoint : Endpoint<ListThingsQuery, IReadOnlyList<ThingDto>>;
+                              public sealed partial class ListThingsEndpoint : Endpoint<ListThingsQuery, IReadOnlyList<ThingDto>>;
 
                               [JsonSerializable(typeof(ThingDto))]
                               internal sealed partial class AppJsonContext : JsonSerializerContext;
@@ -464,7 +464,7 @@ public sealed class AdvisoryDiagnosticTests
                               public sealed record GetThingQuery : IRequest<ThingDto>;
 
                               [Get("/things")]
-                              public sealed class GetThingEndpoint : Endpoint<GetThingQuery, ThingDto>;
+                              public sealed partial class GetThingEndpoint : Endpoint<GetThingQuery, ThingDto>;
                               """;
 
         // Act
@@ -492,10 +492,10 @@ public sealed class AdvisoryDiagnosticTests
                               public sealed record GetOtherThingQuery : IRequest<ThingDto>;
 
                               [Get("/things")]
-                              public sealed class GetThingEndpoint : Endpoint<GetThingQuery, ThingDto>;
+                              public sealed partial class GetThingEndpoint : Endpoint<GetThingQuery, ThingDto>;
 
                               [Get("/things/other")]
-                              public sealed class GetOtherThingEndpoint : Endpoint<GetOtherThingQuery, ThingDto>;
+                              public sealed partial class GetOtherThingEndpoint : Endpoint<GetOtherThingQuery, ThingDto>;
 
                               [JsonSerializable(typeof(GetThingQuery))]
                               [JsonSerializable(typeof(GetOtherThingQuery))]
@@ -528,7 +528,7 @@ public sealed class AdvisoryDiagnosticTests
                               public sealed record HttpThingResponse(int Id);
 
                               [Post("/things")]
-                              public sealed class CreateThingEndpoint
+                              public sealed partial class CreateThingEndpoint
                                   : MappedEndpoint<HttpThingRequest, CreateThingCommand, int, HttpThingResponse>
                               {
                                   public override CreateThingCommand ToRequest(HttpThingRequest request) =>
@@ -568,7 +568,7 @@ public sealed class AdvisoryDiagnosticTests
                               public sealed record TickQuery : IStreamRequest<TickItemDto>;
 
                               [Get("/ticks")]
-                              public sealed class TickEndpoint : StreamEndpoint<TickQuery, TickItemDto>;
+                              public sealed partial class TickEndpoint : StreamEndpoint<TickQuery, TickItemDto>;
 
                               internal sealed partial class AppJsonContext : JsonSerializerContext;
                               """;
@@ -602,7 +602,7 @@ public sealed class AdvisoryDiagnosticTests
                               public sealed record TickQuery : IStreamRequest<TickItemDto>;
 
                               [Get("/ticks")]
-                              public sealed class TickEndpoint : StreamEndpoint<TickQuery, TickItemDto>;
+                              public sealed partial class TickEndpoint : StreamEndpoint<TickQuery, TickItemDto>;
 
                               [JsonSerializable(typeof(TickItemDto))]
                               internal sealed partial class AppJsonContext : JsonSerializerContext;
@@ -634,7 +634,7 @@ public sealed class AdvisoryDiagnosticTests
                               public sealed record TickQuery : IStreamRequest<TickItemDto>;
 
                               [Get("/ticks")]
-                              public sealed class TickEndpoint : StreamEndpoint<TickQuery, TickItemDto>;
+                              public sealed partial class TickEndpoint : StreamEndpoint<TickQuery, TickItemDto>;
 
                               [JsonSerializable(typeof(IAsyncEnumerable<TickItemDto>))]
                               internal sealed partial class AppJsonContext : JsonSerializerContext;
@@ -665,7 +665,7 @@ public sealed class AdvisoryDiagnosticTests
                               public sealed record GetVersionQuery : IRequest<Version>;
 
                               [Get("/version")]
-                              public sealed class GetVersionEndpoint : Endpoint<GetVersionQuery, Version>;
+                              public sealed partial class GetVersionEndpoint : Endpoint<GetVersionQuery, Version>;
 
                               internal sealed partial class AppJsonContext : JsonSerializerContext;
                               """;
@@ -740,7 +740,7 @@ public sealed class AdvisoryDiagnosticTests
                               public sealed record GetThingQuery : IRequest<ThingDto>;
 
                               [Get("/things")]
-                              public sealed class GetThingEndpoint : Endpoint<GetThingQuery, ThingDto>;
+                              public sealed partial class GetThingEndpoint : Endpoint<GetThingQuery, ThingDto>;
 
                               // Opens the gate on its own, in the current (never-excluded) compilation,
                               // independently of the "Microsoft."-named assembly's registration above.
@@ -770,7 +770,7 @@ public sealed class AdvisoryDiagnosticTests
                               public sealed record CreateThingCommand : IRequest<int>;
 
                               [Post("/things")]
-                              public sealed class CreateThingEndpoint : Endpoint<CreateThingCommand, int>;
+                              public sealed partial class CreateThingEndpoint : Endpoint<CreateThingCommand, int>;
                               """;
 
         // Act

@@ -5,7 +5,7 @@ using UnambitiousFx.Synapse.Endpoints.Binding;
 
 namespace UnambitiousFx.Synapse.Endpoints.OpenApi.Tests;
 
-public sealed class FormSchemaDocumentTests
+public sealed partial class FormSchemaDocumentTests
 {
     [Fact]
     public async Task Document_WithFormMessage_DeclaresFieldSchemaForBothContentTypes()
@@ -144,5 +144,5 @@ public sealed class FormSchemaDocumentTests
 
     // internal for the same reason as EmptyFormCommand above: the generator emits registration
     // code for every EndpointBase subclass in the compilation, route attribute or not.
-    internal sealed class EmptyFormEndpoint : Endpoint<EmptyFormCommand, string>;
+    internal sealed partial class EmptyFormEndpoint : Endpoint<EmptyFormCommand, string>;
 }

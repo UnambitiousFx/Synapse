@@ -41,7 +41,7 @@ public sealed record ProbeDto(string Probe, bool Healthy);
 ///     </para>
 /// </remarks>
 [Get("/ops/probes/{probe}")]
-public sealed class ProbeEndpoint : SelfHandledEndpoint<ProbeQuery, ProbeDto>
+public sealed partial class ProbeEndpoint : SelfHandledEndpoint<ProbeQuery, ProbeDto>
 {
     /// <inheritdoc />
     public override void Configure(IEndpointBuilder<ProbeDto> builder)

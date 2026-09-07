@@ -19,7 +19,7 @@ public sealed class SelfHandledEndpointEmissionTests
                                          public sealed record ProbeDto(string Probe, bool Healthy);
 
                                          [Get("/health/{probe}")]
-                                         public sealed class ProbeEndpoint : SelfHandledEndpoint<ProbeQuery, ProbeDto>
+                                         public sealed partial class ProbeEndpoint : SelfHandledEndpoint<ProbeQuery, ProbeDto>
                                          {
                                              public override ValueTask<Result<ProbeDto>> ExecuteAsync(ProbeQuery request,
                                                  HttpContext context,
@@ -45,7 +45,7 @@ public sealed class SelfHandledEndpointEmissionTests
                                         }
 
                                         [Delete("/cache/{key}")]
-                                        public sealed class PurgeEndpoint : SelfHandledEndpoint<PurgeRequest>
+                                        public sealed partial class PurgeEndpoint : SelfHandledEndpoint<PurgeRequest>
                                         {
                                             public override ValueTask<Result> ExecuteAsync(PurgeRequest request,
                                                 HttpContext context,

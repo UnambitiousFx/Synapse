@@ -21,4 +21,4 @@ namespace UnambitiousFx.Examples.EndpointsApi.Features.Tasks;
 /// </remarks>
 [HttpEndpoint("HEAD", "/")]
 [InGroup<TasksGroup>]
-public sealed class HeadTasksEndpoint : Endpoint<ListTasksQuery, IReadOnlyList<TaskDto>>;
+public sealed partial class HeadTasksEndpoint : Endpoint<ListTasksQuery, IReadOnlyList<TaskDto>>;

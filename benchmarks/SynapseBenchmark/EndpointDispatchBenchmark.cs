@@ -357,7 +357,7 @@ public sealed class GetThingQueryHandler : IRequestHandler<GetThingQuery, ThingD
 
 /// <summary>The Synapse endpoint side of the comparison, mapped via <c>MapEndpoint&lt;GetThingEndpoint&gt;()</c>.</summary>
 [Get("/things/{id:guid}")]
-public sealed class GetThingEndpoint : Endpoint<GetThingQuery, ThingDto>;
+public sealed partial class GetThingEndpoint : Endpoint<GetThingQuery, ThingDto>;
 
 /// <summary>
 ///     The self-handled tier answering the same request without the mediator. Deliberately reuses
@@ -369,7 +369,7 @@ public sealed class GetThingEndpoint : Endpoint<GetThingQuery, ThingDto>;
 ///     Carries the same route attribute for the same reason <see cref="HookedThingEndpoint" /> does.
 /// </remarks>
 [Get("/things/{id:guid}")]
-public sealed class SelfHandledThingEndpoint : SelfHandledEndpoint<GetThingQuery, ThingDto>
+public sealed partial class SelfHandledThingEndpoint : SelfHandledEndpoint<GetThingQuery, ThingDto>
 {
     /// <inheritdoc />
     public override ValueTask<Result<ThingDto>> ExecuteAsync(GetThingQuery request,
@@ -392,7 +392,7 @@ public sealed class SelfHandledThingEndpoint : SelfHandledEndpoint<GetThingQuery
 ///     warnings, and this repo builds with warnings as errors.
 /// </remarks>
 [Get("/things/{id:guid}")]
-public sealed class HookedThingEndpoint : Endpoint<GetThingQuery, ThingDto>
+public sealed partial class HookedThingEndpoint : Endpoint<GetThingQuery, ThingDto>
 {
     /// <inheritdoc />
     protected override ValueTask<IResult?> OnBeforeHandleAsync(GetThingQuery request,
@@ -416,7 +416,7 @@ public sealed class HookedThingEndpoint : Endpoint<GetThingQuery, ThingDto>
 /// <summary>The same endpoint with one pre- and one post-processor registered.</summary>
 /// <remarks>Same route attribute as <see cref="HookedThingEndpoint" />, for the same reason.</remarks>
 [Get("/things/{id:guid}")]
-public sealed class ProcessedThingEndpoint : Endpoint<GetThingQuery, ThingDto>
+public sealed partial class ProcessedThingEndpoint : Endpoint<GetThingQuery, ThingDto>
 {
     /// <inheritdoc />
     public override void Configure(IEndpointBuilder<ThingDto> builder)
@@ -475,7 +475,7 @@ public sealed class SearchThingQueryHandler : IRequestHandler<SearchThingQuery, 
 
 /// <summary>The Synapse endpoint whose generated binder reads a single query value into <c>string?</c>.</summary>
 [Get("/things")]
-public sealed class SearchThingEndpoint : Endpoint<SearchThingQuery, ThingDto>;
+public sealed partial class SearchThingEndpoint : Endpoint<SearchThingQuery, ThingDto>;
 
 /// <summary>
 ///     A query bound entirely from a repeated query key, exercising the generated collection binder
@@ -501,7 +501,7 @@ public sealed class SearchThingsQueryHandler : IRequestHandler<SearchThingsQuery
 
 /// <summary>The Synapse endpoint whose generated binder reads a repeated query key into <c>string[]</c>.</summary>
 [Get("/things")]
-public sealed class SearchThingsEndpoint : Endpoint<SearchThingsQuery, ThingDto>;
+public sealed partial class SearchThingsEndpoint : Endpoint<SearchThingsQuery, ThingDto>;
 
 /// <summary>
 ///     The low-level counterpart of <see cref="GetThingEndpoint" />: the same route, message, handler
@@ -542,7 +542,7 @@ public sealed class CreateThingCommandHandler : IRequestHandler<CreateThingComma
 
 /// <summary>The Synapse endpoint whose generated binder reads the JSON request body.</summary>
 [Post("/things")]
-public sealed class CreateThingEndpoint : Endpoint<CreateThingCommand, ThingDto>;
+public sealed partial class CreateThingEndpoint : Endpoint<CreateThingCommand, ThingDto>;
 
 /// <summary>
 ///     Source-generated JSON metadata so neither host pays for reflection-based serialization —

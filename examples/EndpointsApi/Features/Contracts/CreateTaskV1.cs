@@ -44,7 +44,7 @@ public sealed record CreateTaskResponseV1
 ///     </para>
 /// </remarks>
 [Post("/v1/tasks")]
-public sealed class CreateTaskV1Endpoint
+public sealed partial class CreateTaskV1Endpoint
     : MappedEndpoint<CreateTaskRequestV1, CreateTaskCommand, TaskCreated, CreateTaskResponseV1>
 {
     /// <inheritdoc />

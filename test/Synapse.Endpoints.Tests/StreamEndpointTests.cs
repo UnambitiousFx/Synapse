@@ -9,7 +9,7 @@ using UnambitiousFx.Synapse.Endpoints.Builders;
 
 namespace UnambitiousFx.Synapse.Endpoints.Tests;
 
-public sealed class StreamEndpointTests
+public sealed partial class StreamEndpointTests
 {
     [Theory]
     [InlineData("text/event-stream", "text/event-stream")]
@@ -197,7 +197,7 @@ public sealed class StreamEndpointTests
         Assert.Equal(["GET"], descriptor.HttpMethods);
     }
 
-    private sealed class ConfiguredStreamEndpoint : StreamEndpoint<TickQuery, int>
+    private sealed partial class ConfiguredStreamEndpoint : StreamEndpoint<TickQuery, int>
     {
         public override void Configure(IStreamEndpointBuilder builder)
         {
@@ -207,7 +207,7 @@ public sealed class StreamEndpointTests
 
     private sealed record TickQuery : IStreamRequest<int>;
 
-    private sealed class TickEndpoint : StreamEndpoint<TickQuery, int>;
+    private sealed partial class TickEndpoint : StreamEndpoint<TickQuery, int>;
 
     private sealed class TickBinder : IEndpointBinder<TickQuery>
     {
@@ -219,7 +219,7 @@ public sealed class StreamEndpointTests
 
     private sealed record ArrayQuery : IStreamRequest<int>;
 
-    private sealed class ArrayEndpoint : StreamEndpoint<ArrayQuery, int>;
+    private sealed partial class ArrayEndpoint : StreamEndpoint<ArrayQuery, int>;
 
     private sealed class ArrayBinder : IEndpointBinder<ArrayQuery>
     {
@@ -231,7 +231,7 @@ public sealed class StreamEndpointTests
 
     private sealed record SseQuery : IStreamRequest<int>;
 
-    private sealed class SseEndpoint : StreamEndpoint<SseQuery, int>;
+    private sealed partial class SseEndpoint : StreamEndpoint<SseQuery, int>;
 
     private sealed class SseBinder : IEndpointBinder<SseQuery>
     {
