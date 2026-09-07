@@ -1,4 +1,5 @@
 using System.Text;
+using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Text;
 using UnambitiousFx.Synapse.Endpoints.Generator.Model;
 
@@ -17,6 +18,7 @@ internal static class EndpointPartialEmitter
 {
     private const string BindingNamespace = "global::UnambitiousFx.Synapse.Endpoints.Binding";
     private const string InternalNamespace = "global::UnambitiousFx.Synapse.Endpoints.Internal";
+    private const string EndpointsNamespace = "global::UnambitiousFx.Synapse.Endpoints";
 
     /// <summary>The hint name for one endpoint's generated file.</summary>
     /// <param name="declaration">The endpoint's declaration.</param>
@@ -85,6 +87,7 @@ internal static class EndpointPartialEmitter
 
         EmitBindAsync(builder, boundType, indent + "    ", modifier);
         EmitMetadata(builder, boundType, indent + "    ", modifier);
+        EmitCreateMetadata(builder, endpoint, indent + "    ", modifier);
 
         builder.AppendLine($"{indent}}}");
 
@@ -167,5 +170,43 @@ internal static class EndpointPartialEmitter
             builder.AppendLine($"{indent}    return s_synapseFormFields;");
             builder.AppendLine($"{indent}}}");
         }
+    }
+
+    /// <summary>
+    ///     Renders the <c>CreateMetadata</c> override, built exactly as
+    ///     <see cref="EndpointGroupEmitter.EmitRegistrations" /> builds its <c>EndpointMetadata</c>
+    ///     construction — same escaping, same group-type-and-factory pair — because both describe the
+    ///     same route.
+    /// </summary>
+    /// <remarks>
+    ///     Not consumed anywhere yet: <c>EndpointBase.ResolveMetadata</c> prefers the registry's
+    ///     metadata until the registry itself is deleted. This emits it early so the 145 call sites
+    ///     that still register metadata by hand can migrate off the registry incrementally.
+    /// </remarks>
+    private static void EmitCreateMetadata(StringBuilder builder,
+        EndpointTarget endpoint,
+        string indent,
+        string modifier)
+    {
+        // The HTTP method and route come from attribute text the analyzer does not control, so they
+        // are rendered through Roslyn's own literal escaper rather than interpolated straight into a
+        // C# string literal — a route containing a quote or backslash would otherwise produce invalid
+        // (or, worse, structurally different) generated code.
+        var methods = endpoint.HttpMethod.Length == 0
+            ? "global::System.Array.Empty<string>()"
+            : $"new[] {{ {SymbolDisplay.FormatLiteral(endpoint.HttpMethod, quote: true)} }}";
+
+        var route = SymbolDisplay.FormatLiteral(endpoint.Route, quote: true);
+
+        var group = endpoint.GroupFullName is null
+            ? string.Empty
+            : $", typeof({endpoint.GroupFullName}), static () => new {endpoint.GroupFullName}()";
+
+        builder.AppendLine();
+        builder.AppendLine($"{indent}/// <inheritdoc />");
+        builder.AppendLine($"{indent}protected {modifier} {EndpointsNamespace}.EndpointMetadata CreateMetadata()");
+        builder.AppendLine($"{indent}{{");
+        builder.AppendLine($"{indent}    return new {EndpointsNamespace}.EndpointMetadata({methods}, {route}{group});");
+        builder.AppendLine($"{indent}}}");
     }
 }

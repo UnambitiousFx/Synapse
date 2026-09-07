@@ -36,6 +36,15 @@ public static class EndpointRegistry
                    "is enabled for the assembly declaring this endpoint.");
     }
 
+    /// <summary>Gets the route metadata for an endpoint type, without throwing when none was registered.</summary>
+    /// <typeparam name="TEndpoint">The endpoint type.</typeparam>
+    /// <returns>The registered metadata, or <see langword="null" /> when none was registered.</returns>
+    internal static EndpointMetadata? TryGetMetadata<TEndpoint>()
+        where TEndpoint : EndpointBase
+    {
+        return MetadataHolder<TEndpoint>.Instance;
+    }
+
     private static class MetadataHolder<TEndpoint>
         where TEndpoint : EndpointBase
     {

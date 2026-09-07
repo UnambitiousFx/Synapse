@@ -24,7 +24,8 @@ public static class EndpointRouteBuilderExtensions
     {
         ArgumentNullException.ThrowIfNull(endpoints);
 
-        var metadata = EndpointRegistry.GetMetadata<TEndpoint>();
+        var endpoint = new TEndpoint();
+        var metadata = endpoint.ResolveMetadata(EndpointRegistry.TryGetMetadata<TEndpoint>());
         var target = endpoints;
 
         if (metadata.GroupType is not null)
@@ -40,9 +41,7 @@ public static class EndpointRouteBuilderExtensions
             target = GroupCache.Resolve(endpoints, metadata.GroupType, metadata.GroupFactory);
         }
 
-        var endpoint = new TEndpoint();
-        var descriptor = endpoint.CreateDescriptor(metadata);
-        return EndpointMapper.Map(target, descriptor);
+        return EndpointMapper.Map(target, endpoint.CreateDescriptor(metadata));
     }
 
     /// <summary>

@@ -313,4 +313,34 @@ public sealed class PartialEmissionTests
         Assert.DoesNotContain("SynapseEndpointBinders.g.cs", files.Keys);
         GeneratorHarness.AssertGeneratedCompiles(source);
     }
+
+    [Fact]
+    public void Generate_ForEndpointWithRouteAttribute_EmitsCreateMetadata()
+    {
+        // Arrange — ProbeQuery declares Id so the {id} route parameter resolves; an unmatched route
+        // parameter is SYNE001, which blocks emission entirely and would leave nothing to assert on.
+        const string source = """
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+
+                              namespace TestNs;
+
+                              public sealed record ProbeQuery : IRequest<string>
+                              {
+                                  public string Id { get; init; } = "";
+                              }
+
+                              [Get("/probes/{id}")]
+                              public sealed partial class ProbeEndpoint : Endpoint<ProbeQuery, string>;
+                              """;
+
+        // Act
+        var generated = GeneratorHarness.GetEndpointFile(source);
+
+        // Assert — the route and verb come from the endpoint itself, not a registry.
+        Assert.Contains("CreateMetadata()", generated);
+        Assert.Contains("\"GET\"", generated);
+        Assert.Contains("\"/probes/{id}\"", generated);
+        GeneratorHarness.AssertGeneratedCompiles(source);
+    }
 }

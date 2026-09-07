@@ -77,4 +77,33 @@ public abstract class EndpointBase
     {
         return [];
     }
+
+    /// <summary>
+    ///     The endpoint's route, verbs and group, generated from its attributes. Called once at startup.
+    /// </summary>
+    /// <returns>The metadata, or <see langword="null" /> while an endpoint still registers it.</returns>
+    /// <remarks>
+    ///     <c>protected</c> so the generated override can live in the consumer's assembly, and nullable
+    ///     only transitionally: it becomes <c>abstract</c> once nothing registers metadata any more.
+    /// </remarks>
+    protected virtual EndpointMetadata? CreateMetadata()
+    {
+        return null;
+    }
+
+    /// <summary>Resolves this endpoint's metadata, preferring what its generated code declares.</summary>
+    /// <param name="registered">What the registry holds, used only while the fallback exists.</param>
+    /// <returns>The metadata to map with.</returns>
+    internal EndpointMetadata ResolveMetadata(EndpointMetadata? registered)
+    {
+        // Registered metadata wins for now, deliberately. The module initializer registers every
+        // endpoint, so this makes the task change no runtime behaviour: the generated CreateMetadata is
+        // emitted and tested, but nothing consumes it until Task 9 deletes the registry. Preferring the
+        // generated value here instead would silently discard the 148 hand-registered routes in the test
+        // suite, because a generated CreateMetadata returns empty-but-non-null metadata for an endpoint
+        // with no route attribute — a route the test supplied would vanish rather than fail loudly.
+        return registered ?? CreateMetadata() ?? throw new InvalidOperationException(
+            $"Endpoint '{GetType()}' declares no route metadata. The Synapse.Endpoints analyzer emits it " +
+            "at compile time; verify it is enabled for the assembly declaring this endpoint.");
+    }
 }
