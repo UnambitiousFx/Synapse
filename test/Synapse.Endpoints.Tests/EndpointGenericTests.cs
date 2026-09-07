@@ -77,9 +77,9 @@ public sealed partial class EndpointGenericTests
         Assert.Contains("UnambitiousFx.Synapse.Endpoints.Testing", exception.Message);
     }
 
-    private sealed record EchoQuery : IRequest<string>;
+    internal sealed record EchoQuery : IRequest<string>;
 
-    private sealed partial class EchoEndpoint : Endpoint<EchoQuery, string>;
+    internal sealed partial class EchoEndpoint : Endpoint<EchoQuery, string>;
 
     private sealed class EchoBinder : IEndpointBinder<EchoQuery>
     {
@@ -89,9 +89,9 @@ public sealed partial class EndpointGenericTests
         }
     }
 
-    private sealed record FailingQuery : IRequest<string>;
+    internal sealed record FailingQuery : IRequest<string>;
 
-    private sealed partial class FailingEndpoint : Endpoint<FailingQuery, string>;
+    internal sealed partial class FailingEndpoint : Endpoint<FailingQuery, string>;
 
     private sealed class FailingBinder : IEndpointBinder<FailingQuery>
     {

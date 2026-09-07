@@ -105,11 +105,11 @@ public sealed class StubInvokerTests
         Assert.Contains("does not return Result<String>", exception.Message);
     }
 
-    private sealed record GreetQuery : IRequest<string>, IRequest<int>;
+    internal sealed record GreetQuery : IRequest<string>, IRequest<int>;
 
-    private sealed record PurgeCommand : IRequest;
+    internal sealed record PurgeCommand : IRequest;
 
-    private sealed class GreetEndpoint : RawEndpoint<GreetQuery, string>
+    internal sealed class GreetEndpoint : RawEndpoint<GreetQuery, string>
     {
         public override ValueTask<BindResult<GreetQuery>> BindAsync(HttpContext context)
         {
@@ -117,7 +117,7 @@ public sealed class StubInvokerTests
         }
     }
 
-    private sealed class PurgeEndpoint : RawEndpoint<PurgeCommand>
+    internal sealed class PurgeEndpoint : RawEndpoint<PurgeCommand>
     {
         public override ValueTask<BindResult<PurgeCommand>> BindAsync(HttpContext context)
         {

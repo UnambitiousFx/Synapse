@@ -52,7 +52,7 @@ public sealed class HarnessDisposalTests
         }
     }
 
-    private sealed class PingEndpoint : RawEndpoint
+    internal sealed class PingEndpoint : RawEndpoint
     {
         public override ValueTask<IResult> HandleAsync(HttpContext context,
             CancellationToken cancellationToken)

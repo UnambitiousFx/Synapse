@@ -75,12 +75,12 @@ public sealed partial class BinderTierHarnessTests
         Assert.Equal("HELLO!", response.ReadJson<WireResponse>()!.Value);
     }
 
-    private sealed record LookupQuery : IRequest<string>
+    internal sealed record LookupQuery : IRequest<string>
     {
         public string Id { get; init; } = string.Empty;
     }
 
-    private sealed partial class LookupEndpoint : Endpoint<LookupQuery, string>;
+    internal sealed partial class LookupEndpoint : Endpoint<LookupQuery, string>;
 
     private sealed class LookupBinder : IEndpointBinder<LookupQuery>
     {
@@ -91,9 +91,9 @@ public sealed partial class BinderTierHarnessTests
         }
     }
 
-    private sealed record RetireCommand : IRequest;
+    internal sealed record RetireCommand : IRequest;
 
-    private sealed partial class RetireEndpoint : Endpoint<RetireCommand>;
+    internal sealed partial class RetireEndpoint : Endpoint<RetireCommand>;
 
     private sealed class RetireBinder : IEndpointBinder<RetireCommand>
     {
@@ -103,9 +103,9 @@ public sealed partial class BinderTierHarnessTests
         }
     }
 
-    private sealed record RejectingQuery : IRequest<string>;
+    internal sealed record RejectingQuery : IRequest<string>;
 
-    private sealed partial class RejectingEndpoint : Endpoint<RejectingQuery, string>;
+    internal sealed partial class RejectingEndpoint : Endpoint<RejectingQuery, string>;
 
     private sealed class RejectingBinder : IEndpointBinder<RejectingQuery>
     {
@@ -116,15 +116,15 @@ public sealed partial class BinderTierHarnessTests
         }
     }
 
-    private sealed record WireRequest(string Text);
+    internal sealed record WireRequest(string Text);
 
-    private sealed record WireResponse(string Value);
+    internal sealed record WireResponse(string Value);
 
-    private sealed record TranslateCommand(string Text) : IRequest<TranslateResult>;
+    internal sealed record TranslateCommand(string Text) : IRequest<TranslateResult>;
 
-    private sealed record TranslateResult(string Text);
+    internal sealed record TranslateResult(string Text);
 
-    private sealed partial class TranslateEndpoint
+    internal sealed partial class TranslateEndpoint
         : MappedEndpoint<WireRequest, TranslateCommand, TranslateResult, WireResponse>
     {
         public override TranslateCommand ToRequest(WireRequest request)

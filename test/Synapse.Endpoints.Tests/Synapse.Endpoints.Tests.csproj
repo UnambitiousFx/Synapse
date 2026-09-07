@@ -1,5 +1,17 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+    <PropertyGroup>
+        <!--
+            SYNE014: several fixtures here deliberately register their route/verb dynamically via
+            EndpointRegistry.RegisterMetadata rather than a route attribute, specifically to exercise
+            that path, so the generator can never see a verb for them at compile time. The generated
+            binder SYNE014 warns about is never the one that runs anyway: each of these tests overwrites
+            BinderHolder<T>.Instance with its own hand-written binder after the module initializer sets
+            it, so the assumed-bodyless resolution the diagnostic flags has no runtime effect here.
+        -->
+        <NoWarn>$(NoWarn);SYNE014</NoWarn>
+    </PropertyGroup>
+
     <ItemGroup>
         <PackageReference Include="NSubstitute" />
     </ItemGroup>
@@ -10,6 +22,16 @@
 
     <ItemGroup>
         <ProjectReference Include="..\..\src\Synapse.Endpoints\Synapse.Endpoints.csproj" />
+        <!--
+            The generator is PrivateAssets="all" on Synapse.Endpoints (see that csproj), so it does not
+            flow here transitively; NuGet consumers get it from the packed analyzers/ folder instead.
+            Referenced explicitly so these tests exercise real generated code rather than hand-written
+            stand-ins.
+        -->
+        <ProjectReference Include="..\..\src\Synapse.Endpoints.Generator\Synapse.Endpoints.Generator.csproj"
+                          OutputItemType="Analyzer"
+                          ReferenceOutputAssembly="false"
+                          PrivateAssets="all" />
     </ItemGroup>
 
 </Project>

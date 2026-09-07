@@ -169,9 +169,9 @@ public sealed class RawEndpointGenericTests
                 property => property.Value.EnumerateArray().Select(value => value.GetString()!).ToArray());
     }
 
-    private sealed record LookupQuery(int Id, int? Page) : IRequest<string>;
+    internal sealed record LookupQuery(int Id, int? Page) : IRequest<string>;
 
-    private sealed class LookupEndpoint : RawEndpoint<LookupQuery, string>
+    internal sealed partial class LookupEndpoint : RawEndpoint<LookupQuery, string>
     {
         public override ValueTask<BindResult<LookupQuery>> BindAsync(HttpContext context)
         {
@@ -185,9 +185,9 @@ public sealed class RawEndpointGenericTests
         }
     }
 
-    private sealed record CreateCommand : IRequest<string>;
+    internal sealed record CreateCommand : IRequest<string>;
 
-    private sealed class CreateEndpoint : RawEndpoint<CreateCommand, string>
+    internal sealed partial class CreateEndpoint : RawEndpoint<CreateCommand, string>
     {
         public override void Configure(IEndpointBuilder<string> builder)
         {
@@ -200,9 +200,9 @@ public sealed class RawEndpointGenericTests
         }
     }
 
-    private sealed record OverridingQuery : IRequest<string>;
+    internal sealed record OverridingQuery : IRequest<string>;
 
-    private sealed class OverridingEndpoint : RawEndpoint<OverridingQuery, string>
+    internal sealed partial class OverridingEndpoint : RawEndpoint<OverridingQuery, string>
     {
         public override ValueTask<BindResult<OverridingQuery>> BindAsync(HttpContext context)
         {
@@ -216,9 +216,9 @@ public sealed class RawEndpointGenericTests
         }
     }
 
-    private sealed record DeleteCommand(int Id) : IRequest;
+    internal sealed record DeleteCommand(int Id) : IRequest;
 
-    private sealed class DeleteEndpoint : RawEndpoint<DeleteCommand>
+    internal sealed partial class DeleteEndpoint : RawEndpoint<DeleteCommand>
     {
         public override ValueTask<BindResult<DeleteCommand>> BindAsync(HttpContext context)
         {

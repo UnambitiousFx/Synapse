@@ -37,7 +37,7 @@ public sealed class RawEndpointHarnessTests
         Assert.Equal(1, CountingEndpoint.ConfigureCount);
     }
 
-    private sealed class PingEndpoint : RawEndpoint
+    internal sealed class PingEndpoint : RawEndpoint
     {
         public override ValueTask<IResult> HandleAsync(HttpContext context,
             CancellationToken cancellationToken)
@@ -46,7 +46,7 @@ public sealed class RawEndpointHarnessTests
         }
     }
 
-    private sealed class CountingEndpoint : RawEndpoint
+    internal sealed class CountingEndpoint : RawEndpoint
     {
         internal static int ConfigureCount;
 

@@ -70,11 +70,11 @@ public sealed partial class StreamHarnessTests
         }
     }
 
-    private sealed record Tick(int Value);
+    internal sealed record Tick(int Value);
 
-    private sealed record TickerQuery : IStreamRequest<Tick>;
+    internal sealed record TickerQuery : IStreamRequest<Tick>;
 
-    private sealed partial class TickerEndpoint : StreamEndpoint<TickerQuery, Tick>;
+    internal sealed partial class TickerEndpoint : StreamEndpoint<TickerQuery, Tick>;
 
     private sealed class TickerBinder : IEndpointBinder<TickerQuery>
     {

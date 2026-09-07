@@ -87,9 +87,9 @@ public sealed partial class EndpointGroupTests
         }
     }
 
-    private sealed record GroupedQuery : IRequest<string>;
+    internal sealed record GroupedQuery : IRequest<string>;
 
-    private sealed partial class GroupedEndpoint : Endpoint<GroupedQuery, string>;
+    internal sealed partial class GroupedEndpoint : Endpoint<GroupedQuery, string>;
 
     private sealed class GroupedBinder : IEndpointBinder<GroupedQuery>
     {
@@ -110,9 +110,9 @@ public sealed partial class EndpointGroupTests
         }
     }
 
-    private sealed record SharedFirstQuery : IRequest<string>;
+    internal sealed record SharedFirstQuery : IRequest<string>;
 
-    private sealed partial class SharedFirstEndpoint : Endpoint<SharedFirstQuery, string>;
+    internal sealed partial class SharedFirstEndpoint : Endpoint<SharedFirstQuery, string>;
 
     private sealed class SharedFirstBinder : IEndpointBinder<SharedFirstQuery>
     {
@@ -122,9 +122,9 @@ public sealed partial class EndpointGroupTests
         }
     }
 
-    private sealed record SharedSecondQuery : IRequest<string>;
+    internal sealed record SharedSecondQuery : IRequest<string>;
 
-    private sealed partial class SharedSecondEndpoint : Endpoint<SharedSecondQuery, string>;
+    internal sealed partial class SharedSecondEndpoint : Endpoint<SharedSecondQuery, string>;
 
     private sealed class SharedSecondBinder : IEndpointBinder<SharedSecondQuery>
     {
@@ -134,9 +134,9 @@ public sealed partial class EndpointGroupTests
         }
     }
 
-    private sealed record NoFactoryQuery : IRequest<string>;
+    internal sealed record NoFactoryQuery : IRequest<string>;
 
-    private sealed partial class NoFactoryEndpoint : Endpoint<NoFactoryQuery, string>;
+    internal sealed partial class NoFactoryEndpoint : Endpoint<NoFactoryQuery, string>;
 
     private sealed class NoFactoryBinder : IEndpointBinder<NoFactoryQuery>
     {

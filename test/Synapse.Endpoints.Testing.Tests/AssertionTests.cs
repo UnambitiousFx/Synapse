@@ -207,7 +207,7 @@ public sealed class AssertionTests
         return await harness.Get(url).SendAsync(TestContext.Current.CancellationToken);
     }
 
-    private sealed class OkEndpoint : RawEndpoint
+    internal sealed class OkEndpoint : RawEndpoint
     {
         public override ValueTask<IResult> HandleAsync(HttpContext context,
             CancellationToken cancellationToken)
@@ -216,7 +216,7 @@ public sealed class AssertionTests
         }
     }
 
-    private sealed class CreatedEndpoint : RawEndpoint
+    internal sealed class CreatedEndpoint : RawEndpoint
     {
         public override ValueTask<IResult> HandleAsync(HttpContext context,
             CancellationToken cancellationToken)
@@ -225,7 +225,7 @@ public sealed class AssertionTests
         }
     }
 
-    private sealed class NoContentEndpoint : RawEndpoint
+    internal sealed class NoContentEndpoint : RawEndpoint
     {
         public override ValueTask<IResult> HandleAsync(HttpContext context,
             CancellationToken cancellationToken)
@@ -234,7 +234,7 @@ public sealed class AssertionTests
         }
     }
 
-    private sealed class NotFoundEndpoint : RawEndpoint
+    internal sealed class NotFoundEndpoint : RawEndpoint
     {
         public override ValueTask<IResult> HandleAsync(HttpContext context,
             CancellationToken cancellationToken)
@@ -243,7 +243,7 @@ public sealed class AssertionTests
         }
     }
 
-    private sealed class ProblemEndpoint : RawEndpoint
+    internal sealed class ProblemEndpoint : RawEndpoint
     {
         public override ValueTask<IResult> HandleAsync(HttpContext context,
             CancellationToken cancellationToken)

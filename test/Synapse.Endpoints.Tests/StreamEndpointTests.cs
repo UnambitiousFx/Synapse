@@ -197,7 +197,7 @@ public sealed partial class StreamEndpointTests
         Assert.Equal(["GET"], descriptor.HttpMethods);
     }
 
-    private sealed partial class ConfiguredStreamEndpoint : StreamEndpoint<TickQuery, int>
+    internal sealed partial class ConfiguredStreamEndpoint : StreamEndpoint<TickQuery, int>
     {
         public override void Configure(IStreamEndpointBuilder builder)
         {
@@ -205,9 +205,9 @@ public sealed partial class StreamEndpointTests
         }
     }
 
-    private sealed record TickQuery : IStreamRequest<int>;
+    internal sealed record TickQuery : IStreamRequest<int>;
 
-    private sealed partial class TickEndpoint : StreamEndpoint<TickQuery, int>;
+    internal sealed partial class TickEndpoint : StreamEndpoint<TickQuery, int>;
 
     private sealed class TickBinder : IEndpointBinder<TickQuery>
     {
@@ -217,9 +217,9 @@ public sealed partial class StreamEndpointTests
         }
     }
 
-    private sealed record ArrayQuery : IStreamRequest<int>;
+    internal sealed record ArrayQuery : IStreamRequest<int>;
 
-    private sealed partial class ArrayEndpoint : StreamEndpoint<ArrayQuery, int>;
+    internal sealed partial class ArrayEndpoint : StreamEndpoint<ArrayQuery, int>;
 
     private sealed class ArrayBinder : IEndpointBinder<ArrayQuery>
     {
@@ -229,9 +229,9 @@ public sealed partial class StreamEndpointTests
         }
     }
 
-    private sealed record SseQuery : IStreamRequest<int>;
+    internal sealed record SseQuery : IStreamRequest<int>;
 
-    private sealed partial class SseEndpoint : StreamEndpoint<SseQuery, int>;
+    internal sealed partial class SseEndpoint : StreamEndpoint<SseQuery, int>;
 
     private sealed class SseBinder : IEndpointBinder<SseQuery>
     {
@@ -242,5 +242,15 @@ public sealed partial class StreamEndpointTests
     }
 }
 
+// SYNE008 (unused before the generator ran here) checks every request/response type against the
+// JsonSerializerContext(s) in the compilation; the response and DTO types below are otherwise only
+// ever round-tripped through reflection-based JsonSerializer calls in these tests, so they had never
+// been registered anywhere.
 [JsonSerializable(typeof(int))]
+[JsonSerializable(typeof(MappedEndpointTests.CreateResponse))]
+[JsonSerializable(typeof(MappedEndpointTests.CreatedResponse))]
+[JsonSerializable(typeof(MappedEndpointTests.FailingCreateResponse))]
+[JsonSerializable(typeof(OpenApiMetadataTests.CreatedMappedResponse))]
+[JsonSerializable(typeof(RawEndpointTests.Greeting))]
+[JsonSerializable(typeof(SelfHandledEndpointTests.ProbeDto))]
 internal sealed partial class StreamTestJsonContext : JsonSerializerContext;

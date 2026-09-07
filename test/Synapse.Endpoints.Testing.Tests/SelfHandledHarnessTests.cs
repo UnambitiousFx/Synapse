@@ -40,11 +40,11 @@ public sealed partial class SelfHandledHarnessTests
         Assert.Equal(StatusCodes.Status404NotFound, response.StatusCode);
     }
 
-    private sealed record ProbeQuery(string Probe);
+    internal sealed record ProbeQuery(string Probe);
 
-    private sealed record ProbeDto(string Probe);
+    internal sealed record ProbeDto(string Probe);
 
-    private sealed partial class ProbeEndpoint : SelfHandledEndpoint<ProbeQuery, ProbeDto>
+    internal sealed partial class ProbeEndpoint : SelfHandledEndpoint<ProbeQuery, ProbeDto>
     {
         public override ValueTask<Result<ProbeDto>> ExecuteAsync(ProbeQuery request,
             HttpContext context,
@@ -64,9 +64,9 @@ public sealed partial class SelfHandledHarnessTests
         }
     }
 
-    private sealed record MissingProbeQuery(string Probe);
+    internal sealed record MissingProbeQuery(string Probe);
 
-    private sealed partial class MissingProbeEndpoint : SelfHandledEndpoint<MissingProbeQuery, ProbeDto>
+    internal sealed partial class MissingProbeEndpoint : SelfHandledEndpoint<MissingProbeQuery, ProbeDto>
     {
         public override ValueTask<Result<ProbeDto>> ExecuteAsync(MissingProbeQuery request,
             HttpContext context,

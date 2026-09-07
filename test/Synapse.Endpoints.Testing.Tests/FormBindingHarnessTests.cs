@@ -215,7 +215,7 @@ public sealed partial class FormBindingHarnessTests
         public bool IsOptional => false;
     }
 
-    private sealed class ProbeEndpoint : RawEndpoint
+    internal sealed class ProbeEndpoint : RawEndpoint
     {
         public override void Configure(IRawEndpointBuilder builder)
         {
@@ -265,12 +265,12 @@ public sealed partial class FormBindingHarnessTests
         }
     }
 
-    private sealed partial class UploadEndpoint : Endpoint<UploadCommand, string>;
+    internal sealed partial class UploadEndpoint : Endpoint<UploadCommand, string>;
 
     // "Same three shapes as Upload*, file dropped" is written out rather than reusing UploadBinder:
     // UploadBinder's FormFile call would report a missing "file" on a fields-only request, which is
     // exactly the failure this shape needs to NOT produce.
-    private sealed record CaptionCommand : IRequest<string>
+    internal sealed record CaptionCommand : IRequest<string>
     {
         public required string Caption { get; init; }
     }
@@ -298,15 +298,15 @@ public sealed partial class FormBindingHarnessTests
         }
     }
 
-    private sealed partial class CaptionEndpoint : Endpoint<CaptionCommand, string>;
+    internal sealed partial class CaptionEndpoint : Endpoint<CaptionCommand, string>;
 
-    private enum TaskState
+    internal enum TaskState
     {
         Open,
         Closed
     }
 
-    private sealed record SearchQuery : IRequest<int>
+    internal sealed record SearchQuery : IRequest<int>
     {
         public required TaskState[] Statuses { get; init; }
     }
@@ -330,5 +330,5 @@ public sealed partial class FormBindingHarnessTests
         }
     }
 
-    private sealed partial class SearchEndpoint : Endpoint<SearchQuery, int>;
+    internal sealed partial class SearchEndpoint : Endpoint<SearchQuery, int>;
 }

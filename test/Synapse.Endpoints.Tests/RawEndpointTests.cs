@@ -182,7 +182,7 @@ public sealed class RawEndpointTests
         };
     }
 
-    private sealed record Greeting(string Text);
+    internal sealed record Greeting(string Text);
 
     private sealed class Greeter
     {
@@ -194,7 +194,7 @@ public sealed class RawEndpointTests
         internal string Text { get; }
     }
 
-    private sealed class TeapotEndpoint : RawEndpoint
+    internal sealed partial class TeapotEndpoint : RawEndpoint
     {
         public override ValueTask<IResult> HandleAsync(HttpContext context,
             CancellationToken cancellationToken)
@@ -203,7 +203,7 @@ public sealed class RawEndpointTests
         }
     }
 
-    private sealed class EchoHeaderEndpoint : RawEndpoint
+    internal sealed partial class EchoHeaderEndpoint : RawEndpoint
     {
         internal string? SeenHeader { get; private set; }
 
@@ -218,7 +218,7 @@ public sealed class RawEndpointTests
         }
     }
 
-    private sealed class GreetingEndpoint : RawEndpoint
+    internal sealed partial class GreetingEndpoint : RawEndpoint
     {
         internal string? SeenGreeting { get; private set; }
 
@@ -269,7 +269,7 @@ public sealed class RawEndpointTests
         Assert.Contains("has not been mapped", exception.Message);
     }
 
-    private sealed class NullResultEndpoint : RawEndpoint
+    internal sealed partial class NullResultEndpoint : RawEndpoint
     {
         public override ValueTask<IResult> HandleAsync(HttpContext context,
             CancellationToken cancellationToken)
@@ -278,7 +278,7 @@ public sealed class RawEndpointTests
         }
     }
 
-    private sealed class UnmappedEndpoint : RawEndpoint<UnmappedCommand>
+    internal sealed partial class UnmappedEndpoint : RawEndpoint<UnmappedCommand>
     {
         public override ValueTask<BindResult<UnmappedCommand>> BindAsync(HttpContext context)
         {
@@ -286,9 +286,9 @@ public sealed class RawEndpointTests
         }
     }
 
-    private sealed record UnmappedCommand : IRequest;
+    internal sealed record UnmappedCommand : IRequest;
 
-    private sealed class ConfiguredRouteEndpoint : RawEndpoint
+    internal sealed partial class ConfiguredRouteEndpoint : RawEndpoint
     {
         public override void Configure(IRawEndpointBuilder builder)
         {
@@ -302,7 +302,7 @@ public sealed class RawEndpointTests
         }
     }
 
-    private sealed class RoutelessEndpoint : RawEndpoint
+    internal sealed partial class RoutelessEndpoint : RawEndpoint
     {
         public override ValueTask<IResult> HandleAsync(HttpContext context,
             CancellationToken cancellationToken)
@@ -311,7 +311,7 @@ public sealed class RawEndpointTests
         }
     }
 
-    private sealed class DeclaringEndpoint : RawEndpoint
+    internal sealed partial class DeclaringEndpoint : RawEndpoint
     {
         public override void Configure(IRawEndpointBuilder builder)
         {

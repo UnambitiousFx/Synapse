@@ -128,9 +128,9 @@ public sealed partial class EndpointVoidTests
         Assert.Equal(StatusCodes.Status500InternalServerError, context.Response.StatusCode);
     }
 
-    private sealed record PingCommand : IRequest;
+    internal sealed record PingCommand : IRequest;
 
-    private sealed partial class PingEndpoint : Endpoint<PingCommand>;
+    internal sealed partial class PingEndpoint : Endpoint<PingCommand>;
 
     private sealed class PingBinder : IEndpointBinder<PingCommand>
     {
@@ -140,9 +140,9 @@ public sealed partial class EndpointVoidTests
         }
     }
 
-    private sealed record ConflictPingCommand : IRequest;
+    internal sealed record ConflictPingCommand : IRequest;
 
-    private sealed partial class ConflictPingEndpoint : Endpoint<ConflictPingCommand>;
+    internal sealed partial class ConflictPingEndpoint : Endpoint<ConflictPingCommand>;
 
     private sealed class ConflictPingBinder : IEndpointBinder<ConflictPingCommand>
     {
@@ -152,9 +152,9 @@ public sealed partial class EndpointVoidTests
         }
     }
 
-    private sealed record AcceptedPingCommand : IRequest;
+    internal sealed record AcceptedPingCommand : IRequest;
 
-    private sealed partial class AcceptedPingEndpoint : Endpoint<AcceptedPingCommand>
+    internal sealed partial class AcceptedPingEndpoint : Endpoint<AcceptedPingCommand>
     {
         public override void Configure(IEndpointBuilder builder)
         {
@@ -170,9 +170,9 @@ public sealed partial class EndpointVoidTests
         }
     }
 
-    private sealed record FailingPingCommand : IRequest;
+    internal sealed record FailingPingCommand : IRequest;
 
-    private sealed partial class FailingPingEndpoint : Endpoint<FailingPingCommand>
+    internal sealed partial class FailingPingEndpoint : Endpoint<FailingPingCommand>
     {
         public override void Configure(IEndpointBuilder builder)
         {

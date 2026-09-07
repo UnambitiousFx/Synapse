@@ -157,7 +157,7 @@ public sealed class RequestBuildingTests
         public string? SearchTerm { get; set; }
     }
 
-    private sealed class EchoInputEndpoint : RawEndpoint
+    internal sealed class EchoInputEndpoint : RawEndpoint
     {
         public override ValueTask<IResult> HandleAsync(HttpContext context,
             CancellationToken cancellationToken)
@@ -170,7 +170,7 @@ public sealed class RequestBuildingTests
         }
     }
 
-    private sealed class EchoSnakeCaseEndpoint : RawEndpoint
+    internal sealed class EchoSnakeCaseEndpoint : RawEndpoint
     {
         public override ValueTask<IResult> HandleAsync(HttpContext context,
             CancellationToken cancellationToken)
@@ -179,7 +179,7 @@ public sealed class RequestBuildingTests
         }
     }
 
-    private sealed class EchoBodyEndpoint : RawEndpoint
+    internal sealed class EchoBodyEndpoint : RawEndpoint
     {
         public override async ValueTask<IResult> HandleAsync(HttpContext context,
             CancellationToken cancellationToken)
@@ -189,7 +189,7 @@ public sealed class RequestBuildingTests
         }
     }
 
-    private sealed class EchoRawBodyEndpoint : RawEndpoint
+    internal sealed class EchoRawBodyEndpoint : RawEndpoint
     {
         public override async ValueTask<IResult> HandleAsync(HttpContext context,
             CancellationToken cancellationToken)

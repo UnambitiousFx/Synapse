@@ -74,5 +74,5 @@ public sealed partial class BoundEndpointTests
 
     public sealed record PingStream : IStreamRequest<string>;
 
-    private sealed partial class UnmappedEndpoint : Endpoint<PingQuery, string>;
+    internal sealed partial class UnmappedEndpoint : Endpoint<PingQuery, string>;
 }

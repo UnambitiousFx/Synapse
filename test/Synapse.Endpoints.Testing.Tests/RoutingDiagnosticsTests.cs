@@ -81,7 +81,7 @@ public sealed class RoutingDiagnosticsTests
         Assert.Equal("GET /items/{id:guid}", harness.RouteDescription);
     }
 
-    private sealed class ItemEndpoint : RawEndpoint
+    internal sealed class ItemEndpoint : RawEndpoint
     {
         public override ValueTask<IResult> HandleAsync(HttpContext context,
             CancellationToken cancellationToken)
@@ -98,7 +98,7 @@ public sealed class RoutingDiagnosticsTests
         }
     }
 
-    private sealed class GroupedEndpoint : RawEndpoint
+    internal sealed class GroupedEndpoint : RawEndpoint
     {
         public override ValueTask<IResult> HandleAsync(HttpContext context,
             CancellationToken cancellationToken)

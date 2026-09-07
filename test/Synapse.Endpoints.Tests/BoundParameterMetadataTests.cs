@@ -108,9 +108,9 @@ public sealed partial class BoundParameterMetadataTests
         Assert.Equal("page", binder.Parameters[0].Name);
     }
 
-    private sealed record SearchTasksQuery : IRequest<string>;
+    internal sealed record SearchTasksQuery : IRequest<string>;
 
-    private sealed partial class SearchTasksEndpoint : Endpoint<SearchTasksQuery, string>;
+    internal sealed partial class SearchTasksEndpoint : Endpoint<SearchTasksQuery, string>;
 
     // A hand-written binder, not a generated one: this test's subject is the tier's attachment of
     // whatever the binder declares, not what the generator emits — that is the generator project's
@@ -159,9 +159,9 @@ public sealed partial class BoundParameterMetadataTests
         Assert.Contains(metadata.Parameters, p => p.Name == "page" && p.Location == BoundParameterLocation.Query);
     }
 
-    private sealed record NoParametersQuery : IRequest<string>;
+    internal sealed record NoParametersQuery : IRequest<string>;
 
-    private sealed partial class NoParametersEndpoint : Endpoint<NoParametersQuery, string>;
+    internal sealed partial class NoParametersEndpoint : Endpoint<NoParametersQuery, string>;
 
     // Overrides neither Parameters nor FormFields, so the tier's { Count: > 0 } guard should skip
     // WithMetadata entirely rather than attaching an empty BoundParametersMetadata.

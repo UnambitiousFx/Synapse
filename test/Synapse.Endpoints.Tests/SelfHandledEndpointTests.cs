@@ -183,11 +183,11 @@ public sealed partial class SelfHandledEndpointTests
         return (context.Response.StatusCode, context.Response.ContentType, body);
     }
 
-    private sealed record ProbeQuery(string Probe);
+    internal sealed record ProbeQuery(string Probe);
 
-    private sealed record ProbeDto(string Probe);
+    internal sealed record ProbeDto(string Probe);
 
-    private sealed partial class ProbeEndpoint : SelfHandledEndpoint<ProbeQuery, ProbeDto>
+    internal sealed partial class ProbeEndpoint : SelfHandledEndpoint<ProbeQuery, ProbeDto>
     {
         public override ValueTask<Result<ProbeDto>> ExecuteAsync(ProbeQuery request,
             HttpContext context,
@@ -212,11 +212,11 @@ public sealed partial class SelfHandledEndpointTests
         }
     }
 
-    private sealed record MissingProbeQuery(string Probe);
+    internal sealed record MissingProbeQuery(string Probe);
 
-    private sealed record MissingProbeCommand(string Probe) : IRequest<ProbeDto>;
+    internal sealed record MissingProbeCommand(string Probe) : IRequest<ProbeDto>;
 
-    private sealed partial class MissingProbeEndpoint : SelfHandledEndpoint<MissingProbeQuery, ProbeDto>
+    internal sealed partial class MissingProbeEndpoint : SelfHandledEndpoint<MissingProbeQuery, ProbeDto>
     {
         public override ValueTask<Result<ProbeDto>> ExecuteAsync(MissingProbeQuery request,
             HttpContext context,
@@ -226,7 +226,7 @@ public sealed partial class SelfHandledEndpointTests
         }
     }
 
-    private sealed partial class DispatchedMissingProbeEndpoint : Endpoint<MissingProbeCommand, ProbeDto>;
+    internal sealed partial class DispatchedMissingProbeEndpoint : Endpoint<MissingProbeCommand, ProbeDto>;
 
     private sealed class MissingProbeQueryBinder : IEndpointBinder<MissingProbeQuery>
     {
@@ -244,9 +244,9 @@ public sealed partial class SelfHandledEndpointTests
         }
     }
 
-    private sealed record CreatedProbeQuery(string Probe);
+    internal sealed record CreatedProbeQuery(string Probe);
 
-    private sealed partial class CreatedProbeEndpoint : SelfHandledEndpoint<CreatedProbeQuery, ProbeDto>
+    internal sealed partial class CreatedProbeEndpoint : SelfHandledEndpoint<CreatedProbeQuery, ProbeDto>
     {
         public override void Configure(IEndpointBuilder<ProbeDto> builder)
         {
@@ -269,9 +269,9 @@ public sealed partial class SelfHandledEndpointTests
         }
     }
 
-    private sealed record AcceptedProbeQuery(string Probe);
+    internal sealed record AcceptedProbeQuery(string Probe);
 
-    private sealed partial class AcceptedProbeEndpoint : SelfHandledEndpoint<AcceptedProbeQuery, ProbeDto>
+    internal sealed partial class AcceptedProbeEndpoint : SelfHandledEndpoint<AcceptedProbeQuery, ProbeDto>
     {
         public override Microsoft.AspNetCore.Http.IResult OnSuccess(ProbeDto response,
             HttpContext context)
@@ -295,9 +295,9 @@ public sealed partial class SelfHandledEndpointTests
         }
     }
 
-    private sealed record RejectingProbeQuery(string Probe);
+    internal sealed record RejectingProbeQuery(string Probe);
 
-    private sealed partial class RejectingProbeEndpoint : SelfHandledEndpoint<RejectingProbeQuery, ProbeDto>
+    internal sealed partial class RejectingProbeEndpoint : SelfHandledEndpoint<RejectingProbeQuery, ProbeDto>
     {
         public bool Ran { get; private set; }
 
@@ -318,9 +318,9 @@ public sealed partial class SelfHandledEndpointTests
         }
     }
 
-    private sealed record ShortCircuitProbeQuery(string Probe);
+    internal sealed record ShortCircuitProbeQuery(string Probe);
 
-    private sealed partial class ShortCircuitProbeEndpoint : SelfHandledEndpoint<ShortCircuitProbeQuery, ProbeDto>
+    internal sealed partial class ShortCircuitProbeEndpoint : SelfHandledEndpoint<ShortCircuitProbeQuery, ProbeDto>
     {
         public bool Ran { get; private set; }
 

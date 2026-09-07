@@ -106,13 +106,13 @@ public sealed partial class MappedEndpointTests
         Assert.Equal("thing-42", body!.Id);
     }
 
-    private sealed record CreateBody(string Name);
+    internal sealed record CreateBody(string Name);
 
-    private sealed record CreateCommand(string Name) : IRequest<int>;
+    internal sealed record CreateCommand(string Name) : IRequest<int>;
 
-    private sealed record CreateResponse(string Id);
+    internal sealed record CreateResponse(string Id);
 
-    private sealed partial class CreateEndpoint : MappedEndpoint<CreateBody, CreateCommand, int, CreateResponse>
+    internal sealed partial class CreateEndpoint : MappedEndpoint<CreateBody, CreateCommand, int, CreateResponse>
     {
         public override CreateCommand ToRequest(CreateBody request)
         {
@@ -133,11 +133,11 @@ public sealed partial class MappedEndpointTests
         }
     }
 
-    private sealed record FailingCreateCommand(string Name) : IRequest<int>;
+    internal sealed record FailingCreateCommand(string Name) : IRequest<int>;
 
-    private sealed record FailingCreateResponse(string Id);
+    internal sealed record FailingCreateResponse(string Id);
 
-    private sealed partial class FailingEndpoint : MappedEndpoint<CreateBody, FailingCreateCommand, int, FailingCreateResponse>
+    internal sealed partial class FailingEndpoint : MappedEndpoint<CreateBody, FailingCreateCommand, int, FailingCreateResponse>
     {
         public override FailingCreateCommand ToRequest(CreateBody request)
         {
@@ -158,11 +158,11 @@ public sealed partial class MappedEndpointTests
         }
     }
 
-    private sealed record CreatedCommand(string Name) : IRequest<int>;
+    internal sealed record CreatedCommand(string Name) : IRequest<int>;
 
-    private sealed record CreatedResponse(string Id);
+    internal sealed record CreatedResponse(string Id);
 
-    private sealed partial class CreatedEndpoint : MappedEndpoint<CreateBody, CreatedCommand, int, CreatedResponse>
+    internal sealed partial class CreatedEndpoint : MappedEndpoint<CreateBody, CreatedCommand, int, CreatedResponse>
     {
         public override CreatedCommand ToRequest(CreateBody request)
         {

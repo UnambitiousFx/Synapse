@@ -26,9 +26,13 @@
         <!-- The fixtures are declared with route attributes and bound properties and nothing else, so
              the binder, its parameter metadata and the route registration all come from the generator
              here. That makes these tests the one place the whole chain — generator, endpoint tier,
-             transformer, document — is asserted end to end. -->
+             transformer, document — is asserted end to end.
+             The generator is PrivateAssets="all" on Synapse.Endpoints (see that csproj), so it does not
+             flow here transitively; NuGet consumers get it from the packed analyzers/ folder instead. -->
         <ProjectReference Include="..\..\src\Synapse.Endpoints.Generator\Synapse.Endpoints.Generator.csproj"
-                          OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+                          OutputItemType="Analyzer"
+                          ReferenceOutputAssembly="false"
+                          PrivateAssets="all" />
     </ItemGroup>
 
 </Project>

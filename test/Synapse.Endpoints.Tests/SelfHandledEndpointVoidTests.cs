@@ -80,9 +80,9 @@ public sealed partial class SelfHandledEndpointVoidTests
         };
     }
 
-    private sealed record PurgeRequest(string Key);
+    internal sealed record PurgeRequest(string Key);
 
-    private sealed partial class PurgeEndpoint : SelfHandledEndpoint<PurgeRequest>
+    internal sealed partial class PurgeEndpoint : SelfHandledEndpoint<PurgeRequest>
     {
         public string? Purged { get; private set; }
 
@@ -103,9 +103,9 @@ public sealed partial class SelfHandledEndpointVoidTests
         }
     }
 
-    private sealed record ConflictedRequest(string Key);
+    internal sealed record ConflictedRequest(string Key);
 
-    private sealed partial class ConflictedEndpoint : SelfHandledEndpoint<ConflictedRequest>
+    internal sealed partial class ConflictedEndpoint : SelfHandledEndpoint<ConflictedRequest>
     {
         public override ValueTask<Result> ExecuteAsync(ConflictedRequest request,
             HttpContext context,
@@ -123,9 +123,9 @@ public sealed partial class SelfHandledEndpointVoidTests
         }
     }
 
-    private sealed record QueuedRequest(string Key);
+    internal sealed record QueuedRequest(string Key);
 
-    private sealed partial class QueuedEndpoint : SelfHandledEndpoint<QueuedRequest>
+    internal sealed partial class QueuedEndpoint : SelfHandledEndpoint<QueuedRequest>
     {
         public override void Configure(IEndpointBuilder builder)
         {
