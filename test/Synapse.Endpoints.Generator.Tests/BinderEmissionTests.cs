@@ -24,7 +24,7 @@ public sealed class BinderEmissionTests
                               """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert
         Assert.Contains("ReadJsonBodyAsync<global::TestNs.UpdateThingCommand>(context)", generated);
@@ -59,7 +59,7 @@ public sealed class BinderEmissionTests
                               """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert
         Assert.Contains("TryGetQuery(context, \"Page\", out var", generated);
@@ -87,7 +87,7 @@ public sealed class BinderEmissionTests
                               """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert
         Assert.DoesNotContain("ModifiedBy", generated);
@@ -113,7 +113,7 @@ public sealed class BinderEmissionTests
                               """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert
         Assert.Contains("TryGetHeader(context, \"If-Match\", out var", generated);

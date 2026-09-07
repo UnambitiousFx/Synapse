@@ -77,13 +77,11 @@ public sealed partial class FormSchemaDocumentTests
     [Fact]
     public async Task Document_WithFormBinderReportingNoFields_KeepsBothContentTypesWithAnEmptyObjectSchema()
     {
-        // Arrange — a hand-written binder can report BodyKind.Form without overriding FormFields;
-        // IEndpointBinder<TRequest>.FormFields defaults to [] and FormRequestMetadata's constructor
-        // documents "may be empty". Skipping the form pass here (the old Fields.Count > 0 guard)
-        // left such an endpoint with no requestBody at all, losing both content types that
-        // ConsumesMatcherPolicy needs to answer 415 — worse than the empty-schema state this package
-        // started from.
-        EndpointRegistry.RegisterBinder(new EmptyFormBinder());
+        // Arrange — an endpoint can declare BoundBodyKind.Form without describing any field:
+        // DeclaredFormFields() defaults to [] and FormRequestMetadata's constructor documents "may be
+        // empty". Skipping the form pass here (the old Fields.Count > 0 guard) left such an endpoint
+        // with no requestBody at all, losing both content types that ConsumesMatcherPolicy needs to
+        // answer 415 — worse than the empty-schema state this package started from.
         EndpointRegistry.RegisterMetadata<EmptyFormEndpoint>(new EndpointMetadata(["POST"], "/empty-form"));
         var document = await OpenApiTestHost.GenerateAsync<EmptyFormEndpoint>();
 
@@ -123,26 +121,24 @@ public sealed partial class FormSchemaDocumentTests
     }
 
     // internal, not private: the generator (referenced as an analyzer in this project, for the
-    // other fixtures) emits a binder for every IRequest<T> in the compilation regardless of route
-    // attributes, and that generated code needs to see this type. EndpointRegistry.RegisterBinder
-    // below overwrites its module-initializer registration with the hand-written one this test needs.
+    // other fixtures) emits registration code for every endpoint in the compilation, route attribute
+    // or not, and that generated code needs to see these types.
     internal sealed record EmptyFormCommand : IRequest<string>;
 
-    // BodyKind.Form with FormFields left at its [] default — the "supported low-level scenario"
-    // the review flagged: a hand-written binder that reports the shape without describing it.
-    private sealed class EmptyFormBinder : IEndpointBinder<EmptyFormCommand>
+    /// <summary>
+    ///     Declares a form body without describing a single field — the "supported low-level
+    ///     scenario" the review flagged. Only reachable by hand: a generated binding reports
+    ///     <c>Form</c> exactly when some property binds from the form, and then it describes that
+    ///     property. So this sits at the hand-written-binding tier and overrides the hook directly.
+    /// </summary>
+    [Post("/empty-form")]
+    internal sealed partial class EmptyFormEndpoint : RawEndpoint<EmptyFormCommand, string>
     {
-        public bool ReadsRequestBody => true;
+        protected override RequestBodyKind BoundBodyKind => RequestBodyKind.Form;
 
-        public RequestBodyKind BodyKind => RequestBodyKind.Form;
-
-        public ValueTask<BindResult<EmptyFormCommand>> BindAsync(HttpContext context)
+        public override ValueTask<BindResult<EmptyFormCommand>> BindAsync(HttpContext context)
         {
-            return ValueTask.FromResult(BindResult<EmptyFormCommand>.Success(new EmptyFormCommand()));
+            return new(BindResult<EmptyFormCommand>.Success(new EmptyFormCommand()));
         }
     }
-
-    // internal for the same reason as EmptyFormCommand above: the generator emits registration
-    // code for every EndpointBase subclass in the compilation, route attribute or not.
-    internal sealed partial class EmptyFormEndpoint : Endpoint<EmptyFormCommand, string>;
 }

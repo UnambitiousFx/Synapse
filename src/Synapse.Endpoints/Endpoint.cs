@@ -1,7 +1,4 @@
-using Microsoft.AspNetCore.Http;
 using UnambitiousFx.Synapse.Abstractions;
-using UnambitiousFx.Synapse.Endpoints.Binding;
-using UnambitiousFx.Synapse.Endpoints.Internal;
 
 namespace UnambitiousFx.Synapse.Endpoints;
 
@@ -12,43 +9,9 @@ namespace UnambitiousFx.Synapse.Endpoints;
 /// <typeparam name="TRequest">The command, which doubles as the HTTP request contract.</typeparam>
 /// <remarks>
 ///     See <see cref="Endpoint{TRequest,TResponse}" />; this is the same level for the arity with no
-///     response body. It is <see cref="RawEndpoint{TRequest}" /> with its binding supplied by the
-///     generated binder.
+///     response body. An empty marker over <see cref="RawEndpoint{TRequest}" />, whose
+///     <c>BindAsync</c> the analyzer writes into the endpoint's own <c>partial</c> class — so
+///     deriving from this class <em>requires</em> the analyzer rather than merely benefiting from it.
 /// </remarks>
 public abstract class Endpoint<TRequest> : RawEndpoint<TRequest>
-    where TRequest : IRequest
-{
-    private IEndpointBinder<TRequest>? _binder;
-
-    /// <inheritdoc />
-    /// <remarks>
-    ///     Sealed: the generated binder is what makes this the high level. Override the binding by
-    ///     deriving from <see cref="RawEndpoint{TRequest}" /> instead.
-    /// </remarks>
-    public sealed override ValueTask<BindResult<TRequest>> BindAsync(HttpContext context)
-    {
-        return Mapped(_binder).BindAsync(context);
-    }
-
-    /// <inheritdoc />
-    protected sealed override RequestBodyKind BoundBodyKind => _binder?.BodyKind ?? RequestBodyKind.Json;
-
-    /// <inheritdoc />
-    protected sealed override IReadOnlyList<BoundParameterMetadata> DeclaredParameters()
-    {
-        return _binder?.Parameters ?? [];
-    }
-
-    /// <inheritdoc />
-    protected sealed override IReadOnlyList<FormFieldMetadata> DeclaredFormFields()
-    {
-        return _binder?.FormFields ?? [];
-    }
-
-    internal sealed override RawEndpointPlan CreatePlan(EndpointMetadata metadata)
-    {
-        var plan = base.CreatePlan(metadata);
-        _binder = EndpointRegistry.GetBinder<TRequest>();
-        return plan;
-    }
-}
+    where TRequest : IRequest;

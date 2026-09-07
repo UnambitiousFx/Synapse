@@ -26,7 +26,7 @@ public sealed class FormBinderEmissionTests
     public void Generate_ForAFromFormProperty_ReadsTheFormRatherThanAJsonBody()
     {
         // Act
-        var generated = GeneratorHarness.GetFile(FormMessage, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(FormMessage);
 
         // Assert
         Assert.Contains("BindingHelpers.ReadFormAsync(context)", generated);
@@ -39,7 +39,7 @@ public sealed class FormBinderEmissionTests
     public void Generate_ForAFormBoundMessage_ResolvesUnannotatedPropertiesToTheFormToo()
     {
         // Assert — a request is a form or it is JSON, never both, so rule 6 follows the form.
-        var generated = GeneratorHarness.GetFile(FormMessage, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(FormMessage);
 
         Assert.Contains("TryGetForm(context, \"Note\", out var rawNote)", generated);
     }
@@ -48,7 +48,7 @@ public sealed class FormBinderEmissionTests
     public void Generate_ForAFormBoundMessage_DeclaresAFormBodyKind()
     {
         // Assert
-        var generated = GeneratorHarness.GetFile(FormMessage, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(FormMessage);
 
         Assert.Contains("BodyKind => global::UnambitiousFx.Synapse.Endpoints.Binding.RequestBodyKind.Form;", generated);
     }
@@ -57,7 +57,7 @@ public sealed class FormBinderEmissionTests
     public void Generate_ForAFormBoundMessage_ConstructsTheMessageItself()
     {
         // Assert — nothing deserialized it, so the binder builds it exactly as a bodyless one does.
-        var generated = GeneratorHarness.GetFile(FormMessage, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(FormMessage);
 
         Assert.Contains("var message = new global::TestNs.UploadCommand()", generated);
     }
@@ -84,7 +84,7 @@ public sealed class FormBinderEmissionTests
                               """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert — rule 4 still precedes the form.
         Assert.Contains("TryGetRoute(context, \"taskId\", out var rawTaskId)", generated);
@@ -116,7 +116,7 @@ public sealed class FormBinderEmissionTests
                               """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert — still a plain JSON message.
         Assert.Contains("ReadJsonBodyAsync", generated);
@@ -147,7 +147,7 @@ public sealed class FormBinderEmissionTests
                               """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert
         Assert.Contains("TryGetForm(context, \"photo\", out var rawImage)", generated);
@@ -188,7 +188,7 @@ public sealed class FormBinderEmissionTests
                               """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert
         Assert.Contains("TryGetForm(context, \"photo\", out var rawImage)", generated);
@@ -215,7 +215,7 @@ public sealed class FormBinderEmissionTests
                               """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert
         Assert.Contains("RequestBodyKind.Json;", generated);
@@ -244,7 +244,7 @@ public sealed class FormBinderEmissionTests
                               """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert — and the file drags Caption onto the form with it.
         Assert.Contains("TryGetFormFile(context, \"File\", out var rawFile)", generated);
@@ -278,7 +278,7 @@ public sealed class FormBinderEmissionTests
                               """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert
         Assert.Contains("TryGetFormFile(context, \"File\", out var rawFile)", generated);
@@ -311,7 +311,7 @@ public sealed class FormBinderEmissionTests
                               """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert
         Assert.Contains("context.Request.Form.Files", generated);
@@ -344,7 +344,7 @@ public sealed class FormBinderEmissionTests
                        """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert
         Assert.Contains(expected + "(context, \"Files\")", generated);
@@ -378,7 +378,7 @@ public sealed class FormBinderEmissionTests
                               """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert
         Assert.Contains("BindingHelpers.ReadFormAsync(context)", generated);
@@ -395,7 +395,7 @@ public sealed class FormBinderEmissionTests
         // wrong with the body. A constant message here made all of that unreachable from generated
         // code, while the JSON path returned its failure unchanged.
         // Act
-        var generated = GeneratorHarness.GetFile(FormMessage, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(FormMessage);
 
         // Assert
         Assert.DoesNotContain("The request body could not be read as a form.", generated);
@@ -426,7 +426,7 @@ public sealed class FormBinderEmissionTests
                               """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert
         Assert.Contains("context.Request.Form.Files", generated);
@@ -455,7 +455,7 @@ public sealed class FormBinderEmissionTests
                               """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert
         Assert.Contains("GetFormFiles(context, \"page\")", generated);
@@ -524,7 +524,7 @@ public sealed class FormBinderEmissionTests
                               """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
         var diagnostics = GeneratorHarness.GetDiagnostics(source);
 
         // Assert

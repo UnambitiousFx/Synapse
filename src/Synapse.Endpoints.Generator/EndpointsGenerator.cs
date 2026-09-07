@@ -277,7 +277,7 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
             // working code around that omission (see ResolveBindableProperty). Gating on them anyway
             // would only suppress a correctly-generated binder alongside the diagnostic that explains
             // why one property is missing from it. So SYNE001/SYNE002/SYNE005/SYNE006/SYNE009/SYNE010
-            // block; SYNE007/SYNE011/SYNE012/SYNE013 (Warning, or excluded here) do not.
+            // block; SYNE007/SYNE011/SYNE012 (Warning, or excluded here) do not.
             //
             // This check keys off `DefaultSeverity` — the descriptor's built-in severity — not the
             // *effective* severity a consumer may have reconfigured via .editorconfig
@@ -2288,9 +2288,9 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
         var ns = rootNamespace;
         var ordered = endpoints.OrderBy(e => e.EndpointFullName, StringComparer.Ordinal).ToArray();
 
-        // SYNE020 — must be reported before anything below is emitted: a later task moves the
-        // generated binding into the endpoint's own class, which requires it (and every enclosing
-        // type) to already be reopenable as partial.
+        // SYNE020 — must be reported before anything below is emitted: the binding is emitted into
+        // the endpoint's own class, which requires it (and every enclosing type) to be reopenable as
+        // partial.
         foreach (var endpoint in ordered.Where(static e => e.Kind.HasGeneratedBinder()))
         {
             var location = endpoint.Location?.ToLocation() ?? Location.None;
@@ -2313,25 +2313,39 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
         // uses it first.
         ReportMissingJsonRegistrations(context, ordered, jsonContext);
 
-        // Several endpoints can bind the same message type, but EndpointRegistry.RegisterBinder is
-        // keyed by the message type, so only one binder is emitted per distinct bound type: the
-        // group's first endpoint by EndpointFullName (see `ordered` above) wins, and that endpoint's
-        // own route/verb resolution is what the shared binder uses — silently, for every other
-        // endpoint bound to the same type. See EndpointTarget.BoundProperties for the known
-        // limitation this creates; SYNE013 (Task 17), reported just below, is the diagnostic for it.
-        // The resulting array is then re-ordered by bound-type name purely for deterministic emission
-        // order.
+        // Migrated kinds take their binding from a partial on the endpoint itself; the rest still come
+        // from the registry until Task 5 moves them. Two endpoints binding one message now each resolve
+        // their own binding, which is why SYNE013 is gone.
+        var migrated = ordered
+            .Where(static e => e.Kind is EndpointKind.Void or EndpointKind.Value)
+            .ToArray();
+
+        foreach (var endpoint in migrated)
+        {
+            var boundType = new BoundTypeInfo(endpoint.BoundTypeFullName, endpoint.BoundProperties,
+                endpoint.HasParameterlessConstructor, endpoint.PrimaryConstructorParameters);
+
+            context.AddSource(
+                EndpointPartialEmitter.HintName(endpoint.Declaration),
+                EndpointPartialEmitter.Emit(endpoint, boundType));
+        }
+
+        // The kinds still keyed by message type. Only one binder is emitted per distinct bound type:
+        // the group's first endpoint by EndpointFullName (see `ordered` above) wins, and that
+        // endpoint's own route/verb resolution is what the shared binder uses — silently, for every
+        // other endpoint bound to the same type. See EndpointTarget.BoundProperties for the known
+        // limitation this creates, which disappears per kind as Task 5 migrates it. The resulting
+        // array is then re-ordered by bound-type name purely for deterministic emission order.
         // Raw endpoints are registered and mapped like any other, but they have no generated binder,
         // so they must not reach the grouping — an empty BoundTypeFullName would otherwise become a
         // group of its own and emit a binder for nothing.
-        var typeGroups = ordered
-            .Where(e => e.Kind.HasGeneratedBinder())
-            .GroupBy(e => e.BoundTypeFullName, StringComparer.Ordinal)
+        var legacyTypeGroups = ordered
+            .Where(static e => e.Kind.HasGeneratedBinder() &&
+                               e.Kind is not (EndpointKind.Void or EndpointKind.Value))
+            .GroupBy(static e => e.BoundTypeFullName, StringComparer.Ordinal)
             .ToArray();
 
-        ReportConflictingBindingShapes(context, typeGroups);
-
-        var boundTypes = typeGroups
+        var boundTypes = legacyTypeGroups
             .Select(g =>
             {
                 var first = g.First();
@@ -2345,37 +2359,6 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
         context.AddSource("SynapseEndpointRegistrations.g.cs",
             EndpointGroupEmitter.EmitRegistrations(ns, ordered, boundTypes));
         context.AddSource("SynapseEndpointBinders.g.cs", BinderEmitter.Emit(ns, boundTypes));
-    }
-
-    /// <summary>
-    ///     SYNE013: reports, once per bound type, when two or more endpoints sharing that type
-    ///     resolved different <see cref="BindablePropertyModel" /> sets for it. Comparing the
-    ///     resolved property sets — not the endpoints' raw routes or verbs — is deliberate: two
-    ///     endpoints with different-looking routes or verbs can still resolve to the exact same
-    ///     bindings (for instance, two bodyless verbs where nothing matches either route template),
-    ///     in which case the shared binder is correct for both and there is nothing to warn about.
-    /// </summary>
-    private static void ReportConflictingBindingShapes(SourceProductionContext context,
-        IEnumerable<IGrouping<string, EndpointTarget>> typeGroups)
-    {
-        foreach (var group in typeGroups)
-        {
-            var endpoints = group.ToArray();
-            var distinctBindings = endpoints.Select(static e => e.BoundProperties).Distinct().ToArray();
-            if (distinctBindings.Length <= 1)
-            {
-                continue;
-            }
-
-            var first = endpoints[0];
-            var endpointNames = string.Join(", ", endpoints.Select(static e => e.EndpointFullName));
-
-            context.ReportDiagnostic(Diagnostic.Create(
-                EndpointDiagnostics.ConflictingBindingShapes,
-                first.Location?.ToLocation() ?? Location.None,
-                first.BoundTypeFullName,
-                endpointNames));
-        }
     }
 
     /// <summary>

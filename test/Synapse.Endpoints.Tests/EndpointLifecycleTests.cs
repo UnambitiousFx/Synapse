@@ -17,7 +17,6 @@ public sealed partial class EndpointLifecycleTests
     {
         // Arrange
         Order.Clear();
-        EndpointRegistry.RegisterBinder(new TracingBinder());
         EndpointRegistry.RegisterMetadata<TracingEndpoint>(new EndpointMetadata(["GET"], "/trace"));
 
         var context = ContextWith(services =>
@@ -43,7 +42,6 @@ public sealed partial class EndpointLifecycleTests
     {
         // Arrange
         Order.Clear();
-        EndpointRegistry.RegisterBinder(new TracingBinder());
         EndpointRegistry.RegisterMetadata<ShortCircuitingEndpoint>(
             new EndpointMetadata(["GET"], "/short-circuit"));
 
@@ -70,7 +68,6 @@ public sealed partial class EndpointLifecycleTests
     {
         // Arrange: pre-processors run before binding, so a rejection does not pay to bind.
         Order.Clear();
-        EndpointRegistry.RegisterBinder(new TracingBinder());
         EndpointRegistry.RegisterMetadata<RejectingEndpoint>(new EndpointMetadata(["GET"], "/reject"));
 
         var context = ContextWith(services => services.AddScoped<RejectingPreProcessor>(), Ok());
@@ -91,7 +88,6 @@ public sealed partial class EndpointLifecycleTests
     {
         // Arrange
         Order.Clear();
-        EndpointRegistry.RegisterBinder(new TracingBinder());
         EndpointRegistry.RegisterMetadata<TracingEndpoint>(new EndpointMetadata(["GET"], "/trace"));
 
         // The invoker maps a failed dispatch itself and never calls the success factory, which is
@@ -125,7 +121,6 @@ public sealed partial class EndpointLifecycleTests
         // Arrange: a response-header processor that skipped every 400 would be a bug, so the exit
         // steps run on the bind-failure path too.
         Order.Clear();
-        EndpointRegistry.RegisterBinder(new FailingTracingBinder());
         EndpointRegistry.RegisterMetadata<BindFailingEndpoint>(
             new EndpointMetadata(["GET"], "/bind-fail"));
 
@@ -149,7 +144,6 @@ public sealed partial class EndpointLifecycleTests
     {
         // Arrange
         Order.Clear();
-        EndpointRegistry.RegisterBinder(new FailingTracingBinder());
         EndpointRegistry.RegisterMetadata<BindReplacingEndpoint>(
             new EndpointMetadata(["GET"], "/bind-replace"));
 
@@ -170,7 +164,6 @@ public sealed partial class EndpointLifecycleTests
     {
         // Arrange: the result has not executed yet, so a header set in step 7 still reaches the wire.
         Order.Clear();
-        EndpointRegistry.RegisterBinder(new TracingBinder());
         EndpointRegistry.RegisterMetadata<HeaderStampingEndpoint>(
             new EndpointMetadata(["GET"], "/stamp"));
 
@@ -195,7 +188,6 @@ public sealed partial class EndpointLifecycleTests
         // and assigning ITS provider to RequestServices is the only way to tell the two apart.
         Order.Clear();
         ScopeCapturingPreProcessor.Reset();
-        EndpointRegistry.RegisterBinder(new TracingBinder());
         EndpointRegistry.RegisterMetadata<ScopeCapturingEndpoint>(new EndpointMetadata(["GET"], "/scope"));
 
         var services = new ServiceCollection();
@@ -229,7 +221,6 @@ public sealed partial class EndpointLifecycleTests
     {
         // Arrange
         Order.Clear();
-        EndpointRegistry.RegisterBinder(new VoidTracingBinder());
         EndpointRegistry.RegisterMetadata<VoidTracingEndpoint>(
             new EndpointMetadata(["POST"], "/void-trace"));
 
@@ -266,7 +257,6 @@ public sealed partial class EndpointLifecycleTests
         // Arrange: a hand-edit that dropped FinishAsync from this tier's bind-failure branch would
         // be a silent behaviour change with nothing else to catch it.
         Order.Clear();
-        EndpointRegistry.RegisterBinder(new FailingVoidTracingBinder());
         EndpointRegistry.RegisterMetadata<VoidBindFailingEndpoint>(
             new EndpointMetadata(["POST"], "/void-bind-fail"));
 
@@ -291,7 +281,6 @@ public sealed partial class EndpointLifecycleTests
     {
         // Arrange
         Order.Clear();
-        EndpointRegistry.RegisterBinder(new VoidTracingBinder());
         EndpointRegistry.RegisterMetadata<VoidRejectingEndpoint>(
             new EndpointMetadata(["POST"], "/void-reject"));
 
@@ -518,30 +507,25 @@ public sealed partial class EndpointLifecycleTests
 
     internal sealed record TraceQuery : IRequest<string>;
 
-    private sealed class TracingBinder : IEndpointBinder<TraceQuery>
-    {
-        public ValueTask<BindResult<TraceQuery>> BindAsync(HttpContext context)
-        {
-            Order.Add("bind");
-            return ValueTask.FromResult(BindResult<TraceQuery>.Success(new TraceQuery()));
-        }
-    }
-
-    private sealed class FailingTracingBinder : IEndpointBinder<TraceQuery>
-    {
-        public ValueTask<BindResult<TraceQuery>> BindAsync(HttpContext context)
-        {
-            Order.Add("bind");
-            return ValueTask.FromResult(BindResult<TraceQuery>.Failure("id", "is not a valid Guid."));
-        }
-    }
-
-    internal sealed partial class TracingEndpoint : Endpoint<TraceQuery, string>
+    /// <summary>
+    ///     Sits at the hand-written-binding tier so that binding itself can be recorded. The order
+    ///     under test belongs to <c>BoundEndpoint</c> and is identical for both tiers —
+    ///     <c>Endpoint&lt;TRequest,TResponse&gt;</c> is an empty marker over this class — but only a
+    ///     hand-written <c>BindAsync</c> can append to <c>Order</c> as it runs.
+    /// </summary>
+    [Get("/trace")]
+    internal sealed partial class TracingEndpoint : RawEndpoint<TraceQuery, string>
     {
         public override void Configure(IEndpointBuilder<string> builder)
         {
             builder.PreProcessor<TracingPreProcessor>()
                    .PostProcessor<TracingPostProcessor>();
+        }
+
+        public override ValueTask<BindResult<TraceQuery>> BindAsync(HttpContext context)
+        {
+            Order.Add("bind");
+            return new(BindResult<TraceQuery>.Success(new TraceQuery()));
         }
 
         protected override ValueTask<IResult?> OnBeforeHandleAsync(TraceQuery request,
@@ -619,11 +603,23 @@ public sealed partial class EndpointLifecycleTests
         }
     }
 
-    internal sealed partial class BindFailingEndpoint : Endpoint<TraceQuery, string>
+    /// <summary>
+    ///     A hand-written failing binding. Was a stubbed IEndpointBinder registered against
+    ///     Endpoint&lt;TraceQuery, string&gt;; the binding is generated now, so the failure is
+    ///     expressed at the tier that exists for hand-written binding.
+    /// </summary>
+    [Get("/bind-fail")]
+    internal sealed partial class BindFailingEndpoint : RawEndpoint<TraceQuery, string>
     {
         public override void Configure(IEndpointBuilder<string> builder)
         {
             builder.PostProcessor<TracingPostProcessor>();
+        }
+
+        public override ValueTask<BindResult<TraceQuery>> BindAsync(HttpContext context)
+        {
+            Order.Add("bind");
+            return new(BindResult<TraceQuery>.Failure("id", "is required."));
         }
 
         protected override ValueTask<IResult> OnBindFailedAsync(BindResult<TraceQuery> bound,
@@ -641,8 +637,15 @@ public sealed partial class EndpointLifecycleTests
         }
     }
 
-    internal sealed partial class BindReplacingEndpoint : Endpoint<TraceQuery, string>
+    /// <summary>See <see cref="BindFailingEndpoint" /> for why this tier.</summary>
+    [Get("/bind-replace")]
+    internal sealed partial class BindReplacingEndpoint : RawEndpoint<TraceQuery, string>
     {
+        public override ValueTask<BindResult<TraceQuery>> BindAsync(HttpContext context)
+        {
+            return new(BindResult<TraceQuery>.Failure("id", "is required."));
+        }
+
         protected override ValueTask<IResult> OnBindFailedAsync(BindResult<TraceQuery> bound,
             HttpContext context, CancellationToken cancellationToken)
         {
@@ -661,21 +664,20 @@ public sealed partial class EndpointLifecycleTests
 
     internal sealed record TraceCommand : IRequest;
 
-    private sealed class VoidTracingBinder : IEndpointBinder<TraceCommand>
-    {
-        public ValueTask<BindResult<TraceCommand>> BindAsync(HttpContext context)
-        {
-            Order.Add("bind");
-            return ValueTask.FromResult(BindResult<TraceCommand>.Success(new TraceCommand()));
-        }
-    }
-
-    internal sealed partial class VoidTracingEndpoint : Endpoint<TraceCommand>
+    /// <summary>See <see cref="TracingEndpoint" /> for why this tier.</summary>
+    [Post("/void-trace")]
+    internal sealed partial class VoidTracingEndpoint : RawEndpoint<TraceCommand>
     {
         public override void Configure(IEndpointBuilder builder)
         {
             builder.PreProcessor<TracingPreProcessor>()
                    .PostProcessor<TracingPostProcessor>();
+        }
+
+        public override ValueTask<BindResult<TraceCommand>> BindAsync(HttpContext context)
+        {
+            Order.Add("bind");
+            return new(BindResult<TraceCommand>.Success(new TraceCommand()));
         }
 
         protected override ValueTask<IResult?> OnBeforeHandleAsync(TraceCommand request,
@@ -693,20 +695,19 @@ public sealed partial class EndpointLifecycleTests
         }
     }
 
-    private sealed class FailingVoidTracingBinder : IEndpointBinder<TraceCommand>
-    {
-        public ValueTask<BindResult<TraceCommand>> BindAsync(HttpContext context)
-        {
-            Order.Add("bind");
-            return ValueTask.FromResult(BindResult<TraceCommand>.Failure("id", "is not a valid Guid."));
-        }
-    }
-
-    internal sealed partial class VoidBindFailingEndpoint : Endpoint<TraceCommand>
+    /// <summary>See <see cref="BindFailingEndpoint" /> for why this tier.</summary>
+    [Post("/void-bind-fail")]
+    internal sealed partial class VoidBindFailingEndpoint : RawEndpoint<TraceCommand>
     {
         public override void Configure(IEndpointBuilder builder)
         {
             builder.PostProcessor<TracingPostProcessor>();
+        }
+
+        public override ValueTask<BindResult<TraceCommand>> BindAsync(HttpContext context)
+        {
+            Order.Add("bind");
+            return new(BindResult<TraceCommand>.Failure("id", "is required."));
         }
 
         protected override ValueTask<IResult> OnBindFailedAsync(BindResult<TraceCommand> bound,
@@ -754,6 +755,7 @@ public sealed partial class EndpointLifecycleTests
         }
     }
 
+    [Post("/mapped-trace")]
     internal sealed partial class MappedTracingEndpoint
         : MappedEndpoint<TraceWireRequest, TraceQuery, string, string>
     {
@@ -798,6 +800,7 @@ public sealed partial class EndpointLifecycleTests
         }
     }
 
+    [Post("/mapped-bind-fail")]
     internal sealed partial class MappedBindFailingEndpoint
         : MappedEndpoint<TraceWireRequest, TraceQuery, string, string>
     {
@@ -831,6 +834,7 @@ public sealed partial class EndpointLifecycleTests
         }
     }
 
+    [Post("/mapped-reject")]
     internal sealed partial class MappedRejectingEndpoint
         : MappedEndpoint<TraceWireRequest, TraceQuery, string, string>
     {

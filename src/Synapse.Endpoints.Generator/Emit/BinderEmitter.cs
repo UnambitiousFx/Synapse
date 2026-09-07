@@ -7,15 +7,24 @@ using UnambitiousFx.Synapse.Endpoints.Generator.Model;
 namespace UnambitiousFx.Synapse.Endpoints.Generator.Emit;
 
 /// <summary>
-///     Renders <c>SynapseEndpointBinders.g.cs</c>: one <c>IEndpointBinder&lt;T&gt;</c> implementation
-///     per distinct bound type, each assigning route, query, header and body values directly onto the
-///     message's properties. Direct assignment (rather than reflection) is what keeps request binding
-///     reflection-free and AOT-safe at runtime.
+///     Renders one binding: the statements that assign route, query, header, form and body values
+///     directly onto a message's properties. Direct assignment (rather than reflection) is what keeps
+///     request binding reflection-free and AOT-safe at runtime.
 /// </summary>
+/// <remarks>
+///     Two callers, for now. <see cref="EndpointPartialEmitter" /> places
+///     <see cref="EmitBindBody" /> inside the endpoint's own reopened class, which is where the
+///     binding belongs. The <c>SynapseEndpointBinders.g.cs</c> path below wraps the same statements in
+///     an <c>IEndpointBinder&lt;T&gt;</c> keyed by message type, and survives only for the endpoint
+///     kinds not yet migrated — it goes away with the last of them.
+/// </remarks>
 internal static class BinderEmitter
 {
     private const string BindingNamespace = "global::UnambitiousFx.Synapse.Endpoints.Binding";
     private const string InternalNamespace = "global::UnambitiousFx.Synapse.Endpoints.Internal";
+
+    /// <summary>The indent the value-read emitters write their statements at.</summary>
+    private const int ValueReadIndent = 8;
 
     internal static SourceText Emit(string rootNamespace,
         BoundTypeInfo[] boundTypes)
@@ -61,32 +70,7 @@ internal static class BinderEmitter
         BoundTypeInfo boundType)
     {
         var typeFullName = boundType.TypeFullName;
-        var properties = boundType.Properties;
         var className = GetBinderClassName(typeFullName);
-
-        var hasJsonBodyProperty = false;
-        var hasFormProperty = false;
-        foreach (var property in properties)
-        {
-            hasJsonBodyProperty |= property.Source == BindingSource.Body;
-            hasFormProperty |= property.Source == BindingSource.Form;
-        }
-
-        // "Constructs the message itself" is what the rest of this method branches on, and it is not
-        // the same question as "carries a body": a form-bound message carries one and is still built
-        // here, because nothing deserialized it. Primary-constructor construction and `required`
-        // members in the object initializer both belong to that case.
-        var constructsMessage = !hasJsonBodyProperty;
-
-        var bodyKind = hasJsonBodyProperty ? "Json" : hasFormProperty ? "Form" : "None";
-
-        // Which properties the constructor will consume, decided before anything is emitted so that a
-        // consumed property does not also get a presence flag it would never read. The value is the
-        // parameter's default expression, if it declares one, which becomes the local's initial value
-        // so an absent optional value falls back to the declared default instead of overwriting it.
-        var consumedByConstructor = constructsMessage && !boundType.HasParameterlessConstructor
-            ? ResolveConstructorConsumption(boundType.PrimaryConstructorParameters)
-            : new Dictionary<string, string?>(StringComparer.Ordinal);
 
         builder.AppendLine(
             $"internal sealed class {className} : {BindingNamespace}.IEndpointBinder<{typeFullName}>");
@@ -97,45 +81,100 @@ internal static class BinderEmitter
         // from. Emitted on every binder rather than only the false case, so the generated code states
         // the answer rather than relying on the interface's default.
         builder.AppendLine(
-            $"    public bool ReadsRequestBody => {(hasJsonBodyProperty || hasFormProperty ? "true" : "false")};");
+            $"    public bool ReadsRequestBody => {(ReadsRequestBody(boundType) ? "true" : "false")};");
         builder.AppendLine();
         builder.AppendLine(
-            $"    public {BindingNamespace}.RequestBodyKind BodyKind => {BindingNamespace}.RequestBodyKind.{bodyKind};");
+            $"    public {BindingNamespace}.RequestBodyKind BodyKind => {BindingNamespace}.RequestBodyKind.{BodyKindName(boundType)};");
         builder.AppendLine();
 
-        EmitParameters(builder, properties, consumedByConstructor);
-        EmitFormFields(builder, properties, consumedByConstructor);
+        if (EmitParametersArray(builder, boundType, "    ", "ParametersValue"))
+        {
+            builder.AppendLine();
+            builder.AppendLine(
+                $"    public global::System.Collections.Generic.IReadOnlyList<{InternalNamespace}.BoundParameterMetadata> Parameters => ParametersValue;");
+            builder.AppendLine();
+        }
+
+        if (EmitFormFieldsArray(builder, boundType, "    ", "FormFieldsValue"))
+        {
+            builder.AppendLine();
+            builder.AppendLine(
+                $"    public global::System.Collections.Generic.IReadOnlyList<{InternalNamespace}.FormFieldMetadata> FormFields => FormFieldsValue;");
+            builder.AppendLine();
+        }
 
         builder.AppendLine(
             $"    public async global::System.Threading.Tasks.ValueTask<{BindingNamespace}.BindResult<{typeFullName}>> BindAsync(");
         builder.AppendLine("        global::Microsoft.AspNetCore.Http.HttpContext context)");
         builder.AppendLine("    {");
 
+        EmitBindBody(builder, boundType, "        ");
+
+        builder.AppendLine("    }");
+        builder.AppendLine("}");
+    }
+
+    /// <summary>
+    ///     Renders the statements of one binding — the JSON or form read, the value reads, and the
+    ///     construction of the bound type — at the given indent.
+    /// </summary>
+    /// <param name="builder">The buffer to append to.</param>
+    /// <param name="boundType">The type to bind and its resolved properties.</param>
+    /// <param name="indent">The leading whitespace for each emitted statement.</param>
+    /// <remarks>
+    ///     Separated from the declaration wrapper so <c>EndpointPartialEmitter</c> can place the same
+    ///     statements inside a reopened endpoint class. Nothing about what a binding *does* changed
+    ///     when it moved: the value-read emitters under <c>Emit/ValueReads/</c> are untouched, and
+    ///     <see cref="AppendIndented" /> is what reconciles their fixed indent with
+    ///     <paramref name="indent" /> without them having to know about it.
+    /// </remarks>
+    internal static void EmitBindBody(StringBuilder builder,
+        BoundTypeInfo boundType,
+        string indent)
+    {
+        var typeFullName = boundType.TypeFullName;
+        var properties = boundType.Properties;
+
+        var hasJsonBodyProperty = HasSource(boundType, BindingSource.Body);
+        var hasFormProperty = HasSource(boundType, BindingSource.Form);
+
+        // "Constructs the message itself" is what the rest of this method branches on, and it is not
+        // the same question as "carries a body": a form-bound message carries one and is still built
+        // here, because nothing deserialized it. Primary-constructor construction and `required`
+        // members in the object initializer both belong to that case.
+        var constructsMessage = !hasJsonBodyProperty;
+
+        // Which properties the constructor will consume, decided before anything is emitted so that a
+        // consumed property does not also get a presence flag it would never read. The value is the
+        // parameter's default expression, if it declares one, which becomes the local's initial value
+        // so an absent optional value falls back to the declared default instead of overwriting it.
+        var consumedByConstructor = ConsumedByConstructor(boundType);
+
         if (hasJsonBodyProperty)
         {
             builder.AppendLine(
-                $"        var body = await {BindingNamespace}.BindingHelpers.ReadJsonBodyAsync<{typeFullName}>(context);");
-            builder.AppendLine("        if (!body.IsSuccess)");
-            builder.AppendLine("        {");
-            builder.AppendLine("            // A body that cannot be read at all is reported on its own: with no");
-            builder.AppendLine("            // deserialized message there is nothing left to bind the other values onto.");
-            builder.AppendLine("            return body;");
-            builder.AppendLine("        }");
+                $"{indent}var body = await {BindingNamespace}.BindingHelpers.ReadJsonBodyAsync<{typeFullName}>(context);");
+            builder.AppendLine($"{indent}if (!body.IsSuccess)");
+            builder.AppendLine($"{indent}{{");
+            builder.AppendLine($"{indent}    // A body that cannot be read at all is reported on its own: with no");
+            builder.AppendLine($"{indent}    // deserialized message there is nothing left to bind the other values onto.");
+            builder.AppendLine($"{indent}    return body;");
+            builder.AppendLine($"{indent}}}");
             builder.AppendLine();
         }
         else if (hasFormProperty)
         {
-            builder.AppendLine($"        var form = await {BindingNamespace}.BindingHelpers.ReadFormAsync(context);");
-            builder.AppendLine("        if (!form.IsSuccess)");
-            builder.AppendLine("        {");
-            builder.AppendLine("            // The synchronous field readers below serve from the form's cache,");
-            builder.AppendLine("            // so a body that could not be parsed at all is reported on its own.");
-            builder.AppendLine("            // Retyped rather than restated: ReadFormAsync's own reason names the");
-            builder.AppendLine("            // content type sent or what was wrong with the body, and a constant here");
-            builder.AppendLine("            // would throw all of that away.");
+            builder.AppendLine($"{indent}var form = await {BindingNamespace}.BindingHelpers.ReadFormAsync(context);");
+            builder.AppendLine($"{indent}if (!form.IsSuccess)");
+            builder.AppendLine($"{indent}{{");
+            builder.AppendLine($"{indent}    // The synchronous field readers below serve from the form's cache,");
+            builder.AppendLine($"{indent}    // so a body that could not be parsed at all is reported on its own.");
+            builder.AppendLine($"{indent}    // Retyped rather than restated: ReadFormAsync's own reason names the");
+            builder.AppendLine($"{indent}    // content type sent or what was wrong with the body, and a constant here");
+            builder.AppendLine($"{indent}    // would throw all of that away.");
             builder.AppendLine(
-                $"            return {BindingNamespace}.BindResult<{typeFullName}>.Failure(form);");
-            builder.AppendLine("        }");
+                $"{indent}    return {BindingNamespace}.BindResult<{typeFullName}>.Failure(form);");
+            builder.AppendLine($"{indent}}}");
             builder.AppendLine();
         }
 
@@ -154,13 +193,13 @@ internal static class BinderEmitter
 
         if (bindable.Count > 0)
         {
-            builder.AppendLine($"        var validation = new {BindingNamespace}.BindingValidator(context);");
+            builder.AppendLine($"{indent}var validation = new {BindingNamespace}.BindingValidator(context);");
             builder.AppendLine();
         }
 
         // A `required` property the constructor does not cover has to be set in the object initializer
         // of the `new` expression: C# enforces `required` at the creation site, and neither a later
-        // assignment nor a `with` expression satisfies it (CS9035). Only relevant where this binder
+        // assignment nor a `with` expression satisfies it (CS9035). Only relevant where this binding
         // constructs the message — a body-bound message was constructed by the deserializer, which
         // satisfied its required members already.
         var initializerProperties = new List<BindablePropertyModel>();
@@ -185,19 +224,21 @@ internal static class BinderEmitter
         foreach (var property in bindable)
         {
             var consumed = consumedByConstructor.TryGetValue(property.Name, out var constructorDefault);
+            var read = new StringBuilder();
             reads.Add(ValueReadEmitter.Emit(new ValueReadContext(
-                builder, property, consumed, initializerNames.Contains(property.Name),
+                read, property, consumed, initializerNames.Contains(property.Name),
                 consumed ? constructorDefault : null)));
+            AppendIndented(builder, read.ToString(), indent);
             builder.AppendLine();
         }
 
         if (reads.Count > 0)
         {
-            builder.AppendLine("        if (!validation.IsValid)");
-            builder.AppendLine("        {");
+            builder.AppendLine($"{indent}if (!validation.IsValid)");
+            builder.AppendLine($"{indent}{{");
             builder.AppendLine(
-                $"            return {BindingNamespace}.BindResult<{typeFullName}>.Failure(validation);");
-            builder.AppendLine("        }");
+                $"{indent}    return {BindingNamespace}.BindResult<{typeFullName}>.Failure(validation);");
+            builder.AppendLine($"{indent}}}");
             builder.AppendLine();
         }
 
@@ -207,17 +248,17 @@ internal static class BinderEmitter
 
             if (boundType.HasParameterlessConstructor)
             {
-                builder.AppendLine($"        var message = new {typeFullName}(){initializer};");
+                builder.AppendLine($"{indent}var message = new {typeFullName}(){initializer};");
             }
             else
             {
                 EmitPrimaryConstructorCall(builder, typeFullName,
-                    boundType.PrimaryConstructorParameters, initializer);
+                    boundType.PrimaryConstructorParameters, initializer, indent);
             }
         }
         else
         {
-            builder.AppendLine("        var message = body.Value!;");
+            builder.AppendLine($"{indent}var message = body.Value!;");
         }
 
         foreach (var read in reads)
@@ -227,13 +268,91 @@ internal static class BinderEmitter
                 continue;
             }
 
-            EmitAssignment(builder, read);
+            EmitAssignment(builder, read, indent);
         }
 
         builder.AppendLine();
-        builder.AppendLine($"        return {BindingNamespace}.BindResult<{typeFullName}>.Success(message);");
-        builder.AppendLine("    }");
-        builder.AppendLine("}");
+        builder.AppendLine($"{indent}return {BindingNamespace}.BindResult<{typeFullName}>.Success(message);");
+    }
+
+    /// <summary>
+    ///     Appends a value read's statements, shifted right if the surrounding method is indented
+    ///     deeper than the shape emitters assume.
+    /// </summary>
+    /// <remarks>
+    ///     The emitters under <c>Emit/ValueReads/</c> write at a fixed <see cref="ValueReadIndent" />,
+    ///     which is exactly right for a binder class and for an endpoint declared at namespace scope.
+    ///     An endpoint nested inside another type sits deeper, and the difference is padded here
+    ///     rather than threaded through every shape emitter — a no-op whenever the two agree, so the
+    ///     statements those emitters produce are unchanged for every endpoint that is not nested.
+    /// </remarks>
+    private static void AppendIndented(StringBuilder builder,
+        string read,
+        string indent)
+    {
+        if (indent.Length <= ValueReadIndent)
+        {
+            builder.Append(read);
+            return;
+        }
+
+        var padding = new string(' ', indent.Length - ValueReadIndent);
+
+        foreach (var line in read.Split('\n'))
+        {
+            var trimmed = line.TrimEnd('\r');
+            if (trimmed.Length == 0)
+            {
+                continue;
+            }
+
+            builder.AppendLine(padding + trimmed);
+        }
+    }
+
+    /// <summary>Whether any of the bound type's properties binds from the given source.</summary>
+    private static bool HasSource(BoundTypeInfo boundType,
+        BindingSource source)
+    {
+        foreach (var property in boundType.Properties)
+        {
+            if (property.Source == source)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    ///     Whether the binding deserializes a request body, whether as JSON or as a form.
+    /// </summary>
+    internal static bool ReadsRequestBody(BoundTypeInfo boundType)
+    {
+        return HasSource(boundType, BindingSource.Body) || HasSource(boundType, BindingSource.Form);
+    }
+
+    /// <summary>The <c>RequestBodyKind</c> member name the binding reads its body as.</summary>
+    internal static string BodyKindName(BoundTypeInfo boundType)
+    {
+        return HasSource(boundType, BindingSource.Body)
+            ? "Json"
+            : HasSource(boundType, BindingSource.Form)
+                ? "Form"
+                : "None";
+    }
+
+    /// <summary>
+    ///     Which properties the type's constructor consumes, or an empty map when the binding does not
+    ///     construct the message (a JSON body-bound message is constructed by the deserializer) or the
+    ///     type has a parameterless constructor.
+    /// </summary>
+    internal static Dictionary<string, string?> ConsumedByConstructor(BoundTypeInfo boundType)
+    {
+        return !HasSource(boundType, BindingSource.Body) && !boundType.HasParameterlessConstructor
+            ? ResolveConstructorConsumption(boundType.PrimaryConstructorParameters)
+            : new Dictionary<string, string?>(StringComparer.Ordinal);
     }
 
     /// <summary>
@@ -296,7 +415,8 @@ internal static class BinderEmitter
     private static void EmitPrimaryConstructorCall(StringBuilder builder,
         string typeFullName,
         EquatableArray<ConstructorParameterModel> parameters,
-        string initializer)
+        string initializer,
+        string indent)
     {
         var argumentExpressions = new List<string>();
 
@@ -315,47 +435,56 @@ internal static class BinderEmitter
         }
 
         builder.AppendLine(
-            $"        var message = new {typeFullName}({string.Join(", ", argumentExpressions)}){initializer};");
+            $"{indent}var message = new {typeFullName}({string.Join(", ", argumentExpressions)}){initializer};");
     }
 
     private static void EmitAssignment(StringBuilder builder,
-        ValueRead read)
+        ValueRead read,
+        string indent)
     {
         var propertyName = EscapeIdentifier(read.Property.Name);
-        var indent = read.PresenceLocal is null ? "        " : "            ";
+        var assignmentIndent = read.PresenceLocal is null ? indent : indent + "    ";
 
         if (read.PresenceLocal is not null)
         {
-            builder.AppendLine($"        if ({read.PresenceLocal})");
-            builder.AppendLine("        {");
+            builder.AppendLine($"{indent}if ({read.PresenceLocal})");
+            builder.AppendLine($"{indent}{{");
         }
 
         builder.AppendLine(read.Property.IsRecordWith
-            ? $"{indent}message = message with {{ {propertyName} = {read.ValueLocal} }};"
-            : $"{indent}message.{propertyName} = {read.ValueLocal};");
+            ? $"{assignmentIndent}message = message with {{ {propertyName} = {read.ValueLocal} }};"
+            : $"{assignmentIndent}message.{propertyName} = {read.ValueLocal};");
 
         if (read.PresenceLocal is not null)
         {
-            builder.AppendLine("        }");
+            builder.AppendLine($"{indent}}}");
         }
     }
 
     /// <summary>
-    ///     Emits the <c>Parameters</c> member, or nothing when no property maps to an OpenAPI
-    ///     parameter.
+    ///     Emits the <c>static readonly</c> array of OpenAPI parameter metadata, or nothing when no
+    ///     property maps to an OpenAPI parameter.
     /// </summary>
+    /// <param name="builder">The buffer to append to.</param>
+    /// <param name="boundType">The type to bind and its resolved properties.</param>
+    /// <param name="indent">The leading whitespace for the field declaration.</param>
+    /// <param name="fieldName">The name to give the backing field.</param>
+    /// <returns>Whether anything was emitted, so the caller can render the member that reads it.</returns>
     /// <remarks>
-    ///     Nothing rather than an empty array: the interface default already answers "no parameters",
-    ///     and every body-bound binder would otherwise carry a dead member. The backing field is
-    ///     <c>static readonly</c> so the array is allocated once per message type — the binder itself
-    ///     is a singleton, so a property returning a fresh array would allocate on every read.
+    ///     Nothing rather than an empty array: the base implementation already answers "no
+    ///     parameters", and every body-bound endpoint would otherwise carry a dead member. The field
+    ///     is <c>static readonly</c> so the array is allocated once per endpoint — endpoints are
+    ///     singletons, so a member returning a fresh array would allocate on every read.
     /// </remarks>
-    private static void EmitParameters(StringBuilder builder,
-        EquatableArray<BindablePropertyModel> properties,
-        Dictionary<string, string?> consumedByConstructor)
+    internal static bool EmitParametersArray(StringBuilder builder,
+        BoundTypeInfo boundType,
+        string indent,
+        string fieldName)
     {
+        var consumedByConstructor = ConsumedByConstructor(boundType);
+
         var parameters = new List<BindablePropertyModel>();
-        foreach (var property in properties)
+        foreach (var property in boundType.Properties)
         {
             if (TryMapLocation(property.Source, out _))
             {
@@ -365,50 +494,58 @@ internal static class BinderEmitter
 
         if (parameters.Count == 0)
         {
-            return;
+            return false;
         }
 
         builder.AppendLine(
-            $"    private static readonly {InternalNamespace}.BoundParameterMetadata[] ParametersValue =");
-        builder.AppendLine("    [");
+            $"{indent}private static readonly {InternalNamespace}.BoundParameterMetadata[] {fieldName} =");
+        builder.AppendLine($"{indent}[");
 
         foreach (var property in parameters)
         {
             TryMapLocation(property.Source, out var location);
 
-            builder.AppendLine("        new()");
-            builder.AppendLine("        {");
-            builder.AppendLine($"            Name = \"{property.SourceKey}\",");
+            builder.AppendLine($"{indent}    new()");
+            builder.AppendLine($"{indent}    {{");
+            builder.AppendLine($"{indent}        Name = \"{property.SourceKey}\",");
             builder.AppendLine(
-                $"            Location = {InternalNamespace}.BoundParameterLocation.{location},");
+                $"{indent}        Location = {InternalNamespace}.BoundParameterLocation.{location},");
             builder.AppendLine(
-                $"            Required = {(RejectsAbsence(property, consumedByConstructor) ? "true" : "false")},");
+                $"{indent}        Required = {(RejectsAbsence(property, consumedByConstructor) ? "true" : "false")},");
             builder.AppendLine(
-                $"            IsArray = {(property.Shape == BindingValueShape.Collection ? "true" : "false")},");
-            builder.AppendLine($"            ValueType = typeof({property.TypeFullName}),");
-            builder.AppendLine("        },");
+                $"{indent}        IsArray = {(property.Shape == BindingValueShape.Collection ? "true" : "false")},");
+            builder.AppendLine($"{indent}        ValueType = typeof({property.TypeFullName}),");
+            builder.AppendLine($"{indent}    }},");
         }
 
-        builder.AppendLine("    ];");
-        builder.AppendLine();
-        builder.AppendLine(
-            $"    public global::System.Collections.Generic.IReadOnlyList<{InternalNamespace}.BoundParameterMetadata> Parameters => ParametersValue;");
-        builder.AppendLine();
+        builder.AppendLine($"{indent}];");
+        return true;
     }
 
-    /// <summary>Emits the <c>FormFields</c> member, or nothing when the message is not form-bound.</summary>
+    /// <summary>
+    ///     Emits the <c>static readonly</c> array of form-field metadata, or nothing when the message
+    ///     is not form-bound.
+    /// </summary>
+    /// <param name="builder">The buffer to append to.</param>
+    /// <param name="boundType">The type to bind and its resolved properties.</param>
+    /// <param name="indent">The leading whitespace for the field declaration.</param>
+    /// <param name="fieldName">The name to give the backing field.</param>
+    /// <returns>Whether anything was emitted, so the caller can render the member that reads it.</returns>
     /// <remarks>
-    ///     Mirrors <see cref="EmitParameters" />, including the <c>static readonly</c> backing field
-    ///     and the emit-nothing-when-empty rule. Kept as a second method rather than a parameterised
-    ///     one because the two select different properties and produce different types, and merging
-    ///     them would mean a flag argument at every call site.
+    ///     Mirrors <see cref="EmitParametersArray" />, including the <c>static readonly</c> backing
+    ///     field and the emit-nothing-when-empty rule. Kept as a second method rather than a
+    ///     parameterised one because the two select different properties and produce different types,
+    ///     and merging them would mean a flag argument at every call site.
     /// </remarks>
-    private static void EmitFormFields(StringBuilder builder,
-        EquatableArray<BindablePropertyModel> properties,
-        Dictionary<string, string?> consumedByConstructor)
+    internal static bool EmitFormFieldsArray(StringBuilder builder,
+        BoundTypeInfo boundType,
+        string indent,
+        string fieldName)
     {
+        var consumedByConstructor = ConsumedByConstructor(boundType);
+
         var fields = new List<BindablePropertyModel>();
-        foreach (var property in properties)
+        foreach (var property in boundType.Properties)
         {
             if (property.Source == BindingSource.Form)
             {
@@ -418,33 +555,30 @@ internal static class BinderEmitter
 
         if (fields.Count == 0)
         {
-            return;
+            return false;
         }
 
         builder.AppendLine(
-            $"    private static readonly {InternalNamespace}.FormFieldMetadata[] FormFieldsValue =");
-        builder.AppendLine("    [");
+            $"{indent}private static readonly {InternalNamespace}.FormFieldMetadata[] {fieldName} =");
+        builder.AppendLine($"{indent}[");
 
         foreach (var property in fields)
         {
             var isArray = property.Shape is BindingValueShape.Collection
                 or BindingValueShape.FormFileCollection;
 
-            builder.AppendLine("        new()");
-            builder.AppendLine("        {");
-            builder.AppendLine($"            Name = \"{property.SourceKey}\",");
+            builder.AppendLine($"{indent}    new()");
+            builder.AppendLine($"{indent}    {{");
+            builder.AppendLine($"{indent}        Name = \"{property.SourceKey}\",");
             builder.AppendLine(
-                $"            Required = {(RejectsAbsence(property, consumedByConstructor) ? "true" : "false")},");
-            builder.AppendLine($"            IsArray = {(isArray ? "true" : "false")},");
-            builder.AppendLine($"            ValueType = typeof({FieldValueType(property)}),");
-            builder.AppendLine("        },");
+                $"{indent}        Required = {(RejectsAbsence(property, consumedByConstructor) ? "true" : "false")},");
+            builder.AppendLine($"{indent}        IsArray = {(isArray ? "true" : "false")},");
+            builder.AppendLine($"{indent}        ValueType = typeof({FieldValueType(property)}),");
+            builder.AppendLine($"{indent}    }},");
         }
 
-        builder.AppendLine("    ];");
-        builder.AppendLine();
-        builder.AppendLine(
-            $"    public global::System.Collections.Generic.IReadOnlyList<{InternalNamespace}.FormFieldMetadata> FormFields => FormFieldsValue;");
-        builder.AppendLine();
+        builder.AppendLine($"{indent}];");
+        return true;
     }
 
     /// <summary>

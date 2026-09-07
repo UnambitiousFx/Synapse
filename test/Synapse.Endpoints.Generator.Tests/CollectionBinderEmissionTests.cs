@@ -27,7 +27,7 @@ public sealed class CollectionBinderEmissionTests
                               """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert
         Assert.Contains("TryGetQueryValues(context, \"Tags\", out var rawTags)", generated);
@@ -59,7 +59,7 @@ public sealed class CollectionBinderEmissionTests
                        """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert
         Assert.Contains("TryGetQueryValues(context, \"Sizes\", out var rawSizes)", generated);
@@ -91,7 +91,7 @@ public sealed class CollectionBinderEmissionTests
                               """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert — the index is in the message, and the loop continues past a bad element.
         Assert.Contains("global::System.Enum.TryParse<global::TestNs.TaskState>", generated);
@@ -122,7 +122,7 @@ public sealed class CollectionBinderEmissionTests
                               """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert
         Assert.Contains("var hasTags = false;", generated);
@@ -150,7 +150,7 @@ public sealed class CollectionBinderEmissionTests
                               """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert
         Assert.DoesNotContain("The query value is required.", generated);
@@ -206,7 +206,7 @@ public sealed class CollectionBinderEmissionTests
                               """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert
         Assert.Contains("TryGetHeaderValues(context, \"X-Tag\", out var rawTags)", generated);
@@ -236,7 +236,7 @@ public sealed class CollectionBinderEmissionTests
                               """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert — and the form is read first, because the field readers serve from its cache.
         Assert.Contains("BindingHelpers.ReadFormAsync(context)", generated);
@@ -267,7 +267,7 @@ public sealed class CollectionBinderEmissionTests
                               """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert — "form value", not "query value": the message names the source it actually read.
         Assert.Contains("TryGetFormValues(context, \"status\", out var rawStatuses)", generated);
@@ -296,7 +296,7 @@ public sealed class CollectionBinderEmissionTests
                               """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert
         Assert.Contains("string[]? valueTags = default;", generated);
@@ -327,7 +327,7 @@ public sealed class CollectionBinderEmissionTests
                               """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert
         Assert.Contains("global::System.Collections.Generic.List<int>? valueIds = default;", generated);
@@ -358,7 +358,7 @@ public sealed class CollectionBinderEmissionTests
                               """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert
         Assert.Contains("var hasTags = false;", generated);

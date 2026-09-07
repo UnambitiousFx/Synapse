@@ -151,23 +151,6 @@ internal static class EndpointDiagnostics
         isEnabledByDefault: true);
 
     /// <summary>
-    ///     SYNE013: a message type is bound by two or more endpoints whose resolved bindings differ
-    ///     (different routes and/or verbs produced different <c>BindablePropertyModel</c> sets).
-    ///     <c>EndpointRegistry.RegisterBinder&lt;TRequest&gt;</c> is keyed by the message type, so only
-    ///     one binder is ever emitted for it — built from whichever endpoint sorts first ordinally by
-    ///     fully-qualified name — and every other endpoint sharing the type silently binds using that
-    ///     resolution instead of its own. Warning, not Error: this is defined, existing behaviour that
-    ///     a consumer may have intended (see <c>EndpointTarget.BoundProperties</c>).
-    /// </summary>
-    internal static readonly DiagnosticDescriptor ConflictingBindingShapes = new(
-        "SYNE013",
-        "Message type bound by endpoints with conflicting binding shapes",
-        "'{0}' is bound by multiple endpoints with conflicting binding shapes: {1}. Only one endpoint's binding resolution is used for the single registered binder; the others will bind incorrectly at runtime. Give each endpoint its own message type, or ignore this warning if the shared binder's resolution is intentional.",
-        Category,
-        DiagnosticSeverity.Warning,
-        isEnabledByDefault: true);
-
-    /// <summary>
     ///     SYNE003: a <c>POST</c> or <c>PUT</c> endpoint that returns a value (<c>Endpoint&lt;TRequest,TResponse&gt;</c>)
     ///     neither overrides <c>OnSuccess</c> nor calls a declarative success method
     ///     (<c>Ok</c>/<c>Created</c>/<c>Accepted</c>/<c>NoContent</c>/<c>StatusCode</c>) in <c>Configure</c>,

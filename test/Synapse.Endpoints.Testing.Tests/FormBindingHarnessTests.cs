@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Metadata;
+using Microsoft.AspNetCore.Mvc;
 using UnambitiousFx.Functional;
 using UnambitiousFx.Synapse.Abstractions;
 using UnambitiousFx.Synapse.Endpoints.Binding;
@@ -49,7 +50,6 @@ public sealed partial class FormBindingHarnessTests
     {
         // Arrange — spec §6 case 1 is a file plus a field plus a route value; routing and multipart
         // parsing coexisting on one live request is a runtime property no emission test can assert.
-        EndpointRegistry.RegisterBinder(new UploadBinder());
         EndpointRegistry.RegisterMetadata<UploadEndpoint>(
             new EndpointMetadata(["POST"], "/tasks/{taskId}/uploads"));
         using var harness = EndpointHarness.Create<UploadEndpoint>(options =>
@@ -71,7 +71,6 @@ public sealed partial class FormBindingHarnessTests
     public async Task SendAsync_WithUrlEncodedFields_BindsThemToo()
     {
         // Arrange — both form content types bind, not only multipart.
-        EndpointRegistry.RegisterBinder(new CaptionOnlyBinder());
         EndpointRegistry.RegisterMetadata<CaptionEndpoint>(new EndpointMetadata(["POST"], "/captions"));
         using var harness = EndpointHarness.Create<CaptionEndpoint>(options =>
             options.Handle<CaptionCommand, string>(command => Result.Success(command.Caption)));
@@ -90,7 +89,6 @@ public sealed partial class FormBindingHarnessTests
     public async Task SendAsync_WithAnEmptyMultipartBody_Reports400NamingBothMissingFields()
     {
         // Arrange
-        EndpointRegistry.RegisterBinder(new UploadBinder());
         EndpointRegistry.RegisterMetadata<UploadEndpoint>(
             new EndpointMetadata(["POST"], "/tasks/{taskId}/uploads"));
         using var harness = EndpointHarness.Create<UploadEndpoint>();
@@ -113,7 +111,6 @@ public sealed partial class FormBindingHarnessTests
     public async Task SendAsync_WithAJsonBodyToAFormEndpoint_Answers415BeforeTheBinderRuns()
     {
         // Arrange
-        EndpointRegistry.RegisterBinder(new UploadBinder());
         EndpointRegistry.RegisterMetadata<UploadEndpoint>(
             new EndpointMetadata(["POST"], "/tasks/{taskId}/uploads"));
         using var harness = EndpointHarness.Create<UploadEndpoint>();
@@ -132,7 +129,6 @@ public sealed partial class FormBindingHarnessTests
     public async Task SendAsync_WithOneBadElement_ReportsItsIndexAndStillBindsTheOthers()
     {
         // Arrange
-        EndpointRegistry.RegisterBinder(new SearchBinder());
         EndpointRegistry.RegisterMetadata<SearchEndpoint>(new EndpointMetadata(["GET"], "/search"));
         using var harness = EndpointHarness.Create<SearchEndpoint>();
 
@@ -149,7 +145,6 @@ public sealed partial class FormBindingHarnessTests
     public async Task SendAsync_WithNoRepeatedKeyAtAll_BindsAnEmptyCollectionAndSucceeds()
     {
         // Arrange — HTTP cannot send zero values under a key, so absence is not a failure.
-        EndpointRegistry.RegisterBinder(new SearchBinder());
         EndpointRegistry.RegisterMetadata<SearchEndpoint>(new EndpointMetadata(["GET"], "/search"));
         using var harness = EndpointHarness.Create<SearchEndpoint>(options =>
             options.Handle<SearchQuery, int>(query => Result.Success(query.Statuses.Length)));
@@ -169,7 +164,6 @@ public sealed partial class FormBindingHarnessTests
         // closing delimiter. ASP.NET Core throws IOException for it, which used to escape the binder
         // as a 500. And the reason the form read builds has to survive being retyped onto the message
         // type, or the response says nothing a caller can act on.
-        EndpointRegistry.RegisterBinder(new CaptionOnlyBinder());
         EndpointRegistry.RegisterMetadata<CaptionEndpoint>(new EndpointMetadata(["POST"], "/captions"));
         using var harness = EndpointHarness.Create<CaptionEndpoint>();
 
@@ -192,7 +186,6 @@ public sealed partial class FormBindingHarnessTests
         // the one malformed shape the consumes matcher hands to the binder. ReadFormAsync's guidance
         // is the whole value of the response, and a constant "could not be read as a form" threw it
         // away.
-        EndpointRegistry.RegisterBinder(new CaptionOnlyBinder());
         EndpointRegistry.RegisterMetadata<CaptionEndpoint>(new EndpointMetadata(["POST"], "/captions"));
         using var harness = EndpointHarness.Create<CaptionEndpoint>();
 
@@ -229,75 +222,31 @@ public sealed partial class FormBindingHarnessTests
         }
     }
 
+    // The field names are pinned with [FromForm] rather than left to the property names, because the
+    // requests these tests send — and the error keys they assert — use the lowercase wire names.
     public sealed record UploadCommand : IRequest<string>
     {
         public required Guid TaskId { get; init; }
 
+        [FromForm("file")]
         public required IFormFile File { get; init; }
 
+        [FromForm("caption")]
         public required string Caption { get; init; }
     }
 
-    private sealed class UploadBinder : IEndpointBinder<UploadCommand>
-    {
-        public RequestBodyKind BodyKind => RequestBodyKind.Form;
-
-        public bool ReadsRequestBody => true;
-
-        public async ValueTask<BindResult<UploadCommand>> BindAsync(HttpContext context)
-        {
-            var form = await context.FormAsync();
-            if (!form.IsSuccess)
-            {
-                // Retyped, not restated — the shape a generated form binder emits.
-                return BindResult<UploadCommand>.Failure(form);
-            }
-
-            var validation = context.Validate();
-            validation.Route<Guid>("taskId", out var taskId);
-            validation.FormFile("file", out var file);
-            validation.Form<string>("caption", out var caption);
-
-            return validation.IsValid
-                ? BindResult<UploadCommand>.Success(
-                    new UploadCommand { TaskId = taskId, File = file, Caption = caption })
-                : BindResult<UploadCommand>.Failure(validation);
-        }
-    }
-
+    [Post("/tasks/{taskId}/uploads")]
     internal sealed partial class UploadEndpoint : Endpoint<UploadCommand, string>;
 
-    // "Same three shapes as Upload*, file dropped" is written out rather than reusing UploadBinder:
-    // UploadBinder's FormFile call would report a missing "file" on a fields-only request, which is
-    // exactly the failure this shape needs to NOT produce.
+    // "Same three shapes as Upload*, file dropped" is a separate message rather than a reuse of
+    // UploadCommand: a missing "file" is exactly the failure a fields-only request must NOT produce.
     internal sealed record CaptionCommand : IRequest<string>
     {
+        [FromForm("caption")]
         public required string Caption { get; init; }
     }
 
-    private sealed class CaptionOnlyBinder : IEndpointBinder<CaptionCommand>
-    {
-        public RequestBodyKind BodyKind => RequestBodyKind.Form;
-
-        public bool ReadsRequestBody => true;
-
-        public async ValueTask<BindResult<CaptionCommand>> BindAsync(HttpContext context)
-        {
-            var form = await context.FormAsync();
-            if (!form.IsSuccess)
-            {
-                return BindResult<CaptionCommand>.Failure(form);
-            }
-
-            var validation = context.Validate();
-            validation.Form<string>("caption", out var caption);
-
-            return validation.IsValid
-                ? BindResult<CaptionCommand>.Success(new CaptionCommand { Caption = caption })
-                : BindResult<CaptionCommand>.Failure(validation);
-        }
-    }
-
+    [Post("/captions")]
     internal sealed partial class CaptionEndpoint : Endpoint<CaptionCommand, string>;
 
     internal enum TaskState
@@ -308,27 +257,10 @@ public sealed partial class FormBindingHarnessTests
 
     internal sealed record SearchQuery : IRequest<int>
     {
+        [FromQuery(Name = "status")]
         public required TaskState[] Statuses { get; init; }
     }
 
-    private sealed class SearchBinder : IEndpointBinder<SearchQuery>
-    {
-        // Explicit rather than relying on the interface defaults (true / Json), matching what a
-        // generated binder for a query-only message would emit: nothing here reads the body.
-        public bool ReadsRequestBody => false;
-
-        public RequestBodyKind BodyKind => RequestBodyKind.None;
-
-        public ValueTask<BindResult<SearchQuery>> BindAsync(HttpContext context)
-        {
-            var validation = context.Validate();
-            validation.QueryValuesEnum<TaskState>("status", out var states);
-
-            return ValueTask.FromResult(validation.IsValid
-                ? BindResult<SearchQuery>.Success(new SearchQuery { Statuses = states })
-                : BindResult<SearchQuery>.Failure(validation));
-        }
-    }
-
+    [Get("/search")]
     internal sealed partial class SearchEndpoint : Endpoint<SearchQuery, int>;
 }

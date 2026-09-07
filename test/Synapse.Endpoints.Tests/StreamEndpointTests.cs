@@ -245,7 +245,9 @@ public sealed partial class StreamEndpointTests
 // SYNE008 (unused before the generator ran here) checks every request/response type against the
 // JsonSerializerContext(s) in the compilation; the response and DTO types below are otherwise only
 // ever round-tripped through reflection-based JsonSerializer calls in these tests, so they had never
-// been registered anywhere.
+// been registered anywhere. The request types in the second group joined the list when their
+// endpoints gained the route attributes that keep SYNE014 quiet: a POST attribute is what makes the
+// generator resolve their properties to the request body in the first place.
 [JsonSerializable(typeof(int))]
 [JsonSerializable(typeof(MappedEndpointTests.CreateResponse))]
 [JsonSerializable(typeof(MappedEndpointTests.CreatedResponse))]
@@ -253,4 +255,14 @@ public sealed partial class StreamEndpointTests
 [JsonSerializable(typeof(OpenApiMetadataTests.CreatedMappedResponse))]
 [JsonSerializable(typeof(RawEndpointTests.Greeting))]
 [JsonSerializable(typeof(SelfHandledEndpointTests.ProbeDto))]
+[JsonSerializable(typeof(EndpointLifecycleTests.TraceWireRequest))]
+[JsonSerializable(typeof(MappedEndpointTests.CreateBody))]
+[JsonSerializable(typeof(OpenApiMetadataTests.CreatedMappedRequest))]
+[JsonSerializable(typeof(OpenApiMetadataTests.MetaQuery))]
+[JsonSerializable(typeof(OpenApiMetadataTests.MultiVerbMetaQuery))]
+[JsonSerializable(typeof(OpenApiMetadataTests.SelfHandledMetaRequest))]
+[JsonSerializable(typeof(OpenApiMetadataTests.SelfHandledVoidMetaRequest))]
+[JsonSerializable(typeof(SelfHandledEndpointTests.AcceptedProbeQuery))]
+[JsonSerializable(typeof(SelfHandledEndpointTests.CreatedProbeQuery))]
+[JsonSerializable(typeof(SelfHandledEndpointVoidTests.QueuedRequest))]
 internal sealed partial class StreamTestJsonContext : JsonSerializerContext;

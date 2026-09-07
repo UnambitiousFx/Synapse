@@ -150,15 +150,12 @@ internal readonly record struct EndpointTarget
     /// </summary>
     /// <remarks>
     ///     Resolution depends on the endpoint's own route template and HTTP verb (rules 3 and 4 of
-    ///     the binding-source table), not on the type alone. When two endpoints share a bound type
-    ///     with different routes or verbs, only one binder is emitted for that type — keyed by the
-    ///     type, per <c>EndpointRegistry.RegisterBinder</c>'s design — and it is built from whichever
-    ///     endpoint sorts first by <see cref="EndpointFullName" />. The other endpoint silently binds
-    ///     using that resolution instead of its own; this is a known, defined limitation (kept as-is
-    ///     rather than fixed — see <c>EndpointsGenerator.ReportConflictingBindingShapes</c>) that
-    ///     SYNE013 (Task 17) reports as a warning whenever it actually changes the resolved bindings.
-    ///     See <c>BinderEmissionEdgeCaseTests.Generate_ForTypeSharedByEndpointsWithDifferentVerbs_...</c>
-    ///     for a test that pins today's behaviour.
+    ///     the binding-source table), not on the type alone — which is why the binding is emitted per
+    ///     endpoint, into the endpoint's own partial class, rather than once per bound type. The kinds
+    ///     that still take a binder from the registry keep the old limitation until they are migrated:
+    ///     for those, one binder is emitted per bound type, built from whichever endpoint sorts first
+    ///     by <see cref="EndpointFullName" />, and every other endpoint sharing the type silently
+    ///     binds using that resolution instead of its own.
     /// </remarks>
     public EquatableArray<BindablePropertyModel> BoundProperties { get; }
 

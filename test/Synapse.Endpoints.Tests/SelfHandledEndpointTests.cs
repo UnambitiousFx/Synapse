@@ -44,7 +44,6 @@ public sealed partial class SelfHandledEndpointTests
         Assert.Equal("live", body!.Probe);
     }
 
-
     [Fact]
     public async Task Invoke_WhenExecuteAsyncFails_AnswersIdenticallyToTheSameFailureDispatched()
     {
@@ -52,7 +51,6 @@ public sealed partial class SelfHandledEndpointTests
         // returned by a handler behind Endpoint<TRequest, TResponse>. Both run against the real
         // HttpInvoker and the real DefaultFailureHttpMapper, so any difference is the tier's.
         EndpointRegistry.RegisterBinder(new MissingProbeQueryBinder());
-        EndpointRegistry.RegisterBinder(new MissingProbeCommandBinder());
         EndpointRegistry.RegisterMetadata<MissingProbeEndpoint>(new EndpointMetadata(["GET"], "/missing"));
         EndpointRegistry.RegisterMetadata<DispatchedMissingProbeEndpoint>(
             new EndpointMetadata(["GET"], "/missing-dispatched"));
@@ -79,7 +77,6 @@ public sealed partial class SelfHandledEndpointTests
         Assert.Equal(dispatched.ContentType, selfHandled.ContentType);
         Assert.Equal(dispatched.Body, selfHandled.Body);
     }
-
 
     [Fact]
     public async Task Invoke_WithConfiguredCreatedMapping_UsesItInsteadOfOnSuccess()
@@ -118,7 +115,6 @@ public sealed partial class SelfHandledEndpointTests
         // Assert
         Assert.Equal(StatusCodes.Status202Accepted, response.StatusCode);
     }
-
 
     [Fact]
     public async Task Invoke_WhenBindingFails_Answers400WithoutRunningExecuteAsync()
@@ -187,6 +183,7 @@ public sealed partial class SelfHandledEndpointTests
 
     internal sealed record ProbeDto(string Probe);
 
+    [Get("/health/{probe}")]
     internal sealed partial class ProbeEndpoint : SelfHandledEndpoint<ProbeQuery, ProbeDto>
     {
         public override ValueTask<Result<ProbeDto>> ExecuteAsync(ProbeQuery request,
@@ -214,8 +211,11 @@ public sealed partial class SelfHandledEndpointTests
 
     internal sealed record MissingProbeQuery(string Probe);
 
-    internal sealed record MissingProbeCommand(string Probe) : IRequest<ProbeDto>;
+    // A constructor default, so the generated binding on the dispatching endpoint succeeds with no
+    // request input at all: the value is irrelevant here, the failure mapping is the subject.
+    internal sealed record MissingProbeCommand(string Probe = "live") : IRequest<ProbeDto>;
 
+    [Get("/missing")]
     internal sealed partial class MissingProbeEndpoint : SelfHandledEndpoint<MissingProbeQuery, ProbeDto>
     {
         public override ValueTask<Result<ProbeDto>> ExecuteAsync(MissingProbeQuery request,
@@ -226,6 +226,7 @@ public sealed partial class SelfHandledEndpointTests
         }
     }
 
+    [Get("/missing-dispatched")]
     internal sealed partial class DispatchedMissingProbeEndpoint : Endpoint<MissingProbeCommand, ProbeDto>;
 
     private sealed class MissingProbeQueryBinder : IEndpointBinder<MissingProbeQuery>
@@ -236,16 +237,9 @@ public sealed partial class SelfHandledEndpointTests
         }
     }
 
-    private sealed class MissingProbeCommandBinder : IEndpointBinder<MissingProbeCommand>
-    {
-        public ValueTask<BindResult<MissingProbeCommand>> BindAsync(HttpContext context)
-        {
-            return ValueTask.FromResult(BindResult<MissingProbeCommand>.Success(new MissingProbeCommand("live")));
-        }
-    }
-
     internal sealed record CreatedProbeQuery(string Probe);
 
+    [Post("/probes")]
     internal sealed partial class CreatedProbeEndpoint : SelfHandledEndpoint<CreatedProbeQuery, ProbeDto>
     {
         public override void Configure(IEndpointBuilder<ProbeDto> builder)
@@ -271,6 +265,7 @@ public sealed partial class SelfHandledEndpointTests
 
     internal sealed record AcceptedProbeQuery(string Probe);
 
+    [Post("/probes-accepted")]
     internal sealed partial class AcceptedProbeEndpoint : SelfHandledEndpoint<AcceptedProbeQuery, ProbeDto>
     {
         public override Microsoft.AspNetCore.Http.IResult OnSuccess(ProbeDto response,
@@ -297,6 +292,7 @@ public sealed partial class SelfHandledEndpointTests
 
     internal sealed record RejectingProbeQuery(string Probe);
 
+    [Get("/probes-rejected")]
     internal sealed partial class RejectingProbeEndpoint : SelfHandledEndpoint<RejectingProbeQuery, ProbeDto>
     {
         public bool Ran { get; private set; }
@@ -320,6 +316,7 @@ public sealed partial class SelfHandledEndpointTests
 
     internal sealed record ShortCircuitProbeQuery(string Probe);
 
+    [Get("/probes-short-circuit")]
     internal sealed partial class ShortCircuitProbeEndpoint : SelfHandledEndpoint<ShortCircuitProbeQuery, ProbeDto>
     {
         public bool Ran { get; private set; }

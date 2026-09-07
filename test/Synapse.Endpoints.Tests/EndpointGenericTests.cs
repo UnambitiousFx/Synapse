@@ -15,7 +15,6 @@ public sealed partial class EndpointGenericTests
     public async Task Invoke_WithDefaultConfiguration_Returns200AndTheResponse()
     {
         // Arrange
-        EndpointRegistry.RegisterBinder(new EchoBinder());
         EndpointRegistry.RegisterMetadata<EchoEndpoint>(new EndpointMetadata(["GET"], "/echo"));
 
         var invoker = Substitute.For<IHttpInvoker>();
@@ -42,7 +41,6 @@ public sealed partial class EndpointGenericTests
     public async Task Invoke_WhenBindingFails_Returns400()
     {
         // Arrange
-        EndpointRegistry.RegisterBinder<FailingQuery>(new FailingBinder());
         EndpointRegistry.RegisterMetadata<FailingEndpoint>(new EndpointMetadata(["GET"], "/fail"));
 
         var services = new ServiceCollection();
@@ -61,43 +59,25 @@ public sealed partial class EndpointGenericTests
         Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
     }
 
-    [Fact]
-    public async Task BindAsync_OnAnUnmappedEndpoint_PointsAtTheTestHarness()
-    {
-        // Arrange: the message is the only guidance a user gets at the moment they try the obvious
-        // thing, so it has to name the supported alternative rather than only the host.
-        var endpoint = new EchoEndpoint();
-
-        // Act
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
-            async () => await endpoint.BindAsync(new DefaultHttpContext()));
-
-        // Assert
-        Assert.Contains("EndpointHarness.Create", exception.Message);
-        Assert.Contains("UnambitiousFx.Synapse.Endpoints.Testing", exception.Message);
-    }
-
     internal sealed record EchoQuery : IRequest<string>;
 
+    [Get("/echo")]
     internal sealed partial class EchoEndpoint : Endpoint<EchoQuery, string>;
-
-    private sealed class EchoBinder : IEndpointBinder<EchoQuery>
-    {
-        public ValueTask<BindResult<EchoQuery>> BindAsync(HttpContext context)
-        {
-            return ValueTask.FromResult(BindResult<EchoQuery>.Success(new EchoQuery()));
-        }
-    }
 
     internal sealed record FailingQuery : IRequest<string>;
 
-    internal sealed partial class FailingEndpoint : Endpoint<FailingQuery, string>;
-
-    private sealed class FailingBinder : IEndpointBinder<FailingQuery>
+    /// <summary>
+    ///     A hand-written failing binding. Was a stubbed IEndpointBinder registered against
+    ///     Endpoint&lt;FailingQuery, string&gt;; the binding is generated now, so the failure is
+    ///     expressed at the tier that exists for hand-written binding. Behaviourally identical — the
+    ///     two tiers differ only in where BindAsync comes from.
+    /// </summary>
+    [Get("/fail")]
+    internal sealed partial class FailingEndpoint : RawEndpoint<FailingQuery, string>
     {
-        public ValueTask<BindResult<FailingQuery>> BindAsync(HttpContext context)
+        public override ValueTask<BindResult<FailingQuery>> BindAsync(HttpContext context)
         {
-            return ValueTask.FromResult(BindResult<FailingQuery>.Failure("id", "is not a valid Guid."));
+            return new(BindResult<FailingQuery>.Failure("id", "is not a valid Guid."));
         }
     }
 }

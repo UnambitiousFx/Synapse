@@ -13,7 +13,6 @@ public sealed partial class EndpointGroupTests
     public void MapEndpoint_WhenEndpointDeclaresAGroup_PrefixesTheRoute()
     {
         // Arrange
-        EndpointRegistry.RegisterBinder(new GroupedBinder());
         EndpointRegistry.RegisterMetadata<GroupedEndpoint>(
             new EndpointMetadata(["GET"], "/{id:int}", typeof(TasksGroup), static () => new TasksGroup()));
 
@@ -36,8 +35,6 @@ public sealed partial class EndpointGroupTests
     {
         // Arrange
         SharedTasksGroup.ConfigureCallCount = 0;
-        EndpointRegistry.RegisterBinder(new SharedFirstBinder());
-        EndpointRegistry.RegisterBinder(new SharedSecondBinder());
         EndpointRegistry.RegisterMetadata<SharedFirstEndpoint>(
             new EndpointMetadata(["GET"], "/first", typeof(SharedTasksGroup), static () => new SharedTasksGroup()));
         EndpointRegistry.RegisterMetadata<SharedSecondEndpoint>(
@@ -64,7 +61,6 @@ public sealed partial class EndpointGroupTests
     public void MapEndpoint_WhenGroupTypeIsSetWithNoFactory_ThrowsActionableException()
     {
         // Arrange
-        EndpointRegistry.RegisterBinder(new NoFactoryBinder());
         EndpointRegistry.RegisterMetadata<NoFactoryEndpoint>(
             new EndpointMetadata(["GET"], "/{id:int}", typeof(TasksGroup)));
 
@@ -91,14 +87,6 @@ public sealed partial class EndpointGroupTests
 
     internal sealed partial class GroupedEndpoint : Endpoint<GroupedQuery, string>;
 
-    private sealed class GroupedBinder : IEndpointBinder<GroupedQuery>
-    {
-        public ValueTask<BindResult<GroupedQuery>> BindAsync(HttpContext context)
-        {
-            return ValueTask.FromResult(BindResult<GroupedQuery>.Success(new GroupedQuery()));
-        }
-    }
-
     private sealed class SharedTasksGroup : EndpointGroup
     {
         internal static int ConfigureCallCount;
@@ -114,35 +102,11 @@ public sealed partial class EndpointGroupTests
 
     internal sealed partial class SharedFirstEndpoint : Endpoint<SharedFirstQuery, string>;
 
-    private sealed class SharedFirstBinder : IEndpointBinder<SharedFirstQuery>
-    {
-        public ValueTask<BindResult<SharedFirstQuery>> BindAsync(HttpContext context)
-        {
-            return ValueTask.FromResult(BindResult<SharedFirstQuery>.Success(new SharedFirstQuery()));
-        }
-    }
-
     internal sealed record SharedSecondQuery : IRequest<string>;
 
     internal sealed partial class SharedSecondEndpoint : Endpoint<SharedSecondQuery, string>;
 
-    private sealed class SharedSecondBinder : IEndpointBinder<SharedSecondQuery>
-    {
-        public ValueTask<BindResult<SharedSecondQuery>> BindAsync(HttpContext context)
-        {
-            return ValueTask.FromResult(BindResult<SharedSecondQuery>.Success(new SharedSecondQuery()));
-        }
-    }
-
     internal sealed record NoFactoryQuery : IRequest<string>;
 
     internal sealed partial class NoFactoryEndpoint : Endpoint<NoFactoryQuery, string>;
-
-    private sealed class NoFactoryBinder : IEndpointBinder<NoFactoryQuery>
-    {
-        public ValueTask<BindResult<NoFactoryQuery>> BindAsync(HttpContext context)
-        {
-            return ValueTask.FromResult(BindResult<NoFactoryQuery>.Success(new NoFactoryQuery()));
-        }
-    }
 }

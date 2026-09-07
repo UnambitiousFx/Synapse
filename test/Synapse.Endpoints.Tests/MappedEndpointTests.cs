@@ -112,6 +112,7 @@ public sealed partial class MappedEndpointTests
 
     internal sealed record CreateResponse(string Id);
 
+    [Post("/things")]
     internal sealed partial class CreateEndpoint : MappedEndpoint<CreateBody, CreateCommand, int, CreateResponse>
     {
         public override CreateCommand ToRequest(CreateBody request)
@@ -137,6 +138,7 @@ public sealed partial class MappedEndpointTests
 
     internal sealed record FailingCreateResponse(string Id);
 
+    [Post("/things-fail")]
     internal sealed partial class FailingEndpoint : MappedEndpoint<CreateBody, FailingCreateCommand, int, FailingCreateResponse>
     {
         public override FailingCreateCommand ToRequest(CreateBody request)
@@ -162,6 +164,7 @@ public sealed partial class MappedEndpointTests
 
     internal sealed record CreatedResponse(string Id);
 
+    [Post("/things-created")]
     internal sealed partial class CreatedEndpoint : MappedEndpoint<CreateBody, CreatedCommand, int, CreatedResponse>
     {
         public override CreatedCommand ToRequest(CreateBody request)

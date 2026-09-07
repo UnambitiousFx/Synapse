@@ -1,7 +1,5 @@
 using Microsoft.AspNetCore.Http;
 using UnambitiousFx.Synapse.Abstractions;
-using UnambitiousFx.Synapse.Endpoints.Binding;
-using UnambitiousFx.Synapse.Endpoints.Internal;
 
 namespace UnambitiousFx.Synapse.Endpoints;
 
@@ -15,15 +13,22 @@ namespace UnambitiousFx.Synapse.Endpoints;
 /// <remarks>
 ///     <para>
 ///         The high level, and the one to reach for by default: a route attribute and a class
-///         declaration are usually the whole endpoint. The request is bound by a binder the analyzer
+///         declaration are usually the whole endpoint. The request is bound by code the analyzer
 ///         generates at compile time, with no reflection and nothing to write by hand.
 ///     </para>
 ///     <para>
-///         This is <see cref="RawEndpoint{TRequest,TResponse}" /> with its binding supplied. Everything
-///         else — <c>Configure</c>, <c>OnSuccess</c>, dispatch, failure mapping, the OpenAPI metadata —
-///         is inherited unchanged, so the two levels cannot behave differently. If the generated
-///         binding is not what you need, derive from that class instead and write
-///         <c>BindAsync</c> yourself; nothing else about the endpoint changes.
+///         An empty marker over <see cref="RawEndpoint{TRequest,TResponse}" />: deriving from this
+///         class is what tells the analyzer to write <c>BindAsync</c>, and the analyzer writes it as a
+///         member of the endpoint's own <c>partial</c> class. That makes the analyzer a
+///         <em>requirement</em> rather than a convenience — an endpoint at this level that the
+///         analyzer did not see does not compile, because <c>BindAsync</c> is still abstract.
+///     </para>
+///     <para>
+///         Everything else — <c>Configure</c>, <c>OnSuccess</c>, dispatch, failure mapping, the
+///         OpenAPI metadata — is inherited from that class unchanged, so the two levels cannot behave
+///         differently. If the generated binding is not what you need, derive from
+///         <see cref="RawEndpoint{TRequest,TResponse}" /> instead and write <c>BindAsync</c>
+///         yourself; nothing else about the endpoint changes.
 ///     </para>
 ///     <para>
 ///         Endpoints are stateless singletons: one instance is created at startup, <c>Configure</c>
@@ -34,41 +39,4 @@ namespace UnambitiousFx.Synapse.Endpoints;
 /// </remarks>
 public abstract class Endpoint<TRequest, TResponse> : RawEndpoint<TRequest, TResponse>
     where TRequest : IRequest<TResponse>
-    where TResponse : notnull
-{
-    private IEndpointBinder<TRequest>? _binder;
-
-    /// <inheritdoc />
-    /// <remarks>
-    ///     Sealed: the generated binder is what makes this the high level. Override the binding by
-    ///     deriving from <see cref="RawEndpoint{TRequest,TResponse}" /> instead.
-    /// </remarks>
-    public sealed override ValueTask<BindResult<TRequest>> BindAsync(HttpContext context)
-    {
-        return Mapped(_binder).BindAsync(context);
-    }
-
-    /// <inheritdoc />
-    protected sealed override RequestBodyKind BoundBodyKind => _binder?.BodyKind ?? RequestBodyKind.Json;
-
-    /// <inheritdoc />
-    protected sealed override IReadOnlyList<BoundParameterMetadata> DeclaredParameters()
-    {
-        return _binder?.Parameters ?? [];
-    }
-
-    /// <inheritdoc />
-    protected sealed override IReadOnlyList<FormFieldMetadata> DeclaredFormFields()
-    {
-        return _binder?.FormFields ?? [];
-    }
-
-    internal sealed override RawEndpointPlan CreatePlan(EndpointMetadata metadata)
-    {
-        // Resolved after the plan, matching the order the route and binder were resolved in before:
-        // an endpoint missing both reports its missing route first, which is the more useful error.
-        var plan = base.CreatePlan(metadata);
-        _binder = EndpointRegistry.GetBinder<TRequest>();
-        return plan;
-    }
-}
+    where TResponse : notnull;

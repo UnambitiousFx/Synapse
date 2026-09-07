@@ -11,7 +11,6 @@ public sealed partial class BinderTierHarnessTests
     public async Task SendAsync_ForAnEndpointWithAResponse_BindsDispatchesAndMaps()
     {
         // Arrange
-        EndpointRegistry.RegisterBinder(new LookupBinder());
         EndpointRegistry.RegisterMetadata<LookupEndpoint>(new EndpointMetadata(["GET"], "/lookup/{id}"));
         using var harness = EndpointHarness.Create<LookupEndpoint>(options =>
             options.Handle<LookupQuery, string>(query => Result.Success($"found:{query.Id}")));
@@ -28,7 +27,6 @@ public sealed partial class BinderTierHarnessTests
     public async Task SendAsync_ForAVoidEndpoint_DispatchesAndReturnsNoContent()
     {
         // Arrange
-        EndpointRegistry.RegisterBinder(new RetireBinder());
         EndpointRegistry.RegisterMetadata<RetireEndpoint>(new EndpointMetadata(["DELETE"], "/retire"));
         using var harness = EndpointHarness.Create<RetireEndpoint>(options =>
             options.Handle<RetireCommand>(_ => Result.Success()));
@@ -43,18 +41,19 @@ public sealed partial class BinderTierHarnessTests
     [Fact]
     public async Task SendAsync_WhenBindingFails_Returns400WithTheFieldThatFailed()
     {
-        // Arrange
-        EndpointRegistry.RegisterBinder(new RejectingBinder());
-        EndpointRegistry.RegisterMetadata<RejectingEndpoint>(new EndpointMetadata(["GET"], "/rejecting"));
+        // Arrange — a real bad value rather than a stubbed failure: the binding is generated now, so
+        // the only way to make it fail is to send something it cannot parse.
+        EndpointRegistry.RegisterMetadata<RejectingEndpoint>(
+            new EndpointMetadata(["GET"], "/rejecting/{taskId}"));
         using var harness = EndpointHarness.Create<RejectingEndpoint>();
 
         // Act
-        var response = await harness.Get("/rejecting").SendAsync(TestContext.Current.CancellationToken);
+        var response = await harness.Get("/rejecting/not-a-guid").SendAsync(TestContext.Current.CancellationToken);
 
         // Assert
         Assert.Equal(StatusCodes.Status400BadRequest, response.StatusCode);
         var problem = response.ReadValidationProblem();
-        Assert.Equal("The route value is not a valid Guid.", Assert.Single(problem.Errors["taskId"]));
+        Assert.Equal("The route value is not a valid System.Guid.", Assert.Single(problem.Errors["taskId"]));
     }
 
     [Fact]
@@ -80,41 +79,23 @@ public sealed partial class BinderTierHarnessTests
         public string Id { get; init; } = string.Empty;
     }
 
+    [Get("/lookup/{id}")]
     internal sealed partial class LookupEndpoint : Endpoint<LookupQuery, string>;
-
-    private sealed class LookupBinder : IEndpointBinder<LookupQuery>
-    {
-        public ValueTask<BindResult<LookupQuery>> BindAsync(HttpContext context)
-        {
-            return ValueTask.FromResult(BindResult<LookupQuery>.Success(
-                new LookupQuery { Id = context.Request.RouteValues["id"]?.ToString() ?? string.Empty }));
-        }
-    }
 
     internal sealed record RetireCommand : IRequest;
 
+    [Delete("/retire")]
     internal sealed partial class RetireEndpoint : Endpoint<RetireCommand>;
 
-    private sealed class RetireBinder : IEndpointBinder<RetireCommand>
+    internal sealed record RejectingQuery : IRequest<string>
     {
-        public ValueTask<BindResult<RetireCommand>> BindAsync(HttpContext context)
-        {
-            return ValueTask.FromResult(BindResult<RetireCommand>.Success(new RetireCommand()));
-        }
+        // A Guid route parameter is how a generated binding is made to fail: send a segment that is
+        // not one.
+        public Guid TaskId { get; init; }
     }
 
-    internal sealed record RejectingQuery : IRequest<string>;
-
+    [Get("/rejecting/{taskId}")]
     internal sealed partial class RejectingEndpoint : Endpoint<RejectingQuery, string>;
-
-    private sealed class RejectingBinder : IEndpointBinder<RejectingQuery>
-    {
-        public ValueTask<BindResult<RejectingQuery>> BindAsync(HttpContext context)
-        {
-            return ValueTask.FromResult(
-                BindResult<RejectingQuery>.Failure("taskId", "The route value is not a valid Guid."));
-        }
-    }
 
     internal sealed record WireRequest(string Text);
 

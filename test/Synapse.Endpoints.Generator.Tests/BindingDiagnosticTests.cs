@@ -1,12 +1,12 @@
 namespace UnambitiousFx.Synapse.Endpoints.Generator.Tests;
 
 /// <summary>
-///     Covers the five binding diagnostics reported by <c>EndpointsGenerator</c> during property
+///     Covers the four binding diagnostics reported by <c>EndpointsGenerator</c> during property
 ///     resolution: SYNE002 (two properties claim the same input), SYNE007 (a body-only property on a
-///     bodyless verb), SYNE011 (a route/query/header-bound property that cannot be assigned), SYNE012
-///     (a route/query/header-bound property type with no viable <c>TryParse</c>), and SYNE013 (one
-///     message type shared by endpoints with conflicting binding shapes). Each diagnostic gets a test
-///     that it fires and a test that it stays silent on the equivalent correct shape.
+///     bodyless verb), SYNE011 (a route/query/header-bound property that cannot be assigned) and
+///     SYNE012 (a route/query/header-bound property type with no viable <c>TryParse</c>). Each
+///     diagnostic gets a test that it fires and a test that it stays silent on the equivalent correct
+///     shape.
 /// </summary>
 public sealed class BindingDiagnosticTests
 {
@@ -385,100 +385,5 @@ public sealed class BindingDiagnosticTests
 
         // Assert
         Assert.DoesNotContain(diagnostics, d => d.Id == "SYNE012");
-    }
-
-    [Fact]
-    public void Generate_ForTwoEndpointsSharingATypeWithDifferentResolvedBindings_ReportsSyne013()
-    {
-        // Arrange — SharedCommand's "Value" resolves to Route "value" for AEndpoint (GET, route
-        // {value}) but to Body for BEndpoint (POST, no route parameter): genuinely different resolved
-        // bindings, not merely a different-looking route/verb that happens to bind the same way.
-        const string source = """
-                              using UnambitiousFx.Synapse.Abstractions;
-                              using UnambitiousFx.Synapse.Endpoints;
-
-                              namespace TestNs;
-
-                              public sealed record SharedCommand : IRequest
-                              {
-                                  public string Value { get; init; } = "";
-                              }
-
-                              [Get("/a/{value}")]
-                              public sealed partial class AEndpoint : Endpoint<SharedCommand>;
-
-                              [Post("/b")]
-                              public sealed partial class BEndpoint : Endpoint<SharedCommand>;
-                              """;
-
-        // Act
-        var diagnostics = GeneratorHarness.GetDiagnostics(source);
-
-        // Assert — reported once for the shared type, not once per endpoint, and names both.
-        var matches = diagnostics.Where(d => d.Id == "SYNE013").ToArray();
-        var diagnostic = Assert.Single(matches);
-        var message = diagnostic.GetMessage();
-        Assert.Contains("SharedCommand", message);
-        Assert.Contains("AEndpoint", message);
-        Assert.Contains("BEndpoint", message);
-    }
-
-    [Fact]
-    public void Generate_ForTwoEndpointsSharingATypeWithIdenticalResolvedBindings_ReportsNoSyne013()
-    {
-        // Arrange — both endpoints are GET with a route template that does not reference "Value" at
-        // all, so "Value" resolves to Query for both: the routes and verbs are literally identical
-        // here, but the point is the same even when they are not — what matters is whether the
-        // *resolved* binding differs, not the raw route/verb text. This is the false-positive shape
-        // called out in the brief: two endpoints sharing a type whose bindings happen to agree.
-        const string source = """
-                              using UnambitiousFx.Synapse.Abstractions;
-                              using UnambitiousFx.Synapse.Endpoints;
-
-                              namespace TestNs;
-
-                              public sealed record SharedQuery : IRequest<int>
-                              {
-                                  public string Value { get; init; } = "";
-                              }
-
-                              [Get("/a")]
-                              public sealed partial class AEndpoint : Endpoint<SharedQuery, int>;
-
-                              [Get("/b")]
-                              public sealed partial class BEndpoint : Endpoint<SharedQuery, int>;
-                              """;
-
-        // Act
-        var diagnostics = GeneratorHarness.GetDiagnostics(source);
-
-        // Assert
-        Assert.DoesNotContain(diagnostics, d => d.Id == "SYNE013");
-    }
-
-    [Fact]
-    public void Generate_ForOneEndpointBindingAType_ReportsNoSyne013()
-    {
-        // Arrange — a type used by exactly one endpoint can never conflict with itself.
-        const string source = """
-                              using UnambitiousFx.Synapse.Abstractions;
-                              using UnambitiousFx.Synapse.Endpoints;
-
-                              namespace TestNs;
-
-                              public sealed record GetThingQuery : IRequest<int>
-                              {
-                                  public int Id { get; init; }
-                              }
-
-                              [Get("/things/{id}")]
-                              public sealed partial class GetThingEndpoint : Endpoint<GetThingQuery, int>;
-                              """;
-
-        // Act
-        var diagnostics = GeneratorHarness.GetDiagnostics(source);
-
-        // Assert
-        Assert.DoesNotContain(diagnostics, d => d.Id == "SYNE013");
     }
 }

@@ -13,10 +13,9 @@ namespace UnambitiousFx.Examples.EndpointsApi.Features.Tasks;
 ///         <c>TRACE</c> — uses the base attribute directly.
 ///     </para>
 ///     <para>
-///         It reuses <see cref="ListTasksQuery" /> and therefore <c>ListTasksEndpoint</c>'s generated
-///         binder: only one binder is emitted per bound type, and this endpoint resolves to the same
-///         bindings as that one (bodyless verb, no route parameters, no properties), so sharing it
-///         changes nothing. Were the two to resolve differently, SYNE013 would say so.
+///         It reuses <see cref="ListTasksQuery" />, and gets its own generated binding for it: the
+///         binding is emitted per endpoint, resolved from this endpoint's own route and verb, so two
+///         endpoints sharing a message cannot resolve it for each other.
 ///     </para>
 /// </remarks>
 [HttpEndpoint("HEAD", "/")]

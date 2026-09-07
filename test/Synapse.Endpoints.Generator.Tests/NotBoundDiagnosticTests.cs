@@ -200,7 +200,7 @@ public sealed class NotBoundDiagnosticTests
                               """;
 
         // Act
-        var binders = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var binders = GeneratorHarness.GetEndpointFile(source);
 
         // Assert
         Assert.Contains("Term", binders);

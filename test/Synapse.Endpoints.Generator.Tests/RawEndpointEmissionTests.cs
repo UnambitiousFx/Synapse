@@ -61,13 +61,14 @@ public sealed class RawEndpointEmissionTests
     public void Generate_ForAFreeFormEndpoint_RegistersMetadataButNoBinder()
     {
         // Act
-        var registrations = GeneratorHarness.GetFile(FreeFormEndpoint, "SynapseEndpointRegistrations.g.cs");
-        var binders = GeneratorHarness.GetFile(FreeFormEndpoint, "SynapseEndpointBinders.g.cs");
+        var files = GeneratorHarness.GetFiles(FreeFormEndpoint);
+        var registrations = files["SynapseEndpointRegistrations.g.cs"];
 
-        // Assert — the route still has to be registered, but there is no bound type to bind.
+        // Assert — the route still has to be registered, but there is no bound type to bind, so
+        // neither a registry binder nor a per-endpoint binding partial is emitted.
         Assert.Contains("RegisterMetadata<global::TestNs.HealthEndpoint>", registrations);
         Assert.DoesNotContain("RegisterBinder", registrations);
-        Assert.DoesNotContain("IEndpointBinder", binders);
+        Assert.DoesNotContain(files.Keys, key => key.EndsWith(".Synapse.g.cs", StringComparison.Ordinal));
         GeneratorHarness.AssertGeneratedCompiles(FreeFormEndpoint);
     }
 
@@ -149,9 +150,10 @@ public sealed class RawEndpointEmissionTests
     // Discovery walks the base chain outwards from the class, so the nearest match wins. Endpoint<T,R>
     // now derives from RawEndpoint<T,R>, which derives from RawEndpoint — three candidate matches in
     // one chain. Pinned rather than trusted: if proximity ever stopped deciding, a high-level endpoint
-    // would silently lose its generated binder.
+    // would silently lose its generated binding — and, now that the binding is an override of an
+    // abstract member, would not compile.
     [Fact]
-    public void Generate_ForAHighLevelEndpoint_StillEmitsABinderDespiteTheRawBasesInItsChain()
+    public void Generate_ForAHighLevelEndpoint_StillEmitsItsBindingDespiteTheRawBasesInItsChain()
     {
         // Arrange
         const string source = """
@@ -170,12 +172,11 @@ public sealed class RawEndpointEmissionTests
                               """;
 
         // Act
-        var registrations = GeneratorHarness.GetFile(source, "SynapseEndpointRegistrations.g.cs");
-        var binders = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert
-        Assert.Contains("RegisterBinder(new TestNs_GetThingQueryBinder())", registrations);
-        Assert.Contains("IEndpointBinder<global::TestNs.GetThingQuery>", binders);
+        Assert.Contains("partial class GetThingEndpoint", generated);
+        Assert.Contains("BindResult<global::TestNs.GetThingQuery>> BindAsync(", generated);
         GeneratorHarness.AssertGeneratedCompiles(source);
     }
 

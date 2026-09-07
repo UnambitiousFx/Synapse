@@ -135,7 +135,7 @@ public sealed class CollectionDiagnosticTests
 
         // Act
         var diagnostics = GeneratorHarness.GetDiagnostics(source);
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert
         Assert.DoesNotContain(diagnostics, d => d.Id is "SYNE012" or "SYNE016");
@@ -164,7 +164,7 @@ public sealed class CollectionDiagnosticTests
                               """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert
         Assert.Contains("TryGetQuery(context, \"Term\", out var rawTerm)", generated);

@@ -15,7 +15,6 @@ public sealed partial class EndpointVoidTests
     public async Task Invoke_WithDefaultConfiguration_Returns204()
     {
         // Arrange
-        EndpointRegistry.RegisterBinder(new PingBinder());
         EndpointRegistry.RegisterMetadata<PingEndpoint>(new EndpointMetadata(["POST"], "/ping"));
 
         var invoker = Substitute.For<IHttpInvoker>();
@@ -42,7 +41,6 @@ public sealed partial class EndpointVoidTests
     public async Task Invoke_WhenInvokerReturnsMappedFailure_Returns409WithoutInvokingOnSuccess()
     {
         // Arrange
-        EndpointRegistry.RegisterBinder(new ConflictPingBinder());
         EndpointRegistry.RegisterMetadata<ConflictPingEndpoint>(new EndpointMetadata(["POST"], "/ping-conflict"));
 
         // A real HttpInvoker never calls onSuccess for a mapped failure (see HttpInvokerTests); this
@@ -72,7 +70,6 @@ public sealed partial class EndpointVoidTests
     public async Task Invoke_WithConfiguredStatusCode_Returns202ThroughRealHttpInvoker()
     {
         // Arrange
-        EndpointRegistry.RegisterBinder(new AcceptedPingBinder());
         EndpointRegistry.RegisterMetadata<AcceptedPingEndpoint>(new EndpointMetadata(["POST"], "/ping-accepted"));
 
         // Substitute only the mediator (IInvoker), not IHttpInvoker: the point of this test is to
@@ -103,7 +100,6 @@ public sealed partial class EndpointVoidTests
     public async Task Invoke_WhenRealInvokerFails_ReturnsMappedFailureWithoutConfiguredStatusCode()
     {
         // Arrange
-        EndpointRegistry.RegisterBinder(new FailingPingBinder());
         EndpointRegistry.RegisterMetadata<FailingPingEndpoint>(new EndpointMetadata(["POST"], "/ping-failing"));
 
         var mediator = Substitute.For<IInvoker>();
@@ -132,25 +128,9 @@ public sealed partial class EndpointVoidTests
 
     internal sealed partial class PingEndpoint : Endpoint<PingCommand>;
 
-    private sealed class PingBinder : IEndpointBinder<PingCommand>
-    {
-        public ValueTask<BindResult<PingCommand>> BindAsync(HttpContext context)
-        {
-            return ValueTask.FromResult(BindResult<PingCommand>.Success(new PingCommand()));
-        }
-    }
-
     internal sealed record ConflictPingCommand : IRequest;
 
     internal sealed partial class ConflictPingEndpoint : Endpoint<ConflictPingCommand>;
-
-    private sealed class ConflictPingBinder : IEndpointBinder<ConflictPingCommand>
-    {
-        public ValueTask<BindResult<ConflictPingCommand>> BindAsync(HttpContext context)
-        {
-            return ValueTask.FromResult(BindResult<ConflictPingCommand>.Success(new ConflictPingCommand()));
-        }
-    }
 
     internal sealed record AcceptedPingCommand : IRequest;
 
@@ -162,14 +142,6 @@ public sealed partial class EndpointVoidTests
         }
     }
 
-    private sealed class AcceptedPingBinder : IEndpointBinder<AcceptedPingCommand>
-    {
-        public ValueTask<BindResult<AcceptedPingCommand>> BindAsync(HttpContext context)
-        {
-            return ValueTask.FromResult(BindResult<AcceptedPingCommand>.Success(new AcceptedPingCommand()));
-        }
-    }
-
     internal sealed record FailingPingCommand : IRequest;
 
     internal sealed partial class FailingPingEndpoint : Endpoint<FailingPingCommand>
@@ -177,14 +149,6 @@ public sealed partial class EndpointVoidTests
         public override void Configure(IEndpointBuilder builder)
         {
             builder.StatusCode(StatusCodes.Status202Accepted);
-        }
-    }
-
-    private sealed class FailingPingBinder : IEndpointBinder<FailingPingCommand>
-    {
-        public ValueTask<BindResult<FailingPingCommand>> BindAsync(HttpContext context)
-        {
-            return ValueTask.FromResult(BindResult<FailingPingCommand>.Success(new FailingPingCommand()));
         }
     }
 }

@@ -82,6 +82,7 @@ public sealed partial class SelfHandledEndpointVoidTests
 
     internal sealed record PurgeRequest(string Key);
 
+    [Delete("/cache/{key}")]
     internal sealed partial class PurgeEndpoint : SelfHandledEndpoint<PurgeRequest>
     {
         public string? Purged { get; private set; }
@@ -105,6 +106,7 @@ public sealed partial class SelfHandledEndpointVoidTests
 
     internal sealed record ConflictedRequest(string Key);
 
+    [Delete("/cache-conflict")]
     internal sealed partial class ConflictedEndpoint : SelfHandledEndpoint<ConflictedRequest>
     {
         public override ValueTask<Result> ExecuteAsync(ConflictedRequest request,
@@ -125,6 +127,7 @@ public sealed partial class SelfHandledEndpointVoidTests
 
     internal sealed record QueuedRequest(string Key);
 
+    [Post("/cache/rebuild")]
     internal sealed partial class QueuedEndpoint : SelfHandledEndpoint<QueuedRequest>
     {
         public override void Configure(IEndpointBuilder builder)

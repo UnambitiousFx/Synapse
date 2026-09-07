@@ -387,9 +387,8 @@ public sealed partial class SelfHandledThingEndpoint : SelfHandledEndpoint<GetTh
 /// </summary>
 /// <remarks>
 ///     Carries the same route attribute as <see cref="GetThingEndpoint" />: with no attribute at all,
-///     the generator has no verb to resolve <see cref="GetThingQuery" />'s binding sources from (SYNE014),
-///     and a mismatched resolution against <see cref="GetThingEndpoint" />'s would trip SYNE013 — both
-///     warnings, and this repo builds with warnings as errors.
+///     the generator has no verb to resolve <see cref="GetThingQuery" />'s binding sources from
+///     (SYNE014, a warning, and this repo builds with warnings as errors).
 /// </remarks>
 [Get("/things/{id:guid}")]
 public sealed partial class HookedThingEndpoint : Endpoint<GetThingQuery, ThingDto>

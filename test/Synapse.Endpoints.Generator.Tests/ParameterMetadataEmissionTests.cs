@@ -25,10 +25,10 @@ public sealed class ParameterMetadataEmissionTests
             """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert
-        Assert.Contains("BoundParameterMetadata[] ParametersValue", generated);
+        Assert.Contains("BoundParameterMetadata[] s_synapseParameters", generated);
         Assert.Contains("Name = \"Page\"", generated);
         Assert.Contains("BoundParameterLocation.Query", generated);
         Assert.Contains("Required = true", generated);
@@ -55,7 +55,7 @@ public sealed class ParameterMetadataEmissionTests
             """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert
         Assert.Contains("Required = false", generated);
@@ -81,7 +81,7 @@ public sealed class ParameterMetadataEmissionTests
             """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert — the document must advertise the key the binder reads.
         Assert.Contains("Name = \"tag\"", generated);
@@ -110,11 +110,11 @@ public sealed class ParameterMetadataEmissionTests
             """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert — the array-ness is carried by IsArray, and ValueType is int, never int[]: a
         // consumer must not have to unwrap the collection type itself.
-        Assert.Contains("BoundParameterMetadata[] ParametersValue", generated);
+        Assert.Contains("BoundParameterMetadata[] s_synapseParameters", generated);
         Assert.Contains("Name = \"Ids\"", generated);
         Assert.Contains("BoundParameterLocation.Query", generated);
         Assert.Contains("IsArray = true", generated);
@@ -142,7 +142,7 @@ public sealed class ParameterMetadataEmissionTests
             """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert
         Assert.Contains("Required = false", generated);
@@ -166,7 +166,7 @@ public sealed class ParameterMetadataEmissionTests
             """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert
         Assert.Contains("Name = \"Page\"", generated);
@@ -195,7 +195,7 @@ public sealed class ParameterMetadataEmissionTests
             """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert
         Assert.Contains("Required = false", generated);
@@ -222,7 +222,7 @@ public sealed class ParameterMetadataEmissionTests
             """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert
         Assert.Contains("BoundParameterLocation.Path", generated);
@@ -249,7 +249,7 @@ public sealed class ParameterMetadataEmissionTests
             """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert — the underlying type, never Nullable<Guid>: TypeFullName is already unwrapped.
         Assert.Contains("ValueType = typeof(global::System.Guid)", generated);
@@ -276,11 +276,11 @@ public sealed class ParameterMetadataEmissionTests
             """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert — no member at all rather than an empty array: the interface default already says
         // "no parameters", and emitting an empty array would be noise in every body-bound binder.
-        Assert.DoesNotContain("ParametersValue", generated);
+        Assert.DoesNotContain("s_synapseParameters", generated);
         GeneratorHarness.AssertGeneratedCompiles(source);
     }
 
@@ -304,16 +304,16 @@ public sealed class ParameterMetadataEmissionTests
             """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert
-        Assert.Contains("FormFieldMetadata[] FormFieldsValue", generated);
+        Assert.Contains("FormFieldMetadata[] s_synapseFormFields", generated);
         Assert.Contains("Name = \"File\"", generated);
         Assert.Contains("ValueType = typeof(global::Microsoft.AspNetCore.Http.IFormFile)", generated);
         Assert.Contains("Name = \"Caption\"", generated);
 
         // A form field is a body concern, never a parameter.
-        Assert.DoesNotContain("ParametersValue", generated);
+        Assert.DoesNotContain("s_synapseParameters", generated);
         GeneratorHarness.AssertGeneratedCompiles(source);
     }
 
@@ -336,7 +336,7 @@ public sealed class ParameterMetadataEmissionTests
             """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert — and not required: FormFileCollectionValueReadEmitter binds an absent file field
         // to an empty collection, exactly as the other collection shapes do.
@@ -363,10 +363,10 @@ public sealed class ParameterMetadataEmissionTests
             """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert
-        Assert.DoesNotContain("FormFieldsValue", generated);
+        Assert.DoesNotContain("s_synapseFormFields", generated);
         GeneratorHarness.AssertGeneratedCompiles(source);
     }
 }

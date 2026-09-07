@@ -18,9 +18,78 @@ internal static class GeneratorHarness
 
     internal static string? TryGetFile(string source, string fileName)
     {
+        foreach (var file in GetFiles(source))
+        {
+            if (file.Key.EndsWith(fileName, StringComparison.Ordinal))
+            {
+                return file.Value;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    ///     Every file the generator emitted for <paramref name="source" />, keyed by hint name.
+    /// </summary>
+    /// <param name="source">The source to run the generator over.</param>
+    /// <returns>The generated files, keyed by hint name.</returns>
+    /// <remarks>
+    ///     One generator run serves the whole dictionary, so a test asserting about two files does not
+    ///     compile the same source twice — the harness's dominant cost.
+    /// </remarks>
+    internal static IReadOnlyDictionary<string, string> GetFiles(string source)
+    {
         var (_, trees) = Run(source, optionsProvider: null);
-        var tree = trees.FirstOrDefault(t => t.FilePath.EndsWith(fileName, StringComparison.Ordinal));
-        return tree?.ToString();
+
+        return trees.ToDictionary(
+            static tree => Path.GetFileName(tree.FilePath),
+            static tree => tree.ToString(),
+            StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    ///     Returns the single per-endpoint generated file. Most emission tests declare one endpoint, so
+    ///     they need not repeat its hint name.
+    /// </summary>
+    /// <param name="source">The source to run the generator over.</param>
+    /// <returns>The generated file's text.</returns>
+    internal static string GetEndpointFile(string source)
+    {
+        return SingleEndpointFile(GetFiles(source));
+    }
+
+    /// <summary>
+    ///     Same as <see cref="GetEndpointFile" />, but with additional metadata references, so a test
+    ///     can put the message type in a referenced assembly.
+    /// </summary>
+    /// <param name="source">The source to run the generator over.</param>
+    /// <param name="extraReferences">References to add to the compilation.</param>
+    /// <returns>The generated file's text.</returns>
+    internal static string GetEndpointFileWithReferences(string source,
+        params MetadataReference[] extraReferences)
+    {
+        var driver = CSharpGeneratorDriver.Create(new EndpointsGenerator());
+        var result = driver.RunGenerators(CreateCompilation(source).AddReferences(extraReferences))
+            .GetRunResult();
+
+        return SingleEndpointFile(result.GeneratedTrees.ToDictionary(
+            static tree => Path.GetFileName(tree.FilePath),
+            static tree => tree.ToString(),
+            StringComparer.Ordinal));
+    }
+
+    private static string SingleEndpointFile(IReadOnlyDictionary<string, string> files)
+    {
+        var endpointFiles = files
+            .Where(static file => file.Key.EndsWith(".Synapse.g.cs", StringComparison.Ordinal))
+            .ToArray();
+
+        return endpointFiles.Length == 1
+            ? endpointFiles[0].Value
+            : throw new InvalidOperationException(
+                $"Expected exactly one per-endpoint generated file, found {endpointFiles.Length}: " +
+                string.Join(", ", endpointFiles.Select(static file => file.Key)));
     }
 
     /// <summary>

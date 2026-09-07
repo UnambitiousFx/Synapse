@@ -13,8 +13,6 @@ public sealed partial class MapSynapseEndpointsTests
     public void MapSynapseEndpoints_WhenTwoEndpointsShareVerbAndRoute_Throws()
     {
         // Arrange
-        EndpointRegistry.RegisterBinder(new FirstDupBinder());
-        EndpointRegistry.RegisterBinder(new SecondDupBinder());
         EndpointRegistry.RegisterMetadata<FirstDupEndpoint>(new EndpointMetadata(["GET"], "/dup"));
         EndpointRegistry.RegisterMetadata<SecondDupEndpoint>(new EndpointMetadata(["GET"], "/dup"));
 
@@ -30,8 +28,6 @@ public sealed partial class MapSynapseEndpointsTests
     public void MapSynapseEndpoints_WhenRoutesAreDistinct_MapsBothWithoutThrowing()
     {
         // Arrange
-        EndpointRegistry.RegisterBinder(new HappyFirstBinder());
-        EndpointRegistry.RegisterBinder(new HappySecondBinder());
         EndpointRegistry.RegisterMetadata<HappyFirstEndpoint>(new EndpointMetadata(["GET"], "/happy-a"));
         EndpointRegistry.RegisterMetadata<HappySecondEndpoint>(new EndpointMetadata(["GET"], "/happy-b"));
 
@@ -55,7 +51,6 @@ public sealed partial class MapSynapseEndpointsTests
     public void MapSynapseEndpoints_Always_ReturnsSameBuilderForChaining()
     {
         // Arrange
-        EndpointRegistry.RegisterBinder(new ChainBinder());
         EndpointRegistry.RegisterMetadata<ChainEndpoint>(new EndpointMetadata(["GET"], "/chain"));
 
         var app = WebApplication.CreateSlimBuilder().Build();
@@ -74,8 +69,6 @@ public sealed partial class MapSynapseEndpointsTests
         // If DataSources enumeration surfaced the bare template instead of the group-prefixed
         // one, the exception message would read "GET /dup" instead of "GET /shared/dup" - this
         // assertion is the proof that group prefixes are present in what the check inspects.
-        EndpointRegistry.RegisterBinder(new GroupDupFirstBinder());
-        EndpointRegistry.RegisterBinder(new GroupDupSecondBinder());
         EndpointRegistry.RegisterMetadata<GroupDupFirstEndpoint>(
             new EndpointMetadata(["GET"], "/dup", typeof(GroupPrefixDupGroup), static () => new GroupPrefixDupGroup()));
         EndpointRegistry.RegisterMetadata<GroupDupSecondEndpoint>(
@@ -99,7 +92,6 @@ public sealed partial class MapSynapseEndpointsTests
     {
         // Arrange — the duplicate is entirely outside Synapse: two plain MapGet calls on one route,
         // plus one unrelated Synapse endpoint so the check actually has something of ours to inspect.
-        EndpointRegistry.RegisterBinder(new ForeignDupBinder());
         EndpointRegistry.RegisterMetadata<ForeignDupEndpoint>(new EndpointMetadata(["GET"], "/mine"));
 
         var app = WebApplication.CreateSlimBuilder().Build();
@@ -124,8 +116,6 @@ public sealed partial class MapSynapseEndpointsTests
     public void MapSynapseEndpoints_WhenSynapseEndpointsCollideAlongsideHandWrittenRoutes_StillThrows()
     {
         // Arrange
-        EndpointRegistry.RegisterBinder(new MixedDupFirstBinder());
-        EndpointRegistry.RegisterBinder(new MixedDupSecondBinder());
         EndpointRegistry.RegisterMetadata<MixedDupFirstEndpoint>(new EndpointMetadata(["GET"], "/mixed-dup"));
         EndpointRegistry.RegisterMetadata<MixedDupSecondEndpoint>(new EndpointMetadata(["GET"], "/mixed-dup"));
 
@@ -155,14 +145,6 @@ public sealed partial class MapSynapseEndpointsTests
 
     internal sealed partial class ForeignDupEndpoint : Endpoint<ForeignDupQuery, string>;
 
-    private sealed class ForeignDupBinder : IEndpointBinder<ForeignDupQuery>
-    {
-        public ValueTask<BindResult<ForeignDupQuery>> BindAsync(HttpContext context)
-        {
-            return ValueTask.FromResult(BindResult<ForeignDupQuery>.Success(new ForeignDupQuery()));
-        }
-    }
-
     private sealed class MixedDupGroup : IEndpointGroup
     {
         public void Map(IEndpointRouteBuilder endpoints)
@@ -176,25 +158,9 @@ public sealed partial class MapSynapseEndpointsTests
 
     internal sealed partial class MixedDupFirstEndpoint : Endpoint<MixedDupFirstQuery, string>;
 
-    private sealed class MixedDupFirstBinder : IEndpointBinder<MixedDupFirstQuery>
-    {
-        public ValueTask<BindResult<MixedDupFirstQuery>> BindAsync(HttpContext context)
-        {
-            return ValueTask.FromResult(BindResult<MixedDupFirstQuery>.Success(new MixedDupFirstQuery()));
-        }
-    }
-
     internal sealed record MixedDupSecondQuery : IRequest<string>;
 
     internal sealed partial class MixedDupSecondEndpoint : Endpoint<MixedDupSecondQuery, string>;
-
-    private sealed class MixedDupSecondBinder : IEndpointBinder<MixedDupSecondQuery>
-    {
-        public ValueTask<BindResult<MixedDupSecondQuery>> BindAsync(HttpContext context)
-        {
-            return ValueTask.FromResult(BindResult<MixedDupSecondQuery>.Success(new MixedDupSecondQuery()));
-        }
-    }
 
     private sealed class DupGroup : IEndpointGroup
     {
@@ -209,25 +175,9 @@ public sealed partial class MapSynapseEndpointsTests
 
     internal sealed partial class FirstDupEndpoint : Endpoint<FirstDupQuery, string>;
 
-    private sealed class FirstDupBinder : IEndpointBinder<FirstDupQuery>
-    {
-        public ValueTask<BindResult<FirstDupQuery>> BindAsync(HttpContext context)
-        {
-            return ValueTask.FromResult(BindResult<FirstDupQuery>.Success(new FirstDupQuery()));
-        }
-    }
-
     internal sealed record SecondDupQuery : IRequest<string>;
 
     internal sealed partial class SecondDupEndpoint : Endpoint<SecondDupQuery, string>;
-
-    private sealed class SecondDupBinder : IEndpointBinder<SecondDupQuery>
-    {
-        public ValueTask<BindResult<SecondDupQuery>> BindAsync(HttpContext context)
-        {
-            return ValueTask.FromResult(BindResult<SecondDupQuery>.Success(new SecondDupQuery()));
-        }
-    }
 
     private sealed class HappyGroup : IEndpointGroup
     {
@@ -242,25 +192,9 @@ public sealed partial class MapSynapseEndpointsTests
 
     internal sealed partial class HappyFirstEndpoint : Endpoint<HappyFirstQuery, string>;
 
-    private sealed class HappyFirstBinder : IEndpointBinder<HappyFirstQuery>
-    {
-        public ValueTask<BindResult<HappyFirstQuery>> BindAsync(HttpContext context)
-        {
-            return ValueTask.FromResult(BindResult<HappyFirstQuery>.Success(new HappyFirstQuery()));
-        }
-    }
-
     internal sealed record HappySecondQuery : IRequest<string>;
 
     internal sealed partial class HappySecondEndpoint : Endpoint<HappySecondQuery, string>;
-
-    private sealed class HappySecondBinder : IEndpointBinder<HappySecondQuery>
-    {
-        public ValueTask<BindResult<HappySecondQuery>> BindAsync(HttpContext context)
-        {
-            return ValueTask.FromResult(BindResult<HappySecondQuery>.Success(new HappySecondQuery()));
-        }
-    }
 
     private sealed class ChainGroup : IEndpointGroup
     {
@@ -273,14 +207,6 @@ public sealed partial class MapSynapseEndpointsTests
     internal sealed record ChainQuery : IRequest<string>;
 
     internal sealed partial class ChainEndpoint : Endpoint<ChainQuery, string>;
-
-    private sealed class ChainBinder : IEndpointBinder<ChainQuery>
-    {
-        public ValueTask<BindResult<ChainQuery>> BindAsync(HttpContext context)
-        {
-            return ValueTask.FromResult(BindResult<ChainQuery>.Success(new ChainQuery()));
-        }
-    }
 
     private sealed class GroupPrefixDupGroup : EndpointGroup
     {
@@ -303,23 +229,7 @@ public sealed partial class MapSynapseEndpointsTests
 
     internal sealed partial class GroupDupFirstEndpoint : Endpoint<GroupDupFirstQuery, string>;
 
-    private sealed class GroupDupFirstBinder : IEndpointBinder<GroupDupFirstQuery>
-    {
-        public ValueTask<BindResult<GroupDupFirstQuery>> BindAsync(HttpContext context)
-        {
-            return ValueTask.FromResult(BindResult<GroupDupFirstQuery>.Success(new GroupDupFirstQuery()));
-        }
-    }
-
     internal sealed record GroupDupSecondQuery : IRequest<string>;
 
     internal sealed partial class GroupDupSecondEndpoint : Endpoint<GroupDupSecondQuery, string>;
-
-    private sealed class GroupDupSecondBinder : IEndpointBinder<GroupDupSecondQuery>
-    {
-        public ValueTask<BindResult<GroupDupSecondQuery>> BindAsync(HttpContext context)
-        {
-            return ValueTask.FromResult(BindResult<GroupDupSecondQuery>.Success(new GroupDupSecondQuery()));
-        }
-    }
 }

@@ -34,7 +34,7 @@ public sealed class BinderEmissionEdgeCaseTests
                               """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert — direct assignment, not a `with` expression, and a bodyless GET with a body-less
         // property set skips ReadJsonBodyAsync entirely.
@@ -68,7 +68,7 @@ public sealed class BinderEmissionEdgeCaseTests
                               """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert — the missing-value check for "Age" has no else/failure branch attached to it.
         Assert.Contains("if (global::UnambitiousFx.Synapse.Endpoints.Binding.BindingHelpers.TryGetQuery(context, \"Age\", out var rawAge))",
@@ -100,7 +100,7 @@ public sealed class BinderEmissionEdgeCaseTests
                               """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert — read behind a presence flag, and no error of any kind is ever reported for it.
         Assert.Contains("var hasTitle = false;", generated);
@@ -130,7 +130,7 @@ public sealed class BinderEmissionEdgeCaseTests
                               """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert
         // Assigned into a pre-declared local rather than `out var`, so the value survives the
@@ -163,7 +163,7 @@ public sealed class BinderEmissionEdgeCaseTests
                               """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert
         Assert.DoesNotContain("Name", generated);
@@ -195,7 +195,7 @@ public sealed class BinderEmissionEdgeCaseTests
                               """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert
         Assert.Contains("TryGetRoute(context, \"id\", out var rawThingId)", generated);
@@ -227,7 +227,7 @@ public sealed class BinderEmissionEdgeCaseTests
 
         // Act
         GeneratorHarness.AssertGeneratedCompiles(source);
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert — TaskId is parsed before construction and passed as a constructor argument rather
         // than through a `with` expression (which would need the object to already exist).
@@ -258,7 +258,7 @@ public sealed class BinderEmissionEdgeCaseTests
                               """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert
         Assert.Contains("new global::TestNs.MixedShapeQuery(valueId)", generated);
@@ -296,7 +296,7 @@ public sealed class BinderEmissionEdgeCaseTests
                               """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert
         Assert.Contains("new global::TestNs.HandWrittenQuery(default)", generated);
@@ -333,65 +333,13 @@ public sealed class BinderEmissionEdgeCaseTests
                               """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert — the emitted text itself is the assertion that matters here: a compile check alone
         // would not catch a regression back to bare `default`, since that still compiles cleanly.
         Assert.Contains("new global::TestNs.HandWrittenQuery(default!)", generated);
         // SYNE011: 'Id' is init-only on a non-record, so it is omitted and reported. That omission is not what this test is about — the constructor default is — but it is an Error, so the compile check has to be told to expect it.
         GeneratorHarness.AssertGeneratedCompilesDespiteDiagnostics(source);
-    }
-
-    [Fact]
-    public void Generate_ForTypeSharedByEndpointsWithDifferentVerbs_KnownLimitationUsesFirstEndpointsResolution()
-    {
-        // Arrange — SharedCommand is bound by two endpoints with different verbs and routes.
-        // EndpointRegistry.RegisterBinder<TRequest> is keyed by request TYPE, so only one binder can
-        // exist for SharedCommand; today it is built from whichever endpoint sorts first ordinally by
-        // fully-qualified name ("AEndpoint" before "BEndpoint"), regardless of which endpoint actually
-        // receives a given request at runtime. This is a known, defined limitation (see
-        // EndpointTarget.BoundProperties' remarks) that SYNE013 (Task 17) now reports as a warning
-        // rather than leaving silent — the emitted behaviour itself is unchanged (still whichever
-        // endpoint sorts first), so this test still pins that part, and BindingDiagnosticTests covers
-        // the diagnostic itself in more detail.
-        const string source = """
-                              using UnambitiousFx.Synapse.Abstractions;
-                              using UnambitiousFx.Synapse.Endpoints;
-
-                              namespace TestNs;
-
-                              public sealed record SharedCommand : IRequest
-                              {
-                                  public string Value { get; init; } = "";
-                              }
-
-                              [Get("/a/{value}")]
-                              public sealed partial class AEndpoint : Endpoint<SharedCommand>;
-
-                              [Post("/b")]
-                              public sealed partial class BEndpoint : Endpoint<SharedCommand>;
-                              """;
-
-        // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
-
-        // Assert — AEndpoint (GET, route "value") wins: Value binds from the route rather than the
-        // body, and the body is never read at all, as if BEndpoint (POST) did not exist.
-        Assert.Contains("TryGetRoute(context, \"value\", out var", generated);
-        Assert.DoesNotContain("ReadJsonBodyAsync", generated);
-
-        // Only one binder class is emitted for the shared type.
-        var occurrences = generated.Split("IEndpointBinder<global::TestNs.SharedCommand>").Length - 1;
-        Assert.Equal(1, occurrences);
-
-        GeneratorHarness.AssertGeneratedCompiles(source);
-
-        // And the conflict is no longer silent: SYNE013 names both the type and both endpoints.
-        var diagnostics = GeneratorHarness.GetDiagnostics(source);
-        var syne013 = Assert.Single(diagnostics, d => d.Id == "SYNE013").GetMessage();
-        Assert.Contains("SharedCommand", syne013);
-        Assert.Contains("AEndpoint", syne013);
-        Assert.Contains("BEndpoint", syne013);
     }
 
     [Fact]
@@ -420,7 +368,7 @@ public sealed class BinderEmissionEdgeCaseTests
                               """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert
         Assert.DoesNotContain("Thing", generated);
@@ -463,7 +411,7 @@ public sealed class BinderEmissionEdgeCaseTests
                               """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert — no body read, and the unannotated property resolved to the query string.
         Assert.DoesNotContain("ReadJsonBodyAsync", generated);
@@ -542,7 +490,7 @@ public sealed class BinderEmissionEdgeCaseTests
                        """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert
         Assert.DoesNotContain("ReadJsonBodyAsync", generated);
@@ -574,7 +522,7 @@ public sealed class BinderEmissionEdgeCaseTests
                        """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert
         Assert.Contains("ReadJsonBodyAsync<global::TestNs.SubmitCommand>(context)", generated);
@@ -607,7 +555,7 @@ public sealed class BinderEmissionEdgeCaseTests
                        """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert
         Assert.DoesNotContain("ReadJsonBodyAsync", generated);
@@ -634,7 +582,7 @@ public sealed class BinderEmissionEdgeCaseTests
                               """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert
         Assert.DoesNotContain("ReadJsonBodyAsync", generated);
@@ -665,7 +613,7 @@ public sealed class BinderEmissionEdgeCaseTests
                               """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert
         Assert.DoesNotContain("ReadJsonBodyAsync", generated);
@@ -692,7 +640,7 @@ public sealed class BinderEmissionEdgeCaseTests
                               """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert
         Assert.DoesNotContain("ReadJsonBodyAsync", generated);
@@ -724,17 +672,17 @@ public sealed class BinderEmissionEdgeCaseTests
                               """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert
         Assert.Contains("ReadJsonBodyAsync<global::TestNs.RetitleCommand>(context)", generated);
     }
 
-    // The generated binder tells the runtime whether it reads a body, so the endpoint can declare
+    // The generated binding tells the runtime what kind of body it reads, so the endpoint can declare
     // Accepts to match. Without it the declaration could only be made from the verb, which is the
     // half of the picture that is wrong here.
     [Fact]
-    public void Generate_ForABinderThatReadsNoBody_ReportsReadsRequestBodyFalse()
+    public void Generate_ForABindingThatReadsNoBody_DeclaresANoneBodyKind()
     {
         // Arrange
         const string source = """
@@ -753,14 +701,16 @@ public sealed class BinderEmissionEdgeCaseTests
                               """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert
-        Assert.Contains("public bool ReadsRequestBody => false;", generated);
+        Assert.Contains(
+            "BoundBodyKind => global::UnambitiousFx.Synapse.Endpoints.Binding.RequestBodyKind.None;",
+            generated);
     }
 
     [Fact]
-    public void Generate_ForABinderThatReadsABody_ReportsReadsRequestBodyTrue()
+    public void Generate_ForABindingThatReadsABody_DeclaresAJsonBodyKind()
     {
         // Arrange
         const string source = """
@@ -779,10 +729,12 @@ public sealed class BinderEmissionEdgeCaseTests
                               """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert
-        Assert.Contains("public bool ReadsRequestBody => true;", generated);
+        Assert.Contains(
+            "BoundBodyKind => global::UnambitiousFx.Synapse.Endpoints.Binding.RequestBodyKind.Json;",
+            generated);
     }
 }
 
@@ -830,7 +782,7 @@ public sealed class BinderConstructionShapeTests
     public void Generate_ForATypeImplementingOnlyIParsable_BindsItThroughTheInvariantCultureOverload()
     {
         // Act
-        var generated = GeneratorHarness.GetFile(ParsableOnlySource, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(ParsableOnlySource);
 
         // Assert
         Assert.Contains(
@@ -873,7 +825,7 @@ public sealed class BinderConstructionShapeTests
                               """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert — set at construction, and not also assigned afterwards.
         Assert.Contains("new global::TestNs.GetThing(valueId) { Tenant = valueTenant };", generated);
@@ -905,7 +857,7 @@ public sealed class BinderConstructionShapeTests
                               """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert
         Assert.Contains("new global::TestNs.GetTaskQuery() { TaskId = valueTaskId };", generated);
@@ -941,7 +893,7 @@ public sealed class BinderConstructionShapeTests
                        """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert — the parameter falls back to a default and the value is applied afterwards instead.
         Assert.DoesNotContain($"new global::TestNs.Query(value{propertyName})", generated);
@@ -968,7 +920,7 @@ public sealed class BinderConstructionShapeTests
                               """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert — each local starts at the declared default, and an absent value is not an error.
         Assert.Contains("int valuePage = (int)(1);", generated);
@@ -1008,7 +960,7 @@ public sealed class BinderConstructionShapeTests
                               """;
 
         // Act
-        var generated = GeneratorHarness.GetFile(source, "SynapseEndpointBinders.g.cs");
+        var generated = GeneratorHarness.GetEndpointFile(source);
 
         // Assert — the declared header name, through the header reader.
         Assert.Contains("TryGetHeader(context, \"If-Match\"", generated);
@@ -1049,7 +1001,7 @@ public sealed class BinderConstructionShapeTests
                               """;
 
         // Act
-        var generated = GeneratorHarness.GetFileWithReferences(source, "SynapseEndpointBinders.g.cs", contracts);
+        var generated = GeneratorHarness.GetEndpointFileWithReferences(source, contracts);
 
         // Assert — the accessible (public) constructor is used instead of the internal one.
         Assert.DoesNotContain("new global::Contracts.ExternalQuery()", generated);
