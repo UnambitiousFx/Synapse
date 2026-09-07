@@ -88,6 +88,52 @@ public sealed partial class OpenApiMetadataTests
         Assert.Null(endpoint.Metadata.GetMetadata<IAcceptsMetadata>());
     }
 
+    // Settles the multi-verb question the bodyless check leaves open, deliberately and while it is
+    // still free to settle: HttpMethodHelpers.AllVerbsAreBodyless is "all", not "any". An endpoint
+    // serving both GET and POST really does accept a JSON body on one of them, so Accepts is the
+    // accurate declaration; under "any" it would be silently omitted. Nothing in the public API can
+    // produce more than one verb — a route attribute carries a single method, EndpointBuilder.Route
+    // assigns a single-element array, and the generated CreateMetadata emits one or none — so the
+    // metadata is constructed directly and mapped through the same internals MapEndpoint uses. That
+    // is what makes the rule testable at all; without this test, flipping "all" to "any" passes the
+    // whole suite.
+    [Theory]
+    [InlineData(new[] { "GET", "POST" }, true)]
+    [InlineData(new[] { "POST", "GET" }, true)]
+    [InlineData(new[] { "POST" }, true)]
+    [InlineData(new[] { "GET" }, false)]
+    [InlineData(new[] { "GET", "HEAD" }, false)]
+    public void CreateDescriptor_ForMultiVerbEndpoint_DeclaresAcceptsUnlessEveryVerbIsBodyless(
+        string[] httpMethods,
+        bool expectsAccepts)
+    {
+        // Arrange — MetaEndpoint's generated binding reports RequestBodyKind.Json, so whether a body
+        // is declared comes down to the verbs alone.
+        var app = WebApplication.CreateSlimBuilder().Build();
+        var endpoint = new MetaEndpoint();
+        var descriptor = ((EndpointBase)endpoint)
+            .CreateDescriptor(new EndpointMetadata(httpMethods, "/meta-multi"));
+
+        // Act
+        EndpointMapper.Map(app, descriptor);
+
+        // Assert
+        var mapped = ((IEndpointRouteBuilder)app).DataSources
+            .SelectMany(source => source.Endpoints)
+            .Single();
+        var accepts = mapped.Metadata.GetMetadata<IAcceptsMetadata>();
+
+        if (expectsAccepts)
+        {
+            Assert.NotNull(accepts);
+            Assert.Equal(typeof(MetaQuery), accepts.RequestType);
+        }
+        else
+        {
+            Assert.Null(accepts);
+        }
+    }
+
     [Fact]
     public void CreateDescriptor_ForEndpointConfiguredCreated_Declares201NotDefault200()
     {

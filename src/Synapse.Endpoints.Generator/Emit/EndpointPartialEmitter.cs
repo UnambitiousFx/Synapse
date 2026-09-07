@@ -15,7 +15,10 @@ namespace UnambitiousFx.Synapse.Endpoints.Generator.Emit;
 ///     exists — see the design at docs/superpowers/specs/2026-09-07-endpoint-partial-generation-design.md.
 ///     Emitted for every endpoint kind, including the hand-bound and free-form ones: they bind
 ///     themselves, but <c>EndpointBase.CreateMetadata</c> is abstract, so every endpoint needs the
-///     metadata override and therefore has to be reopenable.
+///     metadata override and therefore has to be reopenable. Abstract rather than a base
+///     implementation returning empty metadata deliberately: a raw endpoint's route used to come from
+///     the registry, so a silent empty fallback would have compiled and left
+///     <c>[Get("/health")] HealthEndpoint : RawEndpoint</c> with no route at all.
 /// </remarks>
 internal static class EndpointPartialEmitter
 {
@@ -28,8 +31,11 @@ internal static class EndpointPartialEmitter
     /// <returns>A hint name unique within the compilation.</returns>
     /// <remarks>
     ///     Built from namespace, enclosing types and type name, so two same-named endpoints in
-    ///     different namespaces do not collide. Generic endpoints cannot reach here — SYNE010
-    ///     rejects them — so there are no type-argument brackets to sanitise.
+    ///     different namespaces do not collide. A generic endpoint does reach here: SYNE010 reports it
+    ///     but does not remove the target, so the hint name and the reopened declaration both come out
+    ///     at arity zero and the emitted partial does not match the endpoint. That is harmless only
+    ///     because SYNE010 is an Error and has already failed the build; nothing here needs to
+    ///     sanitise type-argument brackets, because the name never contains any.
     /// </remarks>
     internal static string HintName(EndpointDeclaration declaration)
     {

@@ -16,9 +16,10 @@ public static class EndpointRouteBuilderExtensions
     /// <returns>The route handler builder, for further configuration.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="endpoints" /> is <see langword="null" />.</exception>
     /// <remarks>
-    ///     The group factory is dereferenced unchecked: <see cref="EndpointMetadata" />'s only
-    ///     group-carrying constructor takes the type and the factory together, so a metadata carrying
-    ///     one without the other cannot be built.
+    ///     The group factory is dereferenced unchecked, and that is safe by construction rather than
+    ///     by convention: <see cref="EndpointMetadata" /> is sealed with get-only properties, and of
+    ///     its two constructors one hard-assigns both group members to <see langword="null" /> and the
+    ///     other null-checks both, so no path produces a non-null <c>GroupType</c> with a null factory.
     /// </remarks>
     public static RouteHandlerBuilder MapEndpoint<TEndpoint>(this IEndpointRouteBuilder endpoints)
         where TEndpoint : EndpointBase, new()

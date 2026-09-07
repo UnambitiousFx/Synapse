@@ -86,9 +86,12 @@ public abstract class EndpointBase
     /// <remarks>
     ///     <c>protected</c>, not <c>private protected</c>: the override is generated into the
     ///     endpoint's own partial class, which lives in the consumer's assembly, where a
-    ///     <c>private protected</c> member is unreachable. <c>abstract</c> so that an endpoint whose
-    ///     metadata was never generated does not compile, rather than failing at startup — which is
-    ///     why nothing registers metadata any more and why every endpoint must be <c>partial</c>.
+    ///     <c>private protected</c> member is unreachable. <c>abstract</c> rather than a base
+    ///     implementation returning empty metadata: an endpoint whose metadata was never generated must
+    ///     fail to compile, not map with no route. That matters most for the hand-bound and free-form
+    ///     tiers, whose routes used to come from the registry — a silent fallback would have left
+    ///     <c>[Get("/health")] HealthEndpoint : RawEndpoint</c> compiling and routeless. It is also why
+    ///     every endpoint, those two tiers included, must be declared <c>partial</c>.
     /// </remarks>
     protected abstract EndpointMetadata CreateMetadata();
 
