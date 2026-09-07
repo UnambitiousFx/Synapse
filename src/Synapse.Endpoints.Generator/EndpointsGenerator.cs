@@ -329,12 +329,12 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
     private static EndpointDeclaration ReadDeclaration(INamedTypeSymbol symbol,
         ClassDeclarationSyntax syntax)
     {
-        var enclosing = new List<string>();
+        var enclosing = new List<EnclosingTypeDeclaration>();
         var nonPartial = new List<string>();
 
         for (var container = symbol.ContainingType; container is not null; container = container.ContainingType)
         {
-            enclosing.Insert(0, container.Name);
+            enclosing.Insert(0, EnclosingTypeDeclaration.From(container));
 
             var isPartial = container.DeclaringSyntaxReferences
                 .Select(static reference => reference.GetSyntax())
@@ -354,7 +354,7 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
             symbol.Name,
             syntax.Modifiers.Any(SyntaxKind.PartialKeyword),
             syntax.Modifiers.Any(SyntaxKind.SealedKeyword),
-            EquatableArray<string>.From(enclosing),
+            EquatableArray<EnclosingTypeDeclaration>.From(enclosing),
             EquatableArray<string>.From(nonPartial));
     }
 

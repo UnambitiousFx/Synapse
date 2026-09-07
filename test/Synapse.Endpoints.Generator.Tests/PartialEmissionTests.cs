@@ -113,6 +113,41 @@ public sealed class PartialEmissionTests
         GeneratorHarness.AssertGeneratedCompiles(source);
     }
 
+    [Theory]
+    [InlineData("record", "record")]
+    [InlineData("struct", "struct")]
+    [InlineData("record struct", "record struct")]
+    [InlineData("interface", "interface")]
+    public void Generate_ForEndpointNestedInANonClassType_ReopensItWithItsOwnKeyword(string declaration,
+        string keyword)
+    {
+        // Arrange — partial declarations of one type must all use the same keyword (CS0261), so
+        // reopening a record or a struct with `partial class` is uncompilable generated code in a
+        // file the user cannot edit. The pre-partial top-level binder never had to care, because it
+        // named the enclosing type rather than reopening it.
+        var source = $$"""
+                       using UnambitiousFx.Synapse.Abstractions;
+                       using UnambitiousFx.Synapse.Endpoints;
+
+                       namespace TestNs;
+
+                       public partial {{declaration}} Outer
+                       {
+                           [Get("/probes")]
+                           internal sealed partial class ProbeEndpoint : Endpoint<ProbeQuery, string>;
+                       }
+
+                       public sealed record ProbeQuery : IRequest<string>;
+                       """;
+
+        // Act
+        var generated = GeneratorHarness.GetEndpointFile(source);
+
+        // Assert
+        Assert.Contains($"partial {keyword} Outer", generated);
+        GeneratorHarness.AssertGeneratedCompiles(source);
+    }
+
     [Fact]
     public void Generate_ForEndpointInGlobalNamespace_EmitsNoNamespaceDeclaration()
     {

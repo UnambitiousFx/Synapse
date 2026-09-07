@@ -35,9 +35,9 @@ internal enum EndpointKind
 internal static class EndpointKindExtensions
 {
     /// <summary>
-    ///     Whether the analyzer generates a binder for this kind, and therefore whether the
-    ///     binding diagnostics (SYNE001, SYNE002, SYNE007, SYNE011–SYNE015) have anything to say
-    ///     about it.
+    ///     Whether the analyzer generates a binding for this kind, and therefore whether the
+    ///     binding diagnostics (SYNE001, SYNE002, SYNE007, SYNE011, SYNE012, SYNE014, SYNE015) have
+    ///     anything to say about it.
     /// </summary>
     /// <remarks>
     ///     The low level exists precisely so that binding can be written by hand:

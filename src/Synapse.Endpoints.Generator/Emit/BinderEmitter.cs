@@ -297,16 +297,20 @@ internal static class BinderEmitter
         }
 
         var padding = new string(' ', indent.Length - ValueReadIndent);
+        var lines = read.Split('\n');
 
-        foreach (var line in read.Split('\n'))
+        // Every shape emitter ends on AppendLine, so Split leaves one empty element for that trailing
+        // newline. Dropping only that element — rather than every empty one — keeps a blank line the
+        // emitter wrote, so a nested endpoint's statements stay line-for-line what a top-level one's
+        // would be.
+        var count = lines.Length > 0 && lines[lines.Length - 1].Length == 0
+            ? lines.Length - 1
+            : lines.Length;
+
+        for (var i = 0; i < count; i++)
         {
-            var trimmed = line.TrimEnd('\r');
-            if (trimmed.Length == 0)
-            {
-                continue;
-            }
-
-            builder.AppendLine(padding + trimmed);
+            var line = lines[i].TrimEnd('\r');
+            builder.AppendLine(line.Length == 0 ? string.Empty : padding + line);
         }
     }
 

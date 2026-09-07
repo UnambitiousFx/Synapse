@@ -15,14 +15,14 @@ internal readonly record struct EndpointDeclaration
         string typeName,
         bool isPartial,
         bool isSealed,
-        EquatableArray<string> enclosingTypeNames,
+        EquatableArray<EnclosingTypeDeclaration> enclosingTypes,
         EquatableArray<string> nonPartialEnclosingTypeNames)
     {
         Namespace = @namespace;
         TypeName = typeName;
         IsPartial = isPartial;
         IsSealed = isSealed;
-        EnclosingTypeNames = enclosingTypeNames;
+        EnclosingTypes = enclosingTypes;
         NonPartialEnclosingTypeNames = nonPartialEnclosingTypeNames;
     }
 
@@ -42,10 +42,10 @@ internal readonly record struct EndpointDeclaration
     public bool IsSealed { get; }
 
     /// <summary>
-    ///     The enclosing type names, outermost first, that generated code must reopen around the
+    ///     The enclosing types, outermost first, that generated code must reopen around the
     ///     endpoint. Empty for a top-level endpoint.
     /// </summary>
-    public EquatableArray<string> EnclosingTypeNames { get; }
+    public EquatableArray<EnclosingTypeDeclaration> EnclosingTypes { get; }
 
     /// <summary>
     ///     The enclosing type names that are not declared <c>partial</c>, so cannot be reopened.

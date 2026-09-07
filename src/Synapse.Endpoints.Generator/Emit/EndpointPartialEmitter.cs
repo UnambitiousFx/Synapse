@@ -35,9 +35,9 @@ internal static class EndpointPartialEmitter
             builder.Append(declaration.Namespace).Append('.');
         }
 
-        foreach (var enclosing in declaration.EnclosingTypeNames)
+        foreach (var enclosing in declaration.EnclosingTypes)
         {
-            builder.Append(enclosing).Append('.');
+            builder.Append(enclosing.Name).Append('.');
         }
 
         return builder.Append(declaration.TypeName).Append(".Synapse.g.cs").ToString();
@@ -63,14 +63,19 @@ internal static class EndpointPartialEmitter
             builder.AppendLine();
         }
 
+        // Each enclosing type is reopened with its own keyword: partial declarations of one type must
+        // all use the same one (CS0261), so an endpoint nested inside a record or a struct cannot be
+        // reopened with `partial class`.
         var indent = string.Empty;
-        foreach (var enclosing in declaration.EnclosingTypeNames)
+        foreach (var enclosing in declaration.EnclosingTypes)
         {
-            builder.AppendLine($"{indent}partial class {enclosing}");
+            builder.AppendLine($"{indent}partial {enclosing.Keyword} {enclosing.Name}");
             builder.AppendLine($"{indent}{{");
             indent += "    ";
         }
 
+        // The endpoint itself is always a class: discovery matches ClassDeclarationSyntax, and a
+        // record could not derive from one of the base tiers anyway (CS8864).
         builder.AppendLine($"{indent}partial class {declaration.TypeName}");
         builder.AppendLine($"{indent}{{");
 
@@ -83,7 +88,7 @@ internal static class EndpointPartialEmitter
 
         builder.AppendLine($"{indent}}}");
 
-        for (var i = 0; i < declaration.EnclosingTypeNames.Count; i++)
+        for (var i = 0; i < declaration.EnclosingTypes.Count; i++)
         {
             indent = indent.Substring(0, indent.Length - 4);
             builder.AppendLine($"{indent}}}");
