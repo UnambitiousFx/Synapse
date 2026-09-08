@@ -216,6 +216,38 @@ public sealed partial class OpenApiMetadataTests
     }
 
     [Fact]
+    public void CreateDescriptor_ForVoidContractEndpoint_Declares204AndAcceptsTheWireDto()
+    {
+        // Arrange
+        var app = WebApplication.CreateSlimBuilder().Build();
+
+        // Act
+        app.MapEndpoint<ArchiveContractEndpoint>();
+
+        // Assert
+        var endpoint = ((IEndpointRouteBuilder)app).DataSources
+            .SelectMany(source => source.Endpoints)
+            .Single();
+
+        // Filtered to the library's own metadata type for the reason given on the void dispatching
+        // tier's test: what the framework infers from the mapping lambda is TFM-dependent.
+        var single = Assert.Single(endpoint.Metadata.OfType<ProducesResponseMetadata>());
+        Assert.Equal(StatusCodes.Status204NoContent, single.StatusCode);
+        Assert.Equal(typeof(void), single.Type);
+
+        // Guaranteed for the same reason as on every other binding tier: something binds, so a bad
+        // request answers with a validation problem rather than reaching the handler.
+        Assert.Contains(endpoint.Metadata.OfType<IProducesResponseTypeMetadata>(),
+            metadata => metadata.StatusCode == StatusCodes.Status400BadRequest);
+
+        // The wire DTO, not the command it maps onto: this tier binds THttpRequest and ToRequest is
+        // what turns it into a message, so that is what the endpoint accepts.
+        var accepts = endpoint.Metadata.GetMetadata<IAcceptsMetadata>();
+        Assert.NotNull(accepts);
+        Assert.Equal(typeof(ArchiveMetaBody), accepts!.RequestType);
+    }
+
+    [Fact]
     public void CreateDescriptor_ForInlineEndpoint_DeclaresTheSameMetadataAsTheDispatchingTier()
     {
         // Arrange
@@ -888,6 +920,19 @@ public sealed partial class OpenApiMetadataTests
             CancellationToken cancellationToken)
         {
             return ValueTask.FromResult(TypedResults.NoContent() as IResult);
+        }
+    }
+
+    internal sealed record ArchiveMetaBody(string Reason);
+
+    internal sealed record ArchiveMetaCommand(string Reason) : IRequest;
+
+    [Post("/meta-contract-void")]
+    internal sealed partial class ArchiveContractEndpoint : ContractEndpoint<ArchiveMetaBody, ArchiveMetaCommand>
+    {
+        public override ArchiveMetaCommand ToRequest(ArchiveMetaBody request)
+        {
+            return new ArchiveMetaCommand(request.Reason);
         }
     }
 

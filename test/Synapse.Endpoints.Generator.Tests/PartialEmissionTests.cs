@@ -55,6 +55,24 @@ public sealed class PartialEmissionTests
                                       }
                                       """;
 
+    private const string MappedVoidTier = """
+                                          using UnambitiousFx.Synapse.Abstractions;
+                                          using UnambitiousFx.Synapse.Endpoints;
+
+                                          namespace TestNs;
+
+                                          public sealed record ProbeDto(string Name);
+                                          public sealed record ProbeCommand(string Name) : IRequest;
+
+                                          [Delete("/probes/{name}")]
+                                          public sealed partial class ProbeEndpoint
+                                              : ContractEndpoint<ProbeDto, ProbeCommand>
+                                          {
+                                              public override ProbeCommand ToRequest(ProbeDto request)
+                                                  => new(request.Name);
+                                          }
+                                          """;
+
     private const string InlineTier = """
                                            using System.Threading;
                                            using System.Threading.Tasks;
@@ -380,15 +398,17 @@ public sealed class PartialEmissionTests
     [Theory]
     [InlineData(nameof(StreamTier))]
     [InlineData(nameof(MappedTier))]
+    [InlineData(nameof(MappedVoidTier))]
     [InlineData(nameof(InlineTier))]
     [InlineData(nameof(InlineVoidTier))]
     public void Generate_ForEveryGeneratedTier_EmitsAPartialAndNoBinderFile(string tier)
     {
-        // Arrange — the four tiers migrated in this task, each satisfying its own abstract members.
+        // Arrange — every tier whose binding is generated, each satisfying its own abstract members.
         var source = tier switch
         {
             nameof(StreamTier) => StreamTier,
             nameof(MappedTier) => MappedTier,
+            nameof(MappedVoidTier) => MappedVoidTier,
             nameof(InlineTier) => InlineTier,
             _ => InlineVoidTier
         };

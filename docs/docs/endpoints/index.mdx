@@ -101,7 +101,7 @@ RawEndpoint                                    ← low level:  context in, resul
      ├── BoundEndpoint<TRequest, TResponse>     ← middle
      │    └── Endpoint<TRequest, TResponse>     ← high level
      ├── StreamEndpoint<TRequest, TItem>        ← high level
-     ├── ContractEndpoint<...>                  ← high level
+     ├── ContractEndpoint<...>                  ← high level, wire contract of its own
      ├── InlineEndpoint<TRequest>               ← high level, no dispatch
      └── InlineEndpoint<TRequest, TResponse>    ← high level, no dispatch
 ```
@@ -119,13 +119,13 @@ everything else.
 |---|---|---|
 | `Endpoint<…>` | A class declaration and an attribute | Almost always |
 | `StreamEndpoint<…>` | The same, for an `IStreamRequest<TItem>` | The response is many items, not one |
-| `ContractEndpoint<…>` | The same, plus `ToRequest`/`ToResponse` | The wire contract must not be the message's shape |
+| `ContractEndpoint<…>` | The same, plus `ToRequest` (and `ToResponse`, where there is a response) | The wire contract must not be the message's shape |
 | `InlineEndpoint<…>` | `ExecuteAsync` | The route has no message behind it to dispatch |
 | `BoundEndpoint<…>` | `BindAsync` | The request maps onto a message, but not by the six rules |
 | `RawEndpoint` | `HandleAsync` | There is no message — the endpoint is about the HTTP exchange |
 
-Three of those rows come in two arities — one with a response body, one without — which is why there
-are nine base classes and not six. [Base classes](./reference/base-classes.mdx) lists them side by
+Four of those rows come in two arities — one with a response body, one without — which is why there
+are ten base classes and not six. [Base classes](./reference/base-classes.mdx) lists them side by
 side.
 
 ---

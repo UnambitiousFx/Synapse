@@ -12,7 +12,8 @@ description: Status codes and bodies — the declarative vocabulary, OnSuccess f
 |---|---|
 | `Endpoint<TRequest>` | `204 No Content` |
 | `Endpoint<TRequest, TResponse>` | `200 OK`, response serialized as the body |
-| `ContractEndpoint<…>` | `200 OK`, `THttpResponse` serialized as the body |
+| `ContractEndpoint<THttpRequest, TRequest, TResponse, THttpResponse>` | `200 OK`, `THttpResponse` serialized as the body |
+| `ContractEndpoint<THttpRequest, TRequest>` | `204 No Content` |
 | `StreamEndpoint<TRequest, TItem>` | `200 OK`, negotiated on `Accept` — see [Streaming](./streaming) |
 
 If the default is what you want, write nothing:

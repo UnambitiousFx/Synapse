@@ -25,6 +25,7 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
     private const string EndpointVoid = "UnambitiousFx.Synapse.Endpoints.Endpoint`1";
     private const string EndpointValue = "UnambitiousFx.Synapse.Endpoints.Endpoint`2";
     private const string EndpointContract = "UnambitiousFx.Synapse.Endpoints.ContractEndpoint`4";
+    private const string EndpointContractVoid = "UnambitiousFx.Synapse.Endpoints.ContractEndpoint`2";
     private const string EndpointStream = "UnambitiousFx.Synapse.Endpoints.StreamEndpoint`2";
     private const string InlineVoid = "UnambitiousFx.Synapse.Endpoints.InlineEndpoint`1";
     private const string InlineValue = "UnambitiousFx.Synapse.Endpoints.InlineEndpoint`2";
@@ -101,6 +102,7 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
                 EndpointVoid => EndpointKind.Void,
                 EndpointValue => EndpointKind.Value,
                 EndpointContract => EndpointKind.Contract,
+                EndpointContractVoid => EndpointKind.ContractVoid,
                 EndpointStream => EndpointKind.Stream,
                 InlineVoid => EndpointKind.InlineVoid,
                 InlineValue => EndpointKind.Inline,

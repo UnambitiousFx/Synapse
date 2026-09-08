@@ -17,17 +17,19 @@ handler can be inferred.
 | `Endpoint<TRequest, TResponse>` | `Accepts<TRequest>`; `200` (or the declared status) with `TResponse`; `400` validation problem |
 | `Endpoint<TRequest>` | `Accepts<TRequest>`; `204` (or the declared status), no body; `400` validation problem |
 | `StreamEndpoint<TRequest, TItem>` | `Accepts<TRequest>`; `200` with `IAsyncEnumerable<TItem>` for both `application/json` and `text/event-stream`; `400` validation problem |
-| `ContractEndpoint<…>` | `Accepts<THttpRequest>`; `200` (or the declared status) with `THttpResponse`; `400` validation problem |
+| `ContractEndpoint<THttpRequest, TRequest, TResponse, THttpResponse>` | `Accepts<THttpRequest>`; `200` (or the declared status) with `THttpResponse`; `400` validation problem |
+| `ContractEndpoint<THttpRequest, TRequest>` | `Accepts<THttpRequest>`; `204` (or the declared status), no body; `400` validation problem |
 | `RawEndpoint` | **Nothing.** Declare it yourself |
 
 `Accepts` is skipped on verbs that carry no body (`GET`, `DELETE`, `HEAD`, `OPTIONS`, `TRACE`), so a
 `GET` endpoint does not advertise a request body no such request can send.
 
-Every one of these four tiers resolves `Accepts` from its **generated binder**, not from the tier
-itself — `Endpoint<TRequest, TResponse>`, `Endpoint<TRequest>`, `StreamEndpoint<TRequest, TItem>` and
-`ContractEndpoint<THttpRequest, …>` all ask their binder's `BodyKind` the same way, through the same
-`DeclaredRequestBody` hook. So the row above is the JSON case; the moment the bound type is
-[form-bound](../high-level/messages#forms-and-files) — on any of the four — the endpoint declares the
+Every tier with a generated binder resolves `Accepts` from that **binder**, not from the tier itself
+— `Endpoint<…>`, `StreamEndpoint<TRequest, TItem>`, `ContractEndpoint<THttpRequest, …>` and
+`InlineEndpoint<…>` all ask their binder's `BodyKind` the same way, through the same
+`DeclaredRequestBody` hook, and every one of them declares it through the same shared plan builder.
+So the rows above are the JSON case; the moment the bound type is
+[form-bound](../high-level/messages#forms-and-files) — on any of them — the endpoint declares the
 form content types instead, described next.
 
 ### A form-bound message's schema depends on the satellite package

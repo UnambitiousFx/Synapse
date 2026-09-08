@@ -229,4 +229,6 @@ public sealed partial class StreamEndpointTests
 [JsonSerializable(typeof(InlineEndpointTests.AcceptedProbeQuery))]
 [JsonSerializable(typeof(InlineEndpointTests.CreatedProbeQuery))]
 [JsonSerializable(typeof(InlineEndpointVoidTests.QueuedRequest))]
+[JsonSerializable(typeof(ContractEndpointVoidTests.ArchiveBody))]
+[JsonSerializable(typeof(OpenApiMetadataTests.ArchiveMetaBody))]
 internal sealed partial class StreamTestJsonContext : JsonSerializerContext;

@@ -61,7 +61,7 @@ public sealed partial class ProbeEndpoint : InlineEndpoint<ProbeQuery, ProbeDto>
 Deriving from `Endpoint<…>` for a message that implements `IStreamRequest<T>` is reported as
 [`SYNE005`](../reference/diagnostics) rather than misbehaving at runtime.
 
-See [Base classes](../reference/base-classes) for all nine side by side, including the low-level ones.
+See [Base classes](../reference/base-classes) for all ten side by side, including the low-level ones.
 
 ### `ContractEndpoint` is a deliberate opt-in
 
@@ -85,6 +85,20 @@ public sealed class CreateThingEndpoint
 
 The four type parameters read in wire → internal → internal → wire order:
 `THttpRequest`, `TRequest`, `TResponse`, `THttpResponse`.
+
+For a command with no response, `ContractEndpoint<THttpRequest, TRequest>` is the same tier with the
+response half removed: it asks for `ToRequest` alone, configures through `IEndpointBuilder`, and
+answers `204 No Content` by default.
+
+```csharp
+[Post("/things/{thingId:guid}/archive")]
+public sealed partial class ArchiveThingEndpoint
+    : ContractEndpoint<ArchiveThingRequestDto, ArchiveThingCommand>
+{
+    public override ArchiveThingCommand ToRequest(ArchiveThingRequestDto request) =>
+        new(request.ThingId, request.Reason);
+}
+```
 
 ## Endpoints are singletons
 

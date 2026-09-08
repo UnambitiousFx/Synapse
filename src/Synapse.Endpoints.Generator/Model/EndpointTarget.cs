@@ -12,6 +12,12 @@ internal enum EndpointKind
     /// <summary><c>ContractEndpoint&lt;...&gt;</c> — generated binder over the wire DTO.</summary>
     Contract,
 
+    /// <summary>
+    ///     <c>ContractEndpoint&lt;THttpRequest, TRequest&gt;</c> — generated binder over the wire DTO,
+    ///     no response body.
+    /// </summary>
+    ContractVoid,
+
     /// <summary><c>StreamEndpoint&lt;TRequest, TItem&gt;</c> — generated binder, streamed body.</summary>
     Stream,
 
@@ -47,7 +53,8 @@ internal static class EndpointKindExtensions
     /// </remarks>
     internal static bool HasGeneratedBinder(this EndpointKind kind)
     {
-        return kind is EndpointKind.Void or EndpointKind.Value or EndpointKind.Contract or EndpointKind.Stream
+        return kind is EndpointKind.Void or EndpointKind.Value or EndpointKind.Contract
+            or EndpointKind.ContractVoid or EndpointKind.Stream
             or EndpointKind.Inline or EndpointKind.InlineVoid;
     }
 
@@ -124,7 +131,8 @@ internal readonly record struct EndpointTarget
     /// <summary>
     ///     Fully-qualified name of the type the binder is generated for: the message for
     ///     <see cref="EndpointKind.Void" />, <see cref="EndpointKind.Value" /> and
-    ///     <see cref="EndpointKind.Stream" />; <c>THttpRequest</c> for <see cref="EndpointKind.Contract" />;
+    ///     <see cref="EndpointKind.Stream" />; <c>THttpRequest</c> for <see cref="EndpointKind.Contract" />
+    ///     and <see cref="EndpointKind.ContractVoid" />;
     ///     the request contract — which is not a message at all — for the two self-handled kinds.
     /// </summary>
     public string BoundTypeFullName { get; }
@@ -191,7 +199,8 @@ internal readonly record struct EndpointTarget
     ///     SYNE008: the display name of the type written back as the response body — <c>TResponse</c>
     ///     for <see cref="EndpointKind.Value" /> and <see cref="EndpointKind.Inline" />,
     ///     <c>THttpResponse</c> for <see cref="EndpointKind.Contract" />, <c>TItem</c> for
-    ///     <see cref="EndpointKind.Stream" /> — or null for <see cref="EndpointKind.Void" /> and
+    ///     <see cref="EndpointKind.Stream" /> — or null for <see cref="EndpointKind.Void" />,
+    ///     <see cref="EndpointKind.ContractVoid" /> and
     ///     <see cref="EndpointKind.InlineVoid" /> (no response body at all) and for a
     ///     primitive/framework scalar type, which needs no registration.
     /// </summary>

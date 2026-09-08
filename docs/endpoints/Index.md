@@ -24,7 +24,7 @@ since outgrown, and each spec says so explicitly with evidence.
 
 | Feature | Status | Description |
 |---|---|---|
-| Endpoint per class | ✅ | Six tiers: `RawEndpoint`, `BoundEndpoint<TRequest[, TResponse]>`, `Endpoint<TRequest[, TResponse]>`, `ContractEndpoint<…>`, `StreamEndpoint<TRequest, TItem>`, `InlineEndpoint<TRequest[, TResponse]>`. Each tier adds one thing to the one below it. |
+| Endpoint per class | ✅ | Six tiers: `RawEndpoint`, `BoundEndpoint<TRequest[, TResponse]>`, `Endpoint<TRequest[, TResponse]>`, `ContractEndpoint<THttpRequest, TRequest[, TResponse, THttpResponse]>`, `StreamEndpoint<TRequest, TItem>`, `InlineEndpoint<TRequest[, TResponse]>`. Each tier adds one thing to the one below it. |
 | Compile-time request binding | ✅ | `BindAsync` generated per endpoint, as an `override` on the endpoint's own `partial` class, assigning properties directly. No reflection at request time, and no shared lookup by message type — each endpoint's binding is resolved from its own route and verb. |
 | Binding sources: route, query, header, form, body | ✅ | Six resolution rules; `[FromRoute]`/`[FromQuery]`/`[FromForm]`/`[FromBody]` (MVC) and `[FromHeader]` (MVC or Synapse's own) pin a source explicitly. |
 | Error accumulation | ✅ | `BindingValidator` collects every presence/parse failure into one `400` `HttpValidationProblemDetails`. Allocates nothing on the valid path. |
@@ -33,7 +33,7 @@ since outgrown, and each spec says so explicitly with evidence.
 | Endpoint groups | ✅ | `[InGroup<TGroup>]` plus a group `Configure` contributing prefix, tags and authorization. One `MapGroup` per group, cached. |
 | Authorization | ✅ | `RequireAuthorization(params string[])` at endpoint and group level; `AllowAnonymous()` at endpoint level only, so an endpoint can opt out of its group's policy. |
 | Streaming | ✅ | `StreamEndpoint<TRequest, TItem>` negotiating SSE vs an incrementally written JSON array on the `Accept` header. |
-| Separate wire contract | ✅ | `ContractEndpoint<THttpRequest, TRequest, TResponse, THttpResponse>` when the HTTP shape must evolve independently of the message. |
+| Separate wire contract | ✅ | `ContractEndpoint<THttpRequest, TRequest, TResponse, THttpResponse>` when the HTTP shape must evolve independently of the message, and `ContractEndpoint<THttpRequest, TRequest>` for the same on a command with no response. |
 | OpenAPI: request and success response | ✅ | `Accepts` declared only when a body is actually read; success status and body type declared from the resolved configuration. |
 | OpenAPI: declared failure responses | ✅ | `Produces` / `Produces<TBody>` / `ProducesProblem` / `ProducesValidationProblem` on every endpoint builder, so the statuses the `IFailureHttpMapper` emits can be documented. A bodyless status is declared as `void`, not skipped. |
 | Native AOT | ✅ | No reflection on any request path; `SYNE008` checks `JsonSerializerContext` registration at compile time. |
