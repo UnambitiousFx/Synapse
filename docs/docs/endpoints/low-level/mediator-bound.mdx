@@ -1,7 +1,7 @@
 ---
 sidebar_position: 4
 title: Mediator-bound
-description: RawEndpoint<TRequest, TResponse> — write only the binding, inherit the dispatch, failure mapping and metadata.
+description: BoundEndpoint<TRequest, TResponse> — write only the binding, inherit the dispatch, failure mapping and metadata.
 ---
 
 # The middle level: mediator-bound
@@ -11,13 +11,13 @@ actually need when the high level does not fit:
 
 > **The route *is* a message. Only the binding is unusual.**
 
-`RawEndpoint<TRequest, TResponse>` (and `RawEndpoint<TRequest>` for a message with no response) asks
+`BoundEndpoint<TRequest, TResponse>` (and `BoundEndpoint<TRequest>` for a message with no response) asks
 you for `BindAsync` and nothing else. Dispatch, failure mapping, success mapping and OpenAPI metadata
 are all inherited.
 
 ```csharp
 [Get("/reports")]
-public sealed partial class TagReportEndpoint : RawEndpoint<TagReportQuery, TagReportDto>
+public sealed partial class TagReportEndpoint : BoundEndpoint<TagReportQuery, TagReportDto>
 {
     public override ValueTask<BindResult<TagReportQuery>> BindAsync(HttpContext context)
     {
@@ -97,7 +97,7 @@ public sealed class TagReportQueryHandler : IRequestHandler<TagReportQuery, TagR
 
 ```csharp title="Only BindAsync is hand-written"
 [Get("/reports")]
-public sealed partial class TagReportEndpoint : RawEndpoint<TagReportQuery, TagReportDto>
+public sealed partial class TagReportEndpoint : BoundEndpoint<TagReportQuery, TagReportDto>
 {
     // Inherited, and identical to what Endpoint<…> would give you.
     public override void Configure(IEndpointBuilder<TagReportDto> builder)

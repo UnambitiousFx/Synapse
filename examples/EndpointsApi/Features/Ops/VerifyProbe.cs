@@ -41,7 +41,7 @@ public sealed record VerifyProbeQuery(string Probe);
 ///     </para>
 /// </remarks>
 [Post("/ops/probes/{probe}/verify")]
-public sealed partial class VerifyProbeEndpoint : SelfHandledEndpoint<VerifyProbeQuery>
+public sealed partial class VerifyProbeEndpoint : InlineEndpoint<VerifyProbeQuery>
 {
     /// <inheritdoc />
     public override void Configure(IEndpointBuilder builder)

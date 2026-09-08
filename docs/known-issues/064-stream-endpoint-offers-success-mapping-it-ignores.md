@@ -20,7 +20,7 @@ honoured all of it:
 
 | Shape | Read from its `EndpointConfiguration` |
 |---|---|
-| `RawEndpoint<TRequest>` (and `Endpoint<TRequest>`) | `Route`, `HttpMethods`, `ApplyMetadata`, `SuccessMapper`, `DeclaredSuccessStatusCode` |
+| `BoundEndpoint<TRequest>` (and `Endpoint<TRequest>`) | `Route`, `HttpMethods`, `ApplyMetadata`, `SuccessMapper`, `DeclaredSuccessStatusCode` |
 | `StreamEndpoint<TRequest, TItem>` | `Route`, `HttpMethods`, `ApplyMetadata` — nothing else |
 
 The void arity needs `NoContent()`/`StatusCode(int)`: a `DELETE` answering `202` is ordinary. A

@@ -123,7 +123,7 @@ public sealed class PartialDiagnosticTests
         // Assert — without SYNE021 the only feedback is CS0111 against invisible generated code.
         var reported = Assert.Single(diagnostics, d => d.Id == "SYNE021");
         Assert.Equal(DiagnosticSeverity.Error, reported.Severity);
-        Assert.Contains("RawEndpoint", reported.GetMessage());
+        Assert.Contains("BoundEndpoint", reported.GetMessage());
     }
 
     [Fact]
@@ -154,7 +154,7 @@ public sealed class PartialDiagnosticTests
     [Fact]
     public void Generate_ForHandWrittenBindAsyncOnRawTier_ReportsNoSyne021()
     {
-        // Arrange — RawEndpoint<...> exists precisely so BindAsync can be written by hand.
+        // Arrange — BoundEndpoint<...> exists precisely so BindAsync can be written by hand.
         const string source = """
                               using System.Threading.Tasks;
                               using Microsoft.AspNetCore.Http;
@@ -167,7 +167,7 @@ public sealed class PartialDiagnosticTests
                               public sealed record ProbeQuery : IRequest<string>;
 
                               [Get("/probes")]
-                              public sealed class ProbeEndpoint : RawEndpoint<ProbeQuery, string>
+                              public sealed class ProbeEndpoint : BoundEndpoint<ProbeQuery, string>
                               {
                                   public override ValueTask<BindResult<ProbeQuery>> BindAsync(HttpContext context)
                                   {

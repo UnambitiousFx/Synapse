@@ -22,7 +22,7 @@ public static class EndpointRouteBuilderExtensions
     ///     other null-checks both, so no path produces a non-null <c>GroupType</c> with a null factory.
     /// </remarks>
     public static RouteHandlerBuilder MapEndpoint<TEndpoint>(this IEndpointRouteBuilder endpoints)
-        where TEndpoint : EndpointBase, new()
+        where TEndpoint : SynapseEndpoint, new()
     {
         ArgumentNullException.ThrowIfNull(endpoints);
 

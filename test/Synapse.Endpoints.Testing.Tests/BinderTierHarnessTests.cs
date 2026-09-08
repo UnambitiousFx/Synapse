@@ -52,7 +52,7 @@ public sealed partial class BinderTierHarnessTests
     }
 
     [Fact]
-    public async Task SendAsync_ForAMappedEndpoint_MapsBothWays()
+    public async Task SendAsync_ForAContractEndpoint_MapsBothWays()
     {
         // Arrange
         using var harness = EndpointHarness.Create<TranslateEndpoint>(options =>
@@ -102,7 +102,7 @@ public sealed partial class BinderTierHarnessTests
     // from a JSON body this test does not send.
     [Post("/translate/{text}")]
     internal sealed partial class TranslateEndpoint
-        : MappedEndpoint<WireRequest, TranslateCommand, TranslateResult, WireResponse>
+        : ContractEndpoint<WireRequest, TranslateCommand, TranslateResult, WireResponse>
     {
         public override TranslateCommand ToRequest(WireRequest request)
         {

@@ -35,7 +35,7 @@ public sealed partial class StreamEndpointTests
         }
 
         var endpoint = new TickEndpoint();
-        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
+        var descriptor = ((SynapseEndpoint)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Act
         await descriptor.InvokeAsync(context);
@@ -70,7 +70,7 @@ public sealed partial class StreamEndpointTests
         context.Request.Headers.Accept = "application/json";
 
         var endpoint = new ArrayEndpoint();
-        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
+        var descriptor = ((SynapseEndpoint)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Act
         await descriptor.InvokeAsync(context);
@@ -108,7 +108,7 @@ public sealed partial class StreamEndpointTests
         context.Request.Headers.Accept = "text/event-stream";
 
         var endpoint = new SseEndpoint();
-        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
+        var descriptor = ((SynapseEndpoint)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Act
         await descriptor.InvokeAsync(context);
@@ -175,7 +175,7 @@ public sealed partial class StreamEndpointTests
     {
         // Act
         var endpoint = new ConfiguredStreamEndpoint();
-        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
+        var descriptor = ((SynapseEndpoint)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Assert
         Assert.Equal("/computed-ticks", descriptor.Route);
@@ -213,20 +213,20 @@ public sealed partial class StreamEndpointTests
 // endpoints gained the route attributes that keep SYNE014 quiet: a POST attribute is what makes the
 // generator resolve their properties to the request body in the first place.
 [JsonSerializable(typeof(int))]
-[JsonSerializable(typeof(MappedEndpointTests.CreateResponse))]
-[JsonSerializable(typeof(MappedEndpointTests.CreatedResponse))]
-[JsonSerializable(typeof(MappedEndpointTests.FailingCreateResponse))]
+[JsonSerializable(typeof(ContractEndpointTests.CreateResponse))]
+[JsonSerializable(typeof(ContractEndpointTests.CreatedResponse))]
+[JsonSerializable(typeof(ContractEndpointTests.FailingCreateResponse))]
 [JsonSerializable(typeof(OpenApiMetadataTests.CreatedMappedResponse))]
 [JsonSerializable(typeof(RawEndpointTests.Greeting))]
-[JsonSerializable(typeof(SelfHandledEndpointTests.ProbeDto))]
-[JsonSerializable(typeof(EndpointLifecycleTests.TraceWireRequest))]
-[JsonSerializable(typeof(MappedEndpointTests.CreateBody))]
+[JsonSerializable(typeof(InlineEndpointTests.ProbeDto))]
+[JsonSerializable(typeof(LifecycleHooksTests.TraceWireRequest))]
+[JsonSerializable(typeof(ContractEndpointTests.CreateBody))]
 [JsonSerializable(typeof(OpenApiMetadataTests.CreatedMappedRequest))]
 [JsonSerializable(typeof(OpenApiMetadataTests.MetaQuery))]
 [JsonSerializable(typeof(OpenApiMetadataTests.PostStreamMetaQuery))]
-[JsonSerializable(typeof(OpenApiMetadataTests.SelfHandledMetaRequest))]
-[JsonSerializable(typeof(OpenApiMetadataTests.SelfHandledVoidMetaRequest))]
-[JsonSerializable(typeof(SelfHandledEndpointTests.AcceptedProbeQuery))]
-[JsonSerializable(typeof(SelfHandledEndpointTests.CreatedProbeQuery))]
-[JsonSerializable(typeof(SelfHandledEndpointVoidTests.QueuedRequest))]
+[JsonSerializable(typeof(OpenApiMetadataTests.InlineMetaRequest))]
+[JsonSerializable(typeof(OpenApiMetadataTests.InlineVoidMetaRequest))]
+[JsonSerializable(typeof(InlineEndpointTests.AcceptedProbeQuery))]
+[JsonSerializable(typeof(InlineEndpointTests.CreatedProbeQuery))]
+[JsonSerializable(typeof(InlineEndpointVoidTests.QueuedRequest))]
 internal sealed partial class StreamTestJsonContext : JsonSerializerContext;

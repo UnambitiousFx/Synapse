@@ -199,7 +199,7 @@ public sealed partial class AssertionTests
     }
 
     private static async Task<EndpointResponse> Respond<TEndpoint>(string url)
-        where TEndpoint : EndpointBase, new()
+        where TEndpoint : SynapseEndpoint, new()
     {
         using var harness = EndpointHarness.Create<TEndpoint>();
         return await harness.Get(url).SendAsync(TestContext.Current.CancellationToken);

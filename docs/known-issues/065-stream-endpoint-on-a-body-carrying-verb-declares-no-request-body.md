@@ -18,8 +18,8 @@
 exactly as the single-response tiers do. Its `CreatePlan` declared the negotiated `200` and a
 `ProducesValidationProblem`, but never declared what the endpoint *accepts*.
 
-Every other body-carrying tier does: `RawEndpoint<TRequest>`, `RawEndpoint<TRequest, TResponse>` and
-`MappedEndpoint<…>` each call `Accepts` behind an `HttpMethodHelpers.AllVerbsAreBodyless` guard.
+Every other body-carrying tier does: `BoundEndpoint<TRequest>`, `BoundEndpoint<TRequest, TResponse>` and
+`ContractEndpoint<…>` each call `Accepts` behind an `HttpMethodHelpers.AllVerbsAreBodyless` guard.
 `StreamEndpoint` was the one that did not, so the helper written for exactly this decision was never
 consulted from it.
 
@@ -107,7 +107,7 @@ macOS (Darwin 25.6.0, arm64)
 
 ### Root cause
 
-`StreamEndpoint` derives from `RawEndpoint` rather than from `RawEndpoint<TRequest, TResponse>`,
+`StreamEndpoint` derives from `RawEndpoint` rather than from `BoundEndpoint<TRequest, TResponse>`,
 because it writes the body itself instead of returning a single value to serialize. That inheritance
 choice is right, but it also meant `CreatePlan` was written from scratch rather than inherited — and
 the `Accepts` declaration, which lives in each tier's own `ApplyMetadata`, was simply not carried

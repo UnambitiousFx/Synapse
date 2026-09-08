@@ -20,7 +20,7 @@ different one: does the whole application behave correctly, wired together — e
 registered service, the real OpenAPI document, the real middleware pipeline?
 
 The harness is not a replacement for end-to-end tests. `examples/EndpointsApi.Tests` keeps its
-`WebApplicationFactory<Program>` tests deliberately — `TaskEndpointsTests`, `MappedEndpointTests`,
+`WebApplicationFactory<Program>` tests deliberately — `TaskEndpointsTests`, `ContractEndpointTests`,
 `RawEndpointsTests` and the rest still boot the whole example application, because things like the
 served OpenAPI document, content-negotiation middleware ordering, and every endpoint sharing one DI
 graph are only real when the whole application is running. Reach for the harness to pin one
@@ -249,7 +249,7 @@ generated context rather than the default resolver:
 ```csharp
 private static EndpointHarness<TEndpoint> CreateHarness<TEndpoint>(
     Action<EndpointHarnessOptions> configure)
-    where TEndpoint : UnambitiousFx.Synapse.Endpoints.EndpointBase, new()
+    where TEndpoint : UnambitiousFx.Synapse.Endpoints.SynapseEndpoint, new()
 {
     return EndpointHarness.Create<TEndpoint>(options =>
     {

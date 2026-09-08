@@ -69,7 +69,7 @@ public sealed partial class BoundParameterMetadataTests
     internal sealed partial class SearchTasksEndpoint : Endpoint<SearchTasksQuery, string>;
 
     [Fact]
-    public void MappedEndpoint_WithQueryBoundMessage_CarriesBoundParametersMetadata()
+    public void ContractEndpoint_WithQueryBoundMessage_CarriesBoundParametersMetadata()
     {
         // Arrange & Act — map through the real routing stack so the real routing stack applies the
         // metadata, the same way OpenApiMetadataTests does; EndpointHarness exposes no Endpoint
@@ -93,7 +93,7 @@ public sealed partial class BoundParameterMetadataTests
     internal sealed partial class NoParametersEndpoint : Endpoint<NoParametersQuery, string>;
 
     [Fact]
-    public void MappedEndpoint_WithNoBoundParameters_CarriesNoMetadata()
+    public void ContractEndpoint_WithNoBoundParameters_CarriesNoMetadata()
     {
         // Arrange & Act
         var app = WebApplication.CreateSlimBuilder().Build();

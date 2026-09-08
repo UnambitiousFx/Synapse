@@ -6,7 +6,7 @@ public sealed class ScaffoldTests
     public void Assembly_WhenLoaded_HasExpectedName()
     {
         // Arrange
-        var type = typeof(EndpointBase);
+        var type = typeof(SynapseEndpoint);
 
         // Act
         var name = type.Assembly.GetName().Name;

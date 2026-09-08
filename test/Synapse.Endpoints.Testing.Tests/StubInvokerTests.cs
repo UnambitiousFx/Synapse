@@ -104,7 +104,7 @@ public sealed partial class StubInvokerTests
     internal sealed record PurgeCommand : IRequest;
 
     [Get("/greet")]
-    internal sealed partial class GreetEndpoint : RawEndpoint<GreetQuery, string>
+    internal sealed partial class GreetEndpoint : BoundEndpoint<GreetQuery, string>
     {
         public override ValueTask<BindResult<GreetQuery>> BindAsync(HttpContext context)
         {
@@ -113,7 +113,7 @@ public sealed partial class StubInvokerTests
     }
 
     [Delete("/purge")]
-    internal sealed partial class PurgeEndpoint : RawEndpoint<PurgeCommand>
+    internal sealed partial class PurgeEndpoint : BoundEndpoint<PurgeCommand>
     {
         public override ValueTask<BindResult<PurgeCommand>> BindAsync(HttpContext context)
         {

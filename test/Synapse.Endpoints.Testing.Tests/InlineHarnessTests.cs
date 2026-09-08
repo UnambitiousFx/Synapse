@@ -4,10 +4,10 @@ using UnambitiousFx.Functional.Failures;
 
 namespace UnambitiousFx.Synapse.Endpoints.Testing.Tests;
 
-public sealed partial class SelfHandledHarnessTests
+public sealed partial class InlineHarnessTests
 {
     [Fact]
-    public async Task SendAsync_ForASelfHandledEndpoint_RunsItWithNoHandlerStubbed()
+    public async Task SendAsync_ForAInlineEndpoint_RunsItWithNoHandlerStubbed()
     {
         // Arrange: no options.Handle<…> call, because there is no message to stub.
         using var harness = EndpointHarness.Create<ProbeEndpoint>();
@@ -23,7 +23,7 @@ public sealed partial class SelfHandledHarnessTests
     }
 
     [Fact]
-    public async Task SendAsync_WhenASelfHandledEndpointFails_MapsItThroughTheRealFailureMapper()
+    public async Task SendAsync_WhenAInlineEndpointFails_MapsItThroughTheRealFailureMapper()
     {
         // Arrange
         using var harness = EndpointHarness.Create<MissingProbeEndpoint>();
@@ -40,7 +40,7 @@ public sealed partial class SelfHandledHarnessTests
     internal sealed record ProbeDto(string Probe);
 
     [Get("/health/{probe}")]
-    internal sealed partial class ProbeEndpoint : SelfHandledEndpoint<ProbeQuery, ProbeDto>
+    internal sealed partial class ProbeEndpoint : InlineEndpoint<ProbeQuery, ProbeDto>
     {
         public override ValueTask<Result<ProbeDto>> ExecuteAsync(ProbeQuery request,
             HttpContext context,
@@ -55,7 +55,7 @@ public sealed partial class SelfHandledHarnessTests
     internal sealed record MissingProbeQuery(string Probe = "live");
 
     [Get("/health-missing")]
-    internal sealed partial class MissingProbeEndpoint : SelfHandledEndpoint<MissingProbeQuery, ProbeDto>
+    internal sealed partial class MissingProbeEndpoint : InlineEndpoint<MissingProbeQuery, ProbeDto>
     {
         public override ValueTask<Result<ProbeDto>> ExecuteAsync(MissingProbeQuery request,
             HttpContext context,

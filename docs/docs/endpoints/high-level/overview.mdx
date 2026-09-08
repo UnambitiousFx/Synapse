@@ -51,26 +51,26 @@ public sealed partial class StreamTasksEndpoint : StreamEndpoint<StreamTasksQuer
 
 // The wire contract must differ from the internal message.
 public sealed class CreateThingEndpoint
-    : MappedEndpoint<CreateThingRequestDto, CreateThingCommand, int, CreateThingResponseDto>;
+    : ContractEndpoint<CreateThingRequestDto, CreateThingCommand, int, CreateThingResponseDto>;
 
-// No message at all — the endpoint answers itself. See Self-handled.
+// No message at all — the endpoint answers itself. See Inline.
 [Get("/health/{probe}")]
-public sealed partial class ProbeEndpoint : SelfHandledEndpoint<ProbeQuery, ProbeDto>;
+public sealed partial class ProbeEndpoint : InlineEndpoint<ProbeQuery, ProbeDto>;
 ```
 
 Deriving from `Endpoint<…>` for a message that implements `IStreamRequest<T>` is reported as
 [`SYNE005`](../reference/diagnostics) rather than misbehaving at runtime.
 
-See [Base classes](../reference/base-classes) for all eight side by side, including the low-level ones.
+See [Base classes](../reference/base-classes) for all nine side by side, including the low-level ones.
 
-### `MappedEndpoint` is a deliberate opt-in
+### `ContractEndpoint` is a deliberate opt-in
 
 Prefer `Endpoint<TRequest, TResponse>` unless the wire contract genuinely must differ from the
 internal message: the mapped variant costs two extra mapping methods per endpoint.
 
 ```csharp
 public sealed class CreateThingEndpoint
-    : MappedEndpoint<CreateThingRequestDto, CreateThingCommand, int, CreateThingResponseDto>
+    : ContractEndpoint<CreateThingRequestDto, CreateThingCommand, int, CreateThingResponseDto>
 {
     public override CreateThingCommand ToRequest(CreateThingRequestDto request) =>
         new(request.Name);
@@ -101,7 +101,7 @@ public override IResult OnSuccess(TaskDto response, HttpContext context)
 ```
 
 An endpoint class must also be top-level, non-generic, and have a public parameterless constructor —
-`MapEndpoint<TEndpoint>()` is constrained to `where TEndpoint : EndpointBase, new()`. Violations are
+`MapEndpoint<TEndpoint>()` is constrained to `where TEndpoint : SynapseEndpoint, new()`. Violations are
 reported as [`SYNE010`](../reference/diagnostics). An `abstract` endpoint class never fires it:
 discovery skips abstract classes, so an abstract intermediate base shared by several endpoints is a
 supported pattern.

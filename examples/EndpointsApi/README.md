@@ -17,17 +17,17 @@ Run it with `dotnet run`, then read `/openapi/v1.json`.
 | `Endpoint<TRequest>` | `PUT /tasks/{taskId}`, `DELETE /tasks/{taskId}` | `Features/Tasks/Endpoints.cs` |
 | `StreamEndpoint<TRequest, TItem>` | `GET /tasks/stream` | `Features/Tasks/Endpoints.cs` |
 | `StreamEndpoint<TRequest, TItem>`, bound from a body | `POST /tasks/stream/search` | `Features/Tasks/StreamSearch.cs` |
-| `MappedEndpoint<THttpRequest, TRequest, TResponse, THttpResponse>` | `POST /v1/tasks` | `Features/Contracts/CreateTaskV1.cs` |
-| `SelfHandledEndpoint<TRequest, TResponse>` | `GET /ops/probes/{probe}` | `Features/Ops/ProbeStatus.cs` |
-| `SelfHandledEndpoint<TRequest>` | `POST /ops/probes/{probe}/verify` | `Features/Ops/VerifyProbe.cs` |
+| `ContractEndpoint<THttpRequest, TRequest, TResponse, THttpResponse>` | `POST /v1/tasks` | `Features/Contracts/CreateTaskV1.cs` |
+| `InlineEndpoint<TRequest, TResponse>` | `GET /ops/probes/{probe}` | `Features/Ops/ProbeStatus.cs` |
+| `InlineEndpoint<TRequest>` | `POST /ops/probes/{probe}/verify` | `Features/Ops/VerifyProbe.cs` |
 
 ### Low level — the binding is yours
 
 | Base class | Route | File |
 |---|---|---|
 | `RawEndpoint` | `GET /health` | `Features/Ops/RawEndpoints.cs` |
-| `RawEndpoint<TRequest, TResponse>` | `GET /reports` | `Features/Ops/RawEndpoints.cs` |
-| `RawEndpoint<TRequest>` | `DELETE /ops/tasks` | `Features/Ops/PurgeTasks.cs` |
+| `BoundEndpoint<TRequest, TResponse>` | `GET /reports` | `Features/Ops/RawEndpoints.cs` |
+| `BoundEndpoint<TRequest>` | `DELETE /ops/tasks` | `Features/Ops/PurgeTasks.cs` |
 
 ### Routing
 

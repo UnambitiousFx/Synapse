@@ -35,7 +35,7 @@ public static class EndpointHarness
     ///     build.
     /// </exception>
     public static EndpointHarness<TEndpoint> Create<TEndpoint>()
-        where TEndpoint : EndpointBase, new()
+        where TEndpoint : SynapseEndpoint, new()
     {
         return Create<TEndpoint>(static _ => { });
     }
@@ -52,7 +52,7 @@ public static class EndpointHarness
     ///     build.
     /// </exception>
     public static EndpointHarness<TEndpoint> Create<TEndpoint>(Action<EndpointHarnessOptions> configure)
-        where TEndpoint : EndpointBase, new()
+        where TEndpoint : SynapseEndpoint, new()
     {
         ArgumentNullException.ThrowIfNull(configure);
 

@@ -21,7 +21,7 @@ public sealed partial class RawEndpointTests
         // Arrange
         var context = NewContext();
         var endpoint = new TeapotEndpoint();
-        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
+        var descriptor = ((SynapseEndpoint)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Act
         await descriptor.InvokeAsync(context);
@@ -40,7 +40,7 @@ public sealed partial class RawEndpointTests
         context.RequestAborted = aborted.Token;
 
         var endpoint = new EchoHeaderEndpoint();
-        var descriptor = ((EndpointBase)endpoint)
+        var descriptor = ((SynapseEndpoint)endpoint)
             .CreateDescriptor(endpoint.Metadata);
 
         // Act
@@ -59,7 +59,7 @@ public sealed partial class RawEndpointTests
         var context = NewContext(services => services.AddSingleton(new Greeter("hi there")));
 
         var endpoint = new GreetingEndpoint();
-        var descriptor = ((EndpointBase)endpoint)
+        var descriptor = ((SynapseEndpoint)endpoint)
             .CreateDescriptor(endpoint.Metadata);
 
         // Act
@@ -74,7 +74,7 @@ public sealed partial class RawEndpointTests
     {
         // Act
         var endpoint = new TeapotEndpoint();
-        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
+        var descriptor = ((SynapseEndpoint)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Assert
         Assert.Equal("/teapot", descriptor.Route);
@@ -86,7 +86,7 @@ public sealed partial class RawEndpointTests
     {
         // Act
         var endpoint = new ConfiguredRouteEndpoint();
-        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
+        var descriptor = ((SynapseEndpoint)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Assert
         Assert.Equal("/computed", descriptor.Route);
@@ -101,7 +101,7 @@ public sealed partial class RawEndpointTests
 
         // Act
         var exception = Assert.Throws<InvalidOperationException>(
-            () => ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata));
+            () => ((SynapseEndpoint)endpoint).CreateDescriptor(endpoint.Metadata));
 
         // Assert — the same message the high level gives, because both resolve the route in one place.
         Assert.Contains("declares no route", exception.Message);
@@ -230,7 +230,7 @@ public sealed partial class RawEndpointTests
         // Arrange
         var context = NewContext();
         var endpoint = new NullResultEndpoint();
-        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
+        var descriptor = ((SynapseEndpoint)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Act
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(
@@ -269,7 +269,7 @@ public sealed partial class RawEndpointTests
         }
     }
 
-    internal sealed partial class UnmappedEndpoint : RawEndpoint<UnmappedCommand>
+    internal sealed partial class UnmappedEndpoint : BoundEndpoint<UnmappedCommand>
     {
         public override ValueTask<BindResult<UnmappedCommand>> BindAsync(HttpContext context)
         {

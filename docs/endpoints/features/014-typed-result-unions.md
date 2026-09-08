@@ -5,7 +5,7 @@
 | **Status** | 🔴 Missing |
 | **Priority** | Medium |
 | **Area** | Responses / OpenAPI |
-| **Tiers** | `Endpoint<…>`, `RawEndpoint<…>`, `MappedEndpoint<…>` |
+| **Tiers** | `Endpoint<…>`, `BoundEndpoint<…>`, `ContractEndpoint<…>` |
 | **Breaking** | No — additive |
 
 ## Problem

@@ -9,26 +9,26 @@ internal enum EndpointKind
     /// <summary><c>Endpoint&lt;TRequest, TResponse&gt;</c> — generated binder, response body.</summary>
     Value,
 
-    /// <summary><c>MappedEndpoint&lt;...&gt;</c> — generated binder over the wire DTO.</summary>
-    Mapped,
+    /// <summary><c>ContractEndpoint&lt;...&gt;</c> — generated binder over the wire DTO.</summary>
+    Contract,
 
     /// <summary><c>StreamEndpoint&lt;TRequest, TItem&gt;</c> — generated binder, streamed body.</summary>
     Stream,
 
-    /// <summary><c>SelfHandledEndpoint&lt;TRequest&gt;</c> — generated binder, no dispatch, no response body.</summary>
-    SelfHandledVoid,
+    /// <summary><c>InlineEndpoint&lt;TRequest&gt;</c> — generated binder, no dispatch, no response body.</summary>
+    InlineVoid,
 
-    /// <summary><c>SelfHandledEndpoint&lt;TRequest, TResponse&gt;</c> — generated binder, no dispatch, response body.</summary>
-    SelfHandled,
+    /// <summary><c>InlineEndpoint&lt;TRequest, TResponse&gt;</c> — generated binder, no dispatch, response body.</summary>
+    Inline,
 
-    /// <summary><c>RawEndpoint</c> — the free-form low level; binds nothing, returns its own result.</summary>
+    /// <summary><c>BoundEndpoint</c> — the free-form low level; binds nothing, returns its own result.</summary>
     Raw,
 
-    /// <summary><c>RawEndpoint&lt;TRequest&gt;</c> — hand-written binding, no response body.</summary>
-    RawVoid,
+    /// <summary><c>BoundEndpoint&lt;TRequest&gt;</c> — hand-written binding, no response body.</summary>
+    BoundVoid,
 
-    /// <summary><c>RawEndpoint&lt;TRequest, TResponse&gt;</c> — hand-written binding, response body.</summary>
-    RawValue
+    /// <summary><c>BoundEndpoint&lt;TRequest, TResponse&gt;</c> — hand-written binding, response body.</summary>
+    BoundValue
 }
 
 /// <summary>Which generator behaviours apply to each endpoint kind.</summary>
@@ -42,13 +42,13 @@ internal static class EndpointKindExtensions
     /// <remarks>
     ///     The low level exists precisely so that binding can be written by hand:
     ///     <see cref="EndpointKind.Raw" /> binds nothing at all, and the two
-    ///     <c>RawEndpoint&lt;…&gt;</c> kinds supply their own <c>BindAsync</c>. Reporting a binding
+    ///     <c>BoundEndpoint&lt;…&gt;</c> kinds supply their own <c>BindAsync</c>. Reporting a binding
     ///     diagnostic against code the generator did not write would be a false positive every time.
     /// </remarks>
     internal static bool HasGeneratedBinder(this EndpointKind kind)
     {
-        return kind is EndpointKind.Void or EndpointKind.Value or EndpointKind.Mapped or EndpointKind.Stream
-            or EndpointKind.SelfHandled or EndpointKind.SelfHandledVoid;
+        return kind is EndpointKind.Void or EndpointKind.Value or EndpointKind.Contract or EndpointKind.Stream
+            or EndpointKind.Inline or EndpointKind.InlineVoid;
     }
 
     /// <summary>
@@ -57,18 +57,18 @@ internal static class EndpointKindExtensions
     /// </summary>
     internal static bool DispatchesKnownMessage(this EndpointKind kind)
     {
-        return kind is EndpointKind.Void or EndpointKind.Value or EndpointKind.RawVoid or EndpointKind.RawValue;
+        return kind is EndpointKind.Void or EndpointKind.Value or EndpointKind.BoundVoid or EndpointKind.BoundValue;
     }
 
     /// <summary>Whether this kind returns a single response value, so SYNE003 applies.</summary>
     /// <remarks>
-    ///     <see cref="EndpointKind.SelfHandled" /> included: it produces the response itself rather
+    ///     <see cref="EndpointKind.Inline" /> included: it produces the response itself rather
     ///     than dispatching for it, but it maps that response through the same <c>OnSuccess</c> and
     ///     declarative builder methods, so the nudge means the same thing there.
     /// </remarks>
     internal static bool ReturnsValue(this EndpointKind kind)
     {
-        return kind is EndpointKind.Value or EndpointKind.RawValue or EndpointKind.SelfHandled;
+        return kind is EndpointKind.Value or EndpointKind.BoundValue or EndpointKind.Inline;
     }
 }
 
@@ -124,7 +124,7 @@ internal readonly record struct EndpointTarget
     /// <summary>
     ///     Fully-qualified name of the type the binder is generated for: the message for
     ///     <see cref="EndpointKind.Void" />, <see cref="EndpointKind.Value" /> and
-    ///     <see cref="EndpointKind.Stream" />; <c>THttpRequest</c> for <see cref="EndpointKind.Mapped" />;
+    ///     <see cref="EndpointKind.Stream" />; <c>THttpRequest</c> for <see cref="EndpointKind.Contract" />;
     ///     the request contract — which is not a message at all — for the two self-handled kinds.
     /// </summary>
     public string BoundTypeFullName { get; }
@@ -189,10 +189,10 @@ internal readonly record struct EndpointTarget
 
     /// <summary>
     ///     SYNE008: the display name of the type written back as the response body — <c>TResponse</c>
-    ///     for <see cref="EndpointKind.Value" /> and <see cref="EndpointKind.SelfHandled" />,
-    ///     <c>THttpResponse</c> for <see cref="EndpointKind.Mapped" />, <c>TItem</c> for
+    ///     for <see cref="EndpointKind.Value" /> and <see cref="EndpointKind.Inline" />,
+    ///     <c>THttpResponse</c> for <see cref="EndpointKind.Contract" />, <c>TItem</c> for
     ///     <see cref="EndpointKind.Stream" /> — or null for <see cref="EndpointKind.Void" /> and
-    ///     <see cref="EndpointKind.SelfHandledVoid" /> (no response body at all) and for a
+    ///     <see cref="EndpointKind.InlineVoid" /> (no response body at all) and for a
     ///     primitive/framework scalar type, which needs no registration.
     /// </summary>
     public string? JsonResponseTypeName { get; }

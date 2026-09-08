@@ -21,7 +21,7 @@ for end-to-end dispatch"* (`.claude/CLAUDE.md`) — for the one component that h
 - `src/Synapse.Endpoints/EndpointRouteBuilderExtensions.cs` — `MapEndpoint<TEndpoint>` is the only
   path that calls `CreateDescriptor`, which is the only path that calls `CreatePlan`, which is what
   populates `_binder` and `_configuration`.
-- `src/Synapse.Endpoints/EndpointBase.cs` — `Mapped<TState>` throws
+- `src/Synapse.Endpoints/SynapseEndpoint.cs` — `Mapped<TState>` throws
   `InvalidOperationException("… has not been mapped …")` when either field is still null. Good
   diagnostics (see `docs/known-issues/056`), but it tells the user to go and build a pipeline.
 - `test/Synapse.Endpoints.Tests` works around this with its own scaffolding
@@ -171,5 +171,5 @@ The shipped design departs from the proposal above it in three places:
   `DefaultFailureHttpMapper`. `SendAsync` instead throws `InvalidOperationException`, naming the
   mapped route, whenever the response is a `404` with no matched endpoint at all.
 
-`EndpointBase.Mapped<TState>`'s error message now points at the harness, as this document's original
-Notes section asked for — see `src/Synapse.Endpoints/EndpointBase.cs`.
+`SynapseEndpoint.Mapped<TState>`'s error message now points at the harness, as this document's original
+Notes section asked for — see `src/Synapse.Endpoints/SynapseEndpoint.cs`.

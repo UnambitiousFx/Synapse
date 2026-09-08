@@ -7,7 +7,7 @@ namespace UnambitiousFx.Synapse.Endpoints;
 ///     and internal, endpoints must derive from one of the library's own base classes rather than
 ///     from this type directly.
 /// </summary>
-public abstract class EndpointBase
+public abstract class SynapseEndpoint
 {
     /// <summary>
     ///     Builds the non-generic descriptor used to map this endpoint. Called once at startup.
@@ -92,7 +92,7 @@ public abstract class EndpointBase
     ///     implementation returning empty metadata: an endpoint whose metadata was never generated must
     ///     fail to compile, not map with no route. That matters most for the hand-bound and free-form
     ///     tiers, whose routes used to come from the registry — a silent fallback would have left
-    ///     <c>[Get("/health")] HealthEndpoint : RawEndpoint</c> compiling and routeless. It is also why
+    ///     <c>[Get("/health")] HealthEndpoint : BoundEndpoint</c> compiling and routeless. It is also why
     ///     every endpoint, those two tiers included, must be declared <c>partial</c>.
     /// </remarks>
     protected abstract EndpointMetadata CreateMetadata();

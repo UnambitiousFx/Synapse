@@ -45,7 +45,7 @@ public sealed record CreateTaskResponseV1
 /// </remarks>
 [Post("/v1/tasks")]
 public sealed partial class CreateTaskV1Endpoint
-    : MappedEndpoint<CreateTaskRequestV1, CreateTaskCommand, TaskCreated, CreateTaskResponseV1>
+    : ContractEndpoint<CreateTaskRequestV1, CreateTaskCommand, TaskCreated, CreateTaskResponseV1>
 {
     /// <inheritdoc />
     public override void Configure(IEndpointBuilder<CreateTaskResponseV1> builder)

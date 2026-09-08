@@ -36,7 +36,7 @@ binding — is emitted into its own `partial` class as an `override`. With the a
 missing `partial` or a hand-written `BindAsync` on a generated tier is reported against the endpoint
 itself. Turn the analyzer off and that reporting goes with it: the endpoint still fails to compile, but
 the only diagnostics left are the compiler's own `CS0534`s for the abstract members nothing
-implemented, naming `EndpointBase.CreateMetadata()` and `RawEndpoint<GetTaskQuery, TaskDto>.BindAsync`
+implemented, naming `SynapseEndpoint.CreateMetadata()` and `BoundEndpoint<GetTaskQuery, TaskDto>.BindAsync`
 — base classes the author never wrote and would have no reason to suspect. This is the one respect in
 which generating into the endpoint's own class is worse than the old registry lookup, which at least
 failed at startup with a message about the endpoint. Not fixable in code — a disabled analyzer cannot

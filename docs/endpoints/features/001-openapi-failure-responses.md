@@ -5,7 +5,7 @@
 | **Status** | ✅ Shipped |
 | **Priority** | High |
 | **Area** | OpenAPI / Builders |
-| **Tiers** | `Endpoint<…>`, `RawEndpoint<…>`, `MappedEndpoint<…>`, `StreamEndpoint<…>` |
+| **Tiers** | `Endpoint<…>`, `BoundEndpoint<…>`, `ContractEndpoint<…>`, `StreamEndpoint<…>` |
 | **Breaking** | No — additive |
 
 ## Problem
@@ -21,7 +21,7 @@ The high-level builder also has no way to add one by hand.
 
 - `src/Synapse.Endpoints/RawEndpoint.Generic.cs` — `ApplyMetadata` emits exactly one
   `ProducesResponseMetadata` for the success status plus `handlerBuilder.ProducesValidationProblem()`.
-  Identical code in `RawEndpoint.Void.cs`, `MappedEndpoint.cs` and `StreamEndpoint.cs`.
+  Identical code in `RawEndpoint.Void.cs`, `ContractEndpoint.cs` and `StreamEndpoint.cs`.
 - `src/Synapse.Endpoints/Builders/IEndpointBuilder.cs` and `IEndpointBuilder.Generic.cs` expose no
   `Produces` / `ProducesProblem`. Only `IRawEndpointBuilder` has them
   (`src/Synapse.Endpoints/Builders/IRawEndpointBuilder.cs`), which is backwards: the low tier can

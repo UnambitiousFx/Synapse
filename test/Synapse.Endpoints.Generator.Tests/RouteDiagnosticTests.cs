@@ -364,7 +364,7 @@ public sealed class RouteDiagnosticTests
     {
         // Arrange — the shape violation (generic) should prevent SynapseEndpointGroup.g.cs from emitting a
         // MapEndpoint<T>() call for this endpoint at all, rather than cascading into a confusing
-        // "TEndpoint : EndpointBase, new()" constraint error on the generated call site.
+        // "TEndpoint : SynapseEndpoint, new()" constraint error on the generated call site.
         const string source = """
                               using UnambitiousFx.Synapse.Abstractions;
                               using UnambitiousFx.Synapse.Endpoints;
@@ -444,7 +444,7 @@ public sealed class RouteDiagnosticTests
 
                               [Post("/things")]
                               public sealed partial class CreateThingEndpoint
-                                  : MappedEndpoint<HttpThingRequest, CreateThingCommand, int, HttpThingResponse>
+                                  : ContractEndpoint<HttpThingRequest, CreateThingCommand, int, HttpThingResponse>
                               {
                                   public override CreateThingCommand ToRequest(HttpThingRequest request) =>
                                       new(request.ThingId);

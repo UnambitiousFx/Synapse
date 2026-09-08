@@ -31,7 +31,7 @@ are required.
   var descriptor = endpoint.CreateDescriptor(metadata);
   ```
 
-  One instance per mapped endpoint, created with `new`, constrained `where TEndpoint : EndpointBase, new()`.
+  One instance per mapped endpoint, created with `new`, constrained `where TEndpoint : SynapseEndpoint, new()`.
 - The constraint is deliberate and documented on every tier: *"Endpoints are stateless singletons:
   one instance is created at startup, `Configure` runs once, and the same instance serves every
   request. Constructor injection is therefore unavailable by design."*
@@ -50,7 +50,7 @@ Two reports, both accurate:
 
 ```
 error SYNE010: 'GetTaskEndpoint' has no public parameterless constructor, so
-  'MapEndpoint<TEndpoint>()' (which requires 'TEndpoint : EndpointBase, new()') cannot be
+  'MapEndpoint<TEndpoint>()' (which requires 'TEndpoint : SynapseEndpoint, new()') cannot be
   instantiated for it. Make the endpoint a top-level, non-generic class with a public parameterless
   constructor.
 

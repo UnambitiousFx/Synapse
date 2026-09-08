@@ -5,7 +5,7 @@
 | **Status** | ✅ Shipped |
 | **Priority** | High |
 | **Area** | Endpoint pipeline |
-| **Tiers** | `Endpoint<…>`, `RawEndpoint<…>`, `MappedEndpoint<…>`, `StreamEndpoint<…>` |
+| **Tiers** | `Endpoint<…>`, `BoundEndpoint<…>`, `ContractEndpoint<…>`, `StreamEndpoint<…>` |
 | **Breaking** | No — additive virtual members |
 
 ## Problem
@@ -46,7 +46,7 @@ exchange:
 public sealed class CreateTaskEndpoint : Endpoint<CreateTaskCommand, TaskCreated>
 {
     // CS0239: 'CreateTaskEndpoint.HandleAsync(HttpContext, CancellationToken)' cannot override
-    //         inherited member 'RawEndpoint<CreateTaskCommand, TaskCreated>.HandleAsync(…)'
+    //         inherited member 'BoundEndpoint<CreateTaskCommand, TaskCreated>.HandleAsync(…)'
     //         because it is sealed.
     public override async ValueTask<IResult> HandleAsync(HttpContext context, CancellationToken ct)
     {
@@ -64,7 +64,7 @@ Neither open seam reaches the requirement:
 
 ```csharp
 // Sealed on Endpoint<…> — the generated binder owns it. Overridable one tier down on
-// RawEndpoint<…>, but that means hand-writing the binding to get a hook, and it still runs
+// BoundEndpoint<…>, but that means hand-writing the binding to get a hook, and it still runs
 // *before* there is a bound message to inspect.
 public override ValueTask<BindResult<CreateTaskCommand>> BindAsync(HttpContext context);
 

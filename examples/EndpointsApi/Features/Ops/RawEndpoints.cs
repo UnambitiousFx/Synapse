@@ -66,7 +66,7 @@ public sealed partial class HealthEndpoint : RawEndpoint
 ///         The reason this endpoint cannot be a high-level one: its message wants a
 ///         <c>IReadOnlyList&lt;string&gt;</c> of tags, and the five binding conventions have no way to
 ///         express "one repeated query key becomes a collection". Only the binding differs — everything
-///         after <see cref="BindAsync" /> is <see cref="RawEndpoint{TRequest,TResponse}" />'s, which is
+///         after <see cref="BindAsync" /> is <see cref="BoundEndpoint{TRequest,TResponse}" />'s, which is
 ///         also <see cref="Endpoint{TRequest,TResponse}" />'s.
 ///     </para>
 ///     <para>
@@ -76,7 +76,7 @@ public sealed partial class HealthEndpoint : RawEndpoint
 ///     </para>
 /// </remarks>
 [Get("/reports")]
-public sealed partial class TagReportEndpoint : RawEndpoint<TagReportQuery, TagReportDto>
+public sealed partial class TagReportEndpoint : BoundEndpoint<TagReportQuery, TagReportDto>
 {
     /// <inheritdoc />
     public override void Configure(IEndpointBuilder<TagReportDto> builder)

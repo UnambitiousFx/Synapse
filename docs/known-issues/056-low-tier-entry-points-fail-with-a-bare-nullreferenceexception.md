@@ -115,10 +115,10 @@ read early. Making the tier public turned two internal invariants into things a 
 
 ### Resolution
 
-`EndpointBase` gained a `private protected Mapped<TState>(TState?)` helper that replaces every `!` on
+`SynapseEndpoint` gained a `private protected Mapped<TState>(TState?)` helper that replaces every `!` on
 startup-created state with a failure that explains itself, naming the endpoint type and pointing at
-`MapEndpoint<TEndpoint>()`. Applied at all six sites: `RawEndpoint<TRequest, TResponse>`,
-`RawEndpoint<TRequest>`, `Endpoint<TRequest, TResponse>`, `Endpoint<TRequest>`, `MappedEndpoint<…>` and
+`MapEndpoint<TEndpoint>()`. Applied at all six sites: `BoundEndpoint<TRequest, TResponse>`,
+`BoundEndpoint<TRequest>`, `Endpoint<TRequest, TResponse>`, `Endpoint<TRequest>`, `ContractEndpoint<…>` and
 `StreamEndpoint<…>`.
 
 `RawEndpoint.CreateDescriptor` — the one place in the library where a result is executed — rejects a

@@ -130,7 +130,7 @@ public sealed class HarnessTests
     /// </summary>
     private static EndpointHarness<TEndpoint> CreateHarness<TEndpoint>(
         Action<EndpointHarnessOptions> configure)
-        where TEndpoint : UnambitiousFx.Synapse.Endpoints.EndpointBase, new()
+        where TEndpoint : UnambitiousFx.Synapse.Endpoints.SynapseEndpoint, new()
     {
         return EndpointHarness.Create<TEndpoint>(options =>
         {

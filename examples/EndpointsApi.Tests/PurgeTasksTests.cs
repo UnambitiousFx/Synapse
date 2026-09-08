@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 namespace UnambitiousFx.Examples.EndpointsApi.Tests;
 
 /// <summary>
-///     End-to-end coverage of <c>RawEndpoint&lt;TRequest&gt;</c>, the middle tier at the arity with no
+///     End-to-end coverage of <c>BoundEndpoint&lt;TRequest&gt;</c>, the middle tier at the arity with no
 ///     response — hand-written binding, inherited dispatch, and a <c>204</c> from the base class.
 /// </summary>
 public sealed class PurgeTasksTests : IClassFixture<WebApplicationFactory<Program>>

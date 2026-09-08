@@ -150,13 +150,13 @@ its arrays are empty. See the `SynapseEndpointWithHooks` and `SynapseEndpointWit
 ## Which tiers
 
 Every bound tier: `Endpoint<TRequest>`, `Endpoint<TRequest, TResponse>` (and their
-`RawEndpoint<…>` bases), `MappedEndpoint<…>`, `StreamEndpoint<…>` and `SelfHandledEndpoint<…>`.
+`BoundEndpoint<…>` bases), `ContractEndpoint<…>`, `StreamEndpoint<…>` and `InlineEndpoint<…>`.
 
-`SelfHandledEndpoint<…>` runs the identical order, with `ExecuteAsync` where the dispatch would be.
+`InlineEndpoint<…>` runs the identical order, with `ExecuteAsync` where the dispatch would be.
 Its hooks are the only cross-cutting seam it has — nothing else wraps it, because it never reaches a
-[pipeline behaviour](../high-level/self-handled#when-not-to).
+[pipeline behaviour](../high-level/inline#when-not-to).
 
-`MappedEndpoint<…>`'s hooks are typed on the **wire DTO**, not the message — they run around
+`ContractEndpoint<…>`'s hooks are typed on the **wire DTO**, not the message — they run around
 binding, and binding is what produces a DTO.
 
 `StreamEndpoint<…>` runs steps 6 and 7 before the first item is produced, because its result *is*

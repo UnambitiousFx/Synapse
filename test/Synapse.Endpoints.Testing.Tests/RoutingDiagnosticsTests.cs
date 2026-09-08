@@ -63,7 +63,7 @@ public sealed partial class RoutingDiagnosticsTests
     }
 
     [Fact]
-    public async Task RouteDescription_ForAMappedEndpoint_NamesTheVerbAndTemplate()
+    public async Task RouteDescription_ForAContractEndpoint_NamesTheVerbAndTemplate()
     {
         // Act
         using var harness = EndpointHarness.Create<ItemEndpoint>();

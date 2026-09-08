@@ -39,8 +39,8 @@ which `Microsoft.AspNetCore.OpenApi` skipped outright. It did not touch the oppo
 response for which a type *was* supplied, from a caller that had no way to say the mapper writes
 nothing. Both endpoints of the same question, fixed one at a time.
 
-Affected `RawEndpoint<TRequest, TResponse>` (and therefore `Endpoint<TRequest, TResponse>`) and
-`MappedEndpoint<…>`. The void arity was never affected: it passes no type at all.
+Affected `BoundEndpoint<TRequest, TResponse>` (and therefore `Endpoint<TRequest, TResponse>`) and
+`ContractEndpoint<…>`. The void arity was never affected: it passes no type at all.
 
 ---
 

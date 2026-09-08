@@ -8,8 +8,8 @@ namespace UnambitiousFx.Examples.EndpointsApi.Tests;
 
 /// <summary>
 ///     End-to-end coverage of the two low-level endpoint shapes through the real ASP.NET Core
-///     pipeline: the free-form <c>RawEndpoint</c> and the hand-bound
-///     <c>RawEndpoint&lt;TRequest, TResponse&gt;</c>.
+///     pipeline: the free-form <c>BoundEndpoint</c> and the hand-bound
+///     <c>BoundEndpoint&lt;TRequest, TResponse&gt;</c>.
 /// </summary>
 public sealed class RawEndpointsTests : IClassFixture<WebApplicationFactory<Program>>
 {

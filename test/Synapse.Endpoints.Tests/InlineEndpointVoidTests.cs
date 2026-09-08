@@ -7,7 +7,7 @@ using UnambitiousFx.Synapse.Endpoints.Builders;
 
 namespace UnambitiousFx.Synapse.Endpoints.Tests;
 
-public sealed partial class SelfHandledEndpointVoidTests
+public sealed partial class InlineEndpointVoidTests
 {
     [Fact]
     public async Task Invoke_WithNoResponse_RunsExecuteAsyncAndAnswers204()
@@ -17,7 +17,7 @@ public sealed partial class SelfHandledEndpointVoidTests
         var context = Context("stale");
 
         // Act
-        await ((EndpointBase)endpoint)
+        await ((SynapseEndpoint)endpoint)
             .CreateDescriptor(endpoint.Metadata)
             .InvokeAsync(context);
 
@@ -34,7 +34,7 @@ public sealed partial class SelfHandledEndpointVoidTests
         var endpoint = new ConflictedEndpoint();
 
         // Act
-        await ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata).InvokeAsync(context);
+        await ((SynapseEndpoint)endpoint).CreateDescriptor(endpoint.Metadata).InvokeAsync(context);
 
         // Assert
         Assert.Equal(StatusCodes.Status409Conflict, context.Response.StatusCode);
@@ -48,7 +48,7 @@ public sealed partial class SelfHandledEndpointVoidTests
         var endpoint = new QueuedEndpoint();
 
         // Act
-        await ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata).InvokeAsync(context);
+        await ((SynapseEndpoint)endpoint).CreateDescriptor(endpoint.Metadata).InvokeAsync(context);
 
         // Assert
         Assert.Equal(StatusCodes.Status202Accepted, context.Response.StatusCode);
@@ -76,7 +76,7 @@ public sealed partial class SelfHandledEndpointVoidTests
     internal sealed record PurgeRequest(string Key);
 
     [Delete("/cache/{key}")]
-    internal sealed partial class PurgeEndpoint : SelfHandledEndpoint<PurgeRequest>
+    internal sealed partial class PurgeEndpoint : InlineEndpoint<PurgeRequest>
     {
         public string? Purged { get; private set; }
 
@@ -92,7 +92,7 @@ public sealed partial class SelfHandledEndpointVoidTests
     internal sealed record ConflictedRequest(string Key);
 
     [Delete("/cache-conflict/{key}")]
-    internal sealed partial class ConflictedEndpoint : SelfHandledEndpoint<ConflictedRequest>
+    internal sealed partial class ConflictedEndpoint : InlineEndpoint<ConflictedRequest>
     {
         public override ValueTask<Result> ExecuteAsync(ConflictedRequest request,
             HttpContext context,
@@ -105,7 +105,7 @@ public sealed partial class SelfHandledEndpointVoidTests
     internal sealed record QueuedRequest(string Key);
 
     [Post("/cache/rebuild/{key}")]
-    internal sealed partial class QueuedEndpoint : SelfHandledEndpoint<QueuedRequest>
+    internal sealed partial class QueuedEndpoint : InlineEndpoint<QueuedRequest>
     {
         public override void Configure(IEndpointBuilder builder)
         {

@@ -10,7 +10,7 @@ namespace UnambitiousFx.Examples.EndpointsApi.Features.Ops;
 /// <remarks>
 ///     Bound by hand rather than by convention: a collection built from one repeated key is exactly
 ///     what the five binding conventions cannot express, which is why <c>TagReportEndpoint</c> derives
-///     from <c>RawEndpoint&lt;TRequest, TResponse&gt;</c> instead of <c>Endpoint&lt;…&gt;</c>.
+///     from <c>BoundEndpoint&lt;TRequest, TResponse&gt;</c> instead of <c>Endpoint&lt;…&gt;</c>.
 /// </remarks>
 /// <param name="Page">The 1-based page number.</param>
 /// <param name="Size">The page size.</param>

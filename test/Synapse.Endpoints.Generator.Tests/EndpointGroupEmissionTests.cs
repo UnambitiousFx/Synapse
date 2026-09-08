@@ -128,7 +128,7 @@ public sealed class EndpointGroupEmissionTests
                               [Get("/value")]   public sealed partial class ValueEndpoint : Endpoint<ValueQuery, int>;
                               [Get("/ticks")]   public sealed partial class TickEndpoint : StreamEndpoint<TickQuery, int>;
                               [Post("/mapped")]
-                              public sealed partial class MappedThingEndpoint : MappedEndpoint<HttpBody, MappedCommand, int, HttpOut>
+                              public sealed partial class MappedThingEndpoint : ContractEndpoint<HttpBody, MappedCommand, int, HttpOut>
                               {
                                   public override MappedCommand ToRequest(HttpBody request) => new(request.Name);
                                   public override HttpOut ToResponse(int response) => new(response.ToString());
@@ -139,7 +139,7 @@ public sealed class EndpointGroupEmissionTests
         var generated = GeneratorHarness.GetFile(source, "SynapseEndpointGroup.g.cs");
 
         // Assert — one MapEndpoint call per shape, so a base-type match that silently fails for one
-        // shape (e.g. MappedEndpoint`4 or StreamEndpoint`2) can't hide behind the other three still
+        // shape (e.g. ContractEndpoint`4 or StreamEndpoint`2) can't hide behind the other three still
         // emitting cleanly.
         Assert.Contains("endpoints.MapEndpoint<global::TestNs.VoidEndpoint>();", generated);
         Assert.Contains("endpoints.MapEndpoint<global::TestNs.ValueEndpoint>();", generated);

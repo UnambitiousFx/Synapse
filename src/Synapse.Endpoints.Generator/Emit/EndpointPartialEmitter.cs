@@ -14,11 +14,11 @@ namespace UnambitiousFx.Synapse.Endpoints.Generator.Emit;
 ///     get their own binding resolved from their own route and verb, which is why SYNE013 no longer
 ///     exists — see the design at docs/superpowers/specs/2026-09-07-endpoint-partial-generation-design.md.
 ///     Emitted for every endpoint kind, including the hand-bound and free-form ones: they bind
-///     themselves, but <c>EndpointBase.CreateMetadata</c> is abstract, so every endpoint needs the
+///     themselves, but <c>SynapseEndpoint.CreateMetadata</c> is abstract, so every endpoint needs the
 ///     metadata override and therefore has to be reopenable. Abstract rather than a base
 ///     implementation returning empty metadata deliberately: a raw endpoint's route used to come from
 ///     the registry, so a silent empty fallback would have compiled and left
-///     <c>[Get("/health")] HealthEndpoint : RawEndpoint</c> with no route at all.
+///     <c>[Get("/health")] HealthEndpoint : BoundEndpoint</c> with no route at all.
 /// </remarks>
 internal static class EndpointPartialEmitter
 {
@@ -195,7 +195,7 @@ internal static class EndpointPartialEmitter
     /// </summary>
     /// <remarks>
     ///     Always emitted, even when the endpoint carries no route attribute: the member is abstract on
-    ///     <c>EndpointBase</c>, so omitting it would leave the endpoint unimplemented. Empty verbs and
+    ///     <c>SynapseEndpoint</c>, so omitting it would leave the endpoint unimplemented. Empty verbs and
     ///     an empty route are the honest answer for an endpoint that declares its route inside
     ///     <c>Configure</c>, which the generator cannot see — the builder supplies both at startup.
     /// </remarks>

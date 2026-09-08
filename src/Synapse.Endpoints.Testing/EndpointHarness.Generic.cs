@@ -14,7 +14,7 @@ namespace UnambitiousFx.Synapse.Endpoints.Testing;
 ///     exactly as it is in a host.
 /// </remarks>
 public sealed class EndpointHarness<TEndpoint> : IDisposable
-    where TEndpoint : EndpointBase, new()
+    where TEndpoint : SynapseEndpoint, new()
 {
     private readonly ServiceProvider _provider;
     private readonly RequestDelegate _pipeline;

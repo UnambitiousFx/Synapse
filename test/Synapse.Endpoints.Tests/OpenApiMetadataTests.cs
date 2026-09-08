@@ -111,7 +111,7 @@ public sealed partial class OpenApiMetadataTests
         // is declared comes down to the verbs alone.
         var app = WebApplication.CreateSlimBuilder().Build();
         var endpoint = new MetaEndpoint();
-        var descriptor = ((EndpointBase)endpoint)
+        var descriptor = ((SynapseEndpoint)endpoint)
             .CreateDescriptor(new EndpointMetadata(httpMethods, "/meta-multi"));
 
         // Act
@@ -159,13 +159,13 @@ public sealed partial class OpenApiMetadataTests
     }
 
     [Fact]
-    public void CreateDescriptor_ForMappedEndpointConfiguredCreated_Declares201NotDefault200()
+    public void CreateDescriptor_ForContractEndpointConfiguredCreated_Declares201NotDefault200()
     {
         // Arrange
         var app = WebApplication.CreateSlimBuilder().Build();
 
         // Act
-        app.MapEndpoint<CreatedMappedEndpoint>();
+        app.MapEndpoint<CreatedContractEndpoint>();
 
         // Assert
         var endpoint = ((IEndpointRouteBuilder)app).DataSources
@@ -216,13 +216,13 @@ public sealed partial class OpenApiMetadataTests
     }
 
     [Fact]
-    public void CreateDescriptor_ForSelfHandledEndpoint_DeclaresTheSameMetadataAsTheDispatchingTier()
+    public void CreateDescriptor_ForInlineEndpoint_DeclaresTheSameMetadataAsTheDispatchingTier()
     {
         // Arrange
         var app = WebApplication.CreateSlimBuilder().Build();
 
         // Act
-        app.MapEndpoint<SelfHandledMetaEndpoint>();
+        app.MapEndpoint<InlineMetaEndpoint>();
 
         // Assert
         var endpoint = ((IEndpointRouteBuilder)app).DataSources
@@ -238,17 +238,17 @@ public sealed partial class OpenApiMetadataTests
 
         var accepts = endpoint.Metadata.GetMetadata<IAcceptsMetadata>();
         Assert.NotNull(accepts);
-        Assert.Equal(typeof(SelfHandledMetaRequest), accepts!.RequestType);
+        Assert.Equal(typeof(InlineMetaRequest), accepts!.RequestType);
     }
 
     [Fact]
-    public void CreateDescriptor_ForSelfHandledEndpointWithNoResponse_Declares204NotDefault200()
+    public void CreateDescriptor_ForInlineEndpointWithNoResponse_Declares204NotDefault200()
     {
         // Arrange
         var app = WebApplication.CreateSlimBuilder().Build();
 
         // Act
-        app.MapEndpoint<SelfHandledVoidMetaEndpoint>();
+        app.MapEndpoint<InlineVoidMetaEndpoint>();
 
         // Assert
         var endpoint = ((IEndpointRouteBuilder)app).DataSources
@@ -533,8 +533,8 @@ public sealed partial class OpenApiMetadataTests
     internal sealed record CreatedMappedResponse(string Id);
 
     [Post("/meta-mapped-created")]
-    internal sealed partial class CreatedMappedEndpoint
-        : MappedEndpoint<CreatedMappedRequest, CreatedMappedCommand, int, CreatedMappedResponse>
+    internal sealed partial class CreatedContractEndpoint
+        : ContractEndpoint<CreatedMappedRequest, CreatedMappedCommand, int, CreatedMappedResponse>
     {
         public override CreatedMappedCommand ToRequest(CreatedMappedRequest request)
         {
@@ -565,7 +565,7 @@ public sealed partial class OpenApiMetadataTests
     internal sealed record HandBoundMetaCommand : IRequest<string>;
 
     [Post("/meta-hand-bound")]
-    internal sealed partial class HandBoundMetaEndpoint : RawEndpoint<HandBoundMetaCommand, string>
+    internal sealed partial class HandBoundMetaEndpoint : BoundEndpoint<HandBoundMetaCommand, string>
     {
         public override ValueTask<BindResult<HandBoundMetaCommand>> BindAsync(HttpContext context)
         {
@@ -722,13 +722,13 @@ public sealed partial class OpenApiMetadataTests
     }
 
     [Fact]
-    public void CreateDescriptor_ForAMappedEndpointDeclaringAProblemResponse_DeclaresIt()
+    public void CreateDescriptor_ForAContractEndpointDeclaringAProblemResponse_DeclaresIt()
     {
         // Arrange
         var app = WebApplication.CreateSlimBuilder().Build();
 
         // Act
-        app.MapEndpoint<FailureAwareMappedEndpoint>();
+        app.MapEndpoint<FailureAwareContractEndpoint>();
 
         // Assert
         var endpoint = ((IEndpointRouteBuilder)app).DataSources
@@ -830,8 +830,8 @@ public sealed partial class OpenApiMetadataTests
     }
 
     [Post("/meta-failure-mapped")]
-    internal sealed partial class FailureAwareMappedEndpoint
-        : MappedEndpoint<CreatedMappedRequest, CreatedMappedCommand, int, CreatedMappedResponse>
+    internal sealed partial class FailureAwareContractEndpoint
+        : ContractEndpoint<CreatedMappedRequest, CreatedMappedCommand, int, CreatedMappedResponse>
     {
         public override CreatedMappedCommand ToRequest(CreatedMappedRequest request)
         {
@@ -850,7 +850,7 @@ public sealed partial class OpenApiMetadataTests
     }
 
     [Post("/meta-failure-hand-bound")]
-    internal sealed partial class FailureAwareHandBoundEndpoint : RawEndpoint<HandBoundMetaCommand, string>
+    internal sealed partial class FailureAwareHandBoundEndpoint : BoundEndpoint<HandBoundMetaCommand, string>
     {
         public override ValueTask<BindResult<HandBoundMetaCommand>> BindAsync(HttpContext context)
         {
@@ -891,13 +891,13 @@ public sealed partial class OpenApiMetadataTests
         }
     }
 
-    internal sealed record SelfHandledMetaRequest(string Name);
+    internal sealed record InlineMetaRequest(string Name);
 
     [Post("/meta-self-handled")]
-    internal sealed partial class SelfHandledMetaEndpoint : SelfHandledEndpoint<SelfHandledMetaRequest, string>
+    internal sealed partial class InlineMetaEndpoint : InlineEndpoint<InlineMetaRequest, string>
     {
         public override ValueTask<UnambitiousFx.Functional.Result<string>> ExecuteAsync(
-            SelfHandledMetaRequest request,
+            InlineMetaRequest request,
             HttpContext context,
             CancellationToken cancellationToken)
         {
@@ -905,13 +905,13 @@ public sealed partial class OpenApiMetadataTests
         }
     }
 
-    internal sealed record SelfHandledVoidMetaRequest(string Name);
+    internal sealed record InlineVoidMetaRequest(string Name);
 
     [Post("/meta-self-handled-void")]
-    internal sealed partial class SelfHandledVoidMetaEndpoint : SelfHandledEndpoint<SelfHandledVoidMetaRequest>
+    internal sealed partial class InlineVoidMetaEndpoint : InlineEndpoint<InlineVoidMetaRequest>
     {
         public override ValueTask<UnambitiousFx.Functional.Result> ExecuteAsync(
-            SelfHandledVoidMetaRequest request,
+            InlineVoidMetaRequest request,
             HttpContext context,
             CancellationToken cancellationToken)
         {
@@ -968,7 +968,7 @@ public sealed partial class OpenApiMetadataTests
     ///     Endpoint arities. Abstract, so the two verbs below can share it: discovery skips abstract
     ///     classes, so it declares no route of its own.
     /// </summary>
-    internal abstract partial class FormProbeEndpointBase : RawEndpoint<FormProbeCommand, string>
+    internal abstract partial class FormProbeEndpointBase : BoundEndpoint<FormProbeCommand, string>
     {
         public override ValueTask<BindResult<FormProbeCommand>> BindAsync(HttpContext context)
         {

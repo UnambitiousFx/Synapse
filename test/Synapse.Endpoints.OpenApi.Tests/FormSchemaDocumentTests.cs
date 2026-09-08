@@ -131,7 +131,7 @@ public sealed partial class FormSchemaDocumentTests
     ///     property. So this sits at the hand-written-binding tier and overrides the hook directly.
     /// </summary>
     [Post("/empty-form")]
-    internal sealed partial class EmptyFormEndpoint : RawEndpoint<EmptyFormCommand, string>
+    internal sealed partial class EmptyFormEndpoint : BoundEndpoint<EmptyFormCommand, string>
     {
         protected override RequestBodyKind BoundBodyKind => RequestBodyKind.Form;
 

@@ -5,7 +5,7 @@
 | **Status** | ✅ Shipped |
 | **Priority** | High |
 | **Area** | Base classes |
-| **Tiers** | `SelfHandledEndpoint<TRequest, TResponse>`, `SelfHandledEndpoint<TRequest>` |
+| **Tiers** | `InlineEndpoint<TRequest, TResponse>`, `InlineEndpoint<TRequest>` |
 | **Breaking** | No — additive base class |
 
 ## Problem
@@ -98,7 +98,7 @@ overridable handler:
 
 ```csharp
 [Get("/tasks/{taskId:guid}")]
-public sealed class GetTaskEndpoint : SelfHandledEndpoint<GetTaskRequest, TaskDto>
+public sealed class GetTaskEndpoint : InlineEndpoint<GetTaskRequest, TaskDto>
 {
     public override async ValueTask<Result<TaskDto>> ExecuteAsync(GetTaskRequest request, HttpContext context, CancellationToken ct)
     {
@@ -122,7 +122,7 @@ public sealed record ProbeQuery                    // no IRequest<T>, no handler
 }
 
 [Get("/health/{probe}")]
-public sealed class ProbeEndpoint : SelfHandledEndpoint<ProbeQuery, ProbeDto>
+public sealed class ProbeEndpoint : InlineEndpoint<ProbeQuery, ProbeDto>
 {
     public override void Configure(IEndpointBuilder<ProbeDto> builder)
     {
@@ -152,7 +152,7 @@ accumulated `400`, and `Result.FailNotFound` still goes through the registered `
 - [x] Failures map through `IFailureHttpMapper` exactly as dispatched failures do.
 - [x] Declarative success mappers (`Ok`/`Created`/`Accepted`/`NoContent`/`StatusCode`) and
       `OnSuccess` behave as on `Endpoint<TRequest, TResponse>`.
-- [x] A void arity (`SelfHandledEndpoint<TRequest>`) exists to match.
+- [x] A void arity (`InlineEndpoint<TRequest>`) exists to match.
 - [x] Documented alongside the tier table in `docs/docs/endpoints/reference/base-classes.mdx`, with
       explicit guidance on when *not* to use it (anything a pipeline behaviour must wrap).
 
@@ -164,8 +164,8 @@ enforcement, no outbox. It is for endpoints that genuinely have no domain messag
 
 ## Resolution
 
-Two base classes in `src/Synapse.Endpoints`, siblings of `MappedEndpoint<…>` under
-`BoundEndpoint<TBound>` — not under `RawEndpoint<TRequest, TResponse>`, whose `IRequest<TResponse>`
+Two base classes in `src/Synapse.Endpoints`, siblings of `ContractEndpoint<…>` under
+`EndpointLifecycle<TRequest>` — not under `BoundEndpoint<TRequest, TResponse>`, whose `IRequest<TResponse>`
 constraint is the thing being dropped. Each supplies the same two seams every bound tier supplies:
 `BindBoundAsync` calls the `BindAsync` generated into the endpoint's own partial, and
 `ProduceResultAsync` runs
@@ -173,14 +173,14 @@ constraint is the thing being dropped. Each supplies the same two seams every bo
 unchanged, so the new tier cannot drift from the others.
 
 The handler is named **`ExecuteAsync`**, not `HandleAsync` as proposed above:
-`HandleAsync(HttpContext, CancellationToken)` is already declared and sealed on `BoundEndpoint<TBound>`,
+`HandleAsync(HttpContext, CancellationToken)` is already declared and sealed on `EndpointLifecycle<TRequest>`,
 so a three-argument `HandleAsync` would have compiled as an overload while offering an author two
 same-named members of which only one can be overridden.
 
 Failures are mapped by resolving `IFailureHttpMapper` from the request services and calling
 `AsHttpBuilder` — the same mapper instance and the same call `HttpInvoker` makes internally, rather
 than a new member on `IHttpInvoker`, which would have been a breaking change for implementers of a
-public interface. `SelfHandledEndpointTests.Invoke_WhenExecuteAsyncFails_AnswersIdenticallyToTheSameFailureDispatched`
+public interface. `InlineEndpointTests.Invoke_WhenExecuteAsyncFails_AnswersIdenticallyToTheSameFailureDispatched`
 pins the parity by sending the same `NotFoundFailure` through both tiers and comparing status,
 content type and body.
 

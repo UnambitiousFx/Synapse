@@ -30,7 +30,7 @@ return bound.Problem();     // -> TypedResults.ValidationProblem(errors)
 
 `ValidationProblem` writes `HttpValidationProblemDetails`, which is `ProblemDetails` plus
 `errors: { field: [message, …] }`. The declared metadata did not move with it: all four shapes —
-`RawEndpoint<TRequest, TResponse>`, `RawEndpoint<TRequest>`, `MappedEndpoint<…>` and
+`BoundEndpoint<TRequest, TResponse>`, `BoundEndpoint<TRequest>`, `ContractEndpoint<…>` and
 `StreamEndpoint<…>` — still called `ProducesProblem(StatusCodes.Status400BadRequest)`.
 
 A consumer generating a client from the document therefore gets a `400` type with `type`, `title`,

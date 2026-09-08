@@ -10,7 +10,7 @@ using UnambitiousFx.Synapse.Endpoints.Builders;
 
 namespace UnambitiousFx.Synapse.Endpoints.Tests;
 
-public sealed partial class MappedEndpointTests
+public sealed partial class ContractEndpointTests
 {
     [Fact]
     public async Task Invoke_WithMappedContracts_BindsHttpDtoAndReturnsMappedResponse()
@@ -26,7 +26,7 @@ public sealed partial class MappedEndpointTests
         var context = NewJsonBodyContext(services, """{"name":"thing"}""");
 
         var endpoint = new CreateEndpoint();
-        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
+        var descriptor = ((SynapseEndpoint)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Act
         await descriptor.InvokeAsync(context);
@@ -50,7 +50,7 @@ public sealed partial class MappedEndpointTests
         context.Response.Body = new MemoryStream();
 
         var endpoint = new FailingEndpoint();
-        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
+        var descriptor = ((SynapseEndpoint)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Act
         await descriptor.InvokeAsync(context);
@@ -80,7 +80,7 @@ public sealed partial class MappedEndpointTests
         var context = NewJsonBodyContext(services, """{"name":"thing"}""");
 
         var endpoint = new CreatedEndpoint();
-        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
+        var descriptor = ((SynapseEndpoint)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Act
         await descriptor.InvokeAsync(context);
@@ -122,7 +122,7 @@ public sealed partial class MappedEndpointTests
     internal sealed record CreateResponse(string Id);
 
     [Post("/things")]
-    internal sealed partial class CreateEndpoint : MappedEndpoint<CreateBody, CreateCommand, int, CreateResponse>
+    internal sealed partial class CreateEndpoint : ContractEndpoint<CreateBody, CreateCommand, int, CreateResponse>
     {
         public override CreateCommand ToRequest(CreateBody request)
         {
@@ -140,7 +140,7 @@ public sealed partial class MappedEndpointTests
     internal sealed record FailingCreateResponse(string Id);
 
     [Post("/things-fail")]
-    internal sealed partial class FailingEndpoint : MappedEndpoint<CreateBody, FailingCreateCommand, int, FailingCreateResponse>
+    internal sealed partial class FailingEndpoint : ContractEndpoint<CreateBody, FailingCreateCommand, int, FailingCreateResponse>
     {
         public override FailingCreateCommand ToRequest(CreateBody request)
         {
@@ -158,7 +158,7 @@ public sealed partial class MappedEndpointTests
     internal sealed record CreatedResponse(string Id);
 
     [Post("/things-created")]
-    internal sealed partial class CreatedEndpoint : MappedEndpoint<CreateBody, CreatedCommand, int, CreatedResponse>
+    internal sealed partial class CreatedEndpoint : ContractEndpoint<CreateBody, CreatedCommand, int, CreatedResponse>
     {
         public override CreatedCommand ToRequest(CreateBody request)
         {

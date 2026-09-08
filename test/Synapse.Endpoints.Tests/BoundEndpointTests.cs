@@ -1,78 +1,228 @@
+using System.Text.Json;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
+using NSubstitute;
 using UnambitiousFx.Synapse.Abstractions;
+using UnambitiousFx.Synapse.AspNetCore.Http;
+using UnambitiousFx.Synapse.Endpoints.Binding;
+using UnambitiousFx.Synapse.Endpoints.Builders;
 
 namespace UnambitiousFx.Synapse.Endpoints.Tests;
 
+/// <summary>
+///     The mediator-bound middle level: binding is hand-written, everything downstream of it is the
+///     same code the high level runs.
+/// </summary>
 public sealed partial class BoundEndpointTests
 {
-    [Theory]
-    [InlineData(typeof(RawEndpoint<PingCommand>))]
-    [InlineData(typeof(RawEndpoint<PingQuery, string>))]
-    [InlineData(typeof(MappedEndpoint<PingDto, PingQuery, string, string>))]
-    [InlineData(typeof(StreamEndpoint<PingStream, string>))]
-    public void EveryBoundTier_DerivesFromBoundEndpoint(Type tier)
+    [Fact]
+    public async Task Invoke_WithHandWrittenBinding_DispatchesTheBoundMessage()
     {
-        // Arrange: the four sealed tiers must share one declaration of the hooks, or the ordering
-        // contract exists in four places and can drift.
+        // Arrange
+        LookupQuery? dispatched = null;
+        var invoker = Substitute.For<IHttpInvoker>();
+        invoker.InvokeAsync(Arg.Any<IRequest<string>>(), Arg.Any<Func<string, IResult>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                dispatched = (LookupQuery)call.Arg<IRequest<string>>();
+                return ValueTask.FromResult(call.Arg<Func<string, IResult>>()("found"));
+            });
+
+        var context = NewContext(invoker);
+        context.Request.RouteValues["id"] = "42";
+
+        var endpoint = new LookupEndpoint();
+        var descriptor = ((SynapseEndpoint)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Act
-        var derivesFromBoundEndpoint = Walk(tier)
-            .Any(type => type.IsGenericType &&
-                         type.GetGenericTypeDefinition() == typeof(BoundEndpoint<>));
+        await descriptor.InvokeAsync(context);
 
         // Assert
-        Assert.True(derivesFromBoundEndpoint, $"{tier} does not derive from BoundEndpoint<>.");
+        Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+        Assert.NotNull(dispatched);
+        Assert.Equal(42, dispatched.Id);
+    }
 
-        static IEnumerable<Type> Walk(Type type)
+    [Fact]
+    public async Task Invoke_WhenTheHandWrittenBindingFails_Returns400WithEveryErrorAndNeverDispatches()
+    {
+        // Arrange — two bad query values in one request. This is the whole point of the collector:
+        // the caller learns about both at once instead of fixing one and rediscovering the other.
+
+        var invoker = Substitute.For<IHttpInvoker>();
+        var context = NewContext(invoker);
+        context.Request.QueryString = new QueryString("?page=nope");
+
+        var endpoint = new LookupEndpoint();
+        var descriptor = ((SynapseEndpoint)endpoint).CreateDescriptor(endpoint.Metadata);
+
+        // Act
+        await descriptor.InvokeAsync(context);
+
+        // Assert
+        Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
+
+        var errors = await ReadValidationErrorsAsync(context);
+        Assert.Contains("id", errors.Keys);
+        Assert.Contains("page", errors.Keys);
+
+        await invoker.DidNotReceive().InvokeAsync(
+            Arg.Any<IRequest<string>>(), Arg.Any<Func<string, IResult>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Invoke_WithDeclarativeCreated_Returns201AndALocationHeader()
+    {
+        // Arrange
+        var invoker = Substitute.For<IHttpInvoker>();
+        invoker.InvokeAsync(Arg.Any<IRequest<string>>(), Arg.Any<Func<string, IResult>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(call => ValueTask.FromResult(call.Arg<Func<string, IResult>>()("abc")));
+
+        var context = NewContext(invoker);
+        var endpoint = new CreateEndpoint();
+        var descriptor = ((SynapseEndpoint)endpoint).CreateDescriptor(endpoint.Metadata);
+
+        // Act
+        await descriptor.InvokeAsync(context);
+
+        // Assert
+        Assert.Equal(StatusCodes.Status201Created, context.Response.StatusCode);
+        Assert.Equal("/things/abc", context.Response.Headers.Location);
+    }
+
+    [Fact]
+    public async Task Invoke_WithAnOnSuccessOverride_UsesIt()
+    {
+        // Arrange
+        var invoker = Substitute.For<IHttpInvoker>();
+        invoker.InvokeAsync(Arg.Any<IRequest<string>>(), Arg.Any<Func<string, IResult>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(call => ValueTask.FromResult(call.Arg<Func<string, IResult>>()("x")));
+
+        var context = NewContext(invoker);
+        var endpoint = new OverridingEndpoint();
+        var descriptor = ((SynapseEndpoint)endpoint).CreateDescriptor(endpoint.Metadata);
+
+        // Act
+        await descriptor.InvokeAsync(context);
+
+        // Assert
+        Assert.Equal(StatusCodes.Status205ResetContent, context.Response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Invoke_ForTheVoidArity_Returns204ByDefault()
+    {
+        // Arrange
+        var invoker = Substitute.For<IHttpInvoker>();
+        invoker.InvokeAsync(Arg.Any<IRequest>(), Arg.Any<Func<IResult>>(), Arg.Any<CancellationToken>())
+            .Returns(call => ValueTask.FromResult(call.Arg<Func<IResult>>()()));
+
+        var context = NewContext(invoker);
+        context.Request.RouteValues["id"] = "7";
+
+        var endpoint = new DeleteEndpoint();
+        var descriptor = ((SynapseEndpoint)endpoint).CreateDescriptor(endpoint.Metadata);
+
+        // Act
+        await descriptor.InvokeAsync(context);
+
+        // Assert
+        Assert.Equal(StatusCodes.Status204NoContent, context.Response.StatusCode);
+    }
+
+    private static DefaultHttpContext NewContext(IHttpInvoker invoker)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(invoker);
+        services.AddLogging();
+
+        return new DefaultHttpContext
         {
-            for (var current = type; current is not null; current = current.BaseType)
-            {
-                yield return current;
-            }
+            RequestServices = services.BuildServiceProvider(),
+            Response = { Body = new MemoryStream() }
+        };
+    }
+
+    private static async Task<Dictionary<string, string[]>> ReadValidationErrorsAsync(HttpContext context)
+    {
+        context.Response.Body.Position = 0;
+        using var document = await JsonDocument.ParseAsync(context.Response.Body,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        return document.RootElement.GetProperty("errors")
+            .EnumerateObject()
+            .ToDictionary(
+                property => property.Name,
+                property => property.Value.EnumerateArray().Select(value => value.GetString()!).ToArray());
+    }
+
+    internal sealed record LookupQuery(int Id, int? Page) : IRequest<string>;
+
+    [Get("/lookup/{id}")]
+    internal sealed partial class LookupEndpoint : BoundEndpoint<LookupQuery, string>
+    {
+        public override ValueTask<BindResult<LookupQuery>> BindAsync(HttpContext context)
+        {
+            var validation = context.Validate();
+            validation.Route<int>("id", out var id);
+            validation.QueryOptional<int>("page", out var page);
+
+            return ValueTask.FromResult(validation.IsValid
+                ? BindResult<LookupQuery>.Success(new LookupQuery(id, page))
+                : BindResult<LookupQuery>.Failure(validation));
         }
     }
 
-    [Fact]
-    public async Task HandleAsync_OnAnUnmappedEndpoint_PointsAtTheTestHarness()
+    internal sealed record CreateCommand : IRequest<string>;
+
+    [Post("/things")]
+    internal sealed partial class CreateEndpoint : BoundEndpoint<CreateCommand, string>
     {
-        // Arrange: the processors are now read before the configuration is, so this message has to
-        // survive that reordering — see docs/known-issues/056.
-        var endpoint = new UnmappedEndpoint();
+        public override void Configure(IEndpointBuilder<string> builder)
+        {
+            builder.Created(id => $"/things/{id}");
+        }
 
-        // Act
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
-            async () => await endpoint.HandleAsync(new DefaultHttpContext(), CancellationToken.None));
-
-        // Assert
-        Assert.Contains("EndpointHarness.Create", exception.Message);
-        Assert.Contains("UnambitiousFx.Synapse.Endpoints.Testing", exception.Message);
+        public override ValueTask<BindResult<CreateCommand>> BindAsync(HttpContext context)
+        {
+            return ValueTask.FromResult(BindResult<CreateCommand>.Success(new CreateCommand()));
+        }
     }
 
-    [Fact]
-    public void BoundEndpoint_HasNoConstructorAccessibleOutsideTheLibrary()
+    internal sealed record OverridingQuery : IRequest<string>;
+
+    [Get("/overridden")]
+    internal sealed partial class OverridingEndpoint : BoundEndpoint<OverridingQuery, string>
     {
-        // Arrange: it is a shared seam, not a sixth tier, so it must not be derivable by consumers.
+        public override ValueTask<BindResult<OverridingQuery>> BindAsync(HttpContext context)
+        {
+            return ValueTask.FromResult(BindResult<OverridingQuery>.Success(new OverridingQuery()));
+        }
 
-        // Act
-        var constructors = typeof(BoundEndpoint<>).GetConstructors(
-            System.Reflection.BindingFlags.Instance |
-            System.Reflection.BindingFlags.Public |
-            System.Reflection.BindingFlags.NonPublic);
-
-        // Assert
-        Assert.All(constructors, constructor =>
-            Assert.True(constructor.IsFamilyAndAssembly,
-                "The constructor must be private protected so the type cannot be derived from " +
-                "outside this assembly."));
+        public override IResult OnSuccess(string response,
+            HttpContext context)
+        {
+            return TypedResults.StatusCode(StatusCodes.Status205ResetContent);
+        }
     }
 
-    public sealed record PingCommand : IRequest;
+    internal sealed record DeleteCommand(int Id) : IRequest;
 
-    public sealed record PingQuery : IRequest<string>;
+    [Delete("/things/{id}")]
+    internal sealed partial class DeleteEndpoint : BoundEndpoint<DeleteCommand>
+    {
+        public override ValueTask<BindResult<DeleteCommand>> BindAsync(HttpContext context)
+        {
+            var validation = context.Validate();
+            validation.Route<int>("id", out var id);
 
-    public sealed record PingDto;
-
-    public sealed record PingStream : IStreamRequest<string>;
-
-    internal sealed partial class UnmappedEndpoint : Endpoint<PingQuery, string>;
+            return ValueTask.FromResult(validation.IsValid
+                ? BindResult<DeleteCommand>.Success(new DeleteCommand(id))
+                : BindResult<DeleteCommand>.Failure(validation));
+        }
+    }
 }

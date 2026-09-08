@@ -5,7 +5,7 @@
 | **Status** | 🟡 Partial — `Created` works, but only with hand-built URLs |
 | **Priority** | Low |
 | **Area** | Responses |
-| **Tiers** | `Endpoint<…>`, `RawEndpoint<…>`, `MappedEndpoint<…>` |
+| **Tiers** | `Endpoint<…>`, `BoundEndpoint<…>`, `ContractEndpoint<…>` |
 | **Breaking** | No — additive overload |
 
 ## Problem

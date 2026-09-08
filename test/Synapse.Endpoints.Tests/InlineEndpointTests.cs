@@ -10,7 +10,7 @@ using UnambitiousFx.Synapse.Endpoints.Builders;
 
 namespace UnambitiousFx.Synapse.Endpoints.Tests;
 
-public sealed partial class SelfHandledEndpointTests
+public sealed partial class InlineEndpointTests
 {
     [Fact]
     public async Task Invoke_WithRequestThatIsNotAMessage_RunsExecuteAsyncAndWritesItsResponse()
@@ -24,7 +24,7 @@ public sealed partial class SelfHandledEndpointTests
         context.Request.RouteValues["probe"] = "live";
 
         var endpoint = new ProbeEndpoint();
-        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
+        var descriptor = ((SynapseEndpoint)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Act
         await descriptor.InvokeAsync(context);
@@ -157,7 +157,7 @@ public sealed partial class SelfHandledEndpointTests
     ///     leaves the route empty, which is what the rejecting endpoint's 400 needs.
     /// </param>
     private static async Task<(int StatusCode, string? ContentType, string Body)> InvokeAsync(
-        EndpointBase endpoint,
+        SynapseEndpoint endpoint,
         EndpointMetadata metadata,
         IServiceProvider provider,
         string? probe = null)
@@ -182,7 +182,7 @@ public sealed partial class SelfHandledEndpointTests
     internal sealed record ProbeDto(string Probe);
 
     [Get("/health/{probe}")]
-    internal sealed partial class ProbeEndpoint : SelfHandledEndpoint<ProbeQuery, ProbeDto>
+    internal sealed partial class ProbeEndpoint : InlineEndpoint<ProbeQuery, ProbeDto>
     {
         public override ValueTask<Result<ProbeDto>> ExecuteAsync(ProbeQuery request,
             HttpContext context,
@@ -201,7 +201,7 @@ public sealed partial class SelfHandledEndpointTests
     internal sealed record MissingProbeCommand(string Probe = "live") : IRequest<ProbeDto>;
 
     [Get("/missing")]
-    internal sealed partial class MissingProbeEndpoint : SelfHandledEndpoint<MissingProbeQuery, ProbeDto>
+    internal sealed partial class MissingProbeEndpoint : InlineEndpoint<MissingProbeQuery, ProbeDto>
     {
         public override ValueTask<Result<ProbeDto>> ExecuteAsync(MissingProbeQuery request,
             HttpContext context,
@@ -217,7 +217,7 @@ public sealed partial class SelfHandledEndpointTests
     internal sealed record CreatedProbeQuery(string Probe);
 
     [Post("/probes/{probe}")]
-    internal sealed partial class CreatedProbeEndpoint : SelfHandledEndpoint<CreatedProbeQuery, ProbeDto>
+    internal sealed partial class CreatedProbeEndpoint : InlineEndpoint<CreatedProbeQuery, ProbeDto>
     {
         public override void Configure(IEndpointBuilder<ProbeDto> builder)
         {
@@ -235,7 +235,7 @@ public sealed partial class SelfHandledEndpointTests
     internal sealed record AcceptedProbeQuery(string Probe);
 
     [Post("/probes-accepted/{probe}")]
-    internal sealed partial class AcceptedProbeEndpoint : SelfHandledEndpoint<AcceptedProbeQuery, ProbeDto>
+    internal sealed partial class AcceptedProbeEndpoint : InlineEndpoint<AcceptedProbeQuery, ProbeDto>
     {
         public override Microsoft.AspNetCore.Http.IResult OnSuccess(ProbeDto response,
             HttpContext context)
@@ -254,7 +254,7 @@ public sealed partial class SelfHandledEndpointTests
     internal sealed record RejectingProbeQuery(string Probe);
 
     [Get("/probes-rejected")]
-    internal sealed partial class RejectingProbeEndpoint : SelfHandledEndpoint<RejectingProbeQuery, ProbeDto>
+    internal sealed partial class RejectingProbeEndpoint : InlineEndpoint<RejectingProbeQuery, ProbeDto>
     {
         public bool Ran { get; private set; }
 
@@ -270,7 +270,7 @@ public sealed partial class SelfHandledEndpointTests
     internal sealed record ShortCircuitProbeQuery(string Probe);
 
     [Get("/probes-short-circuit/{probe}")]
-    internal sealed partial class ShortCircuitProbeEndpoint : SelfHandledEndpoint<ShortCircuitProbeQuery, ProbeDto>
+    internal sealed partial class ShortCircuitProbeEndpoint : InlineEndpoint<ShortCircuitProbeQuery, ProbeDto>
     {
         public bool Ran { get; private set; }
 

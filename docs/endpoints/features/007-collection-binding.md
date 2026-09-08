@@ -56,7 +56,7 @@ exists precisely because the high level cannot express it):
 
 ```csharp
 [Get("/tasks/search")]
-public sealed class SearchTasksEndpoint : RawEndpoint<SearchTasksQuery, IReadOnlyList<TaskDto>>
+public sealed class SearchTasksEndpoint : BoundEndpoint<SearchTasksQuery, IReadOnlyList<TaskDto>>
 {
     public override ValueTask<BindResult<SearchTasksQuery>> BindAsync(HttpContext context)
     {

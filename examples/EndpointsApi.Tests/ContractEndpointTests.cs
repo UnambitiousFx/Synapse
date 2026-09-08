@@ -6,14 +6,14 @@ using Microsoft.AspNetCore.Mvc.Testing;
 namespace UnambitiousFx.Examples.EndpointsApi.Tests;
 
 /// <summary>
-///     End-to-end coverage of <c>MappedEndpoint&lt;THttpRequest, TRequest, TResponse, THttpResponse&gt;</c>,
+///     End-to-end coverage of <c>ContractEndpoint&lt;THttpRequest, TRequest, TResponse, THttpResponse&gt;</c>,
 ///     the high-level base class whose wire contract is deliberately not its message.
 /// </summary>
-public sealed class MappedEndpointTests : IClassFixture<WebApplicationFactory<Program>>
+public sealed class ContractEndpointTests : IClassFixture<WebApplicationFactory<Program>>
 {
     private readonly WebApplicationFactory<Program> _factory;
 
-    public MappedEndpointTests(WebApplicationFactory<Program> factory)
+    public ContractEndpointTests(WebApplicationFactory<Program> factory)
     {
         _factory = factory;
     }

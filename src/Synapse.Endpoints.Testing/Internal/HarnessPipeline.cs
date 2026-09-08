@@ -23,7 +23,7 @@ internal static class HarnessPipeline
     /// <returns>The built provider, the request pipeline, and a human-readable route description.</returns>
     internal static (ServiceProvider Provider, RequestDelegate Pipeline, string RouteDescription) Build<TEndpoint>(
         IServiceCollection services)
-        where TEndpoint : EndpointBase, new()
+        where TEndpoint : SynapseEndpoint, new()
     {
         var provider = services.BuildServiceProvider();
         var app = new ApplicationBuilder(provider);

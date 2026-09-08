@@ -1,6 +1,6 @@
 namespace UnambitiousFx.Synapse.Endpoints.Generator.Tests;
 
-public sealed class SelfHandledEndpointEmissionTests
+public sealed class InlineEndpointEmissionTests
 {
     private const string ValueEndpoint = """
                                          using System.Threading;
@@ -19,7 +19,7 @@ public sealed class SelfHandledEndpointEmissionTests
                                          public sealed record ProbeDto(string Probe, bool Healthy);
 
                                          [Get("/health/{probe}")]
-                                         public sealed partial class ProbeEndpoint : SelfHandledEndpoint<ProbeQuery, ProbeDto>
+                                         public sealed partial class ProbeEndpoint : InlineEndpoint<ProbeQuery, ProbeDto>
                                          {
                                              public override ValueTask<Result<ProbeDto>> ExecuteAsync(ProbeQuery request,
                                                  HttpContext context,
@@ -45,7 +45,7 @@ public sealed class SelfHandledEndpointEmissionTests
                                         }
 
                                         [Delete("/cache/{key}")]
-                                        public sealed partial class PurgeEndpoint : SelfHandledEndpoint<PurgeRequest>
+                                        public sealed partial class PurgeEndpoint : InlineEndpoint<PurgeRequest>
                                         {
                                             public override ValueTask<Result> ExecuteAsync(PurgeRequest request,
                                                 HttpContext context,
@@ -57,7 +57,7 @@ public sealed class SelfHandledEndpointEmissionTests
                                         """;
 
     [Fact]
-    public void Generate_ForSelfHandledEndpoint_EmitsABindingForARequestThatIsNotAMessage()
+    public void Generate_ForInlineEndpoint_EmitsABindingForARequestThatIsNotAMessage()
     {
         // Act
         var generated = GeneratorHarness.GetEndpointFile(ValueEndpoint);
@@ -69,7 +69,7 @@ public sealed class SelfHandledEndpointEmissionTests
     }
 
     [Fact]
-    public void Generate_ForSelfHandledVoidEndpoint_EmitsABindingForARequestThatIsNotAMessage()
+    public void Generate_ForInlineVoidEndpoint_EmitsABindingForARequestThatIsNotAMessage()
     {
         // Act
         var generated = GeneratorHarness.GetEndpointFile(VoidEndpoint);
@@ -81,7 +81,7 @@ public sealed class SelfHandledEndpointEmissionTests
     }
 
     [Fact]
-    public void Generate_ForSelfHandledEndpoint_MapsItAlongsideTheDispatchingTiers()
+    public void Generate_ForInlineEndpoint_MapsItAlongsideTheDispatchingTiers()
     {
         // Act
         var generated = GeneratorHarness.GetFile(ValueEndpoint, "SynapseEndpointGroup.g.cs");

@@ -399,8 +399,8 @@ internal static class GeneratorHarness
         // Add UnambitiousFx.Functional (Result<T> used in interface signatures)
         refs.Add(MetadataReference.CreateFromFile(typeof(UnambitiousFx.Functional.Result).Assembly.Location));
 
-        // Add Synapse.Endpoints (Endpoint<>, MappedEndpoint<>, StreamEndpoint<>, IEndpointGroup, EndpointMetadata, …)
-        refs.Add(MetadataReference.CreateFromFile(typeof(EndpointBase).Assembly.Location));
+        // Add Synapse.Endpoints (Endpoint<>, ContractEndpoint<>, StreamEndpoint<>, IEndpointGroup, EndpointMetadata, …)
+        refs.Add(MetadataReference.CreateFromFile(typeof(SynapseEndpoint).Assembly.Location));
 
         return refs.ToImmutableArray();
     }

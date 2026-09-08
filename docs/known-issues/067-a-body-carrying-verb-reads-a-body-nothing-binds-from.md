@@ -139,7 +139,7 @@ The predicate is now one thing — does any property bind from the body — and 
   overridden property rather than an interface member — see
   [Messages & binding](../docs/endpoints/high-level/messages.mdx).)
 - `RawEndpoint` gains a `DeclaredRequestBody` hook, defaulting to today's verb test. `Endpoint<…>`,
-  `MappedEndpoint` and `StreamEndpoint` override it to require **both** that the verb carries a body
+  `ContractEndpoint` and `StreamEndpoint` override it to require **both** that the verb carries a body
   and that the binder reads one — narrowing only, so no endpoint that declared nothing before starts
   declaring one now.
 - `BoundTypeInfo.IsBodylessVerb` is removed, having become unused.

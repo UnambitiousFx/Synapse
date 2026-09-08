@@ -74,6 +74,7 @@ filed as a GitHub issue with minimal editing.
 | [066](066-notbound-property-is-still-populated-from-the-request-body.md) | `[NotBound]` excludes a property from the generated route/query/header assignments but not from JSON deserialization, so on a body-carrying verb a caller could still set a property documented as unsettable by naming it in the payload; a new SYNE015 warning reports the shape and names the fix, `[JsonIgnore]` alongside it | ✅ Resolved | **High** | Generator |
 | [067](067-a-body-carrying-verb-reads-a-body-nothing-binds-from.md) | The binder read a JSON body whenever the verb was one that carries a body, even when every property bound from the route, so such an endpoint answered 400 unless the caller sent `{}` — and, because the same flag also governs construction, a route-bound property could not be `required` there; the read now follows the binding rather than the verb, and the `Accepts` declaration follows the binder | ✅ Resolved | Medium | Generator |
 | [068](068-null-request-type-fails-the-whole-openapi-document.md) | `Microsoft.AspNetCore.OpenApi` 10.0.11 fails the entire OpenAPI document (500 on `/openapi/v1.json`) whenever any endpoint carries an `IAcceptsMetadata` with a `null RequestType` — true of every Synapse form-bound endpoint since feature 006; a second `IApiDescriptionProvider` in the opt-in `Synapse.Endpoints.OpenApi` package now deletes the synthetic `typeof(void)` body parameter that triggers it | ✅ Resolved | **High** | AspNetCore mapping |
+| [069](069-an-xml-cref-with-no-using-fails-the-package-build.md) | `Endpoint<TRequest, TResponse>` documented `<see cref="HttpContext" />` without importing `Microsoft.AspNetCore.Http`, and because the file is an empty marker the type appears nowhere in its code to force the import; with `TreatWarningsAsErrors` and `GenerateDocumentationFile` both on, that CS1574 failed the build of the shipped project on all three target frameworks, so it could not be built or packed directly | ✅ Resolved | **High** | AspNetCore mapping |
 
 > **Discovery context:** 001–003 were found while building the pipeline-behavior showcase in
 > `examples/MinimalApi` on branch `feature/typed-pipeline-behaviors` against .NET 10 with
@@ -101,8 +102,10 @@ filed as a GitHub issue with minimal editing.
 > the remaining gaps in `examples/EndpointsApi`, each surfaced by writing a live instance of a shape
 > that had none. 068 was found while implementing the OpenAPI satellite package's form request-body
 > schema (feature 018), traced against the tagged ASP.NET Core 10.0.11 source and reproduced with a
-> from-scratch, zero-Synapse repro before being worked around. All resolved on the same branch, each
-> reproduced before being fixed.
+> from-scratch, zero-Synapse repro before being worked around. 069 was found while renaming the
+> endpoint base classes, by building the package project directly, and was confirmed pre-existing
+> by stashing the rename and rebuilding. All resolved on the same branch, each reproduced before
+> being fixed.
 >
 > Each file is the report as written at discovery. Where a later change replaced the mechanism a report
 > describes — most often the v2 context-propagation refactor, which removed `CorrelationContext`,

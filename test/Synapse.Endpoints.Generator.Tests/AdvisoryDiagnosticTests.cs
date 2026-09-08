@@ -511,9 +511,9 @@ public sealed class AdvisoryDiagnosticTests
     }
 
     [Fact]
-    public void Generate_WhenMappedEndpointHttpResponseTypeIsUnregistered_ReportsSyne008()
+    public void Generate_WhenContractEndpointHttpResponseTypeIsUnregistered_ReportsSyne008()
     {
-        // Arrange — MappedEndpoint<THttpRequest,TRequest,TResponse,THttpResponse>'s response body is
+        // Arrange — ContractEndpoint<THttpRequest,TRequest,TResponse,THttpResponse>'s response body is
         // THttpResponse (TypeArguments[3]), not TResponse; HttpThingRequest is registered so only the
         // response side is left missing, pinning that index resolution specifically.
         const string source = """
@@ -529,7 +529,7 @@ public sealed class AdvisoryDiagnosticTests
 
                               [Post("/things")]
                               public sealed partial class CreateThingEndpoint
-                                  : MappedEndpoint<HttpThingRequest, CreateThingCommand, int, HttpThingResponse>
+                                  : ContractEndpoint<HttpThingRequest, CreateThingCommand, int, HttpThingResponse>
                               {
                                   public override CreateThingCommand ToRequest(HttpThingRequest request) =>
                                       new(request.ThingId);
@@ -993,7 +993,7 @@ public sealed class AdvisoryDiagnosticTests
     [Fact]
     public void Generate_WhenAHandBoundEndpointsResponseTypeIsMissing_ReportsSyne008()
     {
-        // Arrange — the response of a RawEndpoint<TRequest, TResponse> is serialized by the library, so
+        // Arrange — the response of a BoundEndpoint<TRequest, TResponse> is serialized by the library, so
         // it is known from the type arguments; the request is not, because BindAsync is hand-written.
         const string source = """
                               using System.Text.Json.Serialization;
@@ -1009,7 +1009,7 @@ public sealed class AdvisoryDiagnosticTests
                               public sealed record GetThingQuery : IRequest<ThingDto>;
 
                               [Post("/things")]
-                              public sealed class GetThingEndpoint : RawEndpoint<GetThingQuery, ThingDto>
+                              public sealed class GetThingEndpoint : BoundEndpoint<GetThingQuery, ThingDto>
                               {
                                   public override ValueTask<BindResult<GetThingQuery>> BindAsync(HttpContext context)
                                       => ValueTask.FromResult(BindResult<GetThingQuery>.Success(new GetThingQuery()));

@@ -32,7 +32,7 @@ internal static class OpenApiTestHost
     /// <typeparam name="TEndpoint">The endpoint type to map.</typeparam>
     /// <returns>The generated document.</returns>
     internal static Task<OpenApiDocument> GenerateAsync<TEndpoint>()
-        where TEndpoint : EndpointBase, new()
+        where TEndpoint : SynapseEndpoint, new()
     {
         return GenerateAsync(app => app.MapEndpoint<TEndpoint>());
     }
@@ -48,8 +48,8 @@ internal static class OpenApiTestHost
     ///     endpoint document cannot exercise either.
     /// </remarks>
     internal static Task<OpenApiDocument> GenerateAsync<TEndpointA, TEndpointB>()
-        where TEndpointA : EndpointBase, new()
-        where TEndpointB : EndpointBase, new()
+        where TEndpointA : SynapseEndpoint, new()
+        where TEndpointB : SynapseEndpoint, new()
     {
         return GenerateAsync(app =>
         {

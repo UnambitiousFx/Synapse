@@ -17,7 +17,7 @@ handler can be inferred.
 | `Endpoint<TRequest, TResponse>` | `Accepts<TRequest>`; `200` (or the declared status) with `TResponse`; `400` validation problem |
 | `Endpoint<TRequest>` | `Accepts<TRequest>`; `204` (or the declared status), no body; `400` validation problem |
 | `StreamEndpoint<TRequest, TItem>` | `Accepts<TRequest>`; `200` with `IAsyncEnumerable<TItem>` for both `application/json` and `text/event-stream`; `400` validation problem |
-| `MappedEndpoint<…>` | `Accepts<THttpRequest>`; `200` (or the declared status) with `THttpResponse`; `400` validation problem |
+| `ContractEndpoint<…>` | `Accepts<THttpRequest>`; `200` (or the declared status) with `THttpResponse`; `400` validation problem |
 | `RawEndpoint` | **Nothing.** Declare it yourself |
 
 `Accepts` is skipped on verbs that carry no body (`GET`, `DELETE`, `HEAD`, `OPTIONS`, `TRACE`), so a
@@ -25,7 +25,7 @@ handler can be inferred.
 
 Every one of these four tiers resolves `Accepts` from its **generated binder**, not from the tier
 itself — `Endpoint<TRequest, TResponse>`, `Endpoint<TRequest>`, `StreamEndpoint<TRequest, TItem>` and
-`MappedEndpoint<THttpRequest, …>` all ask their binder's `BodyKind` the same way, through the same
+`ContractEndpoint<THttpRequest, …>` all ask their binder's `BodyKind` the same way, through the same
 `DeclaredRequestBody` hook. So the row above is the JSON case; the moment the bound type is
 [form-bound](../high-level/messages#forms-and-files) — on any of the four — the endpoint declares the
 form content types instead, described next.

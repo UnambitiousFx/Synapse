@@ -123,7 +123,7 @@ public sealed class RawEndpointEmissionTests
                               public sealed record LookupQuery(int Id) : IRequest<string>;
 
                               [Get("/lookup/{id}")]
-                              public sealed partial class LookupEndpoint : RawEndpoint<LookupQuery, string>
+                              public sealed partial class LookupEndpoint : BoundEndpoint<LookupQuery, string>
                               {
                                   public override ValueTask<BindResult<LookupQuery>> BindAsync(HttpContext context)
                                   {
@@ -147,7 +147,7 @@ public sealed class RawEndpointEmissionTests
     }
 
     // Discovery walks the base chain outwards from the class, so the nearest match wins. Endpoint<T,R>
-    // now derives from RawEndpoint<T,R>, which derives from RawEndpoint — three candidate matches in
+    // now derives from BoundEndpoint<T,R>, which derives from RawEndpoint — three candidate matches in
     // one chain. Pinned rather than trusted: if proximity ever stopped deciding, a high-level endpoint
     // would silently lose its generated binding — and, now that the binding is an override of an
     // abstract member, would not compile.
@@ -225,7 +225,7 @@ public sealed class RawEndpointEmissionTests
                               public sealed record SlugQuery(string Value) : IRequest<string>;
 
                               [Get("/pages/{slug}")]
-                              public sealed partial class SlugEndpoint : RawEndpoint<SlugQuery, string>
+                              public sealed partial class SlugEndpoint : BoundEndpoint<SlugQuery, string>
                               {
                                   public override ValueTask<BindResult<SlugQuery>> BindAsync(HttpContext context)
                                   {
@@ -301,7 +301,7 @@ public sealed class RawEndpointEmissionTests
         Assert.Contains(diagnostics, d => d.Id == "SYNE009");
     }
 
-    // SYNE003/SYNE004/SYNE005 are about dispatch and success mapping, which the two RawEndpoint<…>
+    // SYNE003/SYNE004/SYNE005 are about dispatch and success mapping, which the two BoundEndpoint<…>
     // tiers do exactly as the high level does — they inherit that code — so those rules must still
     // apply to them. The binding rules must not.
     [Fact]
@@ -320,7 +320,7 @@ public sealed class RawEndpointEmissionTests
                               public sealed record CreateThingCommand : IRequest<string>;
 
                               [Post("/things")]
-                              public sealed partial class CreateThingEndpoint : RawEndpoint<CreateThingCommand, string>
+                              public sealed partial class CreateThingEndpoint : BoundEndpoint<CreateThingCommand, string>
                               {
                                   public override ValueTask<BindResult<CreateThingCommand>> BindAsync(HttpContext context)
                                       => ValueTask.FromResult(BindResult<CreateThingCommand>.Success(new CreateThingCommand()));
@@ -378,7 +378,7 @@ public sealed class RawEndpointEmissionTests
                               public sealed record TickQuery : IStreamRequest<int>;
 
                               [Get("/ticks")]
-                              public sealed partial class TickEndpoint : RawEndpoint<TickQuery, int>
+                              public sealed partial class TickEndpoint : BoundEndpoint<TickQuery, int>
                               {
                                   public override ValueTask<BindResult<TickQuery>> BindAsync(HttpContext context)
                                       => ValueTask.FromResult(BindResult<TickQuery>.Success(new TickQuery()));
@@ -428,7 +428,7 @@ public sealed class RawEndpointEmissionTests
                               }
 
                               [Get("/messy")]
-                              public sealed partial class MessyEndpoint : RawEndpoint<MessyQuery, string>
+                              public sealed partial class MessyEndpoint : BoundEndpoint<MessyQuery, string>
                               {
                                   public override ValueTask<BindResult<MessyQuery>> BindAsync(HttpContext context)
                                       => ValueTask.FromResult(BindResult<MessyQuery>.Success(new MessyQuery()));

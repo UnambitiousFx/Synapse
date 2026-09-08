@@ -26,7 +26,7 @@ public sealed partial class EndpointGenericTests
         context.Response.Body = new MemoryStream();
 
         var endpoint = new EchoEndpoint();
-        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
+        var descriptor = ((SynapseEndpoint)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Act
         await descriptor.InvokeAsync(context);
@@ -46,7 +46,7 @@ public sealed partial class EndpointGenericTests
         context.Response.Body = new MemoryStream();
 
         var endpoint = new FailingEndpoint();
-        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
+        var descriptor = ((SynapseEndpoint)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Act
         await descriptor.InvokeAsync(context);
@@ -69,7 +69,7 @@ public sealed partial class EndpointGenericTests
     ///     two tiers differ only in where BindAsync comes from.
     /// </summary>
     [Get("/fail")]
-    internal sealed partial class FailingEndpoint : RawEndpoint<FailingQuery, string>
+    internal sealed partial class FailingEndpoint : BoundEndpoint<FailingQuery, string>
     {
         public override ValueTask<BindResult<FailingQuery>> BindAsync(HttpContext context)
         {

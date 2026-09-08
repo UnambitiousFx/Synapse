@@ -67,13 +67,13 @@ internal static class EndpointDiagnostics
 
     /// <summary>
     ///     SYNE010: the endpoint class has a shape that <c>MapEndpoint&lt;TEndpoint&gt;()</c> (which
-    ///     requires <c>TEndpoint : EndpointBase, new()</c>) cannot be instantiated for — generic,
+    ///     requires <c>TEndpoint : SynapseEndpoint, new()</c>) cannot be instantiated for — generic,
     ///     nested inside a generic type, or without a public parameterless constructor.
     /// </summary>
     internal static readonly DiagnosticDescriptor InvalidEndpointShape = new(
         "SYNE010",
         "Endpoint has a shape that cannot be mapped",
-        "'{0}' {1}, so 'MapEndpoint<TEndpoint>()' (which requires 'TEndpoint : EndpointBase, new()') cannot be instantiated for it. Make the endpoint a top-level, non-generic class with a public parameterless constructor.",
+        "'{0}' {1}, so 'MapEndpoint<TEndpoint>()' (which requires 'TEndpoint : SynapseEndpoint, new()') cannot be instantiated for it. Make the endpoint a top-level, non-generic class with a public parameterless constructor.",
         Category,
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
@@ -475,7 +475,7 @@ internal static class EndpointDiagnostics
     /// <remarks>
     ///     Fires alongside the compiler's CS0534 for the unimplemented <c>CreateMetadata</c> — and, on
     ///     the tiers whose binding is generated, <c>BindAsync</c> too. Those errors name
-    ///     <c>EndpointBase</c> and <c>RawEndpoint&lt;...&gt;</c> — base classes the author never wrote
+    ///     <c>SynapseEndpoint</c> and <c>BoundEndpoint&lt;...&gt;</c> — base classes the author never wrote
     ///     — so this diagnostic exists to name the fix. Applies to every endpoint kind, the hand-bound
     ///     and free-form ones included: they write their own binding, but their metadata is still
     ///     generated. With analyzers disabled there is no diagnostic at all and CS0534 stands alone;
@@ -497,7 +497,7 @@ internal static class EndpointDiagnostics
     internal static readonly DiagnosticDescriptor BindAsyncIsGenerated = new(
         "SYNE021",
         "BindAsync is generated for this endpoint tier",
-        "'{0}' declares 'BindAsync', but its binding is generated. Derive from 'RawEndpoint<...>' to write the binding by hand.",
+        "'{0}' declares 'BindAsync', but its binding is generated. Derive from 'BoundEndpoint<...>' to write the binding by hand.",
         Category,
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);

@@ -25,7 +25,7 @@ public sealed partial class EndpointVoidTests
         context.Response.Body = new MemoryStream();
 
         var endpoint = new PingEndpoint();
-        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
+        var descriptor = ((SynapseEndpoint)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Act
         await descriptor.InvokeAsync(context);
@@ -52,7 +52,7 @@ public sealed partial class EndpointVoidTests
         context.Response.Body = new MemoryStream();
 
         var endpoint = new ConflictPingEndpoint();
-        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
+        var descriptor = ((SynapseEndpoint)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Act
         await descriptor.InvokeAsync(context);
@@ -80,7 +80,7 @@ public sealed partial class EndpointVoidTests
         context.Response.Body = new MemoryStream();
 
         var endpoint = new AcceptedPingEndpoint();
-        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
+        var descriptor = ((SynapseEndpoint)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Act
         await descriptor.InvokeAsync(context);
@@ -105,7 +105,7 @@ public sealed partial class EndpointVoidTests
         context.Response.Body = new MemoryStream();
 
         var endpoint = new FailingPingEndpoint();
-        var descriptor = ((EndpointBase)endpoint).CreateDescriptor(endpoint.Metadata);
+        var descriptor = ((SynapseEndpoint)endpoint).CreateDescriptor(endpoint.Metadata);
 
         // Act
         await descriptor.InvokeAsync(context);

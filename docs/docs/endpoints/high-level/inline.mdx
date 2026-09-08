@@ -1,19 +1,19 @@
 ---
 sidebar_position: 6
-title: Self-handled
-description: The tier for a route with no message behind it — the generated binder and the declarative responses, but the endpoint answers itself.
+title: Inline
+description: InlineEndpoint — the tier for a route with no message behind it — the generated binder and the declarative responses, but the endpoint answers itself.
 ---
 
-# Self-handled endpoints
+# Inline endpoints
 
-`SelfHandledEndpoint<TRequest, TResponse>` binds a request the same way `Endpoint<TRequest, TResponse>`
+`InlineEndpoint<TRequest, TResponse>` binds a request the same way `Endpoint<TRequest, TResponse>`
 does, and then **answers it itself** instead of dispatching a message.
 
 ```csharp
 public sealed record ProbeQuery(string Probe);   // no IRequest<T>
 
 [Get("/health/{probe}")]
-public sealed partial class ProbeEndpoint : SelfHandledEndpoint<ProbeQuery, ProbeDto>
+public sealed partial class ProbeEndpoint : InlineEndpoint<ProbeQuery, ProbeDto>
 {
     public override void Configure(IEndpointBuilder<ProbeDto> builder) =>
         builder.Ok().ProducesProblem(StatusCodes.Status404NotFound);
@@ -62,7 +62,7 @@ trades the mediator for everything else: no generated binder, no declared succes
 
 :::warning Nothing wraps `ExecuteAsync`
 
-A self-handled endpoint does not go through the mediator, so **no pipeline behaviour runs**: no
+An inline endpoint does not go through the mediator, so **no pipeline behaviour runs**: no
 validation stage, no retries, no CQRS boundary enforcement, no outbox, no behaviour you register
 later.
 
@@ -77,19 +77,19 @@ handler where it can be unit-tested without an `HttpContext`.
 
 Returning `Result<TResponse>` is what keeps the two tiers answering identically. Failures are mapped by
 the registered `IFailureHttpMapper` — the same instance, applied the same way, that maps a handler's
-failure on the dispatching tiers. Returning the bare value instead would have left every self-handled
+failure on the dispatching tiers. Returning the bare value instead would have left every inline
 endpoint inventing its own error responses.
 
 ## Arities
 
 | Base class | Handler returns | Default response |
 |---|---|---|
-| `SelfHandledEndpoint<TRequest, TResponse>` | `ValueTask<Result<TResponse>>` | `200 OK` with the response body |
-| `SelfHandledEndpoint<TRequest>` | `ValueTask<Result>` | `204 No Content` |
+| `InlineEndpoint<TRequest, TResponse>` | `ValueTask<Result<TResponse>>` | `200 OK` with the response body |
+| `InlineEndpoint<TRequest>` | `ValueTask<Result>` | `204 No Content` |
 
 ```csharp
 [Delete("/cache/{key}")]
-public sealed partial class PurgeEndpoint : SelfHandledEndpoint<PurgeRequest>
+public sealed partial class PurgeEndpoint : InlineEndpoint<PurgeRequest>
 {
     public override ValueTask<Result> ExecuteAsync(PurgeRequest request,
         HttpContext context,
@@ -119,7 +119,7 @@ Two names differ from what you might expect:
 
 ## Testing
 
-The [test harness](../reference/testing) maps a self-handled endpoint like any other, and there is no
+The [test harness](../reference/testing) maps an inline endpoint like any other, and there is no
 handler to stub because there is no message:
 
 ```csharp

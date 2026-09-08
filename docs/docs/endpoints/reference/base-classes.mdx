@@ -1,7 +1,7 @@
 ---
 sidebar_position: 1
 title: Base classes
-description: All eight base classes side by side, plus the rules every endpoint obeys.
+description: All nine base classes side by side, plus the rules every endpoint obeys.
 ---
 
 # Base classes
@@ -11,12 +11,12 @@ description: All eight base classes side by side, plus the rules every endpoint 
 | `Endpoint<TRequest, TResponse>` | High | `200 OK` with the response body | The message is `IRequest<TResponse>` and the wire contract can be the message itself — the common case |
 | `Endpoint<TRequest>` | High | `204 No Content` | The message is `IRequest` (no response) — a delete, a fire-and-forget command |
 | `StreamEndpoint<TRequest, TItem>` | High | Negotiated on `Accept` — see [Streaming](../high-level/streaming) | The message is `IStreamRequest<TItem>` |
-| `MappedEndpoint<THttpRequest, TRequest, TResponse, THttpResponse>` | High | `200 OK` with `THttpResponse` | The public HTTP contract must not be the same shape as the internal CQRS message |
-| `SelfHandledEndpoint<TRequest, TResponse>` / `SelfHandledEndpoint<TRequest>` | High | Same as the `Endpoint<…>` of the matching arity | There is no message — the endpoint answers itself; see [Self-handled](../high-level/self-handled) |
-| `RawEndpoint<TRequest>` / `RawEndpoint<TRequest, TResponse>` | Middle | Same as the `Endpoint<…>` of the matching arity | The binding is yours to write — see [Mediator-bound](../low-level/mediator-bound) |
+| `ContractEndpoint<THttpRequest, TRequest, TResponse, THttpResponse>` | High | `200 OK` with `THttpResponse` | The public HTTP contract must not be the same shape as the internal CQRS message |
+| `InlineEndpoint<TRequest, TResponse>` / `InlineEndpoint<TRequest>` | High | Same as the `Endpoint<…>` of the matching arity | There is no message — the endpoint answers itself; see [Inline](../high-level/inline) |
+| `BoundEndpoint<TRequest>` / `BoundEndpoint<TRequest, TResponse>` | Middle | Same as the `Endpoint<…>` of the matching arity | The binding is yours to write — see [Mediator-bound](../low-level/mediator-bound) |
 | `RawEndpoint` | Low | Whatever `HandleAsync` returns | There is no message at all — see [Low level](../low-level/overview) |
 
-:::warning `SelfHandledEndpoint<…>` runs no pipeline behaviours
+:::warning `InlineEndpoint<…>` runs no pipeline behaviours
 
 It is the one high-level tier that does not dispatch, so nothing wraps its `ExecuteAsync`: no
 validation stage, no retries, no CQRS boundary enforcement, no outbox, and no behaviour registered
@@ -30,19 +30,19 @@ If a behaviour must wrap the work, the route has a message whether or not it loo
 ## The inheritance chain
 
 ```
-EndpointBase                                      CreateMetadata — generated into your partial
- └── RawEndpoint                                  HandleAsync(HttpContext, CancellationToken) → IResult
-     └── BoundEndpoint<TBound>                    sealed HandleAsync — the eight-step order
-         ├── RawEndpoint<TRequest>                + BindAsync, dispatch, 204 default
-         │    └── Endpoint<TRequest>              + BindAsync generated into your partial
-         ├── RawEndpoint<TRequest, TResponse>     + BindAsync, dispatch, 200 default
-         │    └── Endpoint<TRequest, TResponse>   + BindAsync generated into your partial
+SynapseEndpoint                                 CreateMetadata — generated into your partial
+ └── RawEndpoint                                HandleAsync(HttpContext, CancellationToken) → IResult
+     └── EndpointLifecycle<TRequest>            sealed HandleAsync — the eight-step order
+         ├── BoundEndpoint<TRequest>            + BindAsync, dispatch, 204 default
+         │    └── Endpoint<TRequest>            + BindAsync generated into your partial
+         ├── BoundEndpoint<TRequest, TResponse> + BindAsync, dispatch, 200 default
+         │    └── Endpoint<TRequest, TResponse> + BindAsync generated into your partial
          ├── StreamEndpoint<TRequest, TItem>
-         ├── MappedEndpoint<...>
-         └── SelfHandledEndpoint<...>             + generated binder, ExecuteAsync instead of dispatch
+         ├── ContractEndpoint<...>
+         └── InlineEndpoint<...>                + generated binder, ExecuteAsync instead of dispatch
 ```
 
-`BoundEndpoint<TBound>` is not a tier — see [below](#boundendpointtbound). A low-level `RawEndpoint`
+`EndpointLifecycle<TRequest>` is not a tier — see [below](#endpointlifecycletrequest). A low-level `RawEndpoint`
 you write yourself sits directly under `RawEndpoint` and has no lifecycle hooks, by design.
 
 Every shape reaches the route table through one `HandleAsync`, because `CreateDescriptor` is sealed on
@@ -56,13 +56,13 @@ cannot drift apart without the compiler saying so.
 | `Endpoint<TRequest, TResponse>` | `IEndpointBuilder<TResponse>` | Generated* | Optional (`Configure` or `OnSuccess`) |
 | `Endpoint<TRequest>` | `IEndpointBuilder` | Generated* | Optional (`Configure` or `OnSuccess`) |
 | `StreamEndpoint<…>` | `IStreamEndpointBuilder` | Generated* | Negotiated — the builder offers none |
-| `MappedEndpoint<…>` | `IEndpointBuilder<THttpResponse>` | Generated* + `ToRequest`/`ToResponse` | Optional |
-| `SelfHandledEndpoint<…>` | `IEndpointBuilder<TResponse>` (or `IEndpointBuilder`) | Generated* | Optional — but `ExecuteAsync` is **required** |
-| `RawEndpoint<…>` | `IEndpointBuilder<TResponse>` | **Required** — `BindAsync` | Optional |
+| `ContractEndpoint<…>` | `IEndpointBuilder<THttpResponse>` | Generated* + `ToRequest`/`ToResponse` | Optional |
+| `InlineEndpoint<…>` | `IEndpointBuilder<TResponse>` (or `IEndpointBuilder`) | Generated* | Optional — but `ExecuteAsync` is **required** |
+| `BoundEndpoint<…>` | `IEndpointBuilder<TResponse>` | **Required** — `BindAsync` | Optional |
 | `RawEndpoint` | `IRawEndpointBuilder` | — | **Required** — `HandleAsync` returns it |
 
 \* The generator emits `BindAsync` as an `override` on the endpoint's own `partial` class. Every
-endpoint must be `partial`, including the two `RawEndpoint` rows: their binding is their own, but their
+endpoint must be `partial`, including the `BoundEndpoint<…>` and `RawEndpoint` rows: their binding is their own, but their
 route metadata is generated into them the same way. See [`SYNE020`](#shape-requirements) below.
 
 Two of those builders are narrowed on purpose. `IRawEndpointBuilder` and `IStreamEndpointBuilder` omit
@@ -84,20 +84,20 @@ shares the instance.
 ### Shape requirements
 
 An endpoint class must be top-level, non-generic, and have a public parameterless constructor —
-`MapEndpoint<TEndpoint>()` is constrained to `where TEndpoint : EndpointBase, new()`. Violations are
+`MapEndpoint<TEndpoint>()` is constrained to `where TEndpoint : SynapseEndpoint, new()`. Violations are
 reported as [`SYNE010`](./diagnostics).
 
 An `abstract` endpoint class never fires it: discovery skips abstract classes outright, so an abstract
 intermediate base shared by several endpoints is a supported pattern.
 
 Every endpoint class — and every type enclosing it, if it is nested — must also be declared `partial`,
-so the generator has somewhere to emit into. That applies at every tier, `RawEndpoint<…>` and
-`RawEndpoint` included: those two write their own `BindAsync`, but `EndpointBase.CreateMetadata` is
+so the generator has somewhere to emit into. That applies at every tier, `BoundEndpoint<…>` and
+`RawEndpoint` included: those two write their own `BindAsync`, but `SynapseEndpoint.CreateMetadata` is
 abstract and its implementation is generated from the endpoint's route attributes, so they need the
 keyword just as much. Missing it is reported as [`SYNE020`](./diagnostics), naming the specific type
 that needs the keyword. Without analyzers running at all, there is no `SYNE020` to see and the build
-fails on the compiler's own `CS0534` instead, naming `EndpointBase` (and, on the generated tiers,
-`RawEndpoint<...>`) — base classes the author never wrote; see [Preview status](./preview#risks).
+fails on the compiler's own `CS0534` instead, naming `SynapseEndpoint` (and, on the generated tiers,
+`BoundEndpoint<...>`) — base classes the author never wrote; see [Preview status](./preview#risks).
 
 Put shared behaviour on an `abstract` base rather than deriving one concrete endpoint from another:
 the generated members are emitted `sealed override` on every non-`sealed` endpoint, so a concrete
@@ -123,9 +123,9 @@ Both exist so a mistake is a compile error rather than a silent no-op:
 | Sealed | Why |
 |---|---|
 | `Endpoint<…>.BindAsync` | The generated binder is what makes it the high level. To replace the binding, [drop a tier](../low-level/mediator-bound) rather than override it |
-| `RawEndpoint<…>.Configure(IRawEndpointBuilder)` | That tier configures through the typed `Configure(IEndpointBuilder<TResponse>)`, so overriding the low-level overload would configure nothing |
+| `BoundEndpoint<…>.Configure(IRawEndpointBuilder)` | That tier configures through the typed `Configure(IEndpointBuilder<TResponse>)`, so overriding the low-level overload would configure nothing |
 
-`SelfHandledEndpoint<…>` seals the second for the same reason, and never opens a `BindAsync` to seal:
+`InlineEndpoint<…>` seals the second for the same reason, and never opens a `BindAsync` to seal:
 its binder is generated, and there is no tier below it to drop to.
 
 ### Mapping
@@ -156,7 +156,7 @@ public sealed partial class HeadTasksEndpoint : Endpoint<ListTasksQuery, IReadOn
 An endpoint may also declare its route in `Configure` instead of by attribute — see
 [escape hatches](./escape-hatches#a-computed-route). Doing both is [`SYNE009`](./diagnostics).
 
-## `BoundEndpoint<TBound>`
+## `EndpointLifecycle<TRequest>`
 
 Not a tier. It is the shared base every bound tier inherits its
 [lifecycle hooks](./lifecycle.mdx) from, and its constructor is `private protected`, so it cannot be

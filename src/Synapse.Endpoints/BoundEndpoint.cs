@@ -1,4 +1,8 @@
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
+using UnambitiousFx.Synapse.Abstractions;
+using UnambitiousFx.Synapse.AspNetCore.Http;
 using UnambitiousFx.Synapse.Endpoints.Binding;
 using UnambitiousFx.Synapse.Endpoints.Builders;
 using UnambitiousFx.Synapse.Endpoints.Internal;
@@ -6,224 +10,148 @@ using UnambitiousFx.Synapse.Endpoints.Internal;
 namespace UnambitiousFx.Synapse.Endpoints;
 
 /// <summary>
-///     The lifecycle seam shared by every tier that binds something: the three hooks, and the
-///     "on the way out" step that runs whatever produced the result.
+///     The middle level: you write the binding, the base class dispatches
+///     <typeparamref name="TRequest" /> and maps the result. Responds with <c>200 OK</c> and the
+///     response as the body unless configured otherwise.
 /// </summary>
-/// <typeparam name="TBound">
-///     What the tier binds. For <see cref="MappedEndpoint{THttpRequest,TRequest,TResponse,THttpResponse}" />
-///     that is the wire DTO, not the message — the hooks run around binding, and binding is what
-///     produces a DTO.
-/// </typeparam>
+/// <typeparam name="TRequest">The command or query to dispatch.</typeparam>
+/// <typeparam name="TResponse">The response type.</typeparam>
 /// <remarks>
 ///     <para>
-///         Not a tier, and not derivable outside this library: its constructor is
-///         <c>private protected</c>, the same device <see cref="EndpointBase" /> uses to force
-///         endpoints through one of the library's own base classes. Derive from
-///         <see cref="Endpoint{TRequest,TResponse}" /> or one of its siblings instead.
+///         Use this when the request maps onto a message but the mapping is not one the five binding
+///         conventions can express — a header that has to be split, a legacy query-string shape, a
+///         value that needs normalising before it becomes part of the message. Everything downstream of
+///         <see cref="BindAsync" /> is identical to <see cref="Endpoint{TRequest,TResponse}" />, which
+///         differs from this class in exactly one respect: the analyzer writes its
+///         <see cref="BindAsync" /> for it instead of asking you for one.
 ///     </para>
 ///     <para>
-///         Declaring the three hooks per tier would put four copies of those declarations in the
-///         codebase, so they live here instead, alongside the whole documented order, in this type's
-///         <c>HandleAsync</c>. A tier contributes only <see cref="BindBoundAsync" /> and
-///         <see cref="ProduceResultAsync" />; factoring shared concerns onto one type this way is the
-///         same device <see cref="EndpointBuilderCore" /> and <see cref="RawEndpointPlan" /> use
-///         elsewhere in the library.
+///         Read the request with the extension methods in
+///         <c>UnambitiousFx.Synapse.Endpoints.Binding</c>, and prefer
+///         <c>context.Validate()</c> so several bad inputs produce one <c>400</c> listing all of them.
 ///     </para>
 ///     <para>
-///         The documented order is: pre-processors, <c>BindAsync</c>,
-///         <see cref="OnBindFailedAsync" /> when it failed, <see cref="OnBeforeHandleAsync" /> when it
-///         did not, dispatch and mapping, <see cref="OnAfterHandleAsync" />, post-processors, then the
-///         result is written. Steps from <see cref="OnAfterHandleAsync" /> onwards run on every path
-///         <em>that produces a result</em> — an unhandled exception from dispatch, a mapper, a hook, or
-///         a processor bypasses them entirely and is the ASP.NET exception handler's business, not
-///         this type's.
+///         Endpoints are stateless singletons: one instance is created at startup,
+///         <c>Configure</c> runs once, and the same instance serves every request.
+///         Constructor injection is therefore unavailable by design — resolve what you need from the
+///         <see cref="HttpContext" />.
 ///     </para>
 /// </remarks>
-public abstract class BoundEndpoint<TBound> : RawEndpoint
+public abstract class BoundEndpoint<TRequest, TResponse> : EndpointLifecycle<TRequest>
+    where TRequest : IRequest<TResponse>
+    where TResponse : notnull
 {
-    private protected BoundEndpoint()
+    private EndpointConfiguration<TResponse>? _configuration;
+
+    /// <summary>Configures the endpoint. Called once at startup.</summary>
+    /// <param name="builder">The endpoint builder.</param>
+    public virtual void Configure(IEndpointBuilder<TResponse> builder)
     {
     }
 
-    /// <summary>The processors resolved at startup, or null before the endpoint is mapped.</summary>
-    private protected EndpointProcessors? ConfiguredProcessors { get; set; }
-
-    /// <summary>The registered processors, failing with an explanation when unmapped.</summary>
+    /// <summary>Binds the request onto the message to dispatch.</summary>
+    /// <param name="context">The HTTP context.</param>
+    /// <returns>The bound message, or the failures preventing it.</returns>
     /// <remarks>
-    ///     Read at the very top of <c>HandleAsync</c>, before the first <c>Mapped(_configuration)</c>
-    ///     call a tier's <see cref="ProduceResultAsync" /> makes. Going through <c>Mapped</c> is what
-    ///     keeps an unmapped endpoint answering with the message that names <c>EndpointHarness</c>
-    ///     rather than a bare <see cref="NullReferenceException" /> — see docs/known-issues/056.
+    ///     A failure short-circuits to a <c>400</c> carrying every collected error and the message is
+    ///     never dispatched.
     /// </remarks>
-    private protected EndpointProcessors ResolvedProcessors => Mapped(ConfiguredProcessors);
+    public abstract ValueTask<BindResult<TRequest>> BindAsync(HttpContext context);
 
     /// <summary>
-    ///     Runs after binding succeeds and before the message is dispatched.
+    ///     Maps a successful response to an HTTP result. Override for full control; prefer the
+    ///     declarative methods on <see cref="IEndpointBuilder{TResponse}" /> where they suffice,
+    ///     because those also produce accurate OpenAPI metadata.
     /// </summary>
-    /// <param name="request">The bound request.</param>
+    /// <param name="response">The handler's response.</param>
     /// <param name="context">The HTTP context.</param>
-    /// <param name="cancellationToken">Cancellation token, tied to the request.</param>
-    /// <returns>
-    ///     A result to write instead of dispatching, or <see langword="null" /> to carry on.
-    ///     Short-circuiting here still runs <see cref="OnAfterHandleAsync" /> and any post-processors.
-    /// </returns>
-    /// <remarks>
-    ///     This is the typed seam: it is the only hook that sees the bound request. Cross-cutting code
-    ///     that needs only the context belongs in an <see cref="IEndpointPreProcessor" />, which also
-    ///     runs earlier — before binding.
-    /// </remarks>
-    protected virtual ValueTask<IResult?> OnBeforeHandleAsync(TBound request,
-        HttpContext context,
-        CancellationToken cancellationToken)
+    /// <returns>The HTTP result to write.</returns>
+    public virtual IResult OnSuccess(TResponse response,
+        HttpContext context)
     {
-        return default;
+        return TypedResults.Ok(response);
     }
 
-    /// <summary>
-    ///     Runs on the way out, before the result is written.
-    /// </summary>
-    /// <param name="result">The result the endpoint produced.</param>
-    /// <param name="context">The HTTP context.</param>
-    /// <param name="cancellationToken">Cancellation token, tied to the request.</param>
-    /// <returns>The result to write. Return <paramref name="result" /> to leave it unchanged.</returns>
+    /// <summary>Not used at this level; configure through the typed overload instead.</summary>
+    /// <param name="builder">Unused.</param>
     /// <remarks>
-    ///     <para>
-    ///         Runs whatever produced a result: a pre-processor's short circuit, a binding failure's
-    ///         <c>400</c>, a mapped dispatch failure, or the success mapper. It does not run when
-    ///         dispatch, a mapper, or an earlier hook throws — that exception bypasses this hook, the
-    ///         post-processors, and the write, and reaches the ASP.NET exception handler instead.
-    ///     </para>
-    ///     <para>
-    ///         Nothing has executed <paramref name="result" /> yet, so writing to
-    ///         <c>context.Response.Headers</c> here still reaches the wire — but
-    ///         <c>context.Response.StatusCode</c> is still whatever it defaulted to, because the result
-    ///         has not run yet either. Pattern-match <paramref name="result" /> against
-    ///         <see cref="IStatusCodeHttpResult" /> to read the status it is about to write; that fails
-    ///         for a result that does not implement it, including the stream tier's negotiated writer.
-    ///     </para>
+    ///     Sealed deliberately. This level configures through
+    ///     <see cref="Configure(IEndpointBuilder{TResponse})" />, so leaving the low-level overload
+    ///     open would let a subclass override a hook that is never called and wonder why its
+    ///     configuration is ignored. Sealing turns that into a compile error.
     /// </remarks>
-    protected virtual ValueTask<IResult> OnAfterHandleAsync(IResult result,
-        HttpContext context,
-        CancellationToken cancellationToken)
+    public sealed override void Configure(IRawEndpointBuilder builder)
     {
-        return new ValueTask<IResult>(result);
     }
-
-    /// <summary>
-    ///     Runs when binding fails, before the <c>400</c> is written.
-    /// </summary>
-    /// <param name="bound">The failed bind result, carrying every collected error.</param>
-    /// <param name="context">The HTTP context.</param>
-    /// <param name="cancellationToken">Cancellation token, tied to the request.</param>
-    /// <returns>The result to write. The default is the <c>400</c> the binding produced.</returns>
-    protected virtual ValueTask<IResult> OnBindFailedAsync(BindResult<TBound> bound,
-        HttpContext context,
-        CancellationToken cancellationToken)
-    {
-        return new ValueTask<IResult>(bound.Problem());
-    }
-
-    /// <summary>
-    ///     Runs <see cref="OnBindFailedAsync" /> and guards its result, naming that hook rather than
-    ///     <c>HandleAsync</c> if it returns null.
-    /// </summary>
-    /// <param name="bound">The failed bind result, carrying every collected error.</param>
-    /// <param name="context">The HTTP context.</param>
-    /// <param name="cancellationToken">Cancellation token, tied to the request.</param>
-    /// <returns>The result to write.</returns>
-    private protected async ValueTask<IResult> BindFailedResultAsync(BindResult<TBound> bound,
-        HttpContext context,
-        CancellationToken cancellationToken)
-    {
-        return await OnBindFailedAsync(bound, context, cancellationToken)
-               ?? throw new InvalidOperationException(
-                   $"Endpoint '{GetType()}' returned a null result from OnBindFailedAsync. Return " +
-                   "the failed bind's 400 to leave the response unchanged, or a replacement to " +
-                   "change it.");
-    }
-
-    /// <summary>Binds the request, using whatever <c>BindAsync</c> this tier declares.</summary>
-    /// <param name="context">The HTTP context.</param>
-    /// <returns>The bound value, or the failures preventing it.</returns>
-    /// <remarks>
-    ///     Every tier forwards to a public abstract <c>BindAsync</c>; what differs is who implements
-    ///     it. The two <c>RawEndpoint&lt;…&gt;</c> tiers leave it to the author, while the generated
-    ///     tiers have it emitted into the endpoint's own <c>partial</c>. It stays a per-tier member
-    ///     rather than moving here because the bound type is the tier's, not this class's:
-    ///     <see cref="MappedEndpoint{THttpRequest,TRequest,TResponse,THttpResponse}" /> binds a wire
-    ///     DTO where the others bind the message.
-    /// </remarks>
-    private protected abstract ValueTask<BindResult<TBound>> BindBoundAsync(HttpContext context);
-
-    /// <summary>Dispatches the bound value and maps the outcome to a result.</summary>
-    /// <param name="bound">The bound value.</param>
-    /// <param name="context">The HTTP context.</param>
-    /// <param name="cancellationToken">Cancellation token, tied to the request.</param>
-    /// <returns>The result the endpoint produced.</returns>
-    /// <remarks>
-    ///     Everything a tier does that is its own: which invoker overload it calls, how it maps a
-    ///     success, and — for the streaming tier — building the negotiated writer rather than
-    ///     dispatching for a single value at all, which is why this is not called <c>DispatchAsync</c>.
-    /// </remarks>
-    private protected abstract ValueTask<IResult> ProduceResultAsync(TBound bound,
-        HttpContext context,
-        CancellationToken cancellationToken);
 
     /// <inheritdoc />
-    /// <remarks>
-    ///     Sealed, and sealed here rather than on each tier so the documented order exists in one
-    ///     place. Change the binding through <c>BindAsync</c>, the response through <c>OnSuccess</c>
-    ///     or the builder, and wrap the exchange through <see cref="OnBeforeHandleAsync" />,
-    ///     <see cref="OnAfterHandleAsync" />, <see cref="OnBindFailedAsync" /> or a registered
-    ///     <see cref="IEndpointPreProcessor" /> / <see cref="IEndpointPostProcessor" />.
-    /// </remarks>
-    public sealed override async ValueTask<IResult> HandleAsync(HttpContext context,
-        CancellationToken cancellationToken)
+    private protected sealed override ValueTask<BindResult<TRequest>> BindBoundAsync(HttpContext context)
     {
-        // Read before anything else so an unmapped endpoint reports that, rather than failing later
-        // and less clearly.
-        var processors = ResolvedProcessors;
-
-        var result = await RunLifecycleAsync(processors, context, cancellationToken);
-
-        // Unconditional, and that is the point: every path that produced a result above arrives
-        // here, so the exit steps cannot be skipped by a tier forgetting to call them.
-        var mapped = await OnAfterHandleAsync(result, context, cancellationToken)
-                     ?? throw new InvalidOperationException(
-                         $"Endpoint '{GetType()}' returned a null result from OnAfterHandleAsync. " +
-                         "Return the result it was given to leave the response unchanged, or a " +
-                         "replacement to change it.");
-
-        return await processors.RunPostAsync(mapped, context, cancellationToken);
+        return BindAsync(context);
     }
 
-    /// <summary>Runs steps 1 to 5 and returns whichever of them produced the result.</summary>
-    /// <param name="processors">The resolved processors, read once by the caller.</param>
-    /// <param name="context">The HTTP context.</param>
-    /// <param name="cancellationToken">Cancellation token, tied to the request.</param>
-    /// <returns>The result to hand to the exit steps.</returns>
-    private async ValueTask<IResult> RunLifecycleAsync(EndpointProcessors processors,
+    /// <inheritdoc />
+    private protected sealed override ValueTask<IResult> ProduceResultAsync(TRequest bound,
         HttpContext context,
         CancellationToken cancellationToken)
     {
-        var shortCircuit = await processors.RunPreAsync(context, cancellationToken);
-        if (shortCircuit is not null)
-        {
-            return shortCircuit;
-        }
+        var configuration = Mapped(_configuration);
+        var invoker = context.RequestServices.GetRequiredService<IHttpInvoker>();
 
-        var bound = await BindBoundAsync(context);
-        if (!bound.IsSuccess)
-        {
-            return await BindFailedResultAsync(bound, context, cancellationToken);
-        }
+        // Failures flow through the registered IFailureHttpMapper, unchanged.
+        return invoker.InvokeAsync(
+            bound,
+            response => configuration.SuccessMapper is not null
+                ? configuration.SuccessMapper(response)
+                : OnSuccess(response, context),
+            cancellationToken);
+    }
 
-        var before = await OnBeforeHandleAsync(bound.Value!, context, cancellationToken);
-        if (before is not null)
-        {
-            return before;
-        }
+    internal override RawEndpointPlan CreatePlan(EndpointMetadata metadata)
+    {
+        var builder = new EndpointBuilder<TResponse>(metadata);
+        Configure(builder);
+        var configuration = builder.Build();
+        _configuration = configuration;
+        ConfiguredProcessors = configuration.Processors;
 
-        return await ProduceResultAsync(bound.Value!, context, cancellationToken);
+        return new RawEndpointPlan
+        {
+            Route = configuration.Route,
+            HttpMethods = configuration.HttpMethods,
+            Processors = configuration.Processors,
+            ApplyMetadata = handlerBuilder =>
+            {
+                // Declared explicitly because a RequestDelegate-shaped endpoint infers nothing.
+                RequestBodyMetadata.Apply(handlerBuilder, DeclaredRequestBody(configuration.HttpMethods),
+                    typeof(TRequest), DeclaredFormFields());
+
+                // Attached as one entry so a single GetMetadata call retrieves the whole list —
+                // see BoundParametersMetadata's remarks.
+                if (DeclaredParameters() is { Count: > 0 } parameters)
+                {
+                    handlerBuilder.WithMetadata(new BoundParametersMetadata(parameters));
+                }
+
+                // The response type is declared only when the configured mapper actually writes one.
+                // NoContent() and StatusCode(int) write a status line and nothing else, so declaring
+                // typeof(TResponse) there promised a JSON body that never arrives — see
+                // docs/known-issues/054.
+                handlerBuilder.WithMetadata(new ProducesResponseMetadata(
+                    SuccessStatusCode(configuration),
+                    configuration.SuccessResponseHasBody ? typeof(TResponse) : null));
+
+                // A validation problem, not a plain one: binding failures answer with
+                // HttpValidationProblemDetails and its errors dictionary, so ProducesProblem would
+                // describe a narrower body than the endpoint sends — see docs/known-issues/055.
+                handlerBuilder.ProducesValidationProblem();
+                configuration.ApplyMetadata(handlerBuilder);
+            }
+        };
+    }
+
+    private static int SuccessStatusCode(EndpointConfiguration<TResponse> configuration)
+    {
+        return configuration.DeclaredSuccessStatusCode ?? StatusCodes.Status200OK;
     }
 }

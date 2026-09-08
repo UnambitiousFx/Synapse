@@ -45,7 +45,7 @@ public sealed class PartialEmissionTests
 
                                       [Get("/probes/{name}")]
                                       public sealed partial class ProbeEndpoint
-                                          : MappedEndpoint<ProbeDto, ProbeQuery, string, string>
+                                          : ContractEndpoint<ProbeDto, ProbeQuery, string, string>
                                       {
                                           public override ProbeQuery ToRequest(ProbeDto request)
                                               => new(request.Name);
@@ -55,7 +55,7 @@ public sealed class PartialEmissionTests
                                       }
                                       """;
 
-    private const string SelfHandledTier = """
+    private const string InlineTier = """
                                            using System.Threading;
                                            using System.Threading.Tasks;
                                            using Microsoft.AspNetCore.Http;
@@ -69,7 +69,7 @@ public sealed class PartialEmissionTests
 
                                            [Get("/probes")]
                                            public sealed partial class ProbeEndpoint
-                                               : SelfHandledEndpoint<ProbeQuery, string>
+                                               : InlineEndpoint<ProbeQuery, string>
                                            {
                                                public override ValueTask<Result<string>> ExecuteAsync(
                                                    ProbeQuery request,
@@ -79,7 +79,7 @@ public sealed class PartialEmissionTests
                                            }
                                            """;
 
-    private const string SelfHandledVoidTier = """
+    private const string InlineVoidTier = """
                                                using System.Threading;
                                                using System.Threading.Tasks;
                                                using Microsoft.AspNetCore.Http;
@@ -93,7 +93,7 @@ public sealed class PartialEmissionTests
 
                                                [Post("/probes")]
                                                public sealed partial class ProbeEndpoint
-                                                   : SelfHandledEndpoint<ProbeCommand>
+                                                   : InlineEndpoint<ProbeCommand>
                                                {
                                                    public override ValueTask<Result> ExecuteAsync(
                                                        ProbeCommand request,
@@ -380,8 +380,8 @@ public sealed class PartialEmissionTests
     [Theory]
     [InlineData(nameof(StreamTier))]
     [InlineData(nameof(MappedTier))]
-    [InlineData(nameof(SelfHandledTier))]
-    [InlineData(nameof(SelfHandledVoidTier))]
+    [InlineData(nameof(InlineTier))]
+    [InlineData(nameof(InlineVoidTier))]
     public void Generate_ForEveryGeneratedTier_EmitsAPartialAndNoBinderFile(string tier)
     {
         // Arrange — the four tiers migrated in this task, each satisfying its own abstract members.
@@ -389,8 +389,8 @@ public sealed class PartialEmissionTests
         {
             nameof(StreamTier) => StreamTier,
             nameof(MappedTier) => MappedTier,
-            nameof(SelfHandledTier) => SelfHandledTier,
-            _ => SelfHandledVoidTier
+            nameof(InlineTier) => InlineTier,
+            _ => InlineVoidTier
         };
 
         // Act

@@ -27,9 +27,8 @@ does the dispatch and the failure mapping; this package removes the boilerplate 
 
 ## Which level do you want?
 
-The package has **two levels**, and this is the only decision you need to make before reading
-anything else. The question is not "how complicated is my endpoint" — it is **"is this route a
-command or a query?"**
+The package has **two levels**, and that is the decision to make before reading anything else. The
+question is not "how complicated is my endpoint" — it is **"is this route a command or a query?"**
 
 ### The high level
 
@@ -63,6 +62,27 @@ Use it for a conditional `GET`, a webhook, a health check, a redirect, a file do
 
 **[Start the low-level guide →](./low-level/overview.mdx)**
 
+### The high level, without a message
+
+**The route is shaped like a query, but there is nothing behind it to dispatch.** You keep the
+generated binding and the declarative responses, and write the answer yourself.
+
+```csharp
+[Get("/health/{probe}")]
+public sealed partial class ProbeEndpoint
+    : InlineEndpoint<ProbeQuery, ProbeDto>
+{
+    public override ValueTask<Result<ProbeDto>> ExecuteAsync(
+        ProbeQuery request, HttpContext ctx, CancellationToken ct) => …
+}
+```
+
+Use it for a lookup, a health projection, a lightweight read model — a route that would otherwise
+cost a message, a handler and a DI registration so the mediator can hand back a value the endpoint
+already had. It is the one high-level tier that runs **no pipeline behaviours**.
+
+**[Read the inline guide →](./high-level/inline.mdx)**
+
 If you are not sure, start high. Dropping a level later changes only the part that did not fit —
 which is the point of how the two are built.
 
@@ -74,15 +94,19 @@ The high level is not a parallel implementation of the low one. It **is** the lo
 binding supplied, so the two cannot drift apart:
 
 ```
-RawEndpoint                              ← low level:  context in, result out
- ├── RawEndpoint<TRequest>               ← middle:     you write BindAsync
- ├── RawEndpoint<TRequest, TResponse>
- │    └── Endpoint<TRequest, TResponse>  ← high level: the analyzer writes it
- ├── StreamEndpoint<TRequest, TItem>
- └── MappedEndpoint<...>
+RawEndpoint                                    ← low level:  context in, result out
+ └── EndpointLifecycle<TRequest>                not a tier — owns the sealed lifecycle
+     ├── BoundEndpoint<TRequest>                ← middle:     you write BindAsync
+     │    └── Endpoint<TRequest>                ← high level: the analyzer writes it
+     ├── BoundEndpoint<TRequest, TResponse>     ← middle
+     │    └── Endpoint<TRequest, TResponse>     ← high level
+     ├── StreamEndpoint<TRequest, TItem>        ← high level
+     ├── ContractEndpoint<...>                  ← high level
+     ├── InlineEndpoint<TRequest>               ← high level, no dispatch
+     └── InlineEndpoint<TRequest, TResponse>    ← high level, no dispatch
 ```
 
-`Endpoint<TRequest, TResponse>` adds exactly one member to `RawEndpoint<TRequest, TResponse>`: a
+`Endpoint<TRequest, TResponse>` adds exactly one member to `BoundEndpoint<TRequest, TResponse>`: a
 `BindAsync` that calls the generated binder. `Configure`, `OnSuccess`, the dispatch, the failure
 mapping and the OpenAPI metadata are all inherited unchanged from the tier below.
 
@@ -94,8 +118,15 @@ everything else.
 | Level | What you write | Reach for it when |
 |---|---|---|
 | `Endpoint<…>` | A class declaration and an attribute | Almost always |
-| `RawEndpoint<…>` | `BindAsync` | The request maps onto a message, but not by the six rules |
+| `StreamEndpoint<…>` | The same, for an `IStreamRequest<TItem>` | The response is many items, not one |
+| `ContractEndpoint<…>` | The same, plus `ToRequest`/`ToResponse` | The wire contract must not be the message's shape |
+| `InlineEndpoint<…>` | `ExecuteAsync` | The route has no message behind it to dispatch |
+| `BoundEndpoint<…>` | `BindAsync` | The request maps onto a message, but not by the six rules |
 | `RawEndpoint` | `HandleAsync` | There is no message — the endpoint is about the HTTP exchange |
+
+Three of those rows come in two arities — one with a response body, one without — which is why there
+are nine base classes and not six. [Base classes](./reference/base-classes.mdx) lists them side by
+side.
 
 ---
 
@@ -137,6 +168,7 @@ the rest — and the whole surface is [Native AOT](./reference/native-aot.mdx) c
 | [High level: responses](./high-level/responses.mdx) | Status codes, bodies, failures |
 | [High level: groups](./high-level/groups.mdx) | Shared prefixes, tags, authorization |
 | [High level: streaming](./high-level/streaming.mdx) | `IStreamRequest<T>` over SSE or a JSON array |
+| [High level: inline](./high-level/inline.mdx) | A route with no message behind it |
 | [Low level: overview](./low-level/overview.mdx) | When the route is not a message |
 | [Low level: reading the request](./low-level/reading-the-request.mdx) | The `HttpContext` helper surface |
 | [Low level: validating](./low-level/validating.mdx) | Collecting every bad input into one `400` |
@@ -146,10 +178,11 @@ the rest — and the whole surface is [Native AOT](./reference/native-aot.mdx) c
 
 | Page | For |
 |---|---|
-| [Base classes](./reference/base-classes.mdx) | All eight, side by side |
+| [Base classes](./reference/base-classes.mdx) | All nine, side by side |
 | [OpenAPI](./reference/openapi.mdx) | What each shape declares, and the `net8.0` gap |
 | [Native AOT](./reference/native-aot.mdx) | The section most likely to save you an afternoon |
-| [Diagnostics](./reference/diagnostics.mdx) | `SYNE001`–`SYNE015`, what each means |
+| [Diagnostics](./reference/diagnostics.mdx) | `SYNE001`–`SYNE021`, what each means |
+| [Lifecycle hooks](./reference/lifecycle.mdx) | Wrapping the exchange: before binding, before dispatch, on the way out |
 | [Escape hatches](./reference/escape-hatches.mdx) | When the fluent surface is not enough |
 | [Testing](./reference/testing.mdx) | Exercising one endpoint without booting a host |
 | [Preview status](./reference/preview.mdx) | Why it ships prerelease-only, and the `NU5104` warning |

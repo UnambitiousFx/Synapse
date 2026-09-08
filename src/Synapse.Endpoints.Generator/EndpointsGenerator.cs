@@ -24,13 +24,13 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
 
     private const string EndpointVoid = "UnambitiousFx.Synapse.Endpoints.Endpoint`1";
     private const string EndpointValue = "UnambitiousFx.Synapse.Endpoints.Endpoint`2";
-    private const string EndpointMapped = "UnambitiousFx.Synapse.Endpoints.MappedEndpoint`4";
+    private const string EndpointContract = "UnambitiousFx.Synapse.Endpoints.ContractEndpoint`4";
     private const string EndpointStream = "UnambitiousFx.Synapse.Endpoints.StreamEndpoint`2";
-    private const string SelfHandledVoid = "UnambitiousFx.Synapse.Endpoints.SelfHandledEndpoint`1";
-    private const string SelfHandledValue = "UnambitiousFx.Synapse.Endpoints.SelfHandledEndpoint`2";
+    private const string InlineVoid = "UnambitiousFx.Synapse.Endpoints.InlineEndpoint`1";
+    private const string InlineValue = "UnambitiousFx.Synapse.Endpoints.InlineEndpoint`2";
     private const string RawEndpointFree = "UnambitiousFx.Synapse.Endpoints.RawEndpoint";
-    private const string RawEndpointVoid = "UnambitiousFx.Synapse.Endpoints.RawEndpoint`1";
-    private const string RawEndpointValue = "UnambitiousFx.Synapse.Endpoints.RawEndpoint`2";
+    private const string BoundEndpointVoid = "UnambitiousFx.Synapse.Endpoints.BoundEndpoint`1";
+    private const string BoundEndpointValue = "UnambitiousFx.Synapse.Endpoints.BoundEndpoint`2";
 
     /// <inheritdoc />
     public void Initialize(IncrementalGeneratorInitializationContext context)
@@ -100,15 +100,15 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
             {
                 EndpointVoid => EndpointKind.Void,
                 EndpointValue => EndpointKind.Value,
-                EndpointMapped => EndpointKind.Mapped,
+                EndpointContract => EndpointKind.Contract,
                 EndpointStream => EndpointKind.Stream,
-                SelfHandledVoid => EndpointKind.SelfHandledVoid,
-                SelfHandledValue => EndpointKind.SelfHandled,
+                InlineVoid => EndpointKind.InlineVoid,
+                InlineValue => EndpointKind.Inline,
                 // Last, and it matters: every tier above derives from RawEndpoint, so a chain walk
                 // that reached this arm first would classify all of them as the free-form low level.
                 RawEndpointFree => EndpointKind.Raw,
-                RawEndpointVoid => EndpointKind.RawVoid,
-                RawEndpointValue => EndpointKind.RawValue,
+                BoundEndpointVoid => EndpointKind.BoundVoid,
+                BoundEndpointValue => EndpointKind.BoundValue,
                 _ => (EndpointKind?)null
             };
 
@@ -124,7 +124,7 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
                 : null;
 
             // SYNE008: the type actually written back as the response body, which differs from
-            // `bound` for Mapped (THttpResponse, not the internal TRequest/TResponse pair) and does
+            // `bound` for Contract (THttpResponse, not the internal TRequest/TResponse pair) and does
             // not exist at all for Void (204 No Content has no body to serialize). Stream's wire
             // type is IAsyncEnumerable<TItem> — the exact type StreamEndpoint.CreateDescriptor
             // declares via ProducesResponseMetadata and the type Microsoft.AspNetCore.OpenApi asks
@@ -133,9 +133,9 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
             // build stays warning-free, /openapi/v1.json 500s at runtime for real).
             ITypeSymbol? responseType = kind switch
             {
-                EndpointKind.Value or EndpointKind.RawValue or EndpointKind.SelfHandled =>
+                EndpointKind.Value or EndpointKind.BoundValue or EndpointKind.Inline =>
                     baseType.TypeArguments[1],
-                EndpointKind.Mapped => baseType.TypeArguments[3],
+                EndpointKind.Contract => baseType.TypeArguments[3],
                 EndpointKind.Stream => WrapInAsyncEnumerable(context.SemanticModel.Compilation, baseType.TypeArguments[1]),
                 _ => null
             };
@@ -226,7 +226,7 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
             }
 
             // SYNE005 — only Endpoint<TRequest> / Endpoint<TRequest,TResponse> dispatch a single
-            // response; StreamEndpoint and MappedEndpoint are unaffected (Mapped's bound type is the
+            // response; StreamEndpoint and ContractEndpoint are unaffected (Contract's bound type is the
             // HTTP DTO, not the dispatched message, so this check does not apply to it).
             if (kind.Value.DispatchesKnownMessage() && bound is not null && ImplementsStreamRequest(bound))
             {
@@ -248,7 +248,7 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
             var overridesOnSuccess = DeclaresOnSuccessOverride(symbol);
             var callsDeclarativeSuccessMethod = ConfigureCallsSuccessMethodDirectly(declarationParts);
 
-            // SYNE003 — only Endpoint<TRequest,TResponse> actually returns a value; Mapped maps
+            // SYNE003 — only Endpoint<TRequest,TResponse> actually returns a value; Contract maps
             // through its own ToResponse/OnSuccess pair and is out of scope for this nudge.
             if (kind.Value.ReturnsValue() &&
                 method is "POST" or "PUT" &&
@@ -420,7 +420,7 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
 
     /// <summary>
     ///     SYNE010: an endpoint class that <c>MapEndpoint&lt;TEndpoint&gt;()</c> — constrained
-    ///     <c>where TEndpoint : EndpointBase, new()</c> — cannot be instantiated for. All three
+    ///     <c>where TEndpoint : SynapseEndpoint, new()</c> — cannot be instantiated for. All three
     ///     reasons are checked (rather than stopping at the first) so the message names every shape
     ///     problem the class actually has.
     /// </summary>
@@ -2385,7 +2385,7 @@ public sealed class EndpointsGenerator : IIncrementalGenerator
         // SYNE020 — must be reported before anything below is emitted: the metadata (and, for the
         // generated tiers, the binding) is emitted into the endpoint's own class, which requires it
         // (and every enclosing type) to be reopenable as partial. Reported for every kind, not only
-        // the ones with a generated binding: EndpointBase.CreateMetadata is abstract, so a
+        // the ones with a generated binding: SynapseEndpoint.CreateMetadata is abstract, so a
         // hand-bound or free-form endpoint needs its generated override just as much.
         foreach (var endpoint in ordered)
         {

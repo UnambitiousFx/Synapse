@@ -123,7 +123,7 @@ public class EndpointDispatchBenchmark
         _selfHandledHost = BuildHost(app =>
         {
             app.UseRouting();
-            app.UseEndpoints(endpoints => { endpoints.MapEndpoint<SelfHandledThingEndpoint>(); });
+            app.UseEndpoints(endpoints => { endpoints.MapEndpoint<InlineThingEndpoint>(); });
         });
 
         _scalarQueryHost = BuildHost(app =>
@@ -220,7 +220,7 @@ public class EndpointDispatchBenchmark
     ///     <see cref="ThingDto" />, so everything up to and including binding is identical.
     /// </summary>
     [Benchmark]
-    public Task<HttpResponseMessage> SynapseSelfHandledEndpoint()
+    public Task<HttpResponseMessage> SynapseInlineEndpoint()
     {
         return _selfHandled.GetAsync(RequestPath);
     }
@@ -369,7 +369,7 @@ public sealed partial class GetThingEndpoint : Endpoint<GetThingQuery, ThingDto>
 ///     Carries the same route attribute for the same reason <see cref="HookedThingEndpoint" /> does.
 /// </remarks>
 [Get("/things/{id:guid}")]
-public sealed partial class SelfHandledThingEndpoint : SelfHandledEndpoint<GetThingQuery, ThingDto>
+public sealed partial class InlineThingEndpoint : InlineEndpoint<GetThingQuery, ThingDto>
 {
     /// <inheritdoc />
     public override ValueTask<Result<ThingDto>> ExecuteAsync(GetThingQuery request,
@@ -507,7 +507,7 @@ public sealed partial class SearchThingsEndpoint : Endpoint<SearchThingsQuery, T
 ///     and response mapping, with <c>BindAsync</c> written by hand rather than generated.
 /// </summary>
 [Get("/things/{id:guid}")]
-public sealed partial class RawGetThingEndpoint : RawEndpoint<GetThingQuery, ThingDto>
+public sealed partial class RawGetThingEndpoint : BoundEndpoint<GetThingQuery, ThingDto>
 {
     /// <inheritdoc />
     public override ValueTask<BindResult<GetThingQuery>> BindAsync(HttpContext context)

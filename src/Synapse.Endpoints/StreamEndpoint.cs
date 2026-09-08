@@ -22,13 +22,13 @@ namespace UnambitiousFx.Synapse.Endpoints;
 ///         matching <see cref="IHttpInvoker.InvokeStreamAsync{TItem}" />.
 ///     </para>
 ///     <para>
-///         Derives from <see cref="BoundEndpoint{TBound}" /> rather than
-///         <see cref="RawEndpoint{TRequest,TResponse}" /> because it dispatches an
+///         Derives from <see cref="EndpointLifecycle{TRequest}" /> rather than
+///         <see cref="BoundEndpoint{TRequest,TResponse}" /> because it dispatches an
 ///         <see cref="IStreamRequest{TResponse}" /> and writes the body itself rather than returning a
 ///         single value to serialize.
 ///     </para>
 /// </remarks>
-public abstract class StreamEndpoint<TRequest, TItem> : BoundEndpoint<TRequest>
+public abstract class StreamEndpoint<TRequest, TItem> : EndpointLifecycle<TRequest>
     where TRequest : IStreamRequest<TItem>
     where TItem : notnull
 {

@@ -70,7 +70,7 @@ public sealed record ComputedCommand : IRequest<string>
 
 ## Dropping a tier
 
-The largest escape hatch, and the one the package is designed around. `RawEndpoint<TRequest, TResponse>`
+The largest escape hatch, and the one the package is designed around. `BoundEndpoint<TRequest, TResponse>`
 replaces the generated binding and nothing else; `RawEndpoint` replaces the whole handler.
 
 Both are still ordinary Synapse endpoints — discovered by the analyzer, attribute-routed, groupable, and

@@ -26,7 +26,7 @@ public sealed record ProbeDto(string Probe, bool Healthy);
 /// </summary>
 /// <remarks>
 ///     <para>
-///         Compare the three neighbours. <see cref="HealthEndpoint" /> drops to <c>RawEndpoint</c>
+///         Compare the three neighbours. <see cref="HealthEndpoint" /> drops to <c>BoundEndpoint</c>
 ///         because its answer is a decision about the HTTP exchange (an <c>If-None-Match</c>
 ///         negotiation), so there is nothing to bind. <c>TagReportEndpoint</c> keeps the mediator
 ///         because its query is a real message with a handler. This one is neither: it has a request
@@ -41,7 +41,7 @@ public sealed record ProbeDto(string Probe, bool Healthy);
 ///     </para>
 /// </remarks>
 [Get("/ops/probes/{probe}")]
-public sealed partial class ProbeEndpoint : SelfHandledEndpoint<ProbeQuery, ProbeDto>
+public sealed partial class ProbeEndpoint : InlineEndpoint<ProbeQuery, ProbeDto>
 {
     /// <inheritdoc />
     public override void Configure(IEndpointBuilder<ProbeDto> builder)
