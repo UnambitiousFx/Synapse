@@ -18,6 +18,8 @@ Run it with `dotnet run`, then read `/openapi/v1.json`.
 | `StreamEndpoint<TRequest, TItem>` | `GET /tasks/stream` | `Features/Tasks/Endpoints.cs` |
 | `StreamEndpoint<TRequest, TItem>`, bound from a body | `POST /tasks/stream/search` | `Features/Tasks/StreamSearch.cs` |
 | `MappedEndpoint<THttpRequest, TRequest, TResponse, THttpResponse>` | `POST /v1/tasks` | `Features/Contracts/CreateTaskV1.cs` |
+| `SelfHandledEndpoint<TRequest, TResponse>` | `GET /ops/probes/{probe}` | `Features/Ops/ProbeStatus.cs` |
+| `SelfHandledEndpoint<TRequest>` | `POST /ops/probes/{probe}/verify` | `Features/Ops/VerifyProbe.cs` |
 
 ### Low level — the binding is yours
 
@@ -83,7 +85,8 @@ each site. Worth knowing before writing your own:
 - What decides whether a body is read is the binding, not the verb: a `POST` whose every property
   comes off the route reads nothing, declares no `requestBody`, and accepts a request with no body at
   all. The flip side is that a body sent to such an endpoint is ignored rather than rejected. See
-  `ArchiveTaskEndpoint`.
+  `ArchiveTaskEndpoint`, and `VerifyProbeEndpoint` for the same shape on a tier that dispatches
+  nothing.
 - A route declared only in `Configure` leaves the generator with no verb to reason about, so it
   assumes a bodyless one; annotate the properties explicitly. See `SearchTasksEndpoint`.
 - `POST /tasks/stream/search` binds its message from the body but publishes no `requestBody` in the
