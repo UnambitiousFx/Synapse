@@ -1,9 +1,7 @@
-using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using UnambitiousFx.Synapse.Abstractions;
 using UnambitiousFx.Synapse.AspNetCore.Http;
-using UnambitiousFx.Synapse.Endpoints.Binding;
 using UnambitiousFx.Synapse.Endpoints.Builders;
 using UnambitiousFx.Synapse.Endpoints.Internal;
 
@@ -21,9 +19,9 @@ namespace UnambitiousFx.Synapse.Endpoints;
 ///         Use this when the request maps onto a message but the mapping is not one the five binding
 ///         conventions can express — a header that has to be split, a legacy query-string shape, a
 ///         value that needs normalising before it becomes part of the message. Everything downstream of
-///         <see cref="BindAsync" /> is identical to <see cref="Endpoint{TRequest,TResponse}" />, which
-///         differs from this class in exactly one respect: the analyzer writes its
-///         <see cref="BindAsync" /> for it instead of asking you for one.
+///         <see cref="EndpointLifecycle{TRequest}.BindAsync" /> is identical to
+///         <see cref="Endpoint{TRequest,TResponse}" />, which differs from this class in exactly one
+///         respect: the analyzer writes its <c>BindAsync</c> for it instead of asking you for one.
 ///     </para>
 ///     <para>
 ///         Read the request with the extension methods in
@@ -49,15 +47,6 @@ public abstract class BoundEndpoint<TRequest, TResponse> : EndpointLifecycle<TRe
     {
     }
 
-    /// <summary>Binds the request onto the message to dispatch.</summary>
-    /// <param name="context">The HTTP context.</param>
-    /// <returns>The bound message, or the failures preventing it.</returns>
-    /// <remarks>
-    ///     A failure short-circuits to a <c>400</c> carrying every collected error and the message is
-    ///     never dispatched.
-    /// </remarks>
-    public abstract ValueTask<BindResult<TRequest>> BindAsync(HttpContext context);
-
     /// <summary>
     ///     Maps a successful response to an HTTP result. Override for full control; prefer the
     ///     declarative methods on <see cref="IEndpointBuilder{TResponse}" /> where they suffice,
@@ -70,24 +59,6 @@ public abstract class BoundEndpoint<TRequest, TResponse> : EndpointLifecycle<TRe
         HttpContext context)
     {
         return TypedResults.Ok(response);
-    }
-
-    /// <summary>Not used at this level; configure through the typed overload instead.</summary>
-    /// <param name="builder">Unused.</param>
-    /// <remarks>
-    ///     Sealed deliberately. This level configures through
-    ///     <see cref="Configure(IEndpointBuilder{TResponse})" />, so leaving the low-level overload
-    ///     open would let a subclass override a hook that is never called and wonder why its
-    ///     configuration is ignored. Sealing turns that into a compile error.
-    /// </remarks>
-    public sealed override void Configure(IRawEndpointBuilder builder)
-    {
-    }
-
-    /// <inheritdoc />
-    private protected sealed override ValueTask<BindResult<TRequest>> BindBoundAsync(HttpContext context)
-    {
-        return BindAsync(context);
     }
 
     /// <inheritdoc />
@@ -113,45 +84,18 @@ public abstract class BoundEndpoint<TRequest, TResponse> : EndpointLifecycle<TRe
         Configure(builder);
         var configuration = builder.Build();
         _configuration = configuration;
-        ConfiguredProcessors = configuration.Processors;
 
-        return new RawEndpointPlan
-        {
-            Route = configuration.Route,
-            HttpMethods = configuration.HttpMethods,
-            Processors = configuration.Processors,
-            ApplyMetadata = handlerBuilder =>
-            {
-                // Declared explicitly because a RequestDelegate-shaped endpoint infers nothing.
-                RequestBodyMetadata.Apply(handlerBuilder, DeclaredRequestBody(configuration.HttpMethods),
-                    typeof(TRequest), DeclaredFormFields());
-
-                // Attached as one entry so a single GetMetadata call retrieves the whole list —
-                // see BoundParametersMetadata's remarks.
-                if (DeclaredParameters() is { Count: > 0 } parameters)
-                {
-                    handlerBuilder.WithMetadata(new BoundParametersMetadata(parameters));
-                }
-
-                // The response type is declared only when the configured mapper actually writes one.
-                // NoContent() and StatusCode(int) write a status line and nothing else, so declaring
-                // typeof(TResponse) there promised a JSON body that never arrives — see
-                // docs/known-issues/054.
-                handlerBuilder.WithMetadata(new ProducesResponseMetadata(
-                    SuccessStatusCode(configuration),
-                    configuration.SuccessResponseHasBody ? typeof(TResponse) : null));
-
-                // A validation problem, not a plain one: binding failures answer with
-                // HttpValidationProblemDetails and its errors dictionary, so ProducesProblem would
-                // describe a narrower body than the endpoint sends — see docs/known-issues/055.
-                handlerBuilder.ProducesValidationProblem();
-                configuration.ApplyMetadata(handlerBuilder);
-            }
-        };
-    }
-
-    private static int SuccessStatusCode(EndpointConfiguration<TResponse> configuration)
-    {
-        return configuration.DeclaredSuccessStatusCode ?? StatusCodes.Status200OK;
+        // The response type is declared only when the configured mapper actually writes one.
+        // NoContent() and StatusCode(int) write a status line and nothing else, so declaring
+        // typeof(TResponse) there promised a JSON body that never arrives — see
+        // docs/known-issues/054.
+        return BuildPlan(
+            configuration.Route,
+            configuration.HttpMethods,
+            configuration.Processors,
+            new ProducesResponseMetadata(
+                configuration.SuccessStatusCode(StatusCodes.Status200OK),
+                configuration.SuccessResponseHasBody ? typeof(TResponse) : null),
+            configuration.ApplyMetadata);
     }
 }

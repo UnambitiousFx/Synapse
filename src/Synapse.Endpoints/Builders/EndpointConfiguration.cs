@@ -43,6 +43,18 @@ internal sealed class EndpointConfiguration<TResponse>
 
     /// <summary>Gets the callback that applies accumulated metadata to the route handler builder.</summary>
     public required Action<RouteHandlerBuilder> ApplyMetadata { get; init; }
+
+    /// <summary>The status code to declare for the success response.</summary>
+    /// <param name="fallback">The tier's default, used when the endpoint configured no mapper.</param>
+    /// <returns>The configured status code, or <paramref name="fallback" />.</returns>
+    /// <remarks>
+    ///     A method on the configuration rather than a private static per tier, which is what it was
+    ///     in four copies: the fallback is the only part of it that is the tier's business.
+    /// </remarks>
+    public int SuccessStatusCode(int fallback)
+    {
+        return DeclaredSuccessStatusCode ?? fallback;
+    }
 }
 
 /// <summary>Stand-in response type for endpoints that return nothing.</summary>

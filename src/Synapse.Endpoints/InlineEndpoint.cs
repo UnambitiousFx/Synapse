@@ -1,4 +1,3 @@
-using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using UnambitiousFx.Functional;
@@ -6,7 +5,6 @@ using UnambitiousFx.Functional.AspNetCore.Http;
 using UnambitiousFx.Functional.AspNetCore.Mappers;
 using UnambitiousFx.Synapse.Abstractions;
 using UnambitiousFx.Synapse.AspNetCore.Http;
-using UnambitiousFx.Synapse.Endpoints.Binding;
 using UnambitiousFx.Synapse.Endpoints.Builders;
 using UnambitiousFx.Synapse.Endpoints.Internal;
 
@@ -60,16 +58,6 @@ public abstract class InlineEndpoint<TRequest, TResponse> : EndpointLifecycle<TR
     {
     }
 
-    /// <summary>Binds the request onto the contract <see cref="ExecuteAsync" /> answers.</summary>
-    /// <param name="context">The HTTP context.</param>
-    /// <returns>The bound request, or the failures preventing it.</returns>
-    /// <remarks>
-    ///     Implemented by the generated partial, so an endpoint the analyzer never saw does not
-    ///     compile: the binding is an <c>override</c> the compiler requires rather than a binder looked
-    ///     up at startup.
-    /// </remarks>
-    public abstract ValueTask<BindResult<TRequest>> BindAsync(HttpContext context);
-
     /// <summary>Answers the bound request.</summary>
     /// <param name="request">The bound request.</param>
     /// <param name="context">The HTTP context, and the way to reach request-scoped services.</param>
@@ -96,19 +84,6 @@ public abstract class InlineEndpoint<TRequest, TResponse> : EndpointLifecycle<TR
         HttpContext context)
     {
         return TypedResults.Ok(response);
-    }
-
-    /// <summary>Not used at this level; configure through the typed overload instead.</summary>
-    /// <param name="builder">Unused.</param>
-    /// <remarks>See <see cref="BoundEndpoint{TRequest,TResponse}.Configure(IRawEndpointBuilder)" />.</remarks>
-    public sealed override void Configure(IRawEndpointBuilder builder)
-    {
-    }
-
-    /// <inheritdoc />
-    private protected sealed override ValueTask<BindResult<TRequest>> BindBoundAsync(HttpContext context)
-    {
-        return BindAsync(context);
     }
 
     /// <inheritdoc />
@@ -138,38 +113,15 @@ public abstract class InlineEndpoint<TRequest, TResponse> : EndpointLifecycle<TR
         Configure(builder);
         var configuration = builder.Build();
         _configuration = configuration;
-        ConfiguredProcessors = configuration.Processors;
 
-        return new RawEndpointPlan
-        {
-            Route = configuration.Route,
-            HttpMethods = configuration.HttpMethods,
-            Processors = configuration.Processors,
-            ApplyMetadata = handlerBuilder =>
-            {
-                // Declared explicitly because a RequestDelegate-shaped endpoint infers nothing.
-                RequestBodyMetadata.Apply(handlerBuilder, DeclaredRequestBody(configuration.HttpMethods),
-                    typeof(TRequest), DeclaredFormFields());
-
-                // Attached as one entry so a single GetMetadata call retrieves the whole list —
-                // see BoundParametersMetadata's remarks.
-                if (DeclaredParameters() is { Count: > 0 } parameters)
-                {
-                    handlerBuilder.WithMetadata(new BoundParametersMetadata(parameters));
-                }
-
-                // Declared only when the configured mapper writes a body — see docs/known-issues/054.
-                handlerBuilder.WithMetadata(new ProducesResponseMetadata(
-                    SuccessStatusCode(configuration),
-                    configuration.SuccessResponseHasBody ? typeof(TResponse) : null));
-                handlerBuilder.ProducesValidationProblem();
-                configuration.ApplyMetadata(handlerBuilder);
-            }
-        };
-    }
-
-    private static int SuccessStatusCode(EndpointConfiguration<TResponse> configuration)
-    {
-        return configuration.DeclaredSuccessStatusCode ?? StatusCodes.Status200OK;
+        // Declared only when the configured mapper writes a body — see docs/known-issues/054.
+        return BuildPlan(
+            configuration.Route,
+            configuration.HttpMethods,
+            configuration.Processors,
+            new ProducesResponseMetadata(
+                configuration.SuccessStatusCode(StatusCodes.Status200OK),
+                configuration.SuccessResponseHasBody ? typeof(TResponse) : null),
+            configuration.ApplyMetadata);
     }
 }

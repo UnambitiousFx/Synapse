@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using UnambitiousFx.Synapse.Endpoints.Binding;
 using UnambitiousFx.Synapse.Endpoints.Builders;
@@ -24,8 +25,8 @@ namespace UnambitiousFx.Synapse.Endpoints;
 ///     <para>
 ///         Declaring the three hooks per tier would put four copies of those declarations in the
 ///         codebase, so they live here instead, alongside the whole documented order, in this type's
-///         <c>HandleAsync</c>. A tier contributes only <see cref="BindBoundAsync" /> and
-///         <see cref="ProduceResultAsync" />; factoring shared concerns onto one type this way is the
+///         <c>HandleAsync</c>. A tier contributes only <see cref="ProduceResultAsync" /> and the
+///         response half of <see cref="BuildPlan" />; factoring shared concerns onto one type this way is the
 ///         same device <see cref="EndpointBuilderCore" /> and <see cref="RawEndpointPlan" /> use
 ///         elsewhere in the library.
 ///     </para>
@@ -41,12 +42,17 @@ namespace UnambitiousFx.Synapse.Endpoints;
 /// </remarks>
 public abstract class EndpointLifecycle<TRequest> : RawEndpoint
 {
+    /// <summary>The processors resolved at startup, or null before the endpoint is mapped.</summary>
+    /// <remarks>
+    ///     Written only by <see cref="BuildPlan" />, which every binding tier's <c>CreatePlan</c> goes
+    ///     through, so a tier can no longer register processors on its plan and forget to hand them to
+    ///     the endpoint that has to run them.
+    /// </remarks>
+    private EndpointProcessors? _configuredProcessors;
+
     private protected EndpointLifecycle()
     {
     }
-
-    /// <summary>The processors resolved at startup, or null before the endpoint is mapped.</summary>
-    private protected EndpointProcessors? ConfiguredProcessors { get; set; }
 
     /// <summary>The registered processors, failing with an explanation when unmapped.</summary>
     /// <remarks>
@@ -55,7 +61,7 @@ public abstract class EndpointLifecycle<TRequest> : RawEndpoint
     ///     keeps an unmapped endpoint answering with the message that names <c>EndpointHarness</c>
     ///     rather than a bare <see cref="NullReferenceException" /> — see docs/known-issues/056.
     /// </remarks>
-    private protected EndpointProcessors ResolvedProcessors => Mapped(ConfiguredProcessors);
+    private protected EndpointProcessors ResolvedProcessors => Mapped(_configuredProcessors);
 
     /// <summary>
     ///     Runs after binding succeeds and before the message is dispatched.
@@ -142,18 +148,42 @@ public abstract class EndpointLifecycle<TRequest> : RawEndpoint
                    "change it.");
     }
 
-    /// <summary>Binds the request, using whatever <c>BindAsync</c> this tier declares.</summary>
+    /// <summary>Binds the request onto whatever this tier binds.</summary>
     /// <param name="context">The HTTP context.</param>
     /// <returns>The bound value, or the failures preventing it.</returns>
     /// <remarks>
-    ///     Every tier forwards to a public abstract <c>BindAsync</c>; what differs is who implements
-    ///     it. The two <c>BoundEndpoint&lt;…&gt;</c> tiers leave it to the author, while the generated
-    ///     tiers have it emitted into the endpoint's own <c>partial</c>. It stays a per-tier member
-    ///     rather than moving here because the bound type is the tier's, not this class's:
-    ///     <see cref="ContractEndpoint{THttpRequest,TRequest,TResponse,THttpResponse}" /> binds a wire
-    ///     DTO where the others bind the message.
+    ///     <para>
+    ///         Declared once here rather than per tier, because <typeparamref name="TRequest" />
+    ///         <em>is</em> the bound type on every tier: the message for the dispatching and streaming
+    ///         tiers, the request contract for the self-handled ones, and the wire DTO for
+    ///         <see cref="ContractEndpoint{THttpRequest,TRequest,TResponse,THttpResponse}" />, which
+    ///         passes that DTO as this class's type argument. Every tier used to declare it
+    ///         identically and forward to a <c>private protected</c> twin declared here.
+    ///     </para>
+    ///     <para>
+    ///         What differs per tier is who implements it. The two <c>BoundEndpoint&lt;…&gt;</c> tiers
+    ///         leave it to the author; every generated tier has it emitted into the endpoint's own
+    ///         <c>partial</c>, which is why an endpoint the analyzer never saw does not compile — the
+    ///         binding is an <c>override</c> the compiler requires, not a binder looked up at startup.
+    ///     </para>
+    ///     <para>
+    ///         A failure short-circuits through <see cref="OnBindFailedAsync" /> to a <c>400</c>
+    ///         carrying every collected error, and nothing is dispatched.
+    ///     </para>
     /// </remarks>
-    private protected abstract ValueTask<BindResult<TRequest>> BindBoundAsync(HttpContext context);
+    public abstract ValueTask<BindResult<TRequest>> BindAsync(HttpContext context);
+
+    /// <summary>Not used by any binding tier; configure through the typed overload the tier declares.</summary>
+    /// <param name="builder">Unused.</param>
+    /// <remarks>
+    ///     Sealed once here rather than once per tier. Every tier below configures through
+    ///     its own typed <c>Configure</c> overload, so leaving the low-level one open would let a
+    ///     subclass override a hook that is never called and wonder why its configuration is ignored.
+    ///     Sealing turns that into a compile error.
+    /// </remarks>
+    public sealed override void Configure(IRawEndpointBuilder builder)
+    {
+    }
 
     /// <summary>Dispatches the bound value and maps the outcome to a result.</summary>
     /// <param name="bound">The bound value.</param>
@@ -212,7 +242,7 @@ public abstract class EndpointLifecycle<TRequest> : RawEndpoint
             return shortCircuit;
         }
 
-        var bound = await BindBoundAsync(context);
+        var bound = await BindAsync(context);
         if (!bound.IsSuccess)
         {
             return await BindFailedResultAsync(bound, context, cancellationToken);
@@ -225,5 +255,67 @@ public abstract class EndpointLifecycle<TRequest> : RawEndpoint
         }
 
         return await ProduceResultAsync(bound.Value!, context, cancellationToken);
+    }
+
+    /// <summary>
+    ///     Builds the plan every binding tier shares: where it sits on the route table, the
+    ///     processors it registered, and the OpenAPI metadata that follows from binding
+    ///     <typeparamref name="TRequest" />.
+    /// </summary>
+    /// <param name="route">The resolved route template.</param>
+    /// <param name="httpMethods">The resolved HTTP methods.</param>
+    /// <param name="processors">The pre- and post-processors the endpoint registered.</param>
+    /// <param name="response">The success response this tier declares.</param>
+    /// <param name="applyConfigured">The metadata the endpoint's own builder accumulated.</param>
+    /// <returns>The plan.</returns>
+    /// <remarks>
+    ///     <para>
+    ///         The tiers' plans differ in two things — which builder they configure through, and what
+    ///         they declare as a success response — so everything else is here instead of in six
+    ///         near-identical copies. It also stores the processors the endpoint will run, which is
+    ///         why no tier can register them on its plan and then not run them: both come from
+    ///         <paramref name="processors" />.
+    ///     </para>
+    ///     <para>
+    ///         The declarations are explicit because a <c>RequestDelegate</c>-shaped endpoint infers
+    ///         nothing, and the request body is narrowed by the verb: a bodyless verb declares no body
+    ///         whatever the binding reads (docs/known-issues/067), while a body-carrying one owes the
+    ///         declaration so routing can answer <c>415</c> on a wrong content type rather than
+    ///         letting the binder answer <c>400</c> (docs/known-issues/065). The <c>400</c> is
+    ///         declared as a validation problem, not a plain one, because a binding failure answers
+    ///         with <c>HttpValidationProblemDetails</c> and its errors dictionary
+    ///         (docs/known-issues/055).
+    ///     </para>
+    /// </remarks>
+    private protected RawEndpointPlan BuildPlan(string route,
+        string[] httpMethods,
+        EndpointProcessors processors,
+        ProducesResponseMetadata response,
+        Action<RouteHandlerBuilder> applyConfigured)
+    {
+        _configuredProcessors = processors;
+
+        return new RawEndpointPlan
+        {
+            Route = route,
+            HttpMethods = httpMethods,
+            Processors = processors,
+            ApplyMetadata = handlerBuilder =>
+            {
+                RequestBodyMetadata.Apply(handlerBuilder, DeclaredRequestBody(httpMethods),
+                    typeof(TRequest), DeclaredFormFields());
+
+                // Attached as one entry so a single GetMetadata call retrieves the whole list —
+                // see BoundParametersMetadata's remarks.
+                if (DeclaredParameters() is { Count: > 0 } parameters)
+                {
+                    handlerBuilder.WithMetadata(new BoundParametersMetadata(parameters));
+                }
+
+                handlerBuilder.WithMetadata(response);
+                handlerBuilder.ProducesValidationProblem();
+                applyConfigured(handlerBuilder);
+            }
+        };
     }
 }
