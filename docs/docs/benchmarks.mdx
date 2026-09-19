@@ -20,9 +20,9 @@ Benchmarks measure dispatch overhead only — handlers are no-ops (a sum, or `Ta
 ## Environment
 
 ```
-BenchmarkDotNet v0.15.8, macOS Tahoe 26.6 (25G72) [Darwin 25.6.0]
+BenchmarkDotNet v0.15.8, macOS 27.0 (26A428) [Darwin 27.0.0]
 Apple M5 Pro, 18 logical / 18 physical cores
-.NET SDK 10.0.302, .NET 10.0.10, Arm64 RyuJIT
+.NET SDK 10.0.401, .NET 10.0.12, Arm64 RyuJIT
 ```
 
 Lifetimes: Synapse and MediatR use their defaults; **Mediator is registered as `Transient`** to mirror MediatR's transient handlers for an apples-to-apples DI cost. Mediator's recommended `Singleton` lifetime would lower its numbers further.
@@ -35,19 +35,19 @@ Lower is better. **Ratio** is relative to Synapse (baseline `1.00`); **Alloc** i
 
 | Library | Mean | Ratio | Allocated |
 |---|---:|---:|---:|
-| Mediator | 18.6 ns | 0.88 | 88 B |
-| **Synapse** | **21.2 ns** | **1.00** | **72 B** |
-| MediatR | 28.4 ns | 1.34 | 200 B |
-| _Synapse (direct handler)_ | _7.1 ns_ | _0.33_ | _72 B_ |
+| Mediator | 24.8 ns | 0.95 | 88 B |
+| **Synapse** | **26.2 ns** | **1.00** | **72 B** |
+| MediatR | 32.4 ns | 1.24 | 200 B |
+| _Synapse (direct handler)_ | _6.5 ns_ | _0.25_ | _72 B_ |
 
 ### Send — request without response (void)
 
 | Library | Mean | Ratio | Allocated |
 |---|---:|---:|---:|
-| **Synapse** | **17.6 ns** | **1.00** | **0 B** |
-| Mediator | 22.4 ns | 1.27 | 88 B |
-| MediatR | 30.2 ns | 1.71 | 128 B |
-| _Synapse (direct handler)_ | _3.6 ns_ | _0.20_ | _0 B_ |
+| **Synapse** | **20.1 ns** | **1.00** | **0 B** |
+| Mediator | 27.3 ns | 1.36 | 88 B |
+| MediatR | 37.3 ns | 1.85 | 128 B |
+| _Synapse (direct handler)_ | _3.7 ns_ | _0.18_ | _0 B_ |
 
 Synapse allocates **zero bytes** dispatching a void request.
 
@@ -55,9 +55,9 @@ Synapse allocates **zero bytes** dispatching a void request.
 
 | Library | Mean | Ratio | Allocated |
 |---|---:|---:|---:|
-| Mediator | 74.2 ns | 0.57 | 184 B |
-| **Synapse** | **130.6 ns** | **1.00** | **520 B** |
-| MediatR | 357.1 ns | 2.74 | 2088 B |
+| Mediator | 93.2 ns | 0.72 | 184 B |
+| **Synapse** | **129.2 ns** | **1.00** | **520 B** |
+| MediatR | 362.6 ns | 2.81 | 2088 B |
 
 Mediator's source-generated fan-out leads here; both beat MediatR by a wide margin.
 
@@ -65,17 +65,17 @@ Mediator's source-generated fan-out leads here; both beat MediatR by a wide marg
 
 | Library | Mean | Ratio | Allocated |
 |---|---:|---:|---:|
-| **Synapse** | **22.0 ns** | **1.00** | **72 B** |
-| Mediator | 29.4 ns | 1.34 | 240 B |
-| MediatR | 58.6 ns | 2.66 | 440 B |
+| **Synapse** | **24.3 ns** | **1.00** | **72 B** |
+| Mediator | 37.7 ns | 1.55 | 240 B |
+| MediatR | 63.5 ns | 2.61 | 440 B |
 
 ### Pipeline — request through 3 behaviors
 
 | Library | Mean | Ratio | Allocated |
 |---|---:|---:|---:|
-| **Synapse** | **26.3 ns** | **1.00** | **72 B** |
-| Mediator | 51.9 ns | 1.97 | 496 B |
-| MediatR | 89.3 ns | 3.40 | 728 B |
+| **Synapse** | **27.9 ns** | **1.00** | **72 B** |
+| Mediator | 58.0 ns | 2.08 | 496 B |
+| MediatR | 91.9 ns | 3.29 | 728 B |
 
 Synapse's pipeline allocation stays **flat at 72 B** regardless of behavior count, thanks to its cached, pre-composed delegate chain — competitors grow per added behavior.
 
@@ -83,8 +83,8 @@ Synapse's pipeline allocation stays **flat at 72 B** regardless of behavior coun
 
 - **Pipelines** — Synapse is fastest and flat-allocating; the gap widens as behaviors stack.
 - **Send (response)** — Mediator edges ahead on raw speed; Synapse allocates less.
-- **Send (void)** — Synapse beats Mediator (17.6 vs 22.4 ns) and allocates nothing.
-- **Publish** — Mediator's generated fan-out wins; Synapse is ~2.74× faster than MediatR.
+- **Send (void)** — Synapse beats Mediator (20.1 vs 27.3 ns) and allocates nothing.
+- **Publish** — Mediator's generated fan-out wins; Synapse is ~2.8× faster than MediatR.
 - All three vastly outperform reflection-based MediatR on both time and allocations.
 
 Pick based on your workload: pipeline-heavy / allocation-sensitive favors Synapse; raw publish throughput favors Mediator.
@@ -116,16 +116,24 @@ hand-written equivalent.
 | `HandWrittenLambda` (GET) | 9.41 KB | 1.00 | Minimal API lambda, route-only bind — baseline |
 | `SynapseEndpoint` (GET) | 9.52 KB | 1.01 | `Endpoint<T,R>` via the generated binder |
 | `RawEndpointHandWrittenBinding` (GET) | 9.52 KB | 1.01 | Low-level `BoundEndpoint<T,R>`, `BindAsync` by hand |
-| `HandWrittenLambdaWithJsonBody` (POST) | 11.55 KB | 1.23 | Minimal API lambda reading a JSON body |
+| `SynapseEndpointWithHooks` (GET) | 10.59 KB | 1.13 | Both lifecycle hooks overridden — the cost of the seam |
+| `SynapseEndpointWithProcessors` (GET) | 10.63 KB | 1.13 | One pre- and one post-processor, resolved per request |
+| `SynapseInlineEndpoint` (GET) | 8.60 KB | 0.91 | Endpoint answers itself, no mediator round-trip |
+| `SynapseEndpointWithScalarQuery` (GET) | 9.56 KB | 1.02 | Scalar query value — fixes the query-parsing cost |
+| `SynapseEndpointWithCollectionQuery` (GET) | 10.16 KB | 1.08 | Repeated query key into an array; compare against the scalar arm |
+| `HandWrittenLambdaWithJsonBody` (POST) | 11.53 KB | 1.22 | Minimal API lambda reading a JSON body |
 | `SynapseEndpointWithJsonBody` (POST) | 11.69 KB | 1.24 | Generated binder's `ReadJsonBodyAsync` path |
 
 The generated adapter adds **~0.1–0.15 KB per request (~1%)** over the hand-written route, and no
 extra Gen0 pressure. On time, the endpoint arm sits inside the hand-written arm's error bars across
 repeated runs — the adapter has no dispatch cost you can measure above the HTTP pipeline it runs in.
+Opting into lifecycle hooks or processors costs about 1.1 KB (~13%) and roughly 0.4 µs per request;
+collecting a repeated query key adds about 0.6 KB over a scalar query value. An inline endpoint that
+skips the mediator round-trip allocates ~0.9 KB less than the dispatched one.
 The high-level and low-level tiers allocate identically, as expected: the high level *is* the low
 level with its `BindAsync` generated.
 
-Environment: same machine as above, .NET SDK 10.0.400 / .NET 10.0.11.
+Environment: same machine and runtime as above.
 
 ## Running the benchmarks
 
