@@ -1819,7 +1819,26 @@ public sealed class GeneratorBehaviorTests
         return (result.Diagnostics, generatedFile?.GetText().ToString());
     }
 
+    /// <summary>
+    ///     The framework reference set, built once per process.
+    /// </summary>
+    /// <remarks>
+    ///     Built once, not per compilation. <see cref="MetadataReference.CreateFromFile(string, MetadataReferenceProperties, DocumentationProvider)" />
+    ///     has no cache: every call re-reads the file and builds a fresh <c>AssemblyMetadata</c> holding a
+    ///     memory-mapped image of it. TRUSTED_PLATFORM_ASSEMBLIES is the whole shared framework, and this
+    ///     harness compiles once per test, so rebuilding the list per call cost tens of thousands of
+    ///     mapped images per run and exhausted system memory — it OOM-killed the host twice. Roslyn's
+    ///     reference objects are immutable and designed to be shared across compilations, so one list
+    ///     serves every test.
+    /// </remarks>
+    private static readonly ImmutableArray<MetadataReference> SharedMetadataReferences = BuildMetadataReferences();
+
     private static IEnumerable<MetadataReference> GetMetadataReferences()
+    {
+        return SharedMetadataReferences;
+    }
+
+    private static ImmutableArray<MetadataReference> BuildMetadataReferences()
     {
         // Load all trusted platform assemblies (covers System.Runtime, System.Collections, etc.)
         var trustedPaths = (AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES") as string ?? string.Empty)
@@ -1836,7 +1855,7 @@ public sealed class GeneratorBehaviorTests
         // Add UnambitiousFx.Functional (Result<T> used in interface signatures)
         refs.Add(MetadataReference.CreateFromFile(typeof(UnambitiousFx.Functional.Result).Assembly.Location));
 
-        return refs;
+        return refs.ToImmutableArray();
     }
 
     // ── RootNamespace resolution ───────────────────────────────────────────

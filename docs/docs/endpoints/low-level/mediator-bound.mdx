@@ -1,0 +1,190 @@
+---
+sidebar_position: 4
+title: Mediator-bound
+description: BoundEndpoint<TRequest, TResponse> — write only the binding, inherit the dispatch, failure mapping and metadata.
+---
+
+# The middle level: mediator-bound
+
+Between "the analyzer writes everything" and "you write everything" sits the tier most people
+actually need when the high level does not fit:
+
+> **The route *is* a message. Only the binding is unusual.**
+
+`BoundEndpoint<TRequest, TResponse>` (and `BoundEndpoint<TRequest>` for a message with no response) asks
+you for `BindAsync` and nothing else. Dispatch, failure mapping, success mapping and OpenAPI metadata
+are all inherited.
+
+```csharp
+[Get("/reports")]
+public sealed partial class TagReportEndpoint : BoundEndpoint<TagReportQuery, TagReportDto>
+{
+    public override ValueTask<BindResult<TagReportQuery>> BindAsync(HttpContext context)
+    {
+        // …your binding. Everything downstream of here is identical to Endpoint<…>.
+    }
+}
+```
+
+## What you keep
+
+This is the whole reason to stop here rather than at `RawEndpoint`:
+
+| | Inherited? |
+|---|---|
+| Dispatch through `IHttpInvoker` | ✅ |
+| `IFailureHttpMapper` for handler failures | ✅ |
+| `400` from a bind failure, `HttpValidationProblemDetails` | ✅ |
+| `Configure(IEndpointBuilder<TResponse>)` — `Ok`, `Created`, `NoContent`, `StatusCode`, … | ✅ |
+| `OnSuccess(TResponse, HttpContext)` | ✅ |
+| `Accepts`/`Produces` metadata from the type arguments | ✅ |
+| Binding | ❌ — that is what you are here to write |
+
+`Endpoint<TRequest, TResponse>` differs from this class in **exactly one** respect: it takes its binder
+from the generated registry instead of asking you for one. So dropping to this tier changes only the
+binding, and nothing else about the endpoint's behaviour moves.
+
+## When to drop here
+
+| Situation | Why the six rules cannot do it |
+|---|---|
+| A header that must be split or parsed further | The value reaches you as one string |
+| A legacy query-string shape (`filter=name:asc,age:desc`) | No rule maps one key onto several properties |
+| A value that needs normalising before it is part of the message | Binding has no hook between read and construct |
+| The message must come partly from a claim or the connection | Not part of the request's route/query/header/body at all |
+
+:::note `?tag=a&tag=b` no longer belongs on this list
+A property typed `T[]`, `List<T>`, `IReadOnlyList<T>` or `IEnumerable<T>` binds a repeated query key
+or header directly — see [Repeated keys](../high-level/messages#repeated-keys). What still needs
+this tier is anything binding itself has no hook for, such as the normalising step below.
+:::
+
+## A worked example
+
+Deduplicating the repeated `tag` values case-insensitively before they reach the message — the
+repeated key itself binds automatically now, but binding still has no hook between reading a value
+and constructing the message, so normalising still needs `BindAsync`:
+
+```csharp title="The message and its handler are completely ordinary"
+public sealed record TagReportQuery(int Page, int Size, IReadOnlyList<string> Tags)
+    : IRequest<TagReportDto>;
+
+public sealed record TagReportDto(int Page, int Matched, IReadOnlyList<string> Tags);
+
+[RequestHandler<TagReportQuery, TagReportDto>]
+public sealed class TagReportQueryHandler : IRequestHandler<TagReportQuery, TagReportDto>
+{
+    private readonly TaskRepository _repository;
+
+    public TagReportQueryHandler(TaskRepository repository)
+    {
+        _repository = repository;
+    }
+
+    public ValueTask<Result<TagReportDto>> HandleAsync(
+        TagReportQuery request,
+        CancellationToken cancellationToken = default)
+    {
+        var matched = _repository.GetAll()
+            .Count(task => request.Tags.Any(tag =>
+                task.Title.Contains(tag, StringComparison.OrdinalIgnoreCase)));
+
+        return ValueTask.FromResult(Result.Success(
+            new TagReportDto(request.Page, matched, request.Tags)));
+    }
+}
+```
+
+```csharp title="Only BindAsync is hand-written"
+[Get("/reports")]
+public sealed partial class TagReportEndpoint : BoundEndpoint<TagReportQuery, TagReportDto>
+{
+    // Inherited, and identical to what Endpoint<…> would give you.
+    public override void Configure(IEndpointBuilder<TagReportDto> builder)
+    {
+        builder.Tag("Ops")
+            .Summary("Report on tasks matching any of the given tags");
+    }
+
+    public override ValueTask<BindResult<TagReportQuery>> BindAsync(HttpContext context)
+    {
+        var v = context.Validate();
+
+        v.QueryOptional<int>("size", out var size);
+
+        if (v.Query<int>("page", out var page))
+        {
+            v.Check(page >= 1, "page", "must be at least 1");
+        }
+
+        // QueryValues<T> reads and parses the repeated key — the same read the generated binder
+        // would emit for this property. What still needs BindAsync is what happens next: binding
+        // has no hook to deduplicate case-insensitively before the message is constructed.
+        if (v.QueryValues<string>("tag", out var rawTags))
+        {
+            v.Check(rawTags.Length > 0, "tag", "at least one tag is required");
+        }
+
+        var tags = rawTags
+            .Select(static tag => tag.Trim().ToLowerInvariant())
+            .Distinct()
+            .ToArray();
+
+        return ValueTask.FromResult(v.IsValid
+            ? BindResult<TagReportQuery>.Success(new TagReportQuery(page, size ?? 20, tags))
+            : BindResult<TagReportQuery>.Failure(v));
+    }
+}
+```
+
+Note what is *not* in that file: no dispatch, no `IHttpInvoker`, no failure handling, no `200 OK`. All
+inherited.
+
+## Returning a failure
+
+`BindAsync` returns `BindResult<TRequest>`. A failure short-circuits to `400` carrying every collected
+error, and the message is never dispatched.
+
+```csharp
+// From the collector — every problem it gathered.
+return ValueTask.FromResult(BindResult<TagReportQuery>.Failure(v));
+
+// Or one specific problem, keyed by field.
+return ValueTask.FromResult(
+    BindResult<TagReportQuery>.Failure("tag", "at least one tag is required"));
+```
+
+## Reading the body here too
+
+`BindAsync` is `async`-friendly, so a body read is fine:
+
+```csharp
+public override async ValueTask<BindResult<ImportCommand>> BindAsync(HttpContext context)
+{
+    var body = await context.BodyAsync<ImportPayloadDto>();
+    if (!body.IsSuccess)
+    {
+        return BindResult<ImportCommand>.Failure("body", "The payload could not be read.");
+    }
+
+    var tenant = context.Header("X-Tenant") ?? "default";
+
+    // Normalise on the way in — the hook convention binding does not have.
+    return BindResult<ImportCommand>.Success(new ImportCommand(
+        Tenant: tenant.Trim().ToLowerInvariant(),
+        Rows: body.Value!.Rows.Where(static row => row.Length > 0).ToArray()));
+}
+```
+
+## `Configure` has one sealed member
+
+This tier configures through the typed `Configure(IEndpointBuilder<TResponse>)`. The low-level
+`Configure(IRawEndpointBuilder)` overload is **sealed**, so overriding it is a compile error rather
+than a silent no-op — that hook is never called at this tier, and a subclass overriding it would
+otherwise wonder why its configuration is ignored.
+
+## Next
+
+- [Reading the request](./reading-the-request) — the helpers `BindAsync` is built from
+- [Validating](./validating) — the collector, and the one mistake to avoid
+- [High level: responses](../high-level/responses) — the response vocabulary this tier inherits

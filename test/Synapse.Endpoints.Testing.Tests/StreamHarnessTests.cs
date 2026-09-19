@@ -1,0 +1,72 @@
+using Microsoft.AspNetCore.Http;
+using UnambitiousFx.Functional;
+using UnambitiousFx.Synapse.Abstractions;
+
+namespace UnambitiousFx.Synapse.Endpoints.Testing.Tests;
+
+public sealed partial class StreamHarnessTests
+{
+    [Fact]
+    public async Task SendAsync_ForAStreamEndpoint_MaterialisesTheStreamAsAJsonArray()
+    {
+        // Arrange
+        using var harness = EndpointHarness.Create<TickerEndpoint>(options =>
+            options.HandleStream<TickerQuery, Tick>(_ => [new Tick(1), new Tick(2)]));
+
+        // Act
+        var response = await harness.Get("/ticks").SendAsync(TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Equal(StatusCodes.Status200OK, response.StatusCode);
+        var ticks = response.ReadJson<Tick[]>()!;
+        Assert.Equal([1, 2], ticks.Select(tick => tick.Value));
+    }
+
+    [Fact]
+    public async Task SendAsync_WhenAcceptIsEventStream_MaterialisesTheStreamAsServerSentEvents()
+    {
+        // Arrange
+        using var harness = EndpointHarness.Create<TickerEndpoint>(options =>
+            options.HandleStream<TickerQuery, Tick>(_ => [new Tick(7)]));
+
+        // Act
+        var response = await harness.Get("/ticks").Accept("text/event-stream")
+            .SendAsync(TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Contains("text/event-stream", response.ContentType);
+        Assert.Contains("data: {\"value\":7}", response.Body);
+    }
+
+    [Fact]
+    public async Task SendAsync_WhenAnItemFails_SkipsItAndStreamsTheRest()
+    {
+        // Arrange: the skip is IHttpInvoker.InvokeStreamAsync's behaviour, and the harness keeps
+        // that real - so the failing item disappears here exactly as it does on the wire.
+        using var harness = EndpointHarness.Create<TickerEndpoint>(options =>
+            options.HandleStream<TickerQuery, Tick>(_ => Ticks()));
+
+        // Act
+        var response = await harness.Get("/ticks").SendAsync(TestContext.Current.CancellationToken);
+
+        // Assert
+        var ticks = response.ReadJson<Tick[]>()!;
+        Assert.Equal([1, 3], ticks.Select(tick => tick.Value));
+        return;
+
+        static async IAsyncEnumerable<Result<Tick>> Ticks()
+        {
+            yield return Result.Success(new Tick(1));
+            yield return Result.Failure<Tick>("tick 2 is broken");
+            yield return Result.Success(new Tick(3));
+            await Task.CompletedTask;
+        }
+    }
+
+    internal sealed record Tick(int Value);
+
+    internal sealed record TickerQuery : IStreamRequest<Tick>;
+
+    [Get("/ticks")]
+    internal sealed partial class TickerEndpoint : StreamEndpoint<TickerQuery, Tick>;
+}

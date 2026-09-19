@@ -1,0 +1,602 @@
+---
+sidebar_position: 6
+title: Testing
+description: Exercise one endpoint through the real routing stack, without booting a host.
+---
+
+# Testing
+
+`UnambitiousFx.Synapse.Endpoints.Testing` maps one endpoint through the real ASP.NET Core routing
+stack — `UseRouting`/`UseEndpoints` around the library's own `MapEndpoint<TEndpoint>` — and hands
+back something that answers requests. The only faked service is `IInvoker`, the mediator seam a
+stubbed handler plugs into. `IHttpInvoker` and `DefaultFailureHttpMapper` stay real, so a stubbed
+failed `Result` produces the same status the application produces.
+
+## Two shapes, two purposes
+
+This package answers one question: does *this* endpoint — its binding, its dispatch, its response
+mapping — behave correctly, in isolation, without a host? `WebApplicationFactory` answers a
+different one: does the whole application behave correctly, wired together — every endpoint, every
+registered service, the real OpenAPI document, the real middleware pipeline?
+
+The harness is not a replacement for end-to-end tests. `examples/EndpointsApi.Tests` keeps its
+`WebApplicationFactory<Program>` tests deliberately — `TaskEndpointsTests`, `ContractEndpointTests`,
+`RawEndpointsTests` and the rest still boot the whole example application, because things like the
+served OpenAPI document, content-negotiation middleware ordering, and every endpoint sharing one DI
+graph are only real when the whole application is running. Reach for the harness to pin one
+endpoint's own behaviour quickly and without a host; reach for `WebApplicationFactory` when the
+question is about the assembled application rather than one endpoint.
+
+## Installing
+
+Test projects only — never the application itself:
+
+```bash
+dotnet add package UnambitiousFx.Synapse.Endpoints.Testing
+```
+
+## The first test
+
+From `examples/EndpointsApi.Tests/HarnessTests.cs`, against the real, analyzer-generated
+`GetTaskEndpoint`:
+
+```csharp
+[Fact]
+public async Task GetTask_WhenTheHandlerReportsNotFound_Returns404()
+{
+    // Arrange
+    using var harness = CreateHarness<GetTaskEndpoint>(options =>
+        options.Handle<GetTaskQuery, TaskDto>(
+            query => Result.FailNotFound<TaskDto>("Task", query.TaskId.ToString())));
+
+    // Act
+    var response = await harness.Get($"/tasks/{Guid.NewGuid()}").SendAsync(TestContext.Current.CancellationToken);
+
+    // Assert
+    response.ShouldBe().NotFound();
+}
+```
+
+`EndpointHarness.Create<TEndpoint>()` maps the endpoint once — the same `MapEndpoint<TEndpoint>`
+call an application uses — and hands back an `EndpointHarness<TEndpoint>`. `options.Handle<GetTaskQuery, TaskDto>(...)`
+stubs the one handler the endpoint dispatches to; the `404` in the assertion is not asserted by the
+harness — it is what the application's own failure mapper wrote for a `Result.FailNotFound(...)`.
+
+## What the harness actually runs
+
+`MapEndpoint<TEndpoint>` is the real call the library ships for production use, so everything that
+follows from being mapped for real also applies under the harness:
+
+**`Configure` runs once**, at map time, not per request — from `test/Synapse.Endpoints.Testing.Tests/RawEndpointHarnessTests.cs`:
+
+```csharp
+[Fact]
+public async Task SendAsync_ForARawEndpoint_RunsConfigureExactlyOnce()
+{
+    // Arrange: Configure runs at map time, so a harness that mapped twice - or that
+    // re-mapped per request - would show up here rather than as a subtle metadata bug.
+    CountingEndpoint.ConfigureCount = 0;
+    using var harness = EndpointHarness.Create<CountingEndpoint>();
+
+    // Act
+    await harness.Get("/counting").SendAsync(TestContext.Current.CancellationToken);
+    await harness.Get("/counting").SendAsync(TestContext.Current.CancellationToken);
+
+    // Assert
+    Assert.Equal(1, CountingEndpoint.ConfigureCount);
+}
+```
+
+:::note Nothing registers an endpoint's route
+A test endpoint is declared exactly like an application's: `[Get]`/`[Post]`/… on a `partial` class,
+with the route metadata and the binding both generated into that class. There is no registration step
+and no hand-rolled path for either — an endpoint with no route attribute simply has no route until its
+`Configure` declares one.
+:::
+
+**Route constraints apply**, because the real route matcher is doing the work — a value the endpoint's
+own route rejects never reaches it, from `examples/EndpointsApi.Tests/HarnessTests.cs`:
+
+```csharp
+[Fact]
+public async Task GetTask_WhenTheIdIsNotAGuid_NeverReachesTheEndpoint()
+{
+    // Arrange: the route is /tasks/{taskId:guid}, so the constraint rejects this before binding.
+    using var harness = CreateHarness<GetTaskEndpoint>(static _ => { });
+
+    // Act
+    var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+        () => harness.Get("/tasks/not-a-guid").SendAsync(TestContext.Current.CancellationToken));
+
+    // Assert
+    Assert.Contains("GET /tasks/{taskId:guid}", exception.Message);
+}
+```
+
+**Group prefixes apply**, because a grouped endpoint is mapped inside its group exactly as it is in an
+application, from `test/Synapse.Endpoints.Testing.Tests/RoutingDiagnosticsTests.cs`:
+
+```csharp
+[Fact]
+public async Task SendAsync_ForAnEndpointInAGroup_AppliesTheGroupPrefix()
+{
+    // Arrange
+    using var harness = EndpointHarness.Create<GroupedEndpoint>();
+
+    // Act
+    var response = await harness.Get("/ops/ping").SendAsync(TestContext.Current.CancellationToken);
+
+    // Assert
+    Assert.Equal(StatusCodes.Status200OK, response.StatusCode);
+    Assert.Equal("GET /ops/ping", harness.RouteDescription);
+}
+```
+
+**A wrong verb is a `405`**, not a miss — the route matches, the method does not, from the same file:
+
+```csharp
+[Fact]
+public async Task SendAsync_WhenTheVerbIsWrong_Returns405()
+{
+    // Arrange
+    using var harness = EndpointHarness.Create<ItemEndpoint>();
+
+    // Act
+    var response = await harness.Post($"/items/{Guid.NewGuid()}").SendAsync(TestContext.Current.CancellationToken);
+
+    // Assert
+    Assert.Equal(StatusCodes.Status405MethodNotAllowed, response.StatusCode);
+}
+```
+
+**An unmatched URL throws, rather than handing back routing's own `404`** — that is what happened
+above, in `GetTask_WhenTheIdIsNotAGuid_NeverReachesTheEndpoint`: the request never reached the
+endpoint under test, so `Assert.ThrowsAsync<InvalidOperationException>` wraps it, not
+`response.ShouldBe().NotFound()`. If a plain `404` were returned instead, a typo'd URL would
+silently satisfy an assertion written for the endpoint's *own* `404` — the one a handler produces by
+returning `Result.FailNotFound(...)`. The exception message names the mapped route
+(`RouteDescription`) so the mismatch is obvious immediately rather than showing up as a green test
+asserting the wrong thing.
+
+## Stubbing handlers
+
+`EndpointHarnessOptions` exposes `Handle`, `Handle` (void) and `HandleStream` overloads that stub the
+one call the endpoint dispatches to. Because the fake sits at `IInvoker` and not at `IHttpInvoker`,
+the real `IHttpInvoker` and the real failure mapper stay in the pipeline — a stubbed failed `Result`
+comes back as the status the application's own mapper writes for it, as already shown for `404`
+above.
+
+**`Handle<TRequest, TResponse>`** — a message with a response, from `examples/EndpointsApi.Tests/HarnessTests.cs`:
+
+```csharp
+[Fact]
+public async Task CreateTask_WithABody_Returns201WithTheConfiguredLocation()
+{
+    // Arrange
+    var taskId = Guid.NewGuid();
+    using var harness = CreateHarness<CreateTaskEndpoint>(options =>
+        options.Handle<CreateTaskCommand, TaskCreated>(
+            _ => Result.Success(new TaskCreated { TaskId = taskId })));
+
+    // Act
+    var response = await harness.Post("/tasks/")
+        .JsonBody(new CreateTaskCommand { Title = "Write the harness" })
+        .SendAsync(TestContext.Current.CancellationToken);
+
+    // Assert
+    response.ShouldBe()
+        .Created()
+        .Header("Location", $"/tasks/{taskId}");
+}
+```
+
+**`Handle<TRequest>`** — a command with no response, from `test/Synapse.Endpoints.Testing.Tests/StubInvokerTests.cs`:
+
+```csharp
+[Fact]
+public async Task SendAsync_ForAVoidCommand_ReturnsNoContent()
+{
+    // Arrange
+    using var harness = EndpointHarness.Create<PurgeEndpoint>(options =>
+        options.Handle<PurgeCommand>(_ => Result.Success()));
+
+    // Act
+    var response = await harness.Delete("/purge").SendAsync(TestContext.Current.CancellationToken);
+
+    // Assert
+    Assert.Equal(StatusCodes.Status204NoContent, response.StatusCode);
+}
+```
+
+**`HandleStream<TRequest, TItem>`** — a streamed sequence, from `examples/EndpointsApi.Tests/HarnessTests.cs`:
+
+```csharp
+[Fact]
+public async Task StreamTasks_WithoutAnAcceptHeader_MaterialisesAJsonArray()
+{
+    // Arrange
+    using var harness = CreateHarness<StreamTasksEndpoint>(options =>
+        options.HandleStream<StreamTasksQuery, TaskDto>(_ =>
+        [
+            new TaskDto { Id = Guid.NewGuid(), Title = "First" },
+            new TaskDto { Id = Guid.NewGuid(), Title = "Second" }
+        ]));
+
+    // Act
+    var response = await harness.Get("/tasks/stream").SendAsync(TestContext.Current.CancellationToken);
+
+    // Assert
+    response.ShouldBe().Ok();
+    Assert.Equal(2, response.ShouldBe().Json<TaskDto[]>().Length);
+}
+```
+
+Each of `Handle`/`Handle`/`HandleStream` also has an asynchronous overload —
+`Func<TRequest, CancellationToken, ValueTask<Result<TResponse>>>` and friends — for a stub that
+needs to `await` something.
+
+## Registering services
+
+`EndpointHarnessOptions.Services` is a plain `IServiceCollection`, pre-seeded with routing, logging,
+options and the Synapse ASP.NET Core services. Register anything the endpoint reads through
+`context.Service<T>()` on it, exactly as you would in `Program.cs`.
+
+JSON is configured the same way: `ConfigureHttpJsonOptions` installs a source-generated
+`JsonSerializerContext` for the harness the same way it does for the application. `examples/EndpointsApi.Tests/HarnessTests.cs`
+wraps this in a private helper so every test in the file reads the body through the application's own
+generated context rather than the default resolver:
+
+```csharp
+private static EndpointHarness<TEndpoint> CreateHarness<TEndpoint>(
+    Action<EndpointHarnessOptions> configure)
+    where TEndpoint : UnambitiousFx.Synapse.Endpoints.SynapseEndpoint, new()
+{
+    return EndpointHarness.Create<TEndpoint>(options =>
+    {
+        options.Services.ConfigureHttpJsonOptions(json =>
+            json.SerializerOptions.TypeInfoResolverChain.Insert(0, AppJsonSerializerContext.Default));
+        configure(options);
+    });
+}
+```
+
+`EndpointRequest.JsonBody` and `EndpointResponse.ReadJson`/`ShouldBe().Json<T>()` both resolve
+`IOptions<JsonOptions>` from the same service provider, so a request built with `JsonBody(...)` and a
+response read with `Json<T>()` always agree with whatever the endpoint itself serializes with.
+
+## Building the request
+
+`EndpointHarness<TEndpoint>.Get`/`Post`/`Put`/`Patch`/`Delete`/`Head`/`Options` (or the general
+`Request(method, url)`) return an `EndpointRequest`, built up fluently before `SendAsync`.
+
+**`Query`** and **`Header`**, from `test/Synapse.Endpoints.Testing.Tests/RequestBuildingTests.cs`:
+
+```csharp
+[Fact]
+public async Task Query_WhenSet_IsVisibleToTheEndpoint()
+{
+    // Arrange
+    using var harness = EndpointHarness.Create<EchoInputEndpoint>();
+
+    // Act
+    var response = await harness.Get("/echo").Query("search", "widgets").SendAsync(TestContext.Current.CancellationToken);
+
+    // Assert
+    Assert.Equal("widgets", response.ReadJson<Echo>()!.Search);
+}
+```
+
+```csharp
+[Fact]
+public async Task Header_WhenSet_IsVisibleToTheEndpoint()
+{
+    // Arrange
+    using var harness = EndpointHarness.Create<EchoInputEndpoint>();
+
+    // Act
+    var response = await harness.Get("/echo").Header("X-Tenant", "acme").SendAsync(TestContext.Current.CancellationToken);
+
+    // Assert
+    Assert.Equal("acme", response.ReadJson<Echo>()!.Tenant);
+}
+```
+
+A URL can also carry its own query string — `harness.Get("/echo?search=gadgets")` — which
+`EndpointRequest` parses out before matching the route.
+
+**`Accept`** sets the `Accept` header, most often to steer a streaming endpoint towards Server-Sent
+Events — see [Streaming](#streaming) below.
+
+**`JsonBody`** serializes a value with the harness's own `JsonOptions`, shown above in
+`CreateTask_WithABody_Returns201WithTheConfiguredLocation`. For a form-bound endpoint, **`FormBody`**
+and **`MultipartBody`** build the other two request shapes:
+
+```csharp
+// application/x-www-form-urlencoded
+harness.Post("/captions").FormBody(("caption", "hello"));
+
+// multipart/form-data — fields and files
+harness.Post($"/tasks/{taskId}/uploads")
+    .MultipartBody([("caption", "hello")], [("file", "note.txt", "hi")]);
+```
+
+`FormBody(params (string Name, string Value)[])` URL-encodes each pair and joins them with `&`.
+`MultipartBody(IEnumerable<(string Name, string Value)> fields, IEnumerable<(string Name, string FileName, string Content)> files)`
+writes a real multipart body — a fixed boundary rather than a random one, so a test asserting on a
+malformed body has something stable to reason about — with each field and each file's name and file
+name escaped per RFC 2183/6266 quoted-string rules. Both exist side by side because a form binder
+must read either content type identically: `FormBody` is what exercises the request shape
+`MultipartBody` does not need a file to demonstrate.
+
+From `test/Synapse.Endpoints.Testing.Tests/FormBindingHarnessTests.cs` — `UploadEndpoint` carries
+`[Post("/tasks/{taskId}/uploads")]` and is declared `partial`, so its binding is the analyzer's, not
+the test's; only its route metadata is registered by hand, and only because this fixture lives
+outside the assembly `MapSynapseEndpoints` would normally discover it from:
+
+```csharp
+[Fact]
+public async Task SendAsync_WithAMultipartUpload_BindsTheFileAndTheFieldAndTheRouteValue()
+{
+    // Arrange — spec §6 case 1 is a file plus a field plus a route value; routing and multipart
+    // parsing coexisting on one live request is a runtime property no emission test can assert.
+    using var harness = EndpointHarness.Create<UploadEndpoint>(options =>
+        options.Handle<UploadCommand, string>(command =>
+            Result.Success($"{command.TaskId}:{command.File.FileName}:{command.Caption}")));
+    var taskId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+
+    // Act
+    var response = await harness.Post($"/tasks/{taskId}/uploads")
+        .MultipartBody([("caption", "hello")], [("file", "note.txt", "hi")])
+        .SendAsync(TestContext.Current.CancellationToken);
+
+    // Assert
+    Assert.Equal(StatusCodes.Status200OK, response.StatusCode);
+    Assert.Equal($"{taskId}:note.txt:hello", response.ReadJson<string>());
+}
+```
+
+A JSON body sent to a form-bound endpoint is rejected before either method's shape matters —
+`test/Synapse.Endpoints.Testing.Tests/FormBindingHarnessTests.cs`'s
+`SendAsync_WithAJsonBodyToAFormEndpoint_Answers415BeforeTheBinderRuns` sends `.Body("{}", "application/json")`
+against the same route and asserts `415`, not a bind failure: the consumes matcher policy rejects it
+before the endpoint's `BindAsync` ever runs, exactly as it does outside the harness.
+
+For a body that must be sent verbatim otherwise — malformed JSON, or a content type neither `JsonBody`
+nor the two form builders produce — **`Body`** sends the bytes and content type exactly as given,
+from `test/Synapse.Endpoints.Testing.Tests/RequestBuildingTests.cs`:
+
+```csharp
+[Fact]
+public async Task Body_WhenSet_IsReadableVerbatimByTheEndpoint()
+{
+    // Arrange
+    using var harness = EndpointHarness.Create<EchoRawBodyEndpoint>();
+
+    // Act
+    var response = await harness.Post("/echo-raw").Body("<xml/>", "application/xml").SendAsync(TestContext.Current.CancellationToken);
+
+    // Assert
+    Assert.Equal("application/xml|<xml/>", response.Body);
+}
+```
+
+## Asserting
+
+`response.ShouldBe()` returns `EndpointResponseAssertions`. It throws a plain
+`EndpointAssertionException` — not a test-framework-specific assertion type — so the package works
+under xunit, NUnit and MSTest without depending on any of them. Every failure message ends with the
+actual status, content type and body, so an unexpected `400` shows the validation errors that caused
+it without a second run. `EndpointResponse` itself is public, for anyone who prefers to assert with
+their own library instead of `ShouldBe()` — reach it from an assertion chain with
+`EndpointResponseAssertions.Response`, or `ValidationProblemAssertions.Problem` for the already-parsed
+`HttpValidationProblemDetails`, rather than deserializing the body a second time.
+
+`Ok()`/`Created()`/`NoContent()`/`NotFound()` are shorthands over `Status(int)`.
+`GetTask_WithAGeneratedBinder_BindsTheRouteValueOntoTheQuery` (`examples/EndpointsApi.Tests/HarnessTests.cs`)
+chains `Ok()` straight into `Json<T>()`:
+
+```csharp
+[Fact]
+public async Task GetTask_WithAGeneratedBinder_BindsTheRouteValueOntoTheQuery()
+{
+    // Arrange
+    var taskId = Guid.NewGuid();
+    Guid? bound = null;
+    using var harness = CreateHarness<GetTaskEndpoint>(options =>
+        options.Handle<GetTaskQuery, TaskDto>(query =>
+        {
+            bound = query.TaskId;
+            return Result.Success(new TaskDto { Id = query.TaskId, Title = "Bound" });
+        }));
+
+    // Act
+    var response = await harness.Get($"/tasks/{taskId}").SendAsync(TestContext.Current.CancellationToken);
+
+    // Assert
+    Assert.Equal(taskId, bound);
+    Assert.Equal(taskId, response.ShouldBe().Ok().Json<TaskDto>().Id);
+}
+```
+
+`Created()` chained into `Header(name, value)` is shown above in the `CreateTask` example.
+`NoContent()` and `ContentType(...)`, from `test/Synapse.Endpoints.Testing.Tests/AssertionTests.cs`:
+
+```csharp
+[Fact]
+public async Task NoContent_WhenTheStatusIs204_DoesNotThrow()
+{
+    // Arrange
+    var response = await Respond<NoContentEndpoint>("/no-content");
+
+    // Act
+    var exception = Record.Exception(() => response.ShouldBe().NoContent());
+
+    // Assert
+    Assert.Null(exception);
+}
+```
+
+```csharp
+[Fact]
+public async Task ContentType_WhenItMatches_DoesNotThrow()
+{
+    // Arrange
+    var response = await Respond<OkEndpoint>("/ok");
+
+    // Act
+    var exception = Record.Exception(() => response.ShouldBe().ContentType("application/json"));
+
+    // Assert
+    Assert.Null(exception);
+}
+```
+
+`ValidationProblem()` asserts a `400` and hands back `ValidationProblemAssertions`, whose
+`WithError(field, message)` asserts a field carries exactly that message:
+
+```csharp
+[Fact]
+public async Task ValidationProblem_WithTheExpectedError_DoesNotThrow()
+{
+    // Arrange
+    var response = await Respond<ProblemEndpoint>("/problem");
+
+    // Act
+    var exception = Record.Exception(() => response.ShouldBe()
+        .ValidationProblem()
+        .WithError("taskId", "The route value is not a valid Guid.")
+        .WithErrorCount(1));
+
+    // Assert
+    Assert.Null(exception);
+}
+```
+
+`WithErrorFor(field)` asserts only that a field carries *some* error, without pinning the message —
+used below, where the message itself is not worth pinning.
+
+## Testing the binding
+
+Binding is still a half that needs the harness rather than a bare unit test on the endpoint instance
+— but not for the reason `docs/known-issues/056` originally gave. That report's `_binder!` half is
+gone along with `IEndpointBinder` itself: every generated tier's `BindAsync` is now an `override`
+requiring nothing looked up, so there is no unmapped-binder null to guard against any more. What
+still throws on an unmapped instance is `ProduceResultAsync`'s `Mapped(_configuration)` — `Configure`
+only runs once, at map time, so a `CreateTaskEndpoint` constructed and invoked directly still has no
+configuration to read. The harness maps the endpoint for real before either method runs, which is
+what makes it — rather than a bare `new CreateTaskEndpoint()` — the way to exercise binding in
+isolation. From `examples/EndpointsApi.Tests/HarnessTests.cs`:
+
+```csharp
+[Fact]
+public async Task CreateTask_WithNoTitle_Returns400WithTheParseErrorNamingTheProperty()
+{
+    // Arrange: the binding half, which before the harness needed a request over a socket.
+    using var harness = CreateHarness<CreateTaskEndpoint>(static _ => { });
+
+    // Act
+    var response = await harness.Post("/tasks/").Body("{}", "application/json").SendAsync(TestContext.Current.CancellationToken);
+
+    // Assert: the generated binder does not key this as "title" or "Title" — a required-property
+    // gap surfaces as a JsonException from the source-generated deserializer, which the binder
+    // reports as a single "body" error whose message names the missing property. Verified against
+    // the generated binder for CreateTaskCommand; the key genuinely is "body", not the field name.
+    var problem = response.ShouldBe()
+        .ValidationProblem()
+        .WithErrorFor("body")
+        .Problem;
+    Assert.Contains("title", problem.Errors["body"][0], StringComparison.Ordinal);
+}
+```
+
+That `"body"` key is specific to a missing-required-property failure: the source-generated
+deserializer throws before the binder gets a chance to attribute the failure to a property, so
+everything it knows collapses into one generic key with the property named inside the message. This
+is a known limitation of the current binder, not intended design — a form client cannot map that
+error back to a field, and it has simply not been fixed yet. Not every binding failure looks like
+this — a route or query value that fails to parse genuinely is keyed by its own field, as
+`WithError("taskId", "The route value is not a valid Guid.")` above shows, and as
+`SendAsync_WhenBindingFails_Returns400WithTheFieldThatFailed`
+(`test/Synapse.Endpoints.Testing.Tests/BinderTierHarnessTests.cs`) shows again — against the generated
+binder itself this time, rather than a stub, since a real bad route value is now the only way to make
+a generated binding fail:
+
+```csharp
+[Fact]
+public async Task SendAsync_WhenBindingFails_Returns400WithTheFieldThatFailed()
+{
+    // Arrange — a real bad value rather than a stubbed failure: the binding is generated now, so
+    // the only way to make it fail is to send something it cannot parse.
+    using var harness = EndpointHarness.Create<RejectingEndpoint>();
+
+    // Act
+    var response = await harness.Get("/rejecting/not-a-guid").SendAsync(TestContext.Current.CancellationToken);
+
+    // Assert
+    Assert.Equal(StatusCodes.Status400BadRequest, response.StatusCode);
+    var problem = response.ReadValidationProblem();
+    Assert.Equal("The route value is not a valid System.Guid.", Assert.Single(problem.Errors["taskId"]));
+}
+```
+
+Do not assume every `400` this harness produces is field-keyed, or that every one collapses into
+`"body"` — check which shape applies before writing `WithError` against a specific field.
+
+## Streaming
+
+A streaming endpoint's whole response is captured before `SendAsync` returns, so the body is the
+complete materialised sequence rather than a stream still being written. Without an `Accept` header
+it defaults to a JSON array — shown above in `StreamTasks_WithoutAnAcceptHeader_MaterialisesAJsonArray`.
+Asking for `text/event-stream` switches the transport, from `test/Synapse.Endpoints.Testing.Tests/StreamHarnessTests.cs`:
+
+```csharp
+[Fact]
+public async Task SendAsync_WhenAcceptIsEventStream_MaterialisesTheStreamAsServerSentEvents()
+{
+    // Arrange
+    using var harness = EndpointHarness.Create<TickerEndpoint>(options =>
+        options.HandleStream<TickerQuery, Tick>(_ => [new Tick(7)]));
+
+    // Act
+    var response = await harness.Get("/ticks").Accept("text/event-stream")
+        .SendAsync(TestContext.Current.CancellationToken);
+
+    // Assert
+    Assert.Contains("text/event-stream", response.ContentType);
+    Assert.Contains("data: {\"value\":7}", response.Body);
+}
+```
+
+A failed item is skipped rather than surfaced — `IHttpInvoker.InvokeStreamAsync`'s own behaviour, and
+the harness keeps it real rather than papering over it:
+
+```csharp
+[Fact]
+public async Task SendAsync_WhenAnItemFails_SkipsItAndStreamsTheRest()
+{
+    // Arrange: the skip is IHttpInvoker.InvokeStreamAsync's behaviour, and the harness keeps
+    // that real - so the failing item disappears here exactly as it does on the wire.
+    using var harness = EndpointHarness.Create<TickerEndpoint>(options =>
+        options.HandleStream<TickerQuery, Tick>(_ => Ticks()));
+
+    // Act
+    var response = await harness.Get("/ticks").SendAsync(TestContext.Current.CancellationToken);
+
+    // Assert
+    var ticks = response.ReadJson<Tick[]>()!;
+    Assert.Equal([1, 3], ticks.Select(tick => tick.Value));
+    return;
+
+    static async IAsyncEnumerable<Result<Tick>> Ticks()
+    {
+        yield return Result.Success(new Tick(1));
+        yield return Result.Failure<Tick>("tick 2 is broken");
+        yield return Result.Success(new Tick(3));
+        await Task.CompletedTask;
+    }
+}
+```
+
+`HandleStream` has an overload for exactly this — `Func<TRequest, IAsyncEnumerable<Result<TItem>>>` —
+so a test can stub per-item failures directly, alongside the simpler `IEnumerable<TItem>` overload
+used everywhere else on this page.

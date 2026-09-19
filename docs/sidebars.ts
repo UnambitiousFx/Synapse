@@ -27,6 +27,50 @@ const sidebars: SidebarsConfig = {
     },
     {
       type: 'category',
+      label: 'Endpoints',
+      link: {type: 'doc', id: 'endpoints/index'},
+      items: [
+        'endpoints/quickstart',
+        {
+          type: 'category',
+          label: 'High level',
+          items: [
+            'endpoints/high-level/overview',
+            'endpoints/high-level/messages',
+            'endpoints/high-level/responses',
+            'endpoints/high-level/groups',
+            'endpoints/high-level/streaming',
+            'endpoints/high-level/inline',
+          ],
+        },
+        {
+          type: 'category',
+          label: 'Low level',
+          items: [
+            'endpoints/low-level/overview',
+            'endpoints/low-level/reading-the-request',
+            'endpoints/low-level/validating',
+            'endpoints/low-level/mediator-bound',
+          ],
+        },
+        {
+          type: 'category',
+          label: 'Reference',
+          items: [
+            'endpoints/reference/base-classes',
+            'endpoints/reference/openapi',
+            'endpoints/reference/native-aot',
+            'endpoints/reference/diagnostics',
+            'endpoints/reference/escape-hatches',
+            'endpoints/reference/testing',
+            'endpoints/reference/lifecycle',
+            'endpoints/reference/preview',
+          ],
+        },
+      ],
+    },
+    {
+      type: 'category',
       label: 'Performance',
       items: ['benchmarks'],
     },

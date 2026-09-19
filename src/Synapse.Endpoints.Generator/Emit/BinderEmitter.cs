@@ -1,0 +1,591 @@
+using System.Text;
+using Microsoft.CodeAnalysis.CSharp;
+using UnambitiousFx.Synapse.Endpoints.Generator.Emit.ValueReads;
+using UnambitiousFx.Synapse.Endpoints.Generator.Model;
+
+namespace UnambitiousFx.Synapse.Endpoints.Generator.Emit;
+
+/// <summary>
+///     Renders one binding: the statements that assign route, query, header, form and body values
+///     directly onto a message's properties. Direct assignment (rather than reflection) is what keeps
+///     request binding reflection-free and AOT-safe at runtime.
+/// </summary>
+/// <remarks>
+///     One caller: <see cref="EndpointPartialEmitter" /> places <see cref="EmitBindBody" /> inside the
+///     endpoint's own reopened class, which is where the binding belongs. The message-keyed companion
+///     class this used to be wrapped in is gone — every tier's binding is now an <c>override</c> the
+///     compiler requires.
+/// </remarks>
+internal static class BinderEmitter
+{
+    private const string BindingNamespace = "global::UnambitiousFx.Synapse.Endpoints.Binding";
+    private const string InternalNamespace = "global::UnambitiousFx.Synapse.Endpoints.Internal";
+
+    /// <summary>The indent the value-read emitters write their statements at.</summary>
+    private const int ValueReadIndent = 8;
+
+    /// <summary>
+    ///     Renders the statements of one binding — the JSON or form read, the value reads, and the
+    ///     construction of the bound type — at the given indent.
+    /// </summary>
+    /// <param name="builder">The buffer to append to.</param>
+    /// <param name="boundType">The type to bind and its resolved properties.</param>
+    /// <param name="indent">The leading whitespace for each emitted statement.</param>
+    /// <remarks>
+    ///     Separated from the declaration wrapper so <c>EndpointPartialEmitter</c> can place the same
+    ///     statements inside a reopened endpoint class. Nothing about what a binding *does* changed
+    ///     when it moved: the value-read emitters under <c>Emit/ValueReads/</c> are untouched, and
+    ///     <see cref="AppendIndented" /> is what reconciles their fixed indent with
+    ///     <paramref name="indent" /> without them having to know about it.
+    /// </remarks>
+    internal static void EmitBindBody(StringBuilder builder,
+        BoundTypeInfo boundType,
+        string indent)
+    {
+        var typeFullName = boundType.TypeFullName;
+        var properties = boundType.Properties;
+
+        var hasJsonBodyProperty = HasSource(boundType, BindingSource.Body);
+        var hasFormProperty = HasSource(boundType, BindingSource.Form);
+
+        // "Constructs the message itself" is what the rest of this method branches on, and it is not
+        // the same question as "carries a body": a form-bound message carries one and is still built
+        // here, because nothing deserialized it. Primary-constructor construction and `required`
+        // members in the object initializer both belong to that case.
+        var constructsMessage = !hasJsonBodyProperty;
+
+        // Which properties the constructor will consume, decided before anything is emitted so that a
+        // consumed property does not also get a presence flag it would never read. The value is the
+        // parameter's default expression, if it declares one, which becomes the local's initial value
+        // so an absent optional value falls back to the declared default instead of overwriting it.
+        var consumedByConstructor = ConsumedByConstructor(boundType);
+
+        if (hasJsonBodyProperty)
+        {
+            builder.AppendLine(
+                $"{indent}var body = await {BindingNamespace}.BindingHelpers.ReadJsonBodyAsync<{typeFullName}>(context);");
+            builder.AppendLine($"{indent}if (!body.IsSuccess)");
+            builder.AppendLine($"{indent}{{");
+            builder.AppendLine($"{indent}    // A body that cannot be read at all is reported on its own: with no");
+            builder.AppendLine($"{indent}    // deserialized message there is nothing left to bind the other values onto.");
+            builder.AppendLine($"{indent}    return body;");
+            builder.AppendLine($"{indent}}}");
+            builder.AppendLine();
+        }
+        else if (hasFormProperty)
+        {
+            builder.AppendLine($"{indent}var form = await {BindingNamespace}.BindingHelpers.ReadFormAsync(context);");
+            builder.AppendLine($"{indent}if (!form.IsSuccess)");
+            builder.AppendLine($"{indent}{{");
+            builder.AppendLine($"{indent}    // The synchronous field readers below serve from the form's cache,");
+            builder.AppendLine($"{indent}    // so a body that could not be parsed at all is reported on its own.");
+            builder.AppendLine($"{indent}    // Retyped rather than restated: ReadFormAsync's own reason names the");
+            builder.AppendLine($"{indent}    // content type sent or what was wrong with the body, and a constant here");
+            builder.AppendLine($"{indent}    // would throw all of that away.");
+            builder.AppendLine(
+                $"{indent}    return {BindingNamespace}.BindResult<{typeFullName}>.Failure(form);");
+            builder.AppendLine($"{indent}}}");
+            builder.AppendLine();
+        }
+
+        // Every route, query and header value is read first and its problems collected, so a request
+        // with several bad values answers with all of them at once instead of only the first. The
+        // collector is declared only when there is something to collect, or it would be an unused
+        // local in the generated code.
+        var bindable = new List<BindablePropertyModel>();
+        foreach (var property in properties)
+        {
+            if (property.Source != BindingSource.Body)
+            {
+                bindable.Add(property);
+            }
+        }
+
+        if (bindable.Count > 0)
+        {
+            builder.AppendLine($"{indent}var validation = new {BindingNamespace}.BindingValidator(context);");
+            builder.AppendLine();
+        }
+
+        // A `required` property the constructor does not cover has to be set in the object initializer
+        // of the `new` expression: C# enforces `required` at the creation site, and neither a later
+        // assignment nor a `with` expression satisfies it (CS9035). Only relevant where this binding
+        // constructs the message — a body-bound message was constructed by the deserializer, which
+        // satisfied its required members already.
+        var initializerProperties = new List<BindablePropertyModel>();
+        if (constructsMessage)
+        {
+            foreach (var property in bindable)
+            {
+                if (property.IsRequired && !consumedByConstructor.ContainsKey(property.Name))
+                {
+                    initializerProperties.Add(property);
+                }
+            }
+        }
+
+        var initializerNames = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var property in initializerProperties)
+        {
+            initializerNames.Add(property.Name);
+        }
+
+        var reads = new List<ValueRead>();
+        foreach (var property in bindable)
+        {
+            var consumed = consumedByConstructor.TryGetValue(property.Name, out var constructorDefault);
+            var read = new StringBuilder();
+            reads.Add(ValueReadEmitter.Emit(new ValueReadContext(
+                read, property, consumed, initializerNames.Contains(property.Name),
+                consumed ? constructorDefault : null)));
+            AppendIndented(builder, read.ToString(), indent);
+            builder.AppendLine();
+        }
+
+        if (reads.Count > 0)
+        {
+            builder.AppendLine($"{indent}if (!validation.IsValid)");
+            builder.AppendLine($"{indent}{{");
+            builder.AppendLine(
+                $"{indent}    return {BindingNamespace}.BindResult<{typeFullName}>.Failure(validation);");
+            builder.AppendLine($"{indent}}}");
+            builder.AppendLine();
+        }
+
+        if (constructsMessage)
+        {
+            var initializer = FormatObjectInitializer(initializerProperties);
+
+            if (boundType.HasParameterlessConstructor)
+            {
+                builder.AppendLine($"{indent}var message = new {typeFullName}(){initializer};");
+            }
+            else
+            {
+                EmitPrimaryConstructorCall(builder, typeFullName,
+                    boundType.PrimaryConstructorParameters, initializer, indent);
+            }
+        }
+        else
+        {
+            builder.AppendLine($"{indent}var message = body.Value!;");
+        }
+
+        foreach (var read in reads)
+        {
+            if (read.ConsumedByConstructor || read.SetInInitializer)
+            {
+                continue;
+            }
+
+            EmitAssignment(builder, read, indent);
+        }
+
+        builder.AppendLine();
+        builder.AppendLine($"{indent}return {BindingNamespace}.BindResult<{typeFullName}>.Success(message);");
+    }
+
+    /// <summary>
+    ///     Appends a value read's statements, shifted right if the surrounding method is indented
+    ///     deeper than the shape emitters assume.
+    /// </summary>
+    /// <remarks>
+    ///     The emitters under <c>Emit/ValueReads/</c> write at a fixed <see cref="ValueReadIndent" />,
+    ///     which is exactly right for a binder class and for an endpoint declared at namespace scope.
+    ///     An endpoint nested inside another type sits deeper, and the difference is padded here
+    ///     rather than threaded through every shape emitter — a no-op whenever the two agree, so the
+    ///     statements those emitters produce are unchanged for every endpoint that is not nested.
+    /// </remarks>
+    private static void AppendIndented(StringBuilder builder,
+        string read,
+        string indent)
+    {
+        if (indent.Length <= ValueReadIndent)
+        {
+            builder.Append(read);
+            return;
+        }
+
+        var padding = new string(' ', indent.Length - ValueReadIndent);
+        var lines = read.Split('\n');
+
+        // Every shape emitter ends on AppendLine, so Split leaves one empty element for that trailing
+        // newline. Dropping only that element — rather than every empty one — keeps a blank line the
+        // emitter wrote, so a nested endpoint's statements stay line-for-line what a top-level one's
+        // would be.
+        var count = lines.Length > 0 && lines[lines.Length - 1].Length == 0
+            ? lines.Length - 1
+            : lines.Length;
+
+        for (var i = 0; i < count; i++)
+        {
+            var line = lines[i].TrimEnd('\r');
+            builder.AppendLine(line.Length == 0 ? string.Empty : padding + line);
+        }
+    }
+
+    /// <summary>Whether any of the bound type's properties binds from the given source.</summary>
+    private static bool HasSource(BoundTypeInfo boundType,
+        BindingSource source)
+    {
+        foreach (var property in boundType.Properties)
+        {
+            if (property.Source == source)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>The <c>RequestBodyKind</c> member name the binding reads its body as.</summary>
+    internal static string BodyKindName(BoundTypeInfo boundType)
+    {
+        return HasSource(boundType, BindingSource.Body)
+            ? "Json"
+            : HasSource(boundType, BindingSource.Form)
+                ? "Form"
+                : "None";
+    }
+
+    /// <summary>
+    ///     Which properties the type's constructor consumes, or an empty map when the binding does not
+    ///     construct the message (a JSON body-bound message is constructed by the deserializer) or the
+    ///     type has a parameterless constructor.
+    /// </summary>
+    internal static Dictionary<string, string?> ConsumedByConstructor(BoundTypeInfo boundType)
+    {
+        return !HasSource(boundType, BindingSource.Body) && !boundType.HasParameterlessConstructor
+            ? ResolveConstructorConsumption(boundType.PrimaryConstructorParameters)
+            : new Dictionary<string, string?>(StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    ///     Which properties the constructor consumes, mapped to the default expression of the
+    ///     parameter that consumes each one (null when that parameter has no default).
+    /// </summary>
+    /// <remarks>
+    ///     The match itself is resolved during analysis, where the types are still symbols, and merely
+    ///     read here — matching by name in the emitter could only compare strings, and a name match is
+    ///     not enough to know the value can be passed to the parameter. Computed up front so that
+    ///     <see cref="ValueReadEmitter.Emit" /> knows not to emit a presence flag for a property whose value
+    ///     goes into the constructor, where it is passed whether it was present or not — an unread
+    ///     flag would be a warning in the generated code.
+    /// </remarks>
+    private static Dictionary<string, string?> ResolveConstructorConsumption(
+        EquatableArray<ConstructorParameterModel> parameters)
+    {
+        var consumed = new Dictionary<string, string?>(StringComparer.Ordinal);
+        foreach (var parameter in parameters)
+        {
+            if (parameter.MatchedPropertyName is not null)
+            {
+                consumed[parameter.MatchedPropertyName] = parameter.DefaultValueExpression;
+            }
+        }
+
+        return consumed;
+    }
+
+    /// <summary>
+    ///     The object-initializer clause setting the <c>required</c> properties construction has to
+    ///     cover, or an empty string when there are none.
+    /// </summary>
+    private static string FormatObjectInitializer(List<BindablePropertyModel> properties)
+    {
+        if (properties.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        var assignments = new List<string>();
+        foreach (var property in properties)
+        {
+            assignments.Add($"{EscapeIdentifier(property.Name)} = {ValueReadEmitter.ValueLocal(property)}");
+        }
+
+        return " { " + string.Join(", ", assignments) + " }";
+    }
+
+    /// <summary>
+    ///     Emits the argument list for the type's primary constructor and the <c>new T(...)</c> call.
+    ///     Every argument is already sitting in a local computed by <see cref="ValueReadEmitter.Emit" />, and
+    ///     the validity check has already returned if anything failed, so construction here always
+    ///     runs on values that actually parsed. A parameter with no matching property (never resolved
+    ///     as bindable, or resolved but omitted for having no viable <c>TryParse</c> — SYNE012) is
+    ///     passed a literal default: <c>default!</c> for a reference type, so the null-forgiving
+    ///     operator suppresses the nullable-reference warning bare <c>default</c> would raise on the
+    ///     generated code, and bare <c>default</c> for a value type, which needs no suppression.
+    /// </summary>
+    private static void EmitPrimaryConstructorCall(StringBuilder builder,
+        string typeFullName,
+        EquatableArray<ConstructorParameterModel> parameters,
+        string initializer,
+        string indent)
+    {
+        var argumentExpressions = new List<string>();
+
+        foreach (var parameter in parameters)
+        {
+            if (parameter.MatchedPropertyName is not null)
+            {
+                argumentExpressions.Add("value" + parameter.MatchedPropertyName);
+                continue;
+            }
+
+            // Its own default beats a synthesized one: an unmatched parameter that declares a default
+            // means it, and passing `default` over the top of it discards the type's own intent.
+            argumentExpressions.Add(parameter.DefaultValueExpression
+                                    ?? (parameter.IsReferenceType ? "default!" : "default"));
+        }
+
+        builder.AppendLine(
+            $"{indent}var message = new {typeFullName}({string.Join(", ", argumentExpressions)}){initializer};");
+    }
+
+    private static void EmitAssignment(StringBuilder builder,
+        ValueRead read,
+        string indent)
+    {
+        var propertyName = EscapeIdentifier(read.Property.Name);
+        var assignmentIndent = read.PresenceLocal is null ? indent : indent + "    ";
+
+        if (read.PresenceLocal is not null)
+        {
+            builder.AppendLine($"{indent}if ({read.PresenceLocal})");
+            builder.AppendLine($"{indent}{{");
+        }
+
+        builder.AppendLine(read.Property.IsRecordWith
+            ? $"{assignmentIndent}message = message with {{ {propertyName} = {read.ValueLocal} }};"
+            : $"{assignmentIndent}message.{propertyName} = {read.ValueLocal};");
+
+        if (read.PresenceLocal is not null)
+        {
+            builder.AppendLine($"{indent}}}");
+        }
+    }
+
+    /// <summary>
+    ///     Emits the <c>static readonly</c> array of OpenAPI parameter metadata, or nothing when no
+    ///     property maps to an OpenAPI parameter.
+    /// </summary>
+    /// <param name="builder">The buffer to append to.</param>
+    /// <param name="boundType">The type to bind and its resolved properties.</param>
+    /// <param name="indent">The leading whitespace for the field declaration.</param>
+    /// <param name="fieldName">The name to give the backing field.</param>
+    /// <returns>Whether anything was emitted, so the caller can render the member that reads it.</returns>
+    /// <remarks>
+    ///     Nothing rather than an empty array: the base implementation already answers "no
+    ///     parameters", and every body-bound endpoint would otherwise carry a dead member. The field
+    ///     is <c>static readonly</c> so the array is allocated once per endpoint — endpoints are
+    ///     singletons, so a member returning a fresh array would allocate on every read.
+    /// </remarks>
+    internal static bool EmitParametersArray(StringBuilder builder,
+        BoundTypeInfo boundType,
+        string indent,
+        string fieldName)
+    {
+        var consumedByConstructor = ConsumedByConstructor(boundType);
+
+        var parameters = new List<BindablePropertyModel>();
+        foreach (var property in boundType.Properties)
+        {
+            if (TryMapLocation(property.Source, out _))
+            {
+                parameters.Add(property);
+            }
+        }
+
+        if (parameters.Count == 0)
+        {
+            return false;
+        }
+
+        builder.AppendLine(
+            $"{indent}private static readonly {InternalNamespace}.BoundParameterMetadata[] {fieldName} =");
+        builder.AppendLine($"{indent}[");
+
+        foreach (var property in parameters)
+        {
+            TryMapLocation(property.Source, out var location);
+
+            builder.AppendLine($"{indent}    new()");
+            builder.AppendLine($"{indent}    {{");
+            builder.AppendLine($"{indent}        Name = \"{property.SourceKey}\",");
+            builder.AppendLine(
+                $"{indent}        Location = {InternalNamespace}.BoundParameterLocation.{location},");
+            builder.AppendLine(
+                $"{indent}        Required = {(RejectsAbsence(property, consumedByConstructor) ? "true" : "false")},");
+            builder.AppendLine(
+                $"{indent}        IsArray = {(property.Shape == BindingValueShape.Collection ? "true" : "false")},");
+            builder.AppendLine($"{indent}        ValueType = typeof({property.TypeFullName}),");
+            builder.AppendLine($"{indent}    }},");
+        }
+
+        builder.AppendLine($"{indent}];");
+        return true;
+    }
+
+    /// <summary>
+    ///     Emits the <c>static readonly</c> array of form-field metadata, or nothing when the message
+    ///     is not form-bound.
+    /// </summary>
+    /// <param name="builder">The buffer to append to.</param>
+    /// <param name="boundType">The type to bind and its resolved properties.</param>
+    /// <param name="indent">The leading whitespace for the field declaration.</param>
+    /// <param name="fieldName">The name to give the backing field.</param>
+    /// <returns>Whether anything was emitted, so the caller can render the member that reads it.</returns>
+    /// <remarks>
+    ///     Mirrors <see cref="EmitParametersArray" />, including the <c>static readonly</c> backing
+    ///     field and the emit-nothing-when-empty rule. Kept as a second method rather than a
+    ///     parameterised one because the two select different properties and produce different types,
+    ///     and merging them would mean a flag argument at every call site.
+    /// </remarks>
+    internal static bool EmitFormFieldsArray(StringBuilder builder,
+        BoundTypeInfo boundType,
+        string indent,
+        string fieldName)
+    {
+        var consumedByConstructor = ConsumedByConstructor(boundType);
+
+        var fields = new List<BindablePropertyModel>();
+        foreach (var property in boundType.Properties)
+        {
+            if (property.Source == BindingSource.Form)
+            {
+                fields.Add(property);
+            }
+        }
+
+        if (fields.Count == 0)
+        {
+            return false;
+        }
+
+        builder.AppendLine(
+            $"{indent}private static readonly {InternalNamespace}.FormFieldMetadata[] {fieldName} =");
+        builder.AppendLine($"{indent}[");
+
+        foreach (var property in fields)
+        {
+            var isArray = property.Shape is BindingValueShape.Collection
+                or BindingValueShape.FormFileCollection;
+
+            builder.AppendLine($"{indent}    new()");
+            builder.AppendLine($"{indent}    {{");
+            builder.AppendLine($"{indent}        Name = \"{property.SourceKey}\",");
+            builder.AppendLine(
+                $"{indent}        Required = {(RejectsAbsence(property, consumedByConstructor) ? "true" : "false")},");
+            builder.AppendLine($"{indent}        IsArray = {(isArray ? "true" : "false")},");
+            builder.AppendLine($"{indent}        ValueType = typeof({FieldValueType(property)}),");
+            builder.AppendLine($"{indent}    }},");
+        }
+
+        builder.AppendLine($"{indent}];");
+        return true;
+    }
+
+    /// <summary>
+    ///     Whether the binder rejects a request that omits this value — the documented meaning of both
+    ///     <c>BoundParameterMetadata.Required</c> and <c>FormFieldMetadata.Required</c>.
+    /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         Deliberately <em>not</em> <c>IsRequired || !IsNullable</c>. That formula described the
+    ///         declaration site rather than the wire, and over-reported in three ways that are each
+    ///         checkable against the value-read emitters — so please do not "restore" the
+    ///         <c>IsRequired ||</c> term thinking it was omitted by accident.
+    ///     </para>
+    ///     <para>
+    ///         <b>A constructor default accepts absence.</b> For
+    ///         <c>record ListUsers(int Page = 1)</c>, <see cref="ScalarValueReadEmitter" /> seeds the
+    ///         local with the parameter's default expression and never reports a missing value (see
+    ///         docs/known-issues/060), so the request succeeds while <c>required: true</c> claimed it
+    ///         would not.
+    ///     </para>
+    ///     <para>
+    ///         <b>A collection never reports required.</b> Both
+    ///         <see cref="CollectionValueReadEmitter" /> and
+    ///         <see cref="FormFileCollectionValueReadEmitter" /> say so in their own remarks: HTTP
+    ///         cannot express zero values under a key, so an absent repeated key binds an empty
+    ///         collection. A non-nullable <c>string[] Tags</c> or <c>IFormFile[] Files</c> binds fine.
+    ///     </para>
+    ///     <para>
+    ///         <b>C# <c>required</c> is a construction-site concern, not a wire one.</b>
+    ///         <c>BindablePropertyModel.IsRequired</c> exists for CS9035 — the object initializer has
+    ///         to set the member — and says nothing about what the request must carry.
+    ///         <c>required string? Sort</c> binds null and answers <c>200</c>.
+    ///     </para>
+    /// </remarks>
+    private static bool RejectsAbsence(BindablePropertyModel property,
+        Dictionary<string, string?> consumedByConstructor)
+    {
+        if (consumedByConstructor.TryGetValue(property.Name, out var constructorDefault) &&
+            constructorDefault is not null)
+        {
+            return false;
+        }
+
+        return !property.IsNullable &&
+               property.Shape is BindingValueShape.Scalar or BindingValueShape.FormFile;
+    }
+
+    /// <summary>The type to emit for one form field's <c>ValueType</c>.</summary>
+    /// <remarks>
+    ///     A file part emits <c>IFormFile</c> as a literal rather than the property's own
+    ///     <c>TypeFullName</c>. For the single-file shape those coincide, but for
+    ///     <c>FormFileCollection</c> they do not: that shape's emitter
+    ///     (<c>FormFileCollectionValueReadEmitter</c>) never reads <c>TypeFullName</c> — it emits
+    ///     <c>context.Request.Form.Files</c> or <c>GetFormFiles(...)</c> — so the model's value there
+    ///     is the declared collection type. Emitting it would break the
+    ///     <c>ValueType == typeof(IFormFile)</c> test the OpenAPI package uses to recognise a file
+    ///     part, and a file array would silently render as a plain string array with no
+    ///     <c>format: binary</c>. The array-ness is already carried by <c>IsArray</c>.
+    /// </remarks>
+    private static string FieldValueType(BindablePropertyModel property)
+    {
+        return property.Shape is BindingValueShape.FormFile or BindingValueShape.FormFileCollection
+            ? "global::Microsoft.AspNetCore.Http.IFormFile"
+            : property.TypeFullName;
+    }
+
+    /// <summary>Maps a binding source onto an OpenAPI parameter location, if it is one.</summary>
+    /// <remarks>
+    ///     <c>Form</c> goes to <c>FormFields</c> and <c>Body</c> is described by <c>Accepts</c>, so
+    ///     neither is a parameter. Returning false for them rather than throwing keeps this the single
+    ///     place that decides which sources are parameters.
+    /// </remarks>
+    private static bool TryMapLocation(BindingSource source, out string location)
+    {
+        switch (source)
+        {
+            case BindingSource.Route:
+                location = "Path";
+                return true;
+            case BindingSource.Query:
+                location = "Query";
+                return true;
+            case BindingSource.Header:
+                location = "Header";
+                return true;
+            default:
+                location = string.Empty;
+                return false;
+        }
+    }
+
+    /// <summary>
+    ///     A symbol's bare <c>Name</c> (unlike <see cref="SymbolDisplay" /> output) is never escaped,
+    ///     so a property legitimately named after a reserved word (declared as <c>@class</c>, say)
+    ///     would otherwise be emitted as an unescaped keyword and fail to compile.
+    /// </summary>
+    private static string EscapeIdentifier(string name)
+    {
+        return SyntaxFacts.GetKeywordKind(name) != SyntaxKind.None ||
+               SyntaxFacts.GetContextualKeywordKind(name) != SyntaxKind.None
+            ? "@" + name
+            : name;
+    }
+}

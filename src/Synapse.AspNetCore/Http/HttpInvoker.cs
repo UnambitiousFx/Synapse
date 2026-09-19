@@ -44,6 +44,18 @@ internal sealed class HttpInvoker : IHttpInvoker
             .AsHttpBuilder(_failureMapper);
     }
 
+    public async ValueTask<IResult> InvokeAsync<TRequest>(TRequest request,
+        Func<IResult> onSuccess, CancellationToken cancellationToken = default) where TRequest : IRequest
+    {
+        var result = await _invoker.InvokeAsync(request, cancellationToken);
+        if (result.IsSuccess)
+        {
+            return onSuccess();
+        }
+
+        return await ValueTask.FromResult(result).AsHttpBuilder(_failureMapper);
+    }
+
     public async IAsyncEnumerable<TItem> InvokeStreamAsync<TItem>(IStreamRequest<TItem> request,
         [EnumeratorCancellation] CancellationToken cancellationToken = default) where TItem : notnull
     {

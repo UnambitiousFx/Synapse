@@ -1,0 +1,460 @@
+---
+sidebar_position: 2
+title: Messages & binding
+description: How route, query, header, form and body values reach your message — the six rules, optionality, required members, and why a positional record is better.
+---
+
+# Messages & binding
+
+Binding is the whole job of the high level: getting values off the request and into your message. It
+is decided entirely by the message's shape, at compile time.
+
+## The six binding rules
+
+Each property of the message is matched against the route, the query string, headers, the form and the
+body by six rules, applied in order. **The first rule that applies wins.**
+
+| # | Rule |
+|---|---|
+| 1 | `[NotBound]` excludes the property from the generated bindings, regardless of anything else |
+| 2 | `[FromRoute]` / `[FromQuery]` / `[FromHeader]` / `[FromForm]` / `[FromBody]` pins the source explicitly, with the key taken from the attribute's name or else the property name |
+| 3 | A property typed `IFormFile`, `IFormFileCollection`, or a supported collection of `IFormFile`, binds from the form — no attribute needed |
+| 4 | A name matching a route template parameter (case-insensitively) binds from the route |
+| 5 | On a bodyless verb (`GET` / `DELETE` / `HEAD` / `OPTIONS` / `TRACE`), an unmatched property binds from the query string |
+| 6 | Otherwise: the form, if anything on the message is already form-bound (rule 2 or rule 3) — otherwise the request body |
+
+Rule 4 still runs ahead of the form: a route-named property binds from the route on a multipart
+request exactly as it does on a JSON one. Rule 6 is the only one that looks at the *rest* of the
+message rather than at the property in front of it — see [Forms and files](#forms-and-files) below.
+
+Worked through one message:
+
+```csharp
+[Put("/tasks/{taskId:guid}")]
+public sealed partial class UpdateTaskEndpoint : Endpoint<UpdateTaskCommand>;
+
+public sealed record UpdateTaskCommand : IRequest
+{
+    // Rule 4: the name matches {taskId} in the route template.
+    public Guid TaskId { get; init; }
+
+    // Rule 6: PUT carries a body, nothing else claimed this property, and nothing on the
+    // message is form-bound, so it falls through to the body.
+    public required string Title { get; init; }
+
+    // Rule 2: headers are never bound by convention, so this attribute is the only way.
+    [FromHeader("If-Match")]
+    public string? ETag { get; init; }
+
+    // Rule 1: set by a pipeline behaviour, never by the caller. [JsonIgnore] is required
+    // alongside it here -- see the note below.
+    [NotBound]
+    [JsonIgnore]
+    public string? ModifiedBy { get; init; }
+}
+```
+
+`PUT /tasks/{id}` with `{"title":"…"}` and an `If-Match` header binds all four correctly.
+
+:::warning `[NotBound]` needs `[JsonIgnore]` on a verb that carries a body
+Rule 1 excludes a property from the route, query and header assignments the analyzer generates. It
+cannot exclude it from JSON deserialization: a body-carrying verb is bound by reading the whole message
+in one shot, and `System.Text.Json` does not read `[NotBound]`. Without `[JsonIgnore]`, a caller who
+sends `{"modifiedBy":"someone else"}` sets the property, and only an unconditional overwrite by
+whatever owns the value keeps that from reaching the handler -- so assign it unconditionally rather
+than only when it is still at its default.
+
+`SYNE015` reports the shape that needs this -- see [Diagnostics](../reference/diagnostics). On a
+bodyless verb, or on a message that is [form-bound](#forms-and-files) rather than JSON-bound, nothing
+deserializes the message, and `[NotBound]` alone is sufficient.
+:::
+
+:::note Headers are never bound by convention
+Rule 4 matches only route parameters, and rule 6 falls through to the body (or the form) — never to a
+header. `[FromHeader]` is the only way to read one.
+
+Both `UnambitiousFx.Synapse.Endpoints.FromHeaderAttribute` (whose name is a constructor argument,
+`[FromHeader("If-Match")]`) and `Microsoft.AspNetCore.Mvc.FromHeaderAttribute` (whose name is a
+property, `[FromHeader(Name = "If-Match")]`) are honoured. Importing both namespaces in one file makes
+the bare name ambiguous — see [attribute collisions](../reference/escape-hatches#attribute-collisions).
+:::
+
+## Forms and files
+
+A request is a form or it is JSON, never both. Both `multipart/form-data` and
+`application/x-www-form-urlencoded` bind, and either one turns the *whole message* form-bound, not
+just the property that triggered it — rule 6 sends every property that would otherwise have fallen
+through to the JSON body to the form instead, so a form message does not need `[FromForm]` spelled
+out on every field.
+
+Two rules decide whether a message is form-bound at all:
+
+- **Rule 2 — `[FromForm]`, explicitly.** `UnambitiousFx.Synapse.Endpoints.FromFormAttribute` takes
+  the field name as a constructor argument (`[FromForm("caption")]`), the same shape as this
+  project's own `[FromHeader]`. `Microsoft.AspNetCore.Mvc.FromFormAttribute` is honoured too, with
+  its name as a property (`[FromForm(Name = "caption")]`) — the same MVC/Synapse pairing as every
+  other `[From*]` attribute on this page.
+- **Rule 3 — a file-typed property, with no attribute at all.** `IFormFile`, `IFormFileCollection`,
+  or a supported collection of `IFormFile` (`IFormFile[]`, `List<IFormFile>`, `IReadOnlyList<IFormFile>`,
+  `IEnumerable<IFormFile>`) binds from the form unattributed. A file has exactly one place it could
+  come from, unlike a `string`, so there is nothing ambiguous to pin down. `IFormFileCollection` means
+  *every* file on the request; the four collection shapes mean the files uploaded under **one** field
+  name — the same distinction ASP.NET Core's own model binder draws.
+
+A route-bound property is unaffected by any of this: rule 4 (the route-name match) is checked before
+rule 6's form fallback, so a property that names a route parameter binds from the route whether or
+not the rest of the message is form-bound — see the worked example below.
+
+:::info Why this flips silently instead of erroring
+Without rule 6, every field of a form message would need `[FromForm]` written out by hand, which
+defeats the point of the file inference in rule 3: a message with one bare `IFormFile` property and
+three ordinary strings should not force four attributes just because one property happened to be a
+file. [`SYNE019`](../reference/diagnostics) (Info) reports the case where this happens *purely* by
+inference — a file-typed property with no `[FromForm]` anywhere on the message — so the relocation is
+visible rather than silent. Add `[FromForm]` to the file property to state the intent explicitly and
+silence it.
+:::
+
+Mixing an explicit `[FromBody]` into an otherwise form-bound message is [`SYNE018`](../reference/diagnostics)
+(Error): a request is one or the other, so whichever the binder does not read can never populate its
+properties. A form-bound property on a bodyless verb is [`SYNE017`](../reference/diagnostics)
+(Warning), the exact mirror of `SYNE007` for the body.
+
+`[NotBound]`'s [`SYNE015`](../reference/diagnostics) exemption and file-shaped properties' `SYNE012`
+exemption both follow from the same fact: a form-bound message is never JSON-deserialized, so nothing
+reads `[NotBound]` and a file has no string to parse from. [`SYNE011`](../reference/diagnostics) still
+applies to a form field or a form file — both need an accessible setter or a record `with` expression
+[the same as any other bound property](#the-record-or-setter-rule).
+
+006's headline example, written against the shipped API:
+
+```csharp
+public sealed record UploadAttachmentCommand : IRequest<AttachmentCreated>
+{
+    // Rule 4: matches {taskId} — unaffected by anything else on this message being form-bound.
+    public required Guid TaskId { get; init; }
+
+    // Rule 3: file-typed, no attribute — this is what pins the whole message to the form.
+    public required IFormFile File { get; init; }
+
+    // Rule 6: nothing else claimed "Caption", and the message is already form-bound, so it reads
+    // from the form under the property name rather than falling through to a JSON body.
+    public required string Caption { get; init; }
+}
+
+[Post("/tasks/{taskId:guid}/attachments")]
+public sealed partial class UploadAttachmentEndpoint : Endpoint<UploadAttachmentCommand, AttachmentCreated>
+{
+    public override void Configure(IEndpointBuilder<AttachmentCreated> builder) =>
+        builder.Created(created => $"/tasks/{created.TaskId}/attachments/{created.AttachmentId}");
+}
+```
+
+```bash
+$ curl -s -F "caption=hello" -F "file=@note.txt" \
+    http://localhost:5000/tasks/11111111-1111-1111-1111-111111111111/attachments
+# 201, Location: /tasks/11111111-1111-1111-1111-111111111111/attachments/{attachmentId}
+
+$ curl -s -F "caption=hello" \
+    http://localhost:5000/tasks/11111111-1111-1111-1111-111111111111/attachments
+{"status":400,"errors":{"File":["The form file is required."]}}
+
+$ curl -s -X POST -H 'Content-Type: application/json' -d '{}' \
+    http://localhost:5000/tasks/11111111-1111-1111-1111-111111111111/attachments
+# 415 Unsupported Media Type — the consumes matcher policy rejects it before the binder ever runs
+```
+
+Note the error key: `File` is unattributed, so — the same as any other convention-bound
+property — it is reported under the property's own name, capital `F`, not the lowercase `file` the
+multipart field above happens to use. Form-field lookup is case-insensitive on read (`-F
+file=@note.txt` still binds `File` fine); the error key is not — it comes straight off
+`property.Name`, verbatim.
+
+The endpoint declares both `multipart/form-data` and `application/x-www-form-urlencoded`. On its own,
+`Synapse.Endpoints` declares **no request schema** alongside them: a message holding an `IFormFile`
+is not describable as a JSON schema, and pretending otherwise would be a wrong document rather than
+an honest gap. Add [`UnambitiousFx.Synapse.Endpoints.OpenApi`](../reference/openapi#the-satellite-package)
+and the schema is populated field by field instead — see
+[A form-bound message's schema depends on the satellite package](../reference/openapi#a-form-bound-messages-schema-depends-on-the-satellite-package).
+
+:::warning `[FromForm]` collides with `Microsoft.AspNetCore.Mvc`, the same as `[FromHeader]`
+`Microsoft.AspNetCore.Mvc` declares its own `FromFormAttribute`. Importing both
+`UnambitiousFx.Synapse.Endpoints` and `Microsoft.AspNetCore.Mvc` in one file makes the bare
+`[FromForm]` ambiguous (`CS0104`) — nothing warns you before the compiler does. Fully qualify the one
+you mean, or alias it the same way [attribute collisions](../reference/escape-hatches#attribute-collisions)
+shows for `[FromHeader]`:
+
+```csharp
+using FromFormAttribute = UnambitiousFx.Synapse.Endpoints.FromFormAttribute;
+```
+:::
+
+## Is a missing value an error?
+
+Whichever source a property lands on, whether a *missing* value is tolerated is decided by the
+property's shape alone:
+
+| Property shape | Missing value |
+|---|---|
+| Bound from a constructor parameter with a default — `record ListUsers(int Page = 1)` | **Optional.** The declared default stands |
+| Nullable — `int?`, `string?`, a nullable reference type | **Optional.** The property is left alone and binding succeeds |
+| Anything else | **Mandatory.** Binding fails with `400` under that property's source key |
+
+```csharp
+public sealed record SearchTasksQuery(
+    string Title,          // mandatory: ?title= missing is a 400
+    int Page = 1,          // optional: the default stands
+    string? Sort = null    // optional twice over
+) : IRequest<IReadOnlyList<TaskDto>>;
+```
+
+:::warning A property initialiser does not make a property optional
+```csharp
+public int Page { get; init; } = 20;   // still MANDATORY — a 400 when ?page= is absent
+```
+`Page` is non-nullable, so it is required, and the `20` is overwritten or never reached. Express the
+default one of the two ways that work:
+
+```csharp
+public int? Page { get; init; }                          // optional; apply the default in the handler
+public sealed record Q(int Page = 20) : IRequest<…>;     // optional; the binder honours the default
+```
+:::
+
+## Property types
+
+A bound property's type must be one the binder can produce from a string:
+
+- `string` — used as-is, no parse step
+- any `enum` — by name or by numeric value, matching ASP.NET Core (case-**sensitive**)
+- anything with `TryParse(string, out T)` **or** `TryParse(string, IFormatProvider, out T)` — the
+  second is what `IParsable<T>` mandates, so a strongly-typed id works:
+
+```csharp
+public readonly record struct TaskId(Guid Value) : IParsable<TaskId>
+{
+    public static TaskId Parse(string s, IFormatProvider? provider) => new(Guid.Parse(s));
+
+    public static bool TryParse(string? s, IFormatProvider? provider, out TaskId result)
+    {
+        if (Guid.TryParse(s, out var value)) { result = new TaskId(value); return true; }
+        result = default;
+        return false;
+    }
+}
+
+public sealed record GetTask(TaskId TaskId) : IRequest<TaskDto>;   // binds
+```
+
+Anything else is reported as [`SYNE012`](../reference/diagnostics) and omitted.
+
+Parsing always pins the **invariant culture** where the type offers the `IFormatProvider` overload,
+matching ASP.NET Core's own parameter binding. A route or query value is a wire format: `?amount=1.5`
+means one and a half on every host, not "1.5 or 15 depending on the server's locale".
+
+## Repeated keys
+
+`?tag=a&tag=b&tag=c` binds to a property typed `T[]`, `List<T>`, `IReadOnlyList<T>` or
+`IEnumerable<T>`, where `T` itself satisfies the parseability rule above. The binder reads every
+value under the key, in request order, instead of the single value the scalar rule above takes:
+
+```csharp
+public sealed record FilterTasksQuery : IRequest<IReadOnlyList<TaskDto>>
+{
+    [FromQuery(Name = "tag")] public string[] Tags { get; init; } = [];
+    [FromQuery(Name = "status")] public List<TaskStatus> Statuses { get; init; } = [];
+}
+```
+
+Without an explicit `Name`, `[FromQuery]` resolves the key from the property name — `Tags`, not
+`tag`. Matching is case-insensitive, but not pluralization-insensitive, and a repeated key is
+conventionally singular (`?tag=a&tag=b`, not `?tags=a&tags=b`) while the property holding all of
+them is conventionally plural. `Name` is what reconciles the two:
+
+```bash
+$ curl -s 'localhost:5000/tasks/search?tag=docs&tag=ship&status=Open'
+# Tags = ["docs","ship"], Statuses = [Open]
+```
+
+A **query key, a header or a form field** can repeat, so those three sources support this — a
+`[FromForm] string[] Tags` on a `multipart/form-data` or `application/x-www-form-urlencoded` POST
+collects every `Tags` field the request carries, exactly as `?tag=a&tag=b` does. A route
+segment cannot appear twice in one URL, and a collection-shaped route-bound property is reported as
+[`SYNE012`](../reference/diagnostics) — the ordinary "unparsable" diagnostic, not a collection one. A
+`[FromBody]` collection is untouched by any of this: `System.Text.Json` already binds a JSON array,
+and nothing here changes that path. Anything enumerable that is not one of the four shapes above —
+`HashSet<T>`, `Dictionary<K,V>` — is reported as [`SYNE016`](../reference/diagnostics), which names
+the four shapes that do work.
+
+:::note Absent is empty, not an error — and that is a deliberate, distinguishable choice
+HTTP cannot express "zero values under this key": a caller who has no tags to send simply omits
+`tag` altogether. Demanding presence would ask for something unsendable, so a **non-nullable**
+collection binds to an empty array or list when the key is absent, and reports nothing — a request
+with no `?tag=` at all is a `200`, not a `400`.
+
+If you need to tell "the caller sent no tags" apart from "the caller didn't mention tags", make the
+property **nullable** (`string[]?`). An absent key then binds `null`; a present-but-empty-key case
+does not exist over HTTP, so `null` versus a populated collection is the only distinction there is
+to draw. A handler that genuinely requires at least one value enforces that as a business rule, in
+`IRequestValidator` rather than in binding — see [Validation](../../validation) — because "must be
+non-empty" is not a presence-of-the-key question, and binding's job stops at presence:
+
+```csharp
+public sealed record FilterTasksQuery : IRequest<IReadOnlyList<TaskDto>>
+{
+    [FromQuery(Name = "tag")] public string[]? Tags { get; init; }   // null when ?tag is never sent
+}
+```
+:::
+
+Two more rules, both there to keep the wire format unambiguous:
+
+- **No comma splitting.** `?tag=a,b` is one tag named `a,b`, not two. Splitting on a delimiter is a
+  convention this binder does not pick for you — silently splitting is how a tag that legitimately
+  contains a comma turns into a bug report.
+- **A bad element reports its index and binding continues.** `?status=Open&status=Nope` binds index
+  `0` and reports index `1`, so a request with several bad elements gets all of them in one `400`
+  rather than the first:
+
+```json title="GET /tasks/search?status=Open&status=Nope"
+{"status":400,"errors":{"status":["The query value at index 1 is not a valid TaskStatus."]}}
+```
+
+With [`UnambitiousFx.Synapse.Endpoints.OpenApi`](../reference/openapi#the-satellite-package) added, a
+repeated-key property like `Tags` above is declared in the document as an array parameter, and a
+scalar one like `Page` as a required or optional parameter matching the table above exactly — see
+[Declaring query, header and route parameters](../reference/openapi#declaring-query-header-and-route-parameters).
+
+## The record-or-setter rule
+
+A property bound from the route, query string or a header must be assignable after the message already
+exists — the generated binder either calls a setter directly, or applies the value through a `with`
+expression, which only a `record` supports.
+
+A property that is neither on a record nor has an accessible setter is reported as
+[`SYNE011`](../reference/diagnostics) and omitted from the generated code: it does not stop the build,
+but the value is never bound.
+
+This restriction applies only to route/query/header-bound properties. A `[FromBody]` property is
+populated by deserializing the whole message in one JSON read, so neither a setter nor `SYNE011`
+applies to it.
+
+## `required` properties
+
+A route/query/header-bound property may be `required`. The binder sets it in the object initializer of
+the `new` expression, which is the one call site the language accepts for a required member:
+
+```csharp
+public sealed record GetTaskQuery : IRequest<TaskDto>
+{
+    public required Guid TaskId { get; init; }
+}
+
+// emitted:
+var message = new GetTaskQuery() { TaskId = valueTaskId };
+```
+
+A positional record with an extra `required` member works the same way:
+
+```csharp
+public sealed record GetThing(int Id) : IRequest
+{
+    public required string Tenant { get; init; }
+}
+
+// emitted:
+var message = new GetThing(valueId) { Tenant = valueTenant };
+```
+
+The one case outside this is a `required` property that is **not bound at all** — because it is
+`[NotBound]`, or because its type is unparsable and `SYNE012` omitted it. Construction cannot set what
+it has no value for, so that remains a compile error (`CS9035`); the accompanying `SYNE011`/`SYNE012`
+says which property to look at.
+
+:::info This did not always work
+The binder used to construct the message and apply each value afterwards, by assignment or `with` —
+neither of which satisfies `required` — so a `required` bound property broke the build with an error
+pointing into generated code. Both shapes are covered now.
+:::
+
+:::warning Only when the binder is the one constructing the message
+Everything above describes the case where the binder constructs the message. When some property binds
+from the **request body**, the deserializer constructs it instead — and `required` then means
+`System.Text.Json` demands that member in the payload, including a route-bound one the payload never
+carries.
+
+So a route/query/header-bound property may be `required` exactly when nothing else on that message
+binds from the body:
+
+| Message | `required` on the route-bound property? |
+|---|---|
+| `GET /tasks/{taskId}` — `TaskId` only | Yes — a bodyless verb reads nothing |
+| `POST /tasks/{taskId}/archive` — `TaskId` only | Yes — nothing binds from the body, so nothing is read |
+| `PUT /tasks/{taskId}` — `TaskId` plus a body-bound `Title` | **No** — leave `TaskId` non-`required` |
+
+The middle row only became true once a body-carrying verb stopped reading a body it had nothing to
+bind from; see [known issue 067](https://github.com/UnambitiousFx/Synapse/blob/feat/synapse-endpoints/docs/known-issues/067-a-body-carrying-verb-reads-a-body-nothing-binds-from.md).
+:::
+
+## Prefer a positional record
+
+Give a bound message a positional constructor instead of init-only properties where you can:
+
+```csharp
+public sealed record GetTaskQuery(Guid TaskId) : IRequest<TaskDto>;
+```
+
+This is a genuine improvement, not just style, for two independent reasons.
+
+**1. The constructor states the contract, and can carry defaults.** A type with no parameterless
+constructor is constructed through a direct call to that constructor — each bound argument computed
+and validated first, then `new GetTaskQuery(taskId)` once. A parameter with a default makes that value
+optional and binds the default when it is absent, which no property initialiser can do.
+
+**2. It allocates once instead of twice.** The init-only path does `new GetThingQuery()` followed by
+`message = message with { Id = valueId }`: two record allocations.
+
+```csharp
+// two allocations per request
+public sealed record GetThingQuery : IRequest<ThingDto>
+{
+    public Guid Id { get; init; }
+}
+
+// one
+public sealed record GetThingQuery(Guid Id) : IRequest<ThingDto>;
+```
+
+That extra allocation is the *entire* ~100 B/request (1.01x) gap
+`benchmarks/SynapseBenchmark/EndpointDispatchBenchmark.cs` measures between a generated endpoint and
+an equivalent hand-written Minimal API lambda; everything else about the two paths was
+latency-indistinguishable. A positional record's single constructor call removes it.
+
+The same benchmark carries a `RawEndpointHandWrittenBinding` arm — the identical route and message
+bound by hand instead of by the generated binder — which measures the same allocation as the generated
+one. **Dropping a tier buys control over the binding, not speed.**
+
+## Sharing a message across endpoints
+
+Each endpoint's binding is generated as an `override` on that endpoint's own class, resolved from
+*its own* route and verb — not looked up from a shared table keyed by message type. Two endpoints can
+therefore bind the same message type and resolve it correctly even when their routes or verbs differ:
+a `GET /tasks/{taskId}` and a `POST /tasks/{taskId}/archive` sharing a message with an unattributed
+`Note` property resolve that property differently — the query string for the bodyless `GET`, the JSON
+body for the body-carrying `POST` (rule 5) — because each endpoint's binder is emitted from that
+endpoint's own analysis of its own verb, not borrowed from whichever endpoint happened to sort first.
+
+This used to be a real limitation, tracked as `SYNE013`: a single binder was generated per message
+type, keyed by the type alone, and built from whichever endpoint sorted first ordinally by
+fully-qualified name — so a second endpoint whose route or verb resolved a property differently
+silently bound through the first one's resolution instead of its own. Moving binding generation onto
+each endpoint's own `partial` class removed the shared table that limitation depended on, so
+`SYNE013` no longer exists as a diagnostic — there is nothing left for it to warn about.
+
+## Next
+
+- [Responses](./responses) — what comes back, including the shape of that `400`
+- [Low level: mediator-bound](../low-level/mediator-bound) — when the six rules cannot express your binding
+- [Reading the request](../low-level/reading-the-request) — the form readers by hand, `FormAsync` and friends
+- [OpenAPI](../reference/openapi) — what a form-bound endpoint declares, and what it does not
+- [Diagnostics](../reference/diagnostics) — every `SYNE` code referenced above

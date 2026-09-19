@@ -1,0 +1,487 @@
+using System.Text;
+using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Primitives;
+using UnambitiousFx.Synapse.Endpoints.Binding;
+
+namespace UnambitiousFx.Synapse.Endpoints.Tests;
+
+public sealed class BindingHelpersTests
+{
+    [Fact]
+    public void TryGetRoute_WhenValuePresent_ReturnsTrueAndTheValue()
+    {
+        // Arrange
+        var context = new DefaultHttpContext();
+        context.Request.RouteValues["taskId"] = "42";
+
+        // Act
+        var found = BindingHelpers.TryGetRoute(context, "taskId", out var value);
+
+        // Assert
+        Assert.True(found);
+        Assert.Equal("42", value);
+    }
+
+    [Fact]
+    public void TryGetQuery_WhenKeyMissing_ReturnsFalse()
+    {
+        // Arrange
+        var context = new DefaultHttpContext();
+
+        // Act
+        var found = BindingHelpers.TryGetQuery(context, "page", out var value);
+
+        // Assert
+        Assert.False(found);
+        Assert.Null(value);
+    }
+
+    [Fact]
+    public void TryGetHeader_WhenHeaderPresent_ReturnsTheFirstValue()
+    {
+        // Arrange
+        var context = new DefaultHttpContext();
+        context.Request.Headers["If-Match"] = "\"abc\"";
+
+        // Act
+        var found = BindingHelpers.TryGetHeader(context, "If-Match", out var value);
+
+        // Assert
+        Assert.True(found);
+        Assert.Equal("\"abc\"", value);
+    }
+
+    [Fact]
+    public async Task ReadJsonBodyAsync_WhenBodyIsMalformedJson_ReturnsAFailureMentioningNotValidJson()
+    {
+        // Arrange
+        var context = CreateContext("{not json");
+
+        // Act
+        var result = await BindingHelpers.ReadJsonBodyAsync<BindingHelpersTestPayload>(
+            context, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.False(result.IsSuccess);
+        Assert.Contains("not valid JSON", BodyError(result));
+    }
+
+    [Fact]
+    public async Task ReadJsonBodyAsync_WhenBodyIsNull_ReturnsAFailureMentioningRequired()
+    {
+        // Arrange — the literal JSON `null` deserializes successfully to a null value, which is a
+        // different (legitimate) case from a genuinely empty body: this one reaches the `value is
+        // null` check below, not the Content-Length short-circuit.
+        var context = CreateContext("null");
+
+        // Act
+        var result = await BindingHelpers.ReadJsonBodyAsync<BindingHelpersTestPayload>(
+            context, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.False(result.IsSuccess);
+        Assert.Contains("required", BodyError(result));
+    }
+
+    [Fact]
+    public async Task ReadJsonBodyAsync_WhenBodyIsGenuinelyEmpty_ReturnsAFailureMentioningRequired()
+    {
+        // Arrange — a real 0-byte body with Content-Length: 0, e.g. a POST with no payload at all.
+        // System.Text.Json does not deserialize an empty stream to null; it throws JsonException
+        // ("input does not contain any JSON tokens"), which is why this must be checked explicitly
+        // via Content-Length before ever calling ReadFromJsonAsync — verified empirically that,
+        // without that check, this exact scenario produces "not valid JSON" instead.
+        var context = CreateContext("");
+
+        // Act
+        var result = await BindingHelpers.ReadJsonBodyAsync<BindingHelpersTestPayload>(
+            context, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.False(result.IsSuccess);
+        Assert.Contains("required", BodyError(result));
+    }
+
+    [Fact]
+    public async Task ReadJsonBodyAsync_WhenBodyIsEmptyWithNoContentLengthHeader_StillFailsSensibly()
+    {
+        // Arrange — a chunked-transfer request has no Content-Length header at all, so the cheap
+        // `ContentLength == 0` check above cannot see this case; documenting the current fallback
+        // behaviour (the JsonException branch) rather than leaving it unverified. This still reports
+        // failure, just with the "not valid JSON" wording instead of "required" — a real fix would
+        // need to peek the stream, which is out of proportion to how this combination arises in
+        // practice (most HTTP clients, including Kestrel's own request pipeline paths, set
+        // Content-Length for a non-chunked empty body).
+        var context = CreateContext("", omitContentLength: true);
+
+        // Act
+        var result = await BindingHelpers.ReadJsonBodyAsync<BindingHelpersTestPayload>(
+            context, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.False(result.IsSuccess);
+        Assert.NotNull(BodyError(result));
+    }
+
+    [Fact]
+    public async Task ReadJsonBodyAsync_WhenBodyHasNoContentType_ReturnsAFailureRatherThanThrowing()
+    {
+        // Arrange — a body with no Content-Type header at all. This is the one malformed-request shape
+        // the Accepts-driven consumes matcher policy lets through (an absent content type matches any
+        // endpoint), and ReadFromJsonAsync throws InvalidOperationException for it rather than
+        // JsonException — so before the content-type guard it escaped the catch, producing a 500 and
+        // an "An unhandled exception was thrown" log line per request instead of a 400.
+        var context = CreateContext("""{"name":"x"}""", contentType: null);
+
+        // Act
+        var result = await BindingHelpers.ReadJsonBodyAsync<BindingHelpersTestPayload>(
+            context, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.False(result.IsSuccess);
+        Assert.Contains("JSON", BodyError(result));
+    }
+
+    [Fact]
+    public async Task ReadJsonBodyAsync_WhenContentTypeIsNotJson_ReturnsAFailureNamingIt()
+    {
+        // Arrange — normally rejected with 415 during routing, but the helper must not depend on that:
+        // an endpoint that does not declare Accepts (or a direct call) still reaches here.
+        var context = CreateContext("""{"name":"x"}""", contentType: "text/plain");
+
+        // Act
+        var result = await BindingHelpers.ReadJsonBodyAsync<BindingHelpersTestPayload>(
+            context, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.False(result.IsSuccess);
+        Assert.Contains("text/plain", BodyError(result));
+    }
+
+    [Theory]
+    [InlineData("application/json")]
+    [InlineData("application/json; charset=utf-8")]
+    [InlineData("application/problem+json")]
+    public async Task ReadJsonBodyAsync_ForAJsonContentType_StillReadsTheBody(string contentType)
+    {
+        // Arrange — the guard must not reject the JSON content types that legitimately arrive: a
+        // charset parameter and the "+json" structured suffix both count as JSON.
+        var context = CreateContext("""{"name":"kept"}""", contentType: contentType);
+
+        // Act
+        var result = await BindingHelpers.ReadJsonBodyAsync<BindingHelpersTestPayload>(
+            context, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.True(result.IsSuccess, BodyError(result));
+        Assert.Equal("kept", result.Value!.Name);
+    }
+
+    private static DefaultHttpContext CreateContext(string body,
+        bool omitContentLength = false,
+        string? contentType = "application/json")
+    {
+        var services = new ServiceCollection();
+        services.ConfigureHttpJsonOptions(o =>
+            o.SerializerOptions.TypeInfoResolverChain.Insert(0, BindingHelpersTestJsonContext.Default));
+
+        var bytes = Encoding.UTF8.GetBytes(body);
+        return new DefaultHttpContext
+        {
+            RequestServices = services.BuildServiceProvider(),
+            Request =
+            {
+                Body = new MemoryStream(bytes),
+                ContentLength = omitContentLength ? null : bytes.Length,
+                ContentType = contentType
+            }
+        };
+    }
+
+    [Fact]
+    public void TryGetQueryValues_WithARepeatedKey_ReturnsEveryValueInOrder()
+    {
+        // Arrange
+        var context = new DefaultHttpContext();
+        context.Request.QueryString = new QueryString("?tag=a&tag=b&tag=c");
+
+        // Act
+        var found = BindingHelpers.TryGetQueryValues(context, "tag", out var values);
+
+        // Assert
+        Assert.True(found);
+        Assert.Equal((string[])["a", "b", "c"], values.ToArray());
+    }
+
+    [Fact]
+    public void TryGetQueryValues_WithACommaSeparatedValue_ReturnsOneValue()
+    {
+        // Arrange — repeated keys only. Splitting on commas is a convention, and picking one
+        // silently is how you get a bug report about a tag that legitimately contains a comma.
+        var context = new DefaultHttpContext();
+        context.Request.QueryString = new QueryString("?tag=a,b");
+
+        // Act
+        BindingHelpers.TryGetQueryValues(context, "tag", out var values);
+
+        // Assert
+        Assert.Equal((string[])["a,b"], values.ToArray());
+    }
+
+    [Fact]
+    public void TryGetQueryValues_WithAnAbsentKey_ReturnsFalseAndEmpty()
+    {
+        // Arrange
+        var context = new DefaultHttpContext();
+
+        // Act
+        var found = BindingHelpers.TryGetQueryValues(context, "tag", out var values);
+
+        // Assert
+        Assert.False(found);
+        Assert.Empty(values.ToArray());
+    }
+
+    [Fact]
+    public void TryGetHeaderValues_WithARepeatedHeader_ReturnsEveryValue()
+    {
+        // Arrange
+        var context = new DefaultHttpContext();
+        context.Request.Headers["X-Tag"] = new StringValues(["a", "b"]);
+
+        // Act
+        var found = BindingHelpers.TryGetHeaderValues(context, "X-Tag", out var values);
+
+        // Assert
+        Assert.True(found);
+        Assert.Equal((string[])["a", "b"], values.ToArray());
+    }
+
+    /// <summary>
+    ///     The body failure message. Body problems are reported under the <c>body</c> key rather than
+    ///     as a flat detail string, so that route and query failures can accumulate alongside each other.
+    /// </summary>
+    private static string? BodyError<T>(BindResult<T> result)
+    {
+        return result.Errors is null
+            ? null
+            : string.Join(" ", result.Errors[BindingHelpers.BodyField]);
+    }
+
+    private static DefaultHttpContext FormContext(Dictionary<string, StringValues> fields,
+        IFormFileCollection? files = null)
+    {
+        var context = new DefaultHttpContext();
+        context.Request.ContentType = "application/x-www-form-urlencoded";
+        context.Request.Form = new FormCollection(fields, files);
+        return context;
+    }
+
+    [Fact]
+    public async Task ReadFormAsync_WithAFormContentType_ReturnsTheForm()
+    {
+        // Arrange
+        var context = FormContext(new Dictionary<string, StringValues> { ["caption"] = "hello" });
+
+        // Act
+        var result = await BindingHelpers.ReadFormAsync(context, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.True(result.IsSuccess);
+        Assert.Equal("hello", result.Value!["caption"].ToString());
+    }
+
+    [Fact]
+    public async Task ReadFormAsync_WithNoContentType_FailsUnderBodyRatherThanThrowing()
+    {
+        // Arrange — a request with no Content-Type matches an endpoint regardless of what it
+        // accepts, so this is the one shape the consumes matcher lets through to the binder.
+        var context = new DefaultHttpContext();
+
+        // Act
+        var result = await BindingHelpers.ReadFormAsync(context, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.False(result.IsSuccess);
+    }
+
+    /// <summary>
+    ///     A context whose body is <paramref name="body" /> verbatim under <paramref name="contentType" />,
+    ///     so <c>ReadFormAsync</c> actually parses it rather than being handed a pre-built
+    ///     <see cref="FormCollection" />. The malformed-body paths only exist on the real parse.
+    /// </summary>
+    private static DefaultHttpContext RawBodyContext(string body, string contentType)
+    {
+        var bytes = Encoding.UTF8.GetBytes(body);
+        return new DefaultHttpContext
+        {
+            Request =
+            {
+                Body = new MemoryStream(bytes),
+                ContentLength = bytes.Length,
+                ContentType = contentType
+            }
+        };
+    }
+
+    [Theory]
+    // No closing delimiter: what a client disconnecting mid-upload sends. ASP.NET Core throws
+    // IOException ("Unexpected end of Stream") for this and for non-multipart bytes under a multipart
+    // content type, so catching InvalidDataException alone left the commonest malformed body a 500.
+    [InlineData("--B\r\nContent-Disposition: form-data; name=\"a\"\r\n\r\nvalue\r\n")]
+    [InlineData("not multipart at all")]
+    // These two already threw InvalidDataException; kept beside the others so the catch covers both.
+    [InlineData("--B\r\nContent-Disp")]
+    public async Task ReadFormAsync_WithAMalformedMultipartBody_FailsUnderBodyRatherThanThrowing(string body)
+    {
+        // Arrange
+        var context = RawBodyContext(body, "multipart/form-data; boundary=B");
+
+        // Act
+        var result = await BindingHelpers.ReadFormAsync(context, TestContext.Current.CancellationToken);
+
+        // Assert — a 400 under `body`, which is what turns it into a ValidationProblem rather than an
+        // unhandled exception and a log line per request.
+        Assert.False(result.IsSuccess);
+        Assert.Contains("The request body is not a valid form", BodyError(result));
+        Assert.Equal([BindingHelpers.BodyField], result.Errors!.Keys.ToArray());
+    }
+
+    [Fact]
+    public async Task ReadFormAsync_WithAMissingBoundary_FailsUnderBody()
+    {
+        // Arrange
+        var context = RawBodyContext("whatever", "multipart/form-data");
+
+        // Act
+        var result = await BindingHelpers.ReadFormAsync(context, TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.False(result.IsSuccess);
+        Assert.Equal([BindingHelpers.BodyField], result.Errors!.Keys.ToArray());
+    }
+
+    [Fact]
+    public async Task ReadFormAsync_WithABadHttpRequestException_LetsItEscapeWithItsOwnStatusCode()
+    {
+        // Arrange — BadHttpRequestException derives from IOException, so a catch widened to bare
+        // IOException would swallow it and flatten its status code (413 for a body-size limit) into a
+        // 400. Thrown from the body stream, which is where the real one comes from.
+        var context = new DefaultHttpContext();
+        context.Request.ContentType = "multipart/form-data; boundary=B";
+        context.Request.Body = new ThrowingStream(
+            new BadHttpRequestException("Request body too large.", StatusCodes.Status413PayloadTooLarge));
+
+        // Act
+        var thrown = await Assert.ThrowsAsync<BadHttpRequestException>(
+            async () => await BindingHelpers.ReadFormAsync(context, TestContext.Current.CancellationToken));
+
+        // Assert
+        Assert.Equal(StatusCodes.Status413PayloadTooLarge, thrown.StatusCode);
+    }
+
+    private sealed class ThrowingStream(Exception exception) : Stream
+    {
+        public override bool CanRead => true;
+
+        public override bool CanSeek => false;
+
+        public override bool CanWrite => false;
+
+        public override long Length => throw new NotSupportedException();
+
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            throw exception;
+        }
+
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            throw exception;
+        }
+
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+        {
+            throw exception;
+        }
+
+        public override void Flush()
+        {
+        }
+
+        public override long Seek(long offset, SeekOrigin origin)
+        {
+            throw new NotSupportedException();
+        }
+
+        public override void SetLength(long value)
+        {
+            throw new NotSupportedException();
+        }
+
+        public override void Write(byte[] buffer, int offset, int count)
+        {
+            throw new NotSupportedException();
+        }
+    }
+
+    [Fact]
+    public void TryGetFormFile_WithAnUploadedFile_ReturnsIt()
+    {
+        // Arrange
+        var file = new FormFile(new MemoryStream("hi"u8.ToArray()), 0, 2, "file", "note.txt");
+        var context = FormContext(new Dictionary<string, StringValues>(), new FormFileCollection { file });
+
+        // Act
+        var found = BindingHelpers.TryGetFormFile(context, "file", out var read);
+
+        // Assert
+        Assert.True(found);
+        Assert.Equal("note.txt", read!.FileName);
+    }
+
+    [Fact]
+    public void TryGetFormFile_OnANonFormRequest_ReturnsFalseRatherThanThrowing()
+    {
+        // Arrange
+        var context = new DefaultHttpContext();
+
+        // Act
+        var found = BindingHelpers.TryGetFormFile(context, "file", out var read);
+
+        // Assert
+        Assert.False(found);
+        Assert.Null(read);
+    }
+
+    [Fact]
+    public void TryGetFormValues_WithARepeatedField_ReturnsEveryValue()
+    {
+        // Arrange
+        var context = FormContext(new Dictionary<string, StringValues>
+        {
+            ["tag"] = new StringValues(["a", "b"])
+        });
+
+        // Act
+        var found = BindingHelpers.TryGetFormValues(context, "tag", out var values);
+
+        // Assert
+        Assert.True(found);
+        Assert.Equal((string[])["a", "b"], values.ToArray());
+    }
+
+}
+
+internal sealed record BindingHelpersTestPayload(string Name);
+
+[JsonSerializable(typeof(BindingHelpersTestPayload))]
+internal sealed partial class BindingHelpersTestJsonContext : JsonSerializerContext;

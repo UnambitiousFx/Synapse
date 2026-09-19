@@ -1,0 +1,277 @@
+---
+sidebar_position: 3
+title: Validating
+description: BindingValidator — gather every bad input into one 400 instead of sending the caller round the loop.
+---
+
+# Validating
+
+A hand-written handler that returns on the first bad value sends the caller round the loop once per
+mistake. `context.Validate()` returns a collector that gathers every problem it finds, so a request
+with three bad values gets one response naming all three.
+
+```csharp
+var v = context.Validate();
+
+v.Route<Guid>("taskId", out var taskId);
+v.Query<int>("page", out var page);
+v.Header<int>("X-Count", out var count);
+
+if (!v.IsValid)
+{
+    return v.Problem();
+}
+```
+
+```json title="one request, three mistakes, one response"
+{
+  "title": "One or more validation errors occurred.",
+  "status": 400,
+  "errors": {
+    "taskId":  ["The route value is required."],
+    "page":    ["The query value is not a valid int."],
+    "X-Count": ["The header is required."]
+  }
+}
+```
+
+This is the same collector the high level's generated binders use, so both levels produce the same
+`400` shape.
+
+## The surface
+
+| Member | Behaviour |
+|---|---|
+| `Route<T>` / `Query<T>` / `Header<T>` | Required. Reports "is required" when absent, "is not a valid T" when unparsable |
+| `RouteOptional<T>` / `QueryOptional<T>` / `HeaderOptional<T>` | Absent is fine (`null`); present-but-unparsable still reports. Value **and** reference types |
+| `RouteEnum<T>` / `QueryEnum<T>` / `HeaderEnum<T>` | Required, by enum name or numeric value |
+| `QueryValues<T>` / `HeaderValues<T>` | Every value of a repeated key, parsed. Absent reports nothing and yields `[]`; a bad element reports its index and the rest still bind |
+| `QueryValuesEnum<TEnum>` / `HeaderValuesEnum<TEnum>` | Same, for an enum element — named apart for the same reason `QueryEnum` sits beside `Query<T>` |
+| `Form<T>` | Required, the same contract as `Route<T>`/`Query<T>`/`Header<T>`. Requires the form has already been read — [see below](#reading-a-form) |
+| `FormOptional<T>` | Absent is fine (`null`); present-but-unparsable still reports. Value **and** reference types. Same precondition |
+| `FormEnum<TEnum>` | Required, by enum name or numeric value. Same precondition |
+| `FormValues<T>` / `FormValuesEnum<TEnum>` | Every value of a repeated form field, parsed — the same absent-is-empty rule as `QueryValues<T>`. Same precondition |
+| `FormFile` | Required uploaded file. No parse step — reports `"The form file is required."` when absent |
+| `FormFileOptional` | Optional uploaded file — always returns `true`; `null` when absent is not a failure |
+| `Check(condition, field, message)` | Reports `message` against `field` when the condition is false; returns the condition |
+| `AddError(field, message)` | Reports directly |
+| `IsValid` | `true` while nothing has been reported |
+| `Errors` | The collected errors, or `null` when valid |
+| `Problem()` | The `400` describing everything collected |
+
+Every reader returns `bool`, and that return value matters — see below.
+
+## Guard a rule on the read that fed it
+
+:::danger The one mistake worth knowing about
+A failed read reports its own error **and leaves the out value at `default(T)`**. A rule checked
+against that value is therefore checking a value the caller never sent:
+
+```csharp
+// WRONG — a request with no ?page at all is told BOTH
+//   "The query value is required."  (true)
+//   "must be at least 1"            (false — nothing was sent, and 0 came from default(int))
+v.Query<int>("page", out var page);
+v.Check(page >= 1, "page", "must be at least 1");
+```
+
+The readers return `bool` for exactly this. Guard the check:
+
+```csharp
+// RIGHT — the rule only runs on a value that actually bound
+if (v.Query<int>("page", out var page))
+{
+    v.Check(page >= 1, "page", "must be at least 1");
+}
+```
+:::
+
+## Reading every value of a repeated key
+
+`QueryValues<T>` and `HeaderValues<T>` read and parse every value under a repeated key — the same
+loop [the generated binder emits](../high-level/messages#repeated-keys) for a collection-shaped
+message property, which is what these are built from:
+
+```csharp
+var v = context.Validate();
+
+v.QueryValues<string>("tag", out var tags);           // string[] — absent → [], never an error
+v.QueryValuesEnum<TaskStatus>("status", out var st);  // TaskStatus[] — a bad element reports its index
+```
+
+```json title="GET /reports?status=Open&status=Nope"
+{"status":400,"errors":{"status":["The query value at index 1 is not a valid TaskStatus."]}}
+```
+
+An absent key answers `true` with an empty array and reports nothing — the same "absent is empty,
+not an error" rule the high level follows, and for the same reason: HTTP has no way to send zero
+values under a key, so demanding presence would ask the caller for something unsendable. A caller
+who genuinely requires at least one value checks the length itself, guarded like any other rule:
+
+```csharp
+if (v.QueryValues<string>("tag", out var tags))
+{
+    v.Check(tags.Length > 0, "tag", "at least one tag is required");
+}
+```
+
+The guard here is about **parse success**, not presence: `tags.Length > 0` already answers "was
+anything sent". Guarding avoids reporting the length check a second time against a value that failed
+to parse in the first place — the same reason every other guarded `Check` in this file exists.
+
+An enum element cannot satisfy `where T : IParsable<T>`, so it gets the same `…Enum` split as the
+single-value readers: `QueryValuesEnum<TEnum>` / `HeaderValuesEnum<TEnum>` beside `QueryValues<T>` /
+`HeaderValues<T>`, for the same reason `QueryEnum` sits beside `Query<T>`.
+
+:::note No `…ValuesOptional` pair
+`QueryOptional<T>` exists to tell "absent" from "present but invalid" for a single value. A
+collection already treats absence as empty rather than as a failure — for value and reference
+elements alike — so there is nothing left for an "optional" variant to add.
+:::
+
+## A message the high level now handles
+
+`?tag=a&tag=b` becoming a collection used to need a hand-written `BindAsync` here — nothing on the
+six binding rules could express it. Since [repeated keys](../high-level/messages#repeated-keys)
+shipped, a property typed `IReadOnlyList<string>` binds it directly, so the message needs no
+`BindAsync` at all:
+
+```csharp
+public sealed record TagReportQuery(int Page, int Size = 20) : IRequest<TagReportDto>
+{
+    // Without an explicit Name, [FromQuery] would resolve the key as "Tags" — the property
+    // name — not the singular "tag" the repeated key actually uses on the wire.
+    [FromQuery(Name = "tag")] public IReadOnlyList<string> Tags { get; init; } = [];
+}
+
+[Get("/reports")]
+public sealed partial class TagReportEndpoint : Endpoint<TagReportQuery, TagReportDto>;
+```
+
+```bash
+$ curl -s 'localhost:5000/reports?page=2&tag=docs&tag=ship'
+{"page":2,"matched":2,"tags":["docs","ship"]}
+
+$ curl -s 'localhost:5000/reports?page=2'
+{"page":2,"matched":0,"tags":[]}
+
+$ curl -s 'localhost:5000/reports?tag=docs'
+{"status":400,"errors":{"Page":["The query value is required."]}}
+```
+
+Note the error key: `Page` is unattributed, so it resolves under the property's own name — capital `P`
+— not the lowercase `page` the query string happens to use above. Query matching is
+case-insensitive, so `?page=2` still binds it; only an explicit `[FromQuery(Name = "...")]`, like
+`Tags` has, changes what a *failure* is reported under.
+
+A rule like "page must be at least 1" or "at least one tag is required" is a business rule, not a
+presence/parseability one — the six rules and the generated binder do not run `Check`. That still
+belongs in `IRequestValidator` and the Synapse pipeline, exactly as the next section describes.
+
+**The low-tier readers above have not gone anywhere.** They remain the right tool once a handler
+needs something binding itself has no hook for — normalising or deduplicating the parsed elements,
+gating one field's read on another, or folding a collection read into a `BindAsync` that also reads
+the body. [Mediator-bound](./mediator-bound) works through exactly that case.
+
+## Reading a form
+
+`Form<T>`, `FormOptional<T>`, `FormEnum<TEnum>`, `FormValues<T>`/`FormValuesEnum<TEnum>`, `FormFile`
+and `FormFileOptional` have the same required/optional/enum/repeated contract as their `Route`/`Query`/`Header`
+counterparts, with one precondition none of those have: **the form must already be read**. They sit on
+top of `HttpContext.Request.Form`, which only has values once `FormAsync` has populated its cache —
+see [Reading the request → Reading a form](./reading-the-request#reading-a-form).
+
+The same hand-written binder [Reading the request](./reading-the-request#reading-a-form) shows at the
+`HttpContext` level, through the collector instead:
+
+```csharp
+var form = await context.FormAsync(ct);
+if (!form.IsSuccess)
+{
+    return form.Problem();              // 400 under "body" — not readable as a form at all
+}
+
+var v = context.Validate();
+v.FormFile("file", out var file);              // required — "The form file is required." when absent
+v.Form<string>("caption", out var caption);    // required — the same "is required"/"is not a valid T" pair
+
+if (!v.IsValid)
+{
+    return v.Problem();                 // one 400 naming every missing or invalid field
+}
+```
+
+`FormFile` has no parse step — a file is a stream, not a wire-format string — so it reports presence
+only, unlike every other reader on this page. `FormFileOptional` mirrors it for an optional upload:
+always `true`, `null` when absent is not a failure.
+
+## What belongs here, and what does not
+
+The collector's job is **presence, parseability, and one open `Check`**. Business rules belong in
+`IRequestValidator` and the Synapse pipeline — see [Validation](../../validation) — where they apply to
+the message however it arrived, not only over HTTP.
+
+```
+Is "page" present and an int?      → BindingValidator
+Is page within the user's quota?   → IRequestValidator
+```
+
+## Optional readers take reference types too
+
+Each `…Optional<T>` is a pair of overloads, one `where T : struct, IParsable<T>` and one
+`where T : class, IParsable<T>`. You write the same call either way:
+
+```csharp
+var v = context.Validate();
+
+v.QueryOptional<int>("page", out var page);            // int?         — absent → null, bad → reported
+v.QueryOptional<string>("search", out var search);     // string?      — absent → null, never an error
+v.QueryOptional<CallbackUrl>("callback", out var cb);  // CallbackUrl? — absent → null, bad → reported
+```
+
+```json title="GET /reports?page=2&callback=not-a-url"
+{
+  "title": "One or more validation errors occurred.",
+  "status": 400,
+  "errors": { "callback": ["The query value is not a valid CallbackUrl."] }
+}
+```
+
+A missing `search` is still a `200`. A present-but-invalid `callback` is a `400` naming the field,
+alongside every other problem the same request had — which is the point of reading it through the
+collector rather than off `context.TryGetQuery`.
+
+:::note Why an overload here and a `…Enum` name there
+Two generic methods differing *only* in their constraints are a duplicate signature (`CS0111`), which
+is why the enum readers are named separately. The optional readers escape that because their `out`
+parameter differs as well: `T?` is `Nullable<T>` under the `struct` constraint and plain `T` under the
+`class` one.
+:::
+
+## It is a mutable struct
+
+`BindingValidator` is a **mutable struct** whose error dictionary is allocated only when the first
+error arrives, so a valid request allocates nothing. That matters because the generated binders use it
+on every request to every high-level endpoint; `BindResult<T>` is a struct for the same reason.
+
+:::warning Copy semantics
+Use it as a local and **do not pass it to another method** — errors added by the callee land on a copy
+and are silently lost.
+
+```csharp
+// WRONG: ValidateTags gets a copy; anything it reports is thrown away.
+var v = context.Validate();
+ValidateTags(v, tags);
+
+// RIGHT: pass it by reference, or keep the logic inline.
+ValidateTags(ref v, tags);
+```
+
+It is a plain struct rather than a `ref struct` because a handler needs to `await` a body read between
+calls, which a `ref struct` local forbids.
+:::
+
+## Next
+
+- [Mediator-bound](./mediator-bound) — where a hand-written `BindAsync` lives
+- [Validation](../../validation) — where business rules go

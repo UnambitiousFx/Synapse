@@ -1,0 +1,474 @@
+namespace UnambitiousFx.Synapse.Endpoints.Generator.Tests;
+
+/// <summary>
+///     Low-level endpoints are discovered and mapped exactly like the high-level ones, and their route
+///     metadata is generated into them the same way, but they have no generated binder — their binding
+///     is either hand-written or does not exist.
+/// </summary>
+public sealed class RawEndpointEmissionTests
+{
+    private const string FreeFormEndpoint = """
+                                            using System.Threading;
+                                            using System.Threading.Tasks;
+                                            using Microsoft.AspNetCore.Http;
+                                            using UnambitiousFx.Synapse.Endpoints;
+
+                                            namespace TestNs;
+
+                                            [Get("/health")]
+                                            public sealed partial class HealthEndpoint : RawEndpoint
+                                            {
+                                                public override ValueTask<IResult> HandleAsync(HttpContext context, CancellationToken cancellationToken)
+                                                    => ValueTask.FromResult(TypedResults.NoContent() as IResult);
+                                            }
+                                            """;
+
+    [Fact]
+    public void Generate_ForAFreeFormEndpoint_MapsItAlongsideTheHighLevelOnes()
+    {
+        // Arrange
+        const string source = """
+                              using System.Threading;
+                              using System.Threading.Tasks;
+                              using Microsoft.AspNetCore.Http;
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+
+                              namespace TestNs;
+
+                              [Get("/health")]
+                              public sealed partial class HealthEndpoint : RawEndpoint
+                              {
+                                  public override ValueTask<IResult> HandleAsync(HttpContext context, CancellationToken cancellationToken)
+                                      => ValueTask.FromResult(TypedResults.NoContent() as IResult);
+                              }
+
+                              public sealed record GetThingQuery : IRequest<string>;
+
+                              [Get("/things")]
+                              public sealed partial class GetThingEndpoint : Endpoint<GetThingQuery, string>;
+                              """;
+
+        // Act
+        var group = GeneratorHarness.GetFile(source, "SynapseEndpointGroup.g.cs");
+
+        // Assert — one list, both levels.
+        Assert.Contains("endpoints.MapEndpoint<global::TestNs.HealthEndpoint>();", group);
+        Assert.Contains("endpoints.MapEndpoint<global::TestNs.GetThingEndpoint>();", group);
+        GeneratorHarness.AssertGeneratedCompiles(source);
+    }
+
+    [Fact]
+    public void Generate_ForAFreeFormEndpoint_EmitsMetadataButNoBinding()
+    {
+        // Act
+        var generated = GeneratorHarness.GetEndpointFile(FreeFormEndpoint);
+
+        // Assert — the route is still emitted, into the endpoint's own partial, but there is no bound
+        // type to bind, so no BindAsync comes with it.
+        Assert.Contains("EndpointMetadata(new[] { \"GET\" }, \"/health\")", generated);
+        Assert.DoesNotContain("BindAsync(", generated);
+        GeneratorHarness.AssertGeneratedCompiles(FreeFormEndpoint);
+    }
+
+    [Fact]
+    public void Generate_ForAFreeFormEndpointInAGroup_EmitsTheGroupFactory()
+    {
+        // Arrange
+        const string source = """
+                              using System.Threading;
+                              using System.Threading.Tasks;
+                              using Microsoft.AspNetCore.Http;
+                              using UnambitiousFx.Synapse.Endpoints;
+                              using UnambitiousFx.Synapse.Endpoints.Builders;
+
+                              namespace TestNs;
+
+                              public sealed class OpsGroup : EndpointGroup
+                              {
+                                  public override void Configure(IEndpointGroupBuilder builder) => builder.Prefix("/ops");
+                              }
+
+                              [Get("/health")]
+                              [InGroup<OpsGroup>]
+                              public sealed partial class HealthEndpoint : RawEndpoint
+                              {
+                                  public override ValueTask<IResult> HandleAsync(HttpContext context, CancellationToken cancellationToken)
+                                      => ValueTask.FromResult(TypedResults.NoContent() as IResult);
+                              }
+                              """;
+
+        // Act
+        var generated = GeneratorHarness.GetEndpointFile(source);
+
+        // Assert
+        Assert.Contains("typeof(global::TestNs.OpsGroup), static () => new global::TestNs.OpsGroup()",
+            generated);
+        GeneratorHarness.AssertGeneratedCompiles(source);
+    }
+
+    [Fact]
+    public void Generate_ForAHandBoundEndpoint_EmitsMetadataButNoBinder()
+    {
+        // Arrange
+        const string source = """
+                              using System.Threading.Tasks;
+                              using Microsoft.AspNetCore.Http;
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+                              using UnambitiousFx.Synapse.Endpoints.Binding;
+
+                              namespace TestNs;
+
+                              public sealed record LookupQuery(int Id) : IRequest<string>;
+
+                              [Get("/lookup/{id}")]
+                              public sealed partial class LookupEndpoint : BoundEndpoint<LookupQuery, string>
+                              {
+                                  public override ValueTask<BindResult<LookupQuery>> BindAsync(HttpContext context)
+                                  {
+                                      var validation = context.Validate();
+                                      validation.Route<int>("id", out var id);
+                                      return ValueTask.FromResult(validation.IsValid
+                                          ? BindResult<LookupQuery>.Success(new LookupQuery(id))
+                                          : BindResult<LookupQuery>.Failure(validation));
+                                  }
+                              }
+                              """;
+
+        // Act
+        var generated = GeneratorHarness.GetEndpointFile(source);
+
+        // Assert — the endpoint supplies its own BindAsync, so generating one would not merely be
+        // dead code: it would collide with the author's own member. Its metadata is still generated.
+        Assert.Contains("EndpointMetadata(new[] { \"GET\" }, \"/lookup/{id}\")", generated);
+        Assert.DoesNotContain("BindAsync(", generated);
+        GeneratorHarness.AssertGeneratedCompiles(source);
+    }
+
+    // Discovery walks the base chain outwards from the class, so the nearest match wins. Endpoint<T,R>
+    // now derives from BoundEndpoint<T,R>, which derives from RawEndpoint — three candidate matches in
+    // one chain. Pinned rather than trusted: if proximity ever stopped deciding, a high-level endpoint
+    // would silently lose its generated binding — and, now that the binding is an override of an
+    // abstract member, would not compile.
+    [Fact]
+    public void Generate_ForAHighLevelEndpoint_StillEmitsItsBindingDespiteTheRawBasesInItsChain()
+    {
+        // Arrange
+        const string source = """
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+
+                              namespace TestNs;
+
+                              public sealed record GetThingQuery : IRequest<string>
+                              {
+                                  public int Id { get; init; }
+                              }
+
+                              [Get("/things/{id}")]
+                              public sealed partial class GetThingEndpoint : Endpoint<GetThingQuery, string>;
+                              """;
+
+        // Act
+        var generated = GeneratorHarness.GetEndpointFile(source);
+
+        // Assert
+        Assert.Contains("partial class GetThingEndpoint", generated);
+        Assert.Contains("BindResult<global::TestNs.GetThingQuery>> BindAsync(", generated);
+        GeneratorHarness.AssertGeneratedCompiles(source);
+    }
+
+    // SYNE001 exists to catch a route parameter no property can receive. A free-form endpoint has no
+    // properties by design — it reads the route itself — so the rule must not fire for one.
+    [Fact]
+    public void Generate_ForAFreeFormEndpointWithRouteParameters_ReportsNoBindingDiagnostics()
+    {
+        // Arrange
+        const string source = """
+                              using System.Threading;
+                              using System.Threading.Tasks;
+                              using Microsoft.AspNetCore.Http;
+                              using UnambitiousFx.Synapse.Endpoints;
+
+                              namespace TestNs;
+
+                              [Post("/webhooks/{tenant}/{kind}")]
+                              public sealed partial class WebhookEndpoint : RawEndpoint
+                              {
+                                  public override ValueTask<IResult> HandleAsync(HttpContext context, CancellationToken cancellationToken)
+                                      => ValueTask.FromResult(TypedResults.Accepted((string?)null) as IResult);
+                              }
+                              """;
+
+        // Act
+        var diagnostics = GeneratorHarness.GetDiagnostics(source);
+
+        // Assert
+        Assert.DoesNotContain(diagnostics, d => d.Id == "SYNE001");
+        Assert.Empty(diagnostics.Where(d => d.Id.StartsWith("SYNE", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public void Generate_ForAHandBoundEndpointWithRouteParameters_ReportsNoBindingDiagnostics()
+    {
+        // Arrange — the message has no property for {slug}, which would be SYNE001 at the high level.
+        const string source = """
+                              using System.Threading.Tasks;
+                              using Microsoft.AspNetCore.Http;
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+                              using UnambitiousFx.Synapse.Endpoints.Binding;
+
+                              namespace TestNs;
+
+                              public sealed record SlugQuery(string Value) : IRequest<string>;
+
+                              [Get("/pages/{slug}")]
+                              public sealed partial class SlugEndpoint : BoundEndpoint<SlugQuery, string>
+                              {
+                                  public override ValueTask<BindResult<SlugQuery>> BindAsync(HttpContext context)
+                                  {
+                                      context.TryGetRoute("slug", out var slug);
+                                      return ValueTask.FromResult(BindResult<SlugQuery>.Success(new SlugQuery(slug!)));
+                                  }
+                              }
+                              """;
+
+        // Act
+        var diagnostics = GeneratorHarness.GetDiagnostics(source);
+
+        // Assert
+        Assert.DoesNotContain(diagnostics, d => d.Id == "SYNE001");
+    }
+
+    // SYNE010 is about whether MapEndpoint<TEndpoint>() can instantiate the class at all, which is
+    // just as true of the low level as the high level.
+    [Fact]
+    public void Generate_ForAGenericFreeFormEndpoint_ReportsSyne010()
+    {
+        // Arrange
+        const string source = """
+                              using System.Threading;
+                              using System.Threading.Tasks;
+                              using Microsoft.AspNetCore.Http;
+                              using UnambitiousFx.Synapse.Endpoints;
+
+                              namespace TestNs;
+
+                              [Get("/generic")]
+                              public sealed partial class GenericEndpoint<T> : RawEndpoint
+                              {
+                                  public override ValueTask<IResult> HandleAsync(HttpContext context, CancellationToken cancellationToken)
+                                      => ValueTask.FromResult(TypedResults.NoContent() as IResult);
+                              }
+                              """;
+
+        // Act
+        var diagnostics = GeneratorHarness.GetDiagnostics(source);
+
+        // Assert
+        Assert.Contains(diagnostics, d => d.Id == "SYNE010");
+    }
+
+    [Fact]
+    public void Generate_ForAFreeFormEndpointDeclaringItsRouteTwice_ReportsSyne009()
+    {
+        // Arrange
+        const string source = """
+                              using System.Threading;
+                              using System.Threading.Tasks;
+                              using Microsoft.AspNetCore.Http;
+                              using UnambitiousFx.Synapse.Endpoints;
+                              using UnambitiousFx.Synapse.Endpoints.Builders;
+
+                              namespace TestNs;
+
+                              [Get("/twice")]
+                              public sealed partial class TwiceEndpoint : RawEndpoint
+                              {
+                                  public override void Configure(IRawEndpointBuilder builder) => builder.Get("/also-here");
+
+                                  public override ValueTask<IResult> HandleAsync(HttpContext context, CancellationToken cancellationToken)
+                                      => ValueTask.FromResult(TypedResults.NoContent() as IResult);
+                              }
+                              """;
+
+        // Act
+        var diagnostics = GeneratorHarness.GetDiagnostics(source);
+
+        // Assert
+        Assert.Contains(diagnostics, d => d.Id == "SYNE009");
+    }
+
+    // SYNE003/SYNE004/SYNE005 are about dispatch and success mapping, which the two BoundEndpoint<…>
+    // tiers do exactly as the high level does — they inherit that code — so those rules must still
+    // apply to them. The binding rules must not.
+    [Fact]
+    public void Generate_ForAHandBoundPostReturningAValueWithNoSuccessMapping_ReportsSyne003()
+    {
+        // Arrange
+        const string source = """
+                              using System.Threading.Tasks;
+                              using Microsoft.AspNetCore.Http;
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+                              using UnambitiousFx.Synapse.Endpoints.Binding;
+
+                              namespace TestNs;
+
+                              public sealed record CreateThingCommand : IRequest<string>;
+
+                              [Post("/things")]
+                              public sealed partial class CreateThingEndpoint : BoundEndpoint<CreateThingCommand, string>
+                              {
+                                  public override ValueTask<BindResult<CreateThingCommand>> BindAsync(HttpContext context)
+                                      => ValueTask.FromResult(BindResult<CreateThingCommand>.Success(new CreateThingCommand()));
+                              }
+                              """;
+
+        // Act
+        var diagnostics = GeneratorHarness.GetDiagnostics(source);
+
+        // Assert
+        Assert.Contains(diagnostics, d => d.Id == "SYNE003");
+    }
+
+    [Fact]
+    public void Generate_ForAFreeFormPost_ReportsNoSyne003()
+    {
+        // Arrange — a free-form endpoint has no success-mapping concept at all: it returns its own
+        // result, so there is nothing for the nudge to be about.
+        const string source = """
+                              using System.Threading;
+                              using System.Threading.Tasks;
+                              using Microsoft.AspNetCore.Http;
+                              using UnambitiousFx.Synapse.Endpoints;
+
+                              namespace TestNs;
+
+                              [Post("/things")]
+                              public sealed partial class CreateThingEndpoint : RawEndpoint
+                              {
+                                  public override ValueTask<IResult> HandleAsync(HttpContext context, CancellationToken cancellationToken)
+                                      => ValueTask.FromResult(TypedResults.Ok("made") as IResult);
+                              }
+                              """;
+
+        // Act
+        var diagnostics = GeneratorHarness.GetDiagnostics(source);
+
+        // Assert
+        Assert.DoesNotContain(diagnostics, d => d.Id == "SYNE003");
+    }
+
+    [Fact]
+    public void Generate_ForAHandBoundEndpointDispatchingAStreamMessage_ReportsSyne005()
+    {
+        // Arrange
+        const string source = """
+                              using System.Threading.Tasks;
+                              using Microsoft.AspNetCore.Http;
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+                              using UnambitiousFx.Synapse.Endpoints.Binding;
+
+                              namespace TestNs;
+
+                              public sealed record TickQuery : IStreamRequest<int>;
+
+                              [Get("/ticks")]
+                              public sealed partial class TickEndpoint : BoundEndpoint<TickQuery, int>
+                              {
+                                  public override ValueTask<BindResult<TickQuery>> BindAsync(HttpContext context)
+                                      => ValueTask.FromResult(BindResult<TickQuery>.Success(new TickQuery()));
+                              }
+                              """;
+
+        // Act
+        var diagnostics = GeneratorHarness.GetDiagnostics(source);
+
+        // Assert
+        Assert.Contains(diagnostics, d => d.Id == "SYNE005");
+    }
+
+    // Every binding diagnostic must stay silent for a hand-bound endpoint: the generator did not write
+    // that binding, so it has no standing to complain about it. Each case here is a shape that WOULD be
+    // reported on the equivalent Endpoint<…>.
+    [Theory]
+    [InlineData("SYNE002")]
+    [InlineData("SYNE007")]
+    [InlineData("SYNE011")]
+    [InlineData("SYNE012")]
+    [InlineData("SYNE014")]
+    public void Generate_ForAHandBoundEndpoint_ReportsNoBindingDiagnostic(string diagnosticId)
+    {
+        // Arrange — a message that trips several binding rules at once: two properties claiming the
+        // same query key, a [FromBody] on a bodyless verb, a setter-less non-record property, and a
+        // property whose type has no TryParse.
+        const string source = """
+                              using System.Threading.Tasks;
+                              using Microsoft.AspNetCore.Http;
+                              using Microsoft.AspNetCore.Mvc;
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+                              using UnambitiousFx.Synapse.Endpoints.Binding;
+
+                              namespace TestNs;
+
+                              public sealed class Unparsable;
+
+                              public sealed class MessyQuery : IRequest<string>
+                              {
+                                  [FromQuery(Name = "same")] public string? First { get; set; }
+                                  [FromQuery(Name = "same")] public string? Second { get; set; }
+                                  [FromBody] public string? Body { get; set; }
+                                  public string ReadOnly { get; } = "";
+                                  public Unparsable? Weird { get; set; }
+                              }
+
+                              [Get("/messy")]
+                              public sealed partial class MessyEndpoint : BoundEndpoint<MessyQuery, string>
+                              {
+                                  public override ValueTask<BindResult<MessyQuery>> BindAsync(HttpContext context)
+                                      => ValueTask.FromResult(BindResult<MessyQuery>.Success(new MessyQuery()));
+                              }
+                              """;
+
+        // Act
+        var diagnostics = GeneratorHarness.GetDiagnostics(source);
+
+        // Assert
+        Assert.DoesNotContain(diagnostics, d => d.Id == diagnosticId);
+    }
+
+    // The control for the theory above: the identical message on a high-level endpoint DOES get
+    // reported, so the suppression is scoped to the endpoint kind and is not a blanket silencing.
+    [Fact]
+    public void Generate_ForTheSameMessageOnAHighLevelEndpoint_StillReportsTheBindingDiagnostics()
+    {
+        // Arrange
+        const string source = """
+                              using Microsoft.AspNetCore.Mvc;
+                              using UnambitiousFx.Synapse.Abstractions;
+                              using UnambitiousFx.Synapse.Endpoints;
+
+                              namespace TestNs;
+
+                              public sealed class MessyQuery : IRequest<string>
+                              {
+                                  [FromQuery(Name = "same")] public string? First { get; set; }
+                                  [FromQuery(Name = "same")] public string? Second { get; set; }
+                              }
+
+                              [Get("/messy")]
+                              public sealed partial class MessyEndpoint : Endpoint<MessyQuery, string>;
+                              """;
+
+        // Act
+        var diagnostics = GeneratorHarness.GetDiagnostics(source);
+
+        // Assert
+        Assert.Contains(diagnostics, d => d.Id == "SYNE002");
+    }
+}

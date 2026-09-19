@@ -60,3 +60,6 @@ nunit-*.xml
 # Rider
 .idea
 *.sln.DotSettings.user
+
+# Subagent-driven-development scratch (ledger, briefs, review packages)
+.superpowers/

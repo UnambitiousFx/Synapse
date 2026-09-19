@@ -133,12 +133,244 @@ jobs:
             exit 1
           fi
 
+  endpoints-native-aot:
+    name: Endpoints Native AOT publish and smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0   # MinVer needs the full tag history to version the src projects
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Install the native toolchain
+        run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
+
+      - name: Publish native, failing on any trimming or RDG warning
+        run: |
+          set -o pipefail
+          # PublishAot is already set in examples/EndpointsApi/EndpointsApi.csproj. Do NOT also
+          # pass /p:PublishAot=true here: as a command-line global property it propagates down
+          # into the ProjectReferences on Synapse.Generator/Synapse.Endpoints.Generator (analyzer
+          # projects targeting netstandard2.0, referenced with ReferenceOutputAssembly=false) and
+          # fails the build with NETSDK1207 ("Ahead-of-time compilation is not supported for the
+          # target framework"), even though those projects are never published. Confirmed locally.
+          dotnet publish examples/EndpointsApi/EndpointsApi.csproj \
+            -r linux-x64 -c Release 2>&1 | tee publish.log
+          if grep -Eq 'IL[0-9]{4}|RDG[0-9]{3}' publish.log; then
+            echo "::error::Native AOT publish produced trimming or Request Delegate Generator warnings."
+            grep -E 'IL[0-9]{4}|RDG[0-9]{3}' publish.log
+            exit 1
+          fi
+
+      - name: Smoke test the native binary
+        run: |
+          set -o pipefail
+          BIN=examples/EndpointsApi/bin/Release/net10.0/linux-x64/publish/UnambitiousFx.Examples.EndpointsApi
+          if [ ! -f "$BIN" ]; then
+            echo "::error::Published binary not found at $BIN"
+            ls -lah examples/EndpointsApi/bin/Release/net10.0/linux-x64/publish || true
+            exit 1
+          fi
+
+          "$BIN" --urls http://localhost:5200 &
+          PID=$!
+
+          fail() {
+            echo "::error::$1"
+            kill "$PID" 2>/dev/null || true
+            exit 1
+          }
+
+          ready=false
+          for _ in $(seq 1 30); do
+            if curl -sf http://localhost:5200/tasks >/dev/null; then
+              ready=true
+              break
+            fi
+            sleep 1
+          done
+          [ "$ready" = true ] || fail "Server never became ready on :5200"
+
+          # A 201 with Location proves declarative success mapping through the generated
+          # binder and TypedResults.Created works.
+          headers=$(curl -s -D - -o /dev/null -X POST http://localhost:5200/tasks \
+                     -H 'Content-Type: application/json' -d '{"title":"ci"}') \
+            || fail "POST /tasks got no response — did the server crash?"
+          code=$(echo "$headers" | head -1 | tr -d '\r' | awk '{print $2}')
+          [ "$code" = "201" ] || fail "POST /tasks returned $code, expected 201"
+          echo "$headers" | grep -qi '^location:' || fail "POST /tasks response missing Location header"
+
+          # A value response proves body serialization through the JsonSerializerContext.
+          body=$(curl -sf http://localhost:5200/tasks) || fail "GET /tasks failed"
+          echo "$body" | grep -q '"title"' || fail "GET /tasks body did not look like task JSON: $body"
+
+          # A void command proves the 204 path (the IHttpInvoker overload added for void arity).
+          id=$(echo "$body" | grep -o '"id":"[^"]*' | head -1 | cut -d'"' -f4) \
+            || fail "Could not extract a task id from GET /tasks body: $body"
+          # Belt-and-braces: the grep above can match "id":"" (empty value) and still exit 0,
+          # which the guard on the assignment above cannot catch.
+          [ -n "$id" ] || fail "Extracted task id was empty from GET /tasks body: $body"
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X PUT "http://localhost:5200/tasks/$id" \
+                   -H 'Content-Type: application/json' -d '{"title":"ci-updated"}') \
+            || fail "PUT /tasks/$id got no response — did the server crash?"
+          [ "$code" = "204" ] || fail "PUT /tasks/$id returned $code, expected 204"
+
+          # Streaming, both transports negotiated on Accept.
+          curl -sf http://localhost:5200/tasks/stream | grep -q '^\[' \
+            || fail "JSON-array streaming failed (expected body starting with '[')"
+          curl -sf http://localhost:5200/tasks/stream -H 'Accept: text/event-stream' \
+            | grep -q '^data: ' || fail "SSE streaming failed (expected a 'data: ' frame)"
+
+          # A route declared in Configure rather than by attribute (SearchTasksEndpoint), with a
+          # query-bound property. This shape used to 500 on every request: with no route attribute
+          # the generator saw an empty verb string, concluded "not bodyless" and emitted a
+          # request-body read into the binder. Asserts the bound value took effect, not just the
+          # status — a check for 200 alone would pass with Title never reaching the handler.
+          curl -s -X POST http://localhost:5200/tasks \
+            -H 'Content-Type: application/json' -d '{"title":"aot-findable"}' >/dev/null \
+            || fail "POST /tasks (search fixture) got no response"
+          search_response=$(curl -s -w $'\nHTTP_STATUS:%{http_code}' \
+                     'http://localhost:5200/tasks/search?title=aot-findable') \
+            || fail "GET /tasks/search got no response — did the server crash?"
+          code=$(echo "$search_response" | grep -o 'HTTP_STATUS:[0-9]*' | cut -d: -f2)
+          search_body=$(echo "$search_response" | sed '$d')
+          [ "$code" = "200" ] || fail "GET /tasks/search returned $code, expected 200: $search_body"
+          echo "$search_body" | grep -q 'aot-findable' \
+            || fail "GET /tasks/search did not return the matching task: $search_body"
+          if echo "$search_body" | grep -q 'ci-updated'; then
+            fail "GET /tasks/search did not filter on the bound title: $search_body"
+          fi
+
+          # A request body with no Content-Type header at all. text/plain is rejected with 415 by
+          # the Accepts-driven consumes matcher policy, but an absent content type matches any
+          # endpoint and reached the binder, where ReadFromJsonAsync threw InvalidOperationException
+          # (not the JsonException that was caught) — a 500 for a malformed client request.
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost:5200/tasks \
+                   -H 'Content-Type:' -d '{"title":"no-content-type"}') \
+            || fail "POST /tasks with no Content-Type got no response — did the server crash?"
+          [ "$code" = "400" ] || fail "POST /tasks with no Content-Type returned $code, expected 400"
+
+          # The 415 half of the same claim, so the guard above cannot be mistaken for having
+          # replaced content-type rejection with a blanket 400.
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost:5200/tasks \
+                   -H 'Content-Type: text/plain' -d 'not json') \
+            || fail "POST /tasks with text/plain got no response — did the server crash?"
+          [ "$code" = "415" ] || fail "POST /tasks with text/plain returned $code, expected 415"
+
+          # The OpenAPI document is the sharpest check: a type missing from the
+          # JsonSerializerContext lets the build stay green while this 500s. Assert the
+          # document actually describes /tasks, not merely that the request returned 200.
+          openapi=$(curl -sf http://localhost:5200/openapi/v1.json) \
+            || fail "GET /openapi/v1.json failed to return a successful response"
+          echo "$openapi" | grep -q '"/tasks"' \
+            || fail "OpenAPI document missing or does not contain /tasks"
+
+          # A random, non-existent id proves failure mapping through DefaultFailureHttpMapper
+          # and ProblemDetails serialization, another AOT hazard in its own right. Assert the
+          # body actually looks like ProblemDetails, not just the status code, matching the
+          # standard applied to the OpenAPI check above.
+          notfound_response=$(curl -s -w $'\nHTTP_STATUS:%{http_code}' \
+                     "http://localhost:5200/tasks/00000000-0000-0000-0000-000000000000") \
+            || fail "GET /tasks/{unknown-guid} got no response — did the server crash?"
+          code=$(echo "$notfound_response" | grep -o 'HTTP_STATUS:[0-9]*' | cut -d: -f2)
+          notfound_body=$(echo "$notfound_response" | sed '$d')
+          [ "$code" = "404" ] || fail "GET /tasks/{unknown-guid} returned $code, expected 404"
+          echo "$notfound_body" | grep -q '"status":404' \
+            || fail "GET /tasks/{unknown-guid} body did not look like ProblemDetails: $notfound_body"
+
+          # The free-form low level (RawEndpoint): no message, no dispatch, no generated binder.
+          # Covered natively because it reaches the route table through the same single Map* call as
+          # every other endpoint, and because context.Service<T>() and TypedResults from a
+          # hand-written handler are their own AOT surface.
+          health_response=$(curl -s -D /tmp/health-headers -w $'\nHTTP_STATUS:%{http_code}' \
+                     'http://localhost:5200/health') \
+            || fail "GET /health got no response — did the server crash?"
+          code=$(echo "$health_response" | grep -o 'HTTP_STATUS:[0-9]*' | cut -d: -f2)
+          health_body=$(echo "$health_response" | sed '$d')
+          [ "$code" = "200" ] || fail "GET /health returned $code, expected 200: $health_body"
+          echo "$health_body" | grep -q '"status":"ok"' \
+            || fail "GET /health did not return the health payload: $health_body"
+
+          # The conditional-GET decision the high level cannot express: answered from a request
+          # header, with no message to dispatch and no response DTO to map.
+          etag=$(grep -i '^etag' /tmp/health-headers | tr -d '\r' | cut -d' ' -f2)
+          [ -n "$etag" ] || fail "GET /health returned no ETag header"
+          code=$(curl -s -o /dev/null -w '%{http_code}' -H "If-None-Match: $etag" \
+                   'http://localhost:5200/health') \
+            || fail "conditional GET /health got no response — did the server crash?"
+          [ "$code" = "304" ] || fail "conditional GET /health returned $code, expected 304"
+
+          # The hand-bound middle level (RawEndpoint<TRequest,TResponse>): a collection built from one
+          # repeated query key, which none of the five binding conventions can express. Asserts the
+          # bound values, not just the status code.
+          report_response=$(curl -s -w $'\nHTTP_STATUS:%{http_code}' \
+                     'http://localhost:5200/reports?page=2&tag=aot-findable&tag=ci-updated') \
+            || fail "GET /reports got no response — did the server crash?"
+          code=$(echo "$report_response" | grep -o 'HTTP_STATUS:[0-9]*' | cut -d: -f2)
+          report_body=$(echo "$report_response" | sed '$d')
+          [ "$code" = "200" ] || fail "GET /reports returned $code, expected 200: $report_body"
+          echo "$report_body" | grep -q '"page":2' \
+            || fail "GET /reports did not bind the page value: $report_body"
+          echo "$report_body" | grep -q 'aot-findable' \
+            || fail "GET /reports did not bind the repeated tag values: $report_body"
+
+          # One request with two bad inputs must answer once, naming both. Serializing
+          # HttpValidationProblemDetails is itself an AOT hazard, so this is checked on the body and
+          # not only on the status code.
+          invalid_response=$(curl -s -w $'\nHTTP_STATUS:%{http_code}' \
+                     'http://localhost:5200/reports?page=0') \
+            || fail "GET /reports?page=0 got no response — did the server crash?"
+          code=$(echo "$invalid_response" | grep -o 'HTTP_STATUS:[0-9]*' | cut -d: -f2)
+          invalid_body=$(echo "$invalid_response" | sed '$d')
+          [ "$code" = "400" ] || fail "GET /reports?page=0 returned $code, expected 400: $invalid_body"
+          echo "$invalid_body" | grep -q '"page"' \
+            || fail "GET /reports?page=0 did not report the page error: $invalid_body"
+          echo "$invalid_body" | grep -q '"tag"' \
+            || fail "GET /reports?page=0 reported only the first error, not both: $invalid_body"
+
+          # A response with no body used to be declared with a null Type, which
+          # Microsoft.AspNetCore.OpenApi skips outright, so no declared bodyless status code ever
+          # reached the document. Asserted on a high-level 204 and a low-level 304.
+          echo "$openapi" | python3 -c "
+          import json, sys
+          paths = json.load(sys.stdin)['paths']
+          def want(path, verb, status):
+              codes = paths[path][verb].get('responses', {})
+              if status not in codes:
+                  raise SystemExit(f'{verb.upper()} {path} does not document {status}: {sorted(codes)}')
+          want('/tasks/{taskId}', 'put', '204')
+          want('/health', 'get', '304')
+          want('/health', 'get', '200')
+
+          # A declared bodyless response must carry no content schema: a 204 with a JSON body is
+          # invalid, and a generated client would model a return value that never arrives.
+          for path, verb, status in (('/tasks/{taskId}', 'put', '204'), ('/health', 'get', '304')):
+              if paths[path][verb]['responses'][status].get('content'):
+                  raise SystemExit(f'{verb.upper()} {path} declares content for its {status}')
+
+          # Binding failures answer with HttpValidationProblemDetails, so that is what the 400 must
+          # declare — a plain ProblemDetails has no errors dictionary to describe.
+          bad = paths['/reports']['get']['responses']['400']['content']['application/problem+json']
+          if not bad['schema']['\$ref'].endswith('HttpValidationProblemDetails'):
+              raise SystemExit(f'GET /reports declares the wrong 400 schema: {bad["schema"]}')
+          " || fail "OpenAPI document does not describe the responses the endpoints actually send"
+
+          kill "$PID" 2>/dev/null || true
+          echo "Native AOT smoke test passed."
+
   http-smoke:
     name: HTTP Smoke Tests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0   # MinVer needs the full tag history to version the src projects
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
@@ -172,3 +404,44 @@ jobs:
           httpyac send examples/MinimalApi/Http/pipeline-behaviors.http --all
           httpyac send examples/MinimalApi/Http/streaming.http --all
           httpyac send examples/MinimalApi/Http/modules.http --all
+
+  publish-prerelease:
+    name: Publish prerelease to GitHub Packages
+    # Only real pushes to main on the canonical repo — never PRs, never forks.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'UnambitiousFx/Synapse'
+    needs: [build-and-test, native-aot, endpoints-native-aot, http-smoke]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0   # MinVer needs the full tag history
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            ${{ env.DOTNET_VERSION }}
+
+      - name: Restore dependencies
+        run: dotnet restore Synapse.slnx
+
+      # GeneratePackageOnBuild is on when CI=true (src/Directory.Build.props), so a Release build
+      # packs into local_packages/ as a side effect — the same mechanism release.yml relies on.
+      # MinVer stamps <next patch>-preview.0.<height> for commits past the last v* tag.
+      - name: Build and pack
+        run: dotnet build Synapse.slnx --no-restore --configuration Release
+
+      # GitHub Packages rejects symbol packages, so only *.nupkg is pushed. --skip-duplicate keeps
+      # a re-run green: MinVer yields the same version for the same commit.
+      - name: Push to GitHub Packages
+        run: >
+          dotnet nuget push ./local_packages/*.nupkg
+          --api-key ${{ secrets.GITHUB_TOKEN }}
+          --source https://nuget.pkg.github.com/UnambitiousFx/index.json
+          --skip-duplicate
