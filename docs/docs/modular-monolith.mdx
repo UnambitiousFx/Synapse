@@ -37,7 +37,7 @@ public sealed class AccessBehavior<TRequest, TResponse>
         CancellationToken cancellationToken = default)
         => IsAllowed(request)
             ? next(request, cancellationToken)
-            : ValueTask.FromResult(Result.Failure<TResponse>(new UnauthorizedFailure("forbidden")));
+            : ValueTask.FromResult(Result.Failure<TResponse>(new UnauthorizedFailure("forbidden", null)));
 }
 ```
 
