@@ -60,6 +60,21 @@ public async ValueTask<Result<Guid>> HandleAsync(CreateTaskCommand cmd, Cancella
 }
 ```
 
+### Failure types and codes
+
+`Result.Failure` carries a `Failure` with a `Code`, a message and optional metadata. The `UnambitiousFx.Functional` package provides typed variants that set a default code:
+
+| Failure type | Default code |
+| --- | --- |
+| `ValidationFailure` | `VALIDATION` |
+| `NotFoundFailure` | `NOT_FOUND` |
+| `UnauthorizedFailure` | `UNAUTHORIZED` |
+| `UnauthenticatedFailure` | `UNAUTHENTICATED` |
+| `TimeoutFailure` | `TIMEOUT` |
+| any other `Failure` | the code you pass, or `ERROR` |
+
+Codes are plain strings, so you can define your own (for example `orders.quantity_invalid`) and map them in one place, such as the HTTP mapper described in [ASP.NET Core](./aspnetcore). Prefixing custom codes with the module name keeps them unambiguous.
+
 ## Combining multiple results
 
 Combine a collection of `Result` / `Result<T>` values into a single result. It succeeds only when all inputs succeed; otherwise all failures are aggregated:

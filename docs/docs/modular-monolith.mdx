@@ -1,0 +1,81 @@
+---
+sidebar_position: 12
+title: Modular Monoliths
+description: Share pipeline behaviors and events across several handler assemblies with a single host as the composition root.
+---
+
+# Modular Monoliths
+
+A common solution layout has one assembly per module, a shared library of cross-cutting behaviors, and a host that wires everything together.
+
+```text
+Shared/     behaviors: access checks, validation, tracing        (references Synapse)
+ModuleA/    requests and handlers                                (references Shared)
+ModuleB/    requests and handlers                                (references Shared)
+Host/       composition root                                     (references all of the above)
+```
+
+## Packages
+
+Every project that declares handlers or behaviors references `UnambitiousFx.Synapse.Abstractions` and the `UnambitiousFx.Synapse.Generator` analyzer. The host also references `UnambitiousFx.Synapse` and `Microsoft.Extensions.Logging` (the container needs `AddLogging()`), and runs the generator too, because it emits the global behaviors.
+
+## Shared behaviors
+
+Write the behaviors once, open-generic, and give them an `Order` with [`IOrderedPipelineBehavior`](./pipelines#ordering):
+
+```csharp
+public sealed class AccessBehavior<TRequest, TResponse>
+    : IRequestPipelineBehavior<TRequest, TResponse>, IOrderedPipelineBehavior
+    where TRequest : IRequest<TResponse>
+    where TResponse : notnull
+{
+    public uint Order => 30;
+
+    public ValueTask<Result<TResponse>> HandleAsync(
+        TRequest request,
+        RequestHandlerDelegate<TRequest, TResponse> next,
+        CancellationToken cancellationToken = default)
+        => IsAllowed(request)
+            ? next(request, cancellationToken)
+            : ValueTask.FromResult(Result.Failure<TResponse>(new UnauthorizedFailure("forbidden")));
+}
+```
+
+Do not rely on `[PipelineBehavior]` here: it only reaches handlers in assemblies referenced by the one that declares the behavior, and `ModuleA` references `Shared`, not the other way round.
+
+## The host
+
+Opt the behaviors in at the composition root and register **every** generated group, the host's own included:
+
+```csharp
+[assembly: SynapseGlobalBehavior(typeof(Shared.AccessBehavior<,>))]
+[assembly: SynapseGlobalBehavior(typeof(Shared.ValidationBehavior<,>))]
+
+services.AddLogging();
+services.AddSynapse(cfg =>
+{
+    cfg.AddRegisterGroup(new Host.RegisterGroup());
+    cfg.AddRegisterGroup(new ModuleA.RegisterGroup());
+    cfg.AddRegisterGroup(new ModuleB.RegisterGroup());
+});
+```
+
+:::warning
+If `Host.RegisterGroup` is not registered, the `SynapseGlobalBehavior` attributes have no effect and no error is raised. See [Sharing behaviors across projects](./pipelines#sharing-behaviors-across-projects).
+:::
+
+With behaviors at orders 10 (trace), 20 (scope), 30 (access), 40 (validation), a request from either module executes as:
+
+```text
+trace > scope > access > validation > handler < validation < access < scope < trace
+```
+
+A behavior that returns a `Result.Failure` without calling `next` (for example `access`) skips everything inside it and the handler.
+
+## Events across modules
+
+An event emitted in `ModuleA` reaches an `IEventHandler<T>` declared in `ModuleB` as long as both groups are registered. With [`EmitMode.Outbox`](./outbox), the event is delivered on `IOutboxCommit.CommitAsync`, so commit only after your transaction succeeds.
+
+## Test that the chain runs
+
+Because a missing registration is silent, add one test per module that dispatches a request and asserts the behaviors ran, for example by recording each behavior's execution in a test-only log and comparing it with the expected order.
