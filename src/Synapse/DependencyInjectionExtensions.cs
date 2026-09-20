@@ -36,6 +36,7 @@ public static class DependencyInjectionExtensions
         services.TryAddScoped<IOutboxManager, OutboxManager>();
         services.TryAddScoped<IOutboxCommit, OutboxCommit>();
         services.TryAddScoped<IOutboxDiscard, OutboxDiscard>();
+        services.TryAddSingleton<IPipelineDescriber, PipelineDescriber>();
         services.TryAddScoped<IEventDispatcher, EventDispatcher>();
         services.TryAddScoped<IInvoker, Invoker>();
         services.TryAddScoped<IEmitter, Emitter>();

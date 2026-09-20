@@ -47,7 +47,7 @@ jobs:
           --no-build
           --configuration Release
           --report-trx
-          --coverage --coverage-output-format cobertura --coverage-output coverage.cobertura.xml
+          --coverage --coverage-output-format cobertura
           --results-directory ./test-results
 
       - name: Convert TRX to JUnit (for Codecov test results)
@@ -127,6 +127,13 @@ jobs:
 
           if [ "$started" = true ]; then
             echo "✓ Native AOT application started successfully"
+            pipeline=$(curl -fsS "http://localhost:${port}/pipelines/create-task")
+            echo "$pipeline"
+            if ! grep -q CqrsBoundaryEnforcementBehavior <<< "$pipeline"; then
+              echo "✗ IPipelineDescriber did not report the expected pipeline under Native AOT"
+              exit 1
+            fi
+            echo "✓ IPipelineDescriber works under Native AOT"
           else
             echo "✗ Native AOT application failed to start"
             echo "Tried: http://localhost:5000/ and http://localhost:8080/"

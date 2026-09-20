@@ -92,6 +92,18 @@ app.UseSynapsePropagation();
 // ── Root ──────────────────────────────────────────────────────────────
 app.MapGet("/", () => Results.Ok(new ApiInfo()));
 
+// ── Pipeline inspection ───────────────────────────────────────────────
+// IPipelineDescriber's generic overloads are Native-AOT safe, so this endpoint also exercises them under the
+// AOT CI job. Plain text: an anonymous JSON shape would need a source-generated serializer context.
+// Demo endpoint only: do not expose pipeline internals in production.
+app.MapGet("/pipelines/create-task", ([FromServices] IPipelineDescriber describer) =>
+{
+    var description = describer.Describe<CreateTaskCommand, CreateTaskResult>();
+    return description is null
+        ? Results.NotFound()
+        : Results.Text(string.Join('\n', description.Behaviors.Select(b => $"{b.Order} {b.Type.Name}")));
+});
+
 // ── Modular-monolith: Orders + Notifications endpoints ────────────────
 // POST /orders     — place an order; PlaceOrderCommandHandler emits OrderPlacedEvent
 // GET  /notifications — list notifications recorded by OrderPlacedNotificationHandler
