@@ -88,15 +88,7 @@ internal sealed class EventDispatcher : IEventDispatcher
     private EventHandlerDelegate<TEvent> BuildPipeline<TEvent>()
         where TEvent : class, IEvent
     {
-        // Behaviors are resolved as IEventPipelineBehavior<TEvent> so only behaviors declared for this
-        // exact event type are returned — no runtime type-filtering needed.
-        var handlers = _dependencyResolver.GetServices<IEventHandler<TEvent>>() as IEventHandler<TEvent>[] ??
-                       _dependencyResolver.GetServices<IEventHandler<TEvent>>().ToArray();
-        // Ordered by runtime pipeline position (IOrderedPipelineBehavior); the stable sort keeps
-        // registration order for behaviors that share an Order.
-        var behaviors = _dependencyResolver.GetServices<IEventPipelineBehavior<TEvent>>()
-            .OrderBy(Pipelines.PipelineBehaviorOrdering.OrderOf)
-            .ToArray();
+        var (handlers, behaviors) = EventPipelineParts.Resolve<TEvent>(_dependencyResolver);
 
         EventHandlerDelegate<TEvent> next = (e, ct) => DispatchToHandlersAsync(e, handlers, ct);
         for (var i = behaviors.Length - 1; i >= 0; i--)

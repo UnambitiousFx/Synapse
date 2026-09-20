@@ -29,4 +29,12 @@ public interface IPipelineDescriber
     PipelineDescription? Describe<TRequest, TResponse>()
         where TRequest : IRequest<TResponse>
         where TResponse : notnull;
+
+    /// <summary>
+    ///     Describes the pipeline of an event: the behaviors that wrap the fan-out, and every handler subscribed to it.
+    /// </summary>
+    /// <typeparam name="TEvent">The event type.</typeparam>
+    /// <returns>The description, or <c>null</c> when no handler is subscribed to the event.</returns>
+    PipelineDescription? DescribeEvent<TEvent>()
+        where TEvent : class, IEvent;
 }

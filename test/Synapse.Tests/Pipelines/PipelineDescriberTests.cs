@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using UnambitiousFx.Functional;
 using UnambitiousFx.Synapse.Abstractions;
 using UnambitiousFx.Synapse.Pipelines;
+using UnambitiousFx.Synapse.Tests.Definitions;
 
 namespace UnambitiousFx.Synapse.Tests.Pipelines;
 
@@ -142,6 +143,59 @@ public sealed class PipelineDescriberTests
             provider.GetRequiredService<IPipelineDescriber>());
     }
 
+    [Fact]
+    public async Task DescribeEvent_WithBehaviorsAndSeveralHandlers_ListsThemAsTheyExecute()
+    {
+        // Arrange (Given) — behaviors registered out of order on purpose
+        var trace = new Trace();
+        await using var provider = BuildEvents(trace, cfg =>
+        {
+            cfg.RegisterEventPipelineBehavior<InnerEventBehavior, EventExample>();
+            cfg.RegisterEventPipelineBehavior<OuterEventBehavior, EventExample>();
+            cfg.RegisterEventHandler<FirstEventHandler, EventExample>();
+            cfg.RegisterEventHandler<SecondEventHandler, EventExample>();
+        });
+
+        // Act (When)
+        var description = provider.GetRequiredService<IPipelineDescriber>().DescribeEvent<EventExample>();
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<IEventDispatcher>()
+                .DispatchAsync(new EventExample("described"), TestContext.Current.CancellationToken);
+        }
+
+        // Assert (Then)
+        Assert.NotNull(description);
+        Assert.Equal(new[] { typeof(FirstEventHandler), typeof(SecondEventHandler) }, description.Handlers);
+        Assert.Equal(new[] { typeof(OuterEventBehavior), typeof(InnerEventBehavior) },
+            description.Behaviors.Select(behavior => behavior.Type));
+        Assert.Equal(new uint[] { 5, 20 }, description.Behaviors.Select(behavior => behavior.Order));
+        Assert.Equal(new[] { "Outer", "Inner" },
+            trace.Steps.Where(step => !step.StartsWith("handler", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public async Task DescribeEvent_WithNoSubscriber_ReturnsNull()
+    {
+        // Arrange (Given) — a behavior alone does not make an event handled
+        await using var provider = BuildEvents(new Trace(),
+            cfg => cfg.RegisterEventPipelineBehavior<OuterEventBehavior, EventExample>());
+
+        // Act (When)
+        var description = provider.GetRequiredService<IPipelineDescriber>().DescribeEvent<EventExample>();
+
+        // Assert (Then)
+        Assert.Null(description);
+    }
+
+    private static ServiceProvider BuildEvents(Trace trace, Action<ISynapseConfig> configure)
+    {
+        var services = new ServiceCollection().AddLogging();
+        services.AddSingleton(trace);
+        services.AddSynapse(configure);
+        return services.BuildServiceProvider();
+    }
+
     private static ServiceProvider Build(Trace trace, Action<ISynapseConfig> configure)
     {
         var services = new ServiceCollection().AddLogging();
@@ -241,5 +295,46 @@ public sealed class PipelineDescriberTests
         where TRequest : IRequest
     {
         public uint Order => 10;
+    }
+
+    private abstract class TracingEventBehavior(Trace trace, string name) : IEventPipelineBehavior<EventExample>
+    {
+        public ValueTask<Result> HandleAsync(EventExample @event,
+            EventHandlerDelegate<EventExample> next,
+            CancellationToken cancellationToken = default)
+        {
+            trace.Steps.Add(name);
+            return next(@event, cancellationToken);
+        }
+    }
+
+    private sealed class OuterEventBehavior(Trace trace) : TracingEventBehavior(trace, "Outer"),
+        IOrderedPipelineBehavior
+    {
+        public uint Order => 5;
+    }
+
+    private sealed class InnerEventBehavior(Trace trace) : TracingEventBehavior(trace, "Inner"),
+        IOrderedPipelineBehavior
+    {
+        public uint Order => 20;
+    }
+
+    private sealed class FirstEventHandler(Trace trace) : IEventHandler<EventExample>
+    {
+        public ValueTask<Result> HandleAsync(EventExample @event, CancellationToken cancellationToken = default)
+        {
+            trace.Steps.Add("handler:first");
+            return new ValueTask<Result>(Result.Success());
+        }
+    }
+
+    private sealed class SecondEventHandler(Trace trace) : IEventHandler<EventExample>
+    {
+        public ValueTask<Result> HandleAsync(EventExample @event, CancellationToken cancellationToken = default)
+        {
+            trace.Steps.Add("handler:second");
+            return new ValueTask<Result>(Result.Success());
+        }
     }
 }

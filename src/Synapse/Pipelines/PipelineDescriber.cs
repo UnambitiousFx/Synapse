@@ -1,5 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using UnambitiousFx.Synapse.Abstractions;
+using UnambitiousFx.Synapse.Publish;
+using UnambitiousFx.Synapse.Resolvers;
 
 namespace UnambitiousFx.Synapse.Pipelines;
 
@@ -29,6 +31,23 @@ internal sealed class PipelineDescriber : IPipelineDescriber
     {
         using var scope = _scopeFactory.CreateScope();
         return DescribeHandler(scope.ServiceProvider.GetService<IRequestHandler<TRequest, TResponse>>());
+    }
+
+    public PipelineDescription? DescribeEvent<TEvent>()
+        where TEvent : class, IEvent
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var (handlers, behaviors) =
+            EventPipelineParts.Resolve<TEvent>(scope.ServiceProvider.GetRequiredService<IDependencyResolver>());
+
+        if (handlers.Length == 0)
+        {
+            return null;
+        }
+
+        return new PipelineDescription(
+            handlers.Select(handler => handler.GetType()).ToArray(),
+            PipelineBehaviorOrdering.Describe(behaviors));
     }
 
     private static PipelineDescription? DescribeHandler(object? handler)
