@@ -8,3 +8,4 @@ Rule ID | Category | Severity | Notes
 SYN103 | Synapse.Analyzers | Warning | HandlerAttributeOnRecordAnalyzer
 SYN101 | Synapse.Analyzers | Warning | RequestWithoutHandlerAnalyzer
 SYN102 | Synapse.Analyzers | Warning | BehaviorWithoutHandlersAnalyzer
+SYN104 | Synapse.Analyzers | Warning | UnattributedHandlerAnalyzer
