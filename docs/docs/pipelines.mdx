@@ -117,6 +117,33 @@ Registering an open-generic behavior at runtime (`AddOpenGenericRequestPipelineB
 
 Pass the **unbound** generic definition (`typeof(Foo<,>)`) — a non-generic `typeof` is the only way to hand an open generic to an attribute. The behavior type must be `public` and implement one of the pipeline interfaces; its open-generic constraints (named-type and `class`/`struct`/`unmanaged`/`notnull`/`new()`) are honoured, and pipeline position is controlled by the behavior implementing `IOrderedPipelineBehavior`. The same cross-assembly and `[assembly: DisableSynapseCrossAssemblyBehaviors]` rules apply.
 
+### Sharing behaviors across projects
+
+`[PipelineBehavior]` propagates **downward** through the reference graph: the generator of the assembly that declares the behavior closes it over handlers in that assembly and in the assemblies it *references*. In a layered or modular solution the shared behaviors usually live in a library that the handler assemblies reference, so the library's generator never sees those handlers and the behavior is not applied to them.
+
+Wire the shared behaviors from the composition root (the host) instead:
+
+```csharp
+// Host project (references the shared library and every module; runs the generator)
+[assembly: SynapseGlobalBehavior(typeof(Shared.AccessBehavior<,>))]
+[assembly: SynapseGlobalBehavior(typeof(Shared.ValidationBehavior<,>))]
+```
+
+```csharp
+services.AddSynapse(cfg =>
+{
+    cfg.AddRegisterGroup(new Host.RegisterGroup());      // required: carries the global behaviors
+    cfg.AddRegisterGroup(new ModuleA.RegisterGroup());
+    cfg.AddRegisterGroup(new ModuleB.RegisterGroup());
+});
+```
+
+:::warning The host's own group must be registered
+`[assembly: SynapseGlobalBehavior]` is emitted into the host assembly's generated `RegisterGroup` (or your `[RegisterGroup]` partial class). If that group is never passed to `AddRegisterGroup`, the attributes are accepted, **nothing fails, and the behaviors never run**. This matters most for security behaviors such as authorization. Add a test that dispatches one request from each module and asserts that the expected behaviors ran.
+:::
+
+Ordering is unaffected by where a behavior is declared or registered: it is decided at runtime by [`IOrderedPipelineBehavior`](#ordering). See [Modular monoliths](./modular-monolith) for a complete layout.
+
 ## Built-in behaviors
 
 ### `SimpleLoggingBehavior<TRequest, TResponse>` / `SimpleLoggingEventBehavior<TEvent>`
