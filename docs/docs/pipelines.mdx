@@ -278,29 +278,35 @@ public sealed class LoggingBehavior<TRequest, TResponse>
 ```csharp
 var describer = provider.GetRequiredService<IPipelineDescriber>();
 
-var pipeline = describer.Describe<CreateTaskCommand, CreateTaskResult>();
+var pipeline = describer.Describe<PurgeCompletedTasksCommand, int>();
 
 Assert.NotNull(pipeline);
-Assert.Equal(typeof(CreateTaskHandler), Assert.Single(pipeline.Handlers));
-Assert.Contains(pipeline.Behaviors, b => b.Type.GetGenericTypeDefinition() == typeof(AuthorizationBehavior<,>));
+Assert.Equal(typeof(PurgeCompletedTasksCommandHandler), Assert.Single(pipeline.Handlers));
+Assert.Contains(pipeline.Behaviors, b =>
+    b.Type.IsGenericType && b.Type.GetGenericTypeDefinition() == typeof(AuthorizationBehavior<,>));
 ```
 
 `Behaviors` is outermost first; each entry carries the concrete behavior type and the `Order` it declared (`IOrderedPipelineBehavior.Last` when it declares none). Behaviors that share an `Order` keep their registration order. `Describe` returns `null` when nothing handles the message.
 
-To check every request in an assembly, use the non-generic overloads:
+To check every request in an assembly, use the non-generic overloads. `IsRequest` stands for your own predicate for request types (for example, concrete types that implement `IRequest` or `IRequest<>`). `Describe` returns `null` for a request nothing handles, so decide what that means for your test instead of suppressing it:
 
 ```csharp
-foreach (var requestType in typeof(CreateTaskCommand).Assembly.GetTypes().Where(IsRequest))
+foreach (var requestType in typeof(PurgeCompletedTasksCommand).Assembly.GetTypes().Where(IsRequest))
 {
     var pipeline = describer.Describe(requestType);
-    Assert.Contains(pipeline!.Behaviors, b => b.Type.Name.StartsWith("AuthorizationBehavior", StringComparison.Ordinal));
+
+    Assert.NotNull(pipeline); // or skip request types that are deliberately unhandled
+    Assert.Contains(pipeline.Behaviors, b =>
+        b.Type.IsGenericType && b.Type.GetGenericTypeDefinition() == typeof(AuthorizationBehavior<,>));
 }
 ```
+
+`PipelineDescription` has structural equality, so two descriptions with the same handlers and behaviors in the same order are equal, and `ToString()` prints them as `Order Name`.
 
 :::note
 `Describe(Type)` and `DescribeEvent(Type)` build a generic method at runtime, so they are not Native-AOT safe: use them in tests, and the generic overloads (which are AOT safe) in an application.
 :::
 
 :::caution
-Describing resolves the behaviors from a fresh DI scope, because `Order` is an instance property. A behavior whose constructor needs something that only exists inside a real request (for example an `HttpContext`) can throw there, and a handler that only implements `IAsyncDisposable` makes disposing that scope throw.
+Describing resolves the handler and the behaviors from a fresh DI scope, because `Order` is an instance property, then disposes the scope. The handler's constructor dependencies are constructed too (a `DbContext`, an `HttpClient`, any warm-up side effect). A handler or behavior whose constructor needs something that only exists inside a real request (for example an `HttpContext`) can throw there, and a handler that only implements `IAsyncDisposable` makes disposing that scope throw.
 :::
