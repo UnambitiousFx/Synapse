@@ -168,6 +168,31 @@ namespace is generated as shown above.
 
 The generator is an `IIncrementalGenerator` — it only re-generates when a handler class is added, removed, or its attributes change. Build times are not affected significantly in large solutions.
 
+## Diagnostics
+
+The same `UnambitiousFx.Synapse.Generator` package also ships Roslyn analyzers. They report registration mistakes at compile time and all four default to `Warning`. `SYN103` is live in the editor. `SYN101`, `SYN102` and `SYN104` are compilation-end analyzers: they need the whole assembly, so they report on a build or a full-solution analysis rather than as you type.
+
+| ID | When it fires | Fix |
+|---|---|---|
+| `SYN101` | A request type (`IRequest` or `IRequest<TResponse>`) declared in this assembly has no handler in this assembly. Events and stream requests are not checked. A contracts-only assembly (requests without handlers) warns once per request, so set `dotnet_diagnostic.SYN101.severity = none` there. | Add a handler class with the matching `[RequestHandler...]` attribute, or disable the rule if the handler lives in another project. |
+| `SYN102` | A `[PipelineBehavior]` behavior (or an `[assembly: SynapseGlobalBehavior(...)]` entry) applies to no handler visible from this assembly (for example its generic constraint matches no request), so it never runs. A `[PipelineBehavior]` in a shared library with no handlers of its own is inert in the consuming host too (see [modular monolith](./modular-monolith)), so the warning is real. Global entries whose behavior type comes from a referenced assembly are not reported. | Widen or correct the constraint, or delete the behavior. For a shared library, declare `[assembly: SynapseGlobalBehavior(typeof(...))]` in the composition root instead. |
+| `SYN103` | A handler attribute is placed on a `record`. The generator ignores records, so the handler is not registered. | Declare the handler as a `class`. |
+| `SYN104` | A class implements a handler interface but has no handler attribute, in an assembly that uses the attributes elsewhere. | Add the attribute, or register the handler manually and silence the rule for that class with `#pragma warning disable SYN104`. |
+
+Disable a rule per project or per folder with an `.editorconfig` entry:
+
+```ini
+[*.cs]
+dotnet_diagnostic.SYN101.severity = none
+```
+
+Two limits to keep in mind:
+
+- `SYN101` only sees the current assembly. A request whose handler is in another project needs the rule disabled in the project that declares the request.
+- `SYN104` cannot see manual registration. A handler you register by hand with `RegisterRequestHandler` or `RegisterEventHandler` is still reported when it has no attribute; silence it per class with `#pragma warning disable SYN104`, or disable the rule.
+
+The analyzers work at compile time and complement the runtime [`ValidateSynapse()`](./pipelines#validating-the-configuration) check. Neither detects a host that never registers its generated group with `AddRegisterGroup` (tracked in #91): in that case no handler is registered and no diagnostic is reported.
+
 ## See also
 
 - [Commands and Queries](./commands-and-queries) — `IRegisterGroup` and modular registration.

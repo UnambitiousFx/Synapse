@@ -7,6 +7,7 @@
         <IsPackable>false</IsPackable>
         <WarningsAsErrors>false</WarningsAsErrors>
         <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+        <WarningsAsErrors>$(WarningsAsErrors);SYN101;SYN102;SYN103;SYN104</WarningsAsErrors>
         <RootNamespace>$(Product).Examples.$(MSBuildProjectName)</RootNamespace>
         <AssemblyName>$(Product).Examples.$(MSBuildProjectName)</AssemblyName>
     </PropertyGroup>
