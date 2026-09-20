@@ -21,6 +21,7 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
         "and are not Native-AOT safe (value-type responses throw at resolution time). Decorate the behavior " +
         "with [PipelineBehavior] so the source generator emits closed registrations instead.";
 
+    private bool _validateOnStart;
     private readonly List<Action<IServiceCollection>> _actions = new();
     private readonly Dictionary<Type, DispatchEventDelegate> _eventDispatchers = new();
     private readonly Dictionary<Type, Delegate> _requestDispatchers = new();
@@ -432,6 +433,12 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
         return this;
     }
 
+    public ISynapseConfig ValidateOnStart()
+    {
+        _validateOnStart = true;
+        return this;
+    }
+
     public void Apply()
     {
         foreach (var action in _actions)
@@ -443,6 +450,11 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
 
         services.AddSingleton(typeof(IEventOutboxStorage), _eventOutBoxStorage);
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, InMemoryOutboxProductionCheck>());
+        if (_validateOnStart)
+        {
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, SynapseValidationStartup>());
+        }
+
         services.AddScoped(typeof(IContextFactory), _contextFactory);
         services.AddScoped(typeof(IEventOrchestrator), _eventOrchestrator);
 
