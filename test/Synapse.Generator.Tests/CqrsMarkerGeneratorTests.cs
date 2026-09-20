@@ -2,7 +2,6 @@ using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using UnambitiousFx.Synapse.Abstractions;
-using UnambitiousFx.Synapse.Generator;
 
 namespace UnambitiousFx.Synapse.Generator.Tests;
 
@@ -24,7 +23,7 @@ public sealed class CqrsMarkerGeneratorTests
 
     private const string Usings = UsingsOnly + NamespaceLine;
 
-    private const string Types = """
+    private const string Messages = """
         public sealed record CreateCommand : ICommand<int>;
 
         public sealed record GetQuery : IQuery<int>;
@@ -42,7 +41,9 @@ public sealed class CqrsMarkerGeneratorTests
             public ValueTask<Result<int>> HandleAsync(GetQuery request, CancellationToken ct = default)
                 => ValueTask.FromResult(Result.Success(2));
         }
+        """;
 
+    private const string TransactionBehaviorSource = """
         public sealed class TransactionBehavior<TRequest, TResponse> : IRequestPipelineBehavior<TRequest, TResponse>
             where TRequest : ICommand<TResponse>
             where TResponse : notnull
@@ -52,6 +53,8 @@ public sealed class CqrsMarkerGeneratorTests
                 => next(request, ct);
         }
         """;
+
+    private const string Types = Messages + "\n\n" + TransactionBehaviorSource;
 
     [Fact]
     public void Generate_WithHandlersImplementingTheAliases_EmitsTheirRegistrationsAndCompiles()
@@ -104,6 +107,121 @@ public sealed class CqrsMarkerGeneratorTests
         Assert.DoesNotContain("TransactionBehavior<global::TestNs.GetQuery", generated);
         Assert.Empty(errors);
     }
+
+    private const string BehaviorTail = """
+
+            public ValueTask<Result<TResponse>> HandleAsync(TRequest request,
+                RequestHandlerDelegate<TRequest, TResponse> next, CancellationToken ct = default)
+                => next(request, ct);
+        }
+        """;
+
+    [Fact]
+    public void Generate_WithABehaviorConstrainedToAGenericBaseClass_ClosesItOverDerivedRequests()
+    {
+        // Arrange (Given)
+        const string fixture = """
+            public abstract record RequestBase<TResponse> : IRequest<TResponse> where TResponse : notnull;
+
+            public sealed record CreateCommand : RequestBase<int>;
+
+            [RequestHandler<CreateCommand, int>]
+            public sealed class CreateHandler : IRequestHandler<CreateCommand, int>
+            {
+                public ValueTask<Result<int>> HandleAsync(CreateCommand request, CancellationToken ct = default)
+                    => ValueTask.FromResult(Result.Success(1));
+            }
+
+            [PipelineBehavior]
+            public sealed class BaseScopedBehavior<TRequest, TResponse> : IRequestPipelineBehavior<TRequest, TResponse>
+                where TRequest : RequestBase<TResponse>
+                where TResponse : notnull
+            {
+            """;
+        var source = Usings + fixture + BehaviorTail;
+
+        // Act (When)
+        var (generated, errors) = Run(source);
+
+        // Assert (Then)
+        Assert.Contains("BaseScopedBehavior<global::TestNs.CreateCommand, int>", generated);
+        Assert.Empty(errors);
+    }
+
+    [Fact]
+    public void Generate_WithABehaviorConstrainedToTheRequestsOwnGenericType_ClosesItOverThatRequest()
+    {
+        // Arrange (Given)
+        const string fixture = """
+            public record Paged<T> : IRequest<T> where T : notnull;
+
+            [RequestHandler<Paged<int>, int>]
+            public sealed class PagedHandler : IRequestHandler<Paged<int>, int>
+            {
+                public ValueTask<Result<int>> HandleAsync(Paged<int> request, CancellationToken ct = default)
+                    => ValueTask.FromResult(Result.Success(1));
+            }
+
+            [PipelineBehavior]
+            public sealed class PagedBehavior<TRequest, TResponse> : IRequestPipelineBehavior<TRequest, TResponse>
+                where TRequest : Paged<TResponse>
+                where TResponse : notnull
+            {
+            """;
+        var source = Usings + fixture + BehaviorTail;
+
+        // Act (When)
+        var (generated, errors) = Run(source);
+
+        // Assert (Then)
+        Assert.Contains("PagedBehavior<global::TestNs.Paged<int>, int>", generated);
+        Assert.Empty(errors);
+    }
+
+    [Fact]
+    public void Generate_WithATwoConstraintBehavior_ClosesItOverCommandHandlersOnly()
+    {
+        // Arrange (Given)
+        const string behavior = """
+            [PipelineBehavior]
+            public sealed class BothBehavior<TRequest, TResponse> : IRequestPipelineBehavior<TRequest, TResponse>
+                where TRequest : IRequest<TResponse>, ICommand<TResponse>
+                where TResponse : notnull
+            {
+            """;
+        var source = Usings + Messages + "\n\n" + behavior + BehaviorTail;
+
+        // Act (When)
+        var (generated, errors) = Run(source);
+
+        // Assert (Then)
+        Assert.Contains("BothBehavior<global::TestNs.CreateCommand, int>", generated);
+        Assert.DoesNotContain("BothBehavior<global::TestNs.GetQuery", generated);
+        Assert.Empty(errors);
+    }
+
+    [Fact]
+    public void Generate_WithAnIRequestOnlyConstraintBehavior_ClosesItOverCommandsAndQueries()
+    {
+        // Arrange (Given)
+        const string behavior = """
+            [PipelineBehavior]
+            public sealed class AnyBehavior<TRequest, TResponse> : IRequestPipelineBehavior<TRequest, TResponse>
+                where TRequest : IRequest<TResponse>
+                where TResponse : notnull
+            {
+            """;
+        var source = Usings + Messages + "\n\n" + behavior + BehaviorTail;
+
+        // Act (When)
+        var (generated, errors) = Run(source);
+
+        // Assert (Then)
+        Assert.Contains("AnyBehavior<global::TestNs.CreateCommand, int>", generated);
+        Assert.Contains("AnyBehavior<global::TestNs.GetQuery, int>", generated);
+        Assert.Empty(errors);
+    }
+
 
     private static (string Generated, ImmutableArray<Diagnostic> Errors) Run(string source)
     {

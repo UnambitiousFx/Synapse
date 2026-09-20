@@ -1071,6 +1071,11 @@ public class SynapseGenerator : IIncrementalGenerator
         }
 
         var names = new List<string> { type.ToDisplayString() };
+        if (type is INamedTypeSymbol { IsGenericType: true } namedSelf)
+        {
+            names.Add(namedSelf.OriginalDefinition.ToDisplayString());
+        }
+
         foreach (var iface in type.AllInterfaces)
         {
             names.Add(iface.ToDisplayString());
@@ -1083,6 +1088,10 @@ public class SynapseGenerator : IIncrementalGenerator
         for (var baseType = type.BaseType; baseType is not null; baseType = baseType.BaseType)
         {
             names.Add(baseType.ToDisplayString());
+            if (baseType.IsGenericType)
+            {
+                names.Add(baseType.OriginalDefinition.ToDisplayString());
+            }
         }
 
         return EquatableArray<string>.From(names);
