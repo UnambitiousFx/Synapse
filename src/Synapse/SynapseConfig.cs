@@ -10,6 +10,7 @@ using UnambitiousFx.Synapse.Publish;
 using UnambitiousFx.Synapse.Publish.Orchestrators;
 using UnambitiousFx.Synapse.Publish.Outbox;
 using UnambitiousFx.Synapse.Resolvers;
+using UnambitiousFx.Synapse.Validation;
 
 namespace UnambitiousFx.Synapse;
 
@@ -20,11 +21,13 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
         "and are not Native-AOT safe (value-type responses throw at resolution time). Decorate the behavior " +
         "with [PipelineBehavior] so the source generator emits closed registrations instead.";
 
+    private bool _validateOnStart;
     private readonly List<Action<IServiceCollection>> _actions = new();
     private readonly Dictionary<Type, DispatchEventDelegate> _eventDispatchers = new();
     private readonly Dictionary<Type, Delegate> _requestDispatchers = new();
     private readonly Dictionary<Type, Delegate> _voidRequestDispatchers = new();
     private readonly Dictionary<Type, Delegate> _streamRequestDispatchers = new();
+    private readonly Dictionary<Type, Func<IPipelineDescriber, PipelineDescription?>> _probes = new();
 
     [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
     private Type _contextFactory = typeof(DefaultContextFactory);
@@ -169,6 +172,7 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
                     var handler = resolver.GetRequiredService<IRequestHandler<TRequest, TResponse>>();
                     return handler.HandleAsync((TRequest)request, ct);
                 }));
+        _probes.TryAdd(typeof(TRequest), describer => describer.Describe<TRequest, TResponse>());
         return this;
     }
 
@@ -186,6 +190,7 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
                     var handler = resolver.GetRequiredService<IRequestHandler<TRequest>>();
                     return handler.HandleAsync((TRequest)request, ct);
                 }));
+        _probes.TryAdd(typeof(TRequest), describer => describer.Describe<TRequest>());
         return this;
     }
 
@@ -208,6 +213,7 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
 
             return dispatcher.DispatchAsync(typedEvent, cancellationToken);
         });
+        _probes.TryAdd(typeof(TEvent), describer => describer.DescribeEvent<TEvent>());
         return this;
     }
 
@@ -250,6 +256,7 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
                             var handler = resolver.GetRequiredService<IRequestHandler<TRequest, TResponse>>();
                             return handler.HandleAsync((TRequest)request, ct);
                         }));
+                _probes.TryAdd(typeof(TRequest), describer => describer.Describe<TRequest, TResponse>());
             }
         });
         return this;
@@ -273,6 +280,7 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
                             var handler = resolver.GetRequiredService<IRequestHandler<TRequest>>();
                             return handler.HandleAsync((TRequest)request, ct);
                         }));
+                _probes.TryAdd(typeof(TRequest), describer => describer.Describe<TRequest>());
             }
         });
         return this;
@@ -301,6 +309,7 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
 
                     return dispatcher.DispatchAsync(typedEvent, cancellationToken);
                 });
+                _probes.TryAdd(typeof(TEvent), describer => describer.DescribeEvent<TEvent>());
             }
         });
         return this;
@@ -352,6 +361,11 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
             foreach (var (type, dispatcher) in builder.StreamRequestDispatchers)
             {
                 _streamRequestDispatchers.TryAdd(type, dispatcher);
+            }
+
+            foreach (var (type, probe) in builder.Probes)
+            {
+                _probes.TryAdd(type, probe);
             }
         });
 
@@ -419,6 +433,12 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
         return this;
     }
 
+    public ISynapseConfig ValidateOnStart()
+    {
+        _validateOnStart = true;
+        return this;
+    }
+
     public void Apply()
     {
         foreach (var action in _actions)
@@ -426,8 +446,15 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
             action(services);
         }
 
+        services.AddSingleton(SynapseRegistry.Create(services, _probes));
+
         services.AddSingleton(typeof(IEventOutboxStorage), _eventOutBoxStorage);
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, InMemoryOutboxProductionCheck>());
+        if (_validateOnStart)
+        {
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, SynapseValidationStartup>());
+        }
+
         services.AddScoped(typeof(IContextFactory), _contextFactory);
         services.AddScoped(typeof(IEventOrchestrator), _eventOrchestrator);
 

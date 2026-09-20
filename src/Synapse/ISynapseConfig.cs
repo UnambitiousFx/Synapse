@@ -305,6 +305,15 @@ public interface ISynapseConfig
         where TContextFactory : class, IContextFactory;
 
     /// <summary>
+    ///     Validates the Synapse configuration when the host starts and fails the start when it is invalid, instead
+    ///     of failing at the first request. Errors throw <see cref="SynapseValidationException" />; warnings are
+    ///     logged. Only generic-host applications start hosted services; elsewhere call
+    ///     <c>ValidateSynapse()</c> yourself. See <see cref="SynapseValidationExtensions.ValidateSynapse" />.
+    /// </summary>
+    /// <returns>The same config, for chaining.</returns>
+    ISynapseConfig ValidateOnStart();
+
+    /// <summary>
     ///     Applies the current configuration to set up the mediator.
     /// </summary>
     void Apply();

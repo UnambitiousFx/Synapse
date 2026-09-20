@@ -80,6 +80,9 @@ builder.Services.AddSynapse(cfg =>
 
     // Run both TaskCompleted event handlers concurrently (observe interleaved logs).
     cfg.SetEventOrchestrator<ConcurrentEventOrchestrator>();
+
+    // A misconfiguration (behavior without handler, duplicate handlers, unresolvable pipeline) now fails startup.
+    cfg.ValidateOnStart();
 });
 
 var app = builder.Build();
