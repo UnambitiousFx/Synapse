@@ -15,13 +15,13 @@ public sealed class SynapseValidationReportTests
     [Fact]
     public void IsValid_WithNoIssues_IsTrue()
     {
-        // Arrange
+        // Arrange (Given)
         var report = new SynapseValidationReport([]);
 
-        // Act
+        // Act (When)
         var isValid = report.IsValid;
 
-        // Assert
+        // Assert (Then)
         Assert.True(isValid);
         Assert.Empty(report.Issues);
     }
@@ -29,13 +29,13 @@ public sealed class SynapseValidationReportTests
     [Fact]
     public void IsValid_WithOnlyWarnings_IsTrueAndThrowIfInvalidDoesNotThrow()
     {
-        // Arrange
+        // Arrange (Given)
         var report = new SynapseValidationReport([Warning()]);
 
-        // Act
+        // Act (When)
         report.ThrowIfInvalid();
 
-        // Assert
+        // Assert (Then)
         Assert.True(report.IsValid);
         Assert.Single(report.Warnings);
         Assert.Empty(report.Errors);
@@ -44,13 +44,13 @@ public sealed class SynapseValidationReportTests
     [Fact]
     public void IsValid_WithAnError_IsFalseAndSplitsErrorsFromWarnings()
     {
-        // Arrange
+        // Arrange (Given)
         var report = new SynapseValidationReport([Warning(), Error()]);
 
-        // Act
+        // Act (When)
         var isValid = report.IsValid;
 
-        // Assert
+        // Assert (Then)
         Assert.False(isValid);
         Assert.Equal("SYN001", Assert.Single(report.Errors).Code);
         Assert.Equal("SYN004", Assert.Single(report.Warnings).Code);
@@ -60,13 +60,13 @@ public sealed class SynapseValidationReportTests
     [Fact]
     public void ThrowIfInvalid_WithErrors_ThrowsWithTheReportAndListsEveryError()
     {
-        // Arrange
+        // Arrange (Given)
         var report = new SynapseValidationReport([Error("SYN001"), Error("SYN002"), Warning()]);
 
-        // Act
+        // Act (When)
         var exception = Assert.Throws<SynapseValidationException>(report.ThrowIfInvalid);
 
-        // Assert
+        // Assert (Then)
         Assert.Same(report, exception.Report);
         Assert.Contains("SYN001", exception.Message);
         Assert.Contains("SYN002", exception.Message);
@@ -76,7 +76,7 @@ public sealed class SynapseValidationReportTests
     [Fact]
     public void Constructor_WithNullIssues_Throws()
     {
-        // Arrange / Act / Assert
+        // Arrange (Given) / Act (When) / Assert (Then)
         Assert.Throws<ArgumentNullException>(() => new SynapseValidationReport(null!));
     }
 }
