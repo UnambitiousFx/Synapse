@@ -123,7 +123,34 @@ With this setting, `EmitAsync(event)` and `EmitAsync(event, EmitMode.Default)` s
 The built-in `InMemoryEventOutboxStorage` is **not persistent** — all pending events are lost on restart. Replace it with a database-backed implementation before going to production.
 
 It is also **not transactional**: it is not enlisted in your database transaction. If a handler emits an event with `EmitMode.Outbox` and then fails or rolls back, the pending entry stays in memory and is dispatched by the next `IOutboxCommit.CommitAsync` call, typically triggered by an unrelated request. Use a storage that writes the entry in the same transaction as your data.
+
+When the in-memory storage is registered in a Production host, Synapse logs a warning at startup.
 :::
+
+### Discard the events of a failed request
+
+If you stay on the in-memory storage, opt in to `OutboxDiscardOnFailureBehavior`. When a request returns a failed `Result` or throws, it takes back the outbox events that request stored and that were not dispatched yet, so a later `CommitAsync` does not publish something that never happened. It runs outermost, so a failure raised by any other behavior counts too.
+
+Enable it per request type:
+
+```csharp
+cfg.RegisterOutboxDiscardOnFailure<CreateTaskCommand, Guid>();
+cfg.RegisterOutboxDiscardOnFailure<DeleteTaskCommand>();
+```
+
+Or for every handler in the assembly:
+
+```csharp
+[assembly: SynapseGlobalBehavior(typeof(OutboxDiscardOnFailureBehavior<>))]
+[assembly: SynapseGlobalBehavior(typeof(OutboxDiscardOnFailureBehavior<,>))]
+```
+
+Things to know:
+
+- It is **opt-in**. Without it, the leak described above still happens.
+- Discarding is **scope-wide**: it takes back everything the current DI scope stored, not only what the failing request stored. Events stored by other scopes, such as concurrent requests, are never touched.
+- Events already dispatched by an explicit `CommitAsync` inside the failed handler cannot be taken back.
+- It only applies to a storage that implements `IDiscardableOutboxStorage`, which the in-memory one does. With a transactional storage the database rollback already removes the entry, so the behavior does nothing.
 
 ## Replace the storage for production
 

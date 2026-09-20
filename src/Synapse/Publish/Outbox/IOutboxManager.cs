@@ -25,4 +25,15 @@ internal interface IOutboxManager
     ValueTask<Result> StoreAsync<TEvent>(TEvent @event,
         CancellationToken cancellationToken)
         where TEvent : class, IEvent;
+
+    /// <summary>
+    ///     Discards the events this scope stored and that have not been dispatched yet, so a request that failed
+    ///     does not leave events behind for an unrelated later commit to dispatch.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>
+    ///     A successful result when the events were discarded or the storage has nothing to discard, otherwise the
+    ///     storage's failure.
+    /// </returns>
+    ValueTask<Result> DiscardStoredAsync(CancellationToken cancellationToken);
 }

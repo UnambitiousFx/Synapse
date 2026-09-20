@@ -15,6 +15,14 @@ namespace UnambitiousFx.Synapse.Publish.Outbox;
 ///         Since the storage is in-memory, all data will be lost when the application process is terminated.
 ///     </para>
 ///     <para>
+///         <b>Not for production.</b> This storage is not enlisted in any database transaction, so it gives no
+///         atomicity between your data change and the event. If a command emits with <see cref="EmitMode.Outbox" />
+///         and then fails, its event stays here and is dispatched by the next <see cref="IOutboxCommit.CommitAsync" />,
+///         typically from an unrelated request, so subscribers react to something that never happened. Wire
+///         <c>OutboxDiscardOnFailureBehavior</c> to take a failed request's events back, or register a transactional
+///         <see cref="IEventOutboxStorage" /> for production. A startup warning is logged in a Production host.
+///     </para>
+///     <para>
 ///         Entries are held in a single flat collection. The storage is registered as a Singleton, and retrieval
 ///         and lifecycle operations are deliberately global rather than filtered by the storing scope, so outbox
 ///         processing can run from any context — including a background one whose scope never stored anything.
@@ -25,7 +33,7 @@ namespace UnambitiousFx.Synapse.Publish.Outbox;
 /// <threadsafety>
 ///     This class is thread-safe and can be safely accessed from multiple threads concurrently.
 /// </threadsafety>
-public sealed class InMemoryEventOutboxStorage : IEventOutboxStorage
+public sealed class InMemoryEventOutboxStorage : IEventOutboxStorage, IDiscardableOutboxStorage
 {
     private readonly ConcurrentBag<Item> _items = [];
 
@@ -36,7 +44,7 @@ public sealed class InMemoryEventOutboxStorage : IEventOutboxStorage
         var now = DateTimeOffset.UtcNow;
         IReadOnlyList<OutboxEntry> pending = _items
             .Where(item =>
-                item is { Processed: false, DeadLetter: false } &&
+                item is { Processed: false, DeadLetter: false, Discarded: false } &&
                 (item.NextAttemptAt is null || item.NextAttemptAt <= now))
             .Select(item => new OutboxEntry(item.Id, item.Event, item.Headers))
             .ToList();
@@ -73,6 +81,22 @@ public sealed class InMemoryEventOutboxStorage : IEventOutboxStorage
         where TEvent : class, IEvent
     {
         _items.Add(new Item(@event, headers));
+
+        return new ValueTask<Result>(Result.Success());
+    }
+
+    /// <inheritdoc />
+    public ValueTask<Result> DiscardAsync(IReadOnlyCollection<IEvent> events,
+        CancellationToken cancellationToken = default)
+    {
+        foreach (var item in _items)
+        {
+            if (item is { Processed: false, DeadLetter: false } &&
+                events.Any(@event => ReferenceEquals(@event, item.Event)))
+            {
+                item.Discarded = true;
+            }
+        }
 
         return new ValueTask<Result>(Result.Success());
     }
@@ -129,14 +153,14 @@ public sealed class InMemoryEventOutboxStorage : IEventOutboxStorage
     /// <inheritdoc />
     public ValueTask<int> GetPendingCountAsync(CancellationToken cancellationToken = default)
     {
-        var count = _items.Count(i => i is { Processed: false, DeadLetter: false });
+        var count = _items.Count(i => i is { Processed: false, DeadLetter: false, Discarded: false });
         return new ValueTask<int>(count);
     }
 
     /// <inheritdoc />
     public ValueTask<int> GetRetryingCountAsync(CancellationToken cancellationToken = default)
     {
-        var count = _items.Count(i => i is { Processed: false, DeadLetter: false } && i.Attempts > 0);
+        var count = _items.Count(i => i is { Processed: false, DeadLetter: false, Discarded: false } && i.Attempts > 0);
         return new ValueTask<int>(count);
     }
 
@@ -151,7 +175,7 @@ public sealed class InMemoryEventOutboxStorage : IEventOutboxStorage
     public ValueTask<TimeSpan?> GetOldestPendingAgeAsync(CancellationToken cancellationToken = default)
     {
         var oldestItem = _items
-            .Where(i => i is { Processed: false, DeadLetter: false })
+            .Where(i => i is { Processed: false, DeadLetter: false, Discarded: false })
             .OrderBy(i => i.CreatedAt)
             .FirstOrDefault();
 
@@ -198,6 +222,7 @@ public sealed class InMemoryEventOutboxStorage : IEventOutboxStorage
         public int Attempts { get; set; }
         public string? LastError { get; set; }
         public bool DeadLetter { get; set; }
+        public bool Discarded { get; set; }
         public DateTimeOffset? NextAttemptAt { get; set; }
     }
 }

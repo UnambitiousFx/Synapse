@@ -246,6 +246,77 @@ public sealed class InMemoryEventOutboxStorageTests
         Assert.True(age.Value >= TimeSpan.Zero);
     }
 
+    [Fact]
+    public async Task DiscardAsync_WithStoredEvent_RemovesItFromPending()
+    {
+        // Arrange (Given)
+        var storage = new InMemoryEventOutboxStorage();
+        var doomed = new EventExample("doomed");
+        var kept = new EventExample("kept");
+        await storage.AddAsync(doomed, NoHeaders, TestContext.Current.CancellationToken);
+        await storage.AddAsync(kept, NoHeaders, TestContext.Current.CancellationToken);
+
+        // Act (When)
+        await storage.DiscardAsync([doomed], TestContext.Current.CancellationToken);
+        var pending = await storage.GetPendingEventsAsync(TestContext.Current.CancellationToken);
+        var pendingCount = await storage.GetPendingCountAsync(TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        var entry = Assert.Single(pending);
+        Assert.Same(kept, entry.Event);
+        Assert.Equal(1, pendingCount);
+    }
+
+    [Fact]
+    public async Task DiscardAsync_WithValueEqualEvents_DiscardsOnlyTheSameInstance()
+    {
+        // Arrange (Given) — two records with the same value are still two distinct emissions
+        var storage = new InMemoryEventOutboxStorage();
+        var first = new EventExample("same-value");
+        var second = new EventExample("same-value");
+        await storage.AddAsync(first, NoHeaders, TestContext.Current.CancellationToken);
+        await storage.AddAsync(second, NoHeaders, TestContext.Current.CancellationToken);
+
+        // Act (When)
+        await storage.DiscardAsync([first], TestContext.Current.CancellationToken);
+        var pending = await storage.GetPendingEventsAsync(TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.Same(second, Assert.Single(pending).Event);
+    }
+
+    [Fact]
+    public async Task DiscardAsync_WithAlreadyProcessedEvent_LeavesItProcessed()
+    {
+        // Arrange (Given) — an entry flushed by an explicit commit was already dispatched, so it can't be taken back
+        var storage = new InMemoryEventOutboxStorage();
+        var dispatched = new EventExample("dispatched");
+        await storage.AddAsync(dispatched, NoHeaders, TestContext.Current.CancellationToken);
+        var entry = Assert.Single(await storage.GetPendingEventsAsync(TestContext.Current.CancellationToken));
+        await storage.MarkAsProcessedAsync(entry.Id, TestContext.Current.CancellationToken);
+
+        // Act (When)
+        await storage.DiscardAsync([dispatched], TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.Equal(0, await storage.GetPendingCountAsync(TestContext.Current.CancellationToken));
+        Assert.NotNull(await storage.GetAttemptCountAsync(entry.Id, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task DiscardAsync_WithNoMatchingEvent_DoesNothing()
+    {
+        // Arrange (Given)
+        var storage = new InMemoryEventOutboxStorage();
+        await storage.AddAsync(new EventExample("stays"), NoHeaders, TestContext.Current.CancellationToken);
+
+        // Act (When)
+        await storage.DiscardAsync([new EventExample("stays")], TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.Equal(1, await storage.GetPendingCountAsync(TestContext.Current.CancellationToken));
+    }
+
     private static Dictionary<string, string> Headers(string traceparent)
     {
         return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)

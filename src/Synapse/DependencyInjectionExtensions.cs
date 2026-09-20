@@ -35,6 +35,7 @@ public static class DependencyInjectionExtensions
         services.TryAddScoped<IDependencyResolver, DefaultDependencyResolver>();
         services.TryAddScoped<IOutboxManager, OutboxManager>();
         services.TryAddScoped<IOutboxCommit, OutboxCommit>();
+        services.TryAddScoped<IOutboxDiscard, OutboxDiscard>();
         services.TryAddScoped<IEventDispatcher, EventDispatcher>();
         services.TryAddScoped<IInvoker, Invoker>();
         services.TryAddScoped<IEmitter, Emitter>();
@@ -186,6 +187,40 @@ public static class DependencyInjectionExtensions
     {
         var serviceType = typeof(IRequestPipelineBehavior<TRequest, TResponse>);
         var implementationType = typeof(CqrsBoundaryEnforcementBehavior<TRequest, TResponse>);
+        ThrowOnLifetimeConflict(services, serviceType, implementationType, lifetime);
+        services.TryAddEnumerable(new ServiceDescriptor(serviceType, implementationType, lifetime));
+        return services;
+    }
+
+    /// <summary>
+    ///     Registers the outbox discard behavior (no-response variant). Runs outermost via
+    ///     <see cref="IOrderedPipelineBehavior.First" />. Deduplicated on the closed behavior, like
+    ///     <see cref="RegisterCqrsBoundaryEnforcement{TRequest}(IServiceCollection, ServiceLifetime)" />: a request covered by
+    ///     both an assembly-level attribute and an explicit call is wired once.
+    /// </summary>
+    internal static IServiceCollection RegisterOutboxDiscardOnFailure<TRequest>(
+        this IServiceCollection services,
+        ServiceLifetime lifetime = ServiceLifetime.Scoped)
+        where TRequest : IRequest
+    {
+        var serviceType = typeof(IRequestPipelineBehavior<TRequest>);
+        var implementationType = typeof(OutboxDiscardOnFailureBehavior<TRequest>);
+        ThrowOnLifetimeConflict(services, serviceType, implementationType, lifetime);
+        services.TryAddEnumerable(new ServiceDescriptor(serviceType, implementationType, lifetime));
+        return services;
+    }
+
+    /// <summary>
+    ///     Registers the outbox discard behavior (with-response variant). See the no-response overload.
+    /// </summary>
+    internal static IServiceCollection RegisterOutboxDiscardOnFailure<TRequest, TResponse>(
+        this IServiceCollection services,
+        ServiceLifetime lifetime = ServiceLifetime.Scoped)
+        where TRequest : IRequest<TResponse>
+        where TResponse : notnull
+    {
+        var serviceType = typeof(IRequestPipelineBehavior<TRequest, TResponse>);
+        var implementationType = typeof(OutboxDiscardOnFailureBehavior<TRequest, TResponse>);
         ThrowOnLifetimeConflict(services, serviceType, implementationType, lifetime);
         services.TryAddEnumerable(new ServiceDescriptor(serviceType, implementationType, lifetime));
         return services;

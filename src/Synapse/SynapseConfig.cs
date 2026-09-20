@@ -1,5 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using UnambitiousFx.Functional;
 using UnambitiousFx.Synapse.Abstractions;
 using UnambitiousFx.Synapse.Contexts;
@@ -93,6 +95,21 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
         where TResponse : notnull
     {
         _actions.Add(svc => svc.RegisterCqrsBoundaryEnforcement<TRequest, TResponse>());
+        return this;
+    }
+
+    public ISynapseConfig RegisterOutboxDiscardOnFailure<TRequest>()
+        where TRequest : IRequest
+    {
+        _actions.Add(svc => svc.RegisterOutboxDiscardOnFailure<TRequest>());
+        return this;
+    }
+
+    public ISynapseConfig RegisterOutboxDiscardOnFailure<TRequest, TResponse>()
+        where TRequest : IRequest<TResponse>
+        where TResponse : notnull
+    {
+        _actions.Add(svc => svc.RegisterOutboxDiscardOnFailure<TRequest, TResponse>());
         return this;
     }
 
@@ -410,6 +427,7 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
         }
 
         services.AddSingleton(typeof(IEventOutboxStorage), _eventOutBoxStorage);
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, InMemoryOutboxProductionCheck>());
         services.AddScoped(typeof(IContextFactory), _contextFactory);
         services.AddScoped(typeof(IEventOrchestrator), _eventOrchestrator);
 

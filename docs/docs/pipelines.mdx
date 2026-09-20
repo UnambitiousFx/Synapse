@@ -192,6 +192,10 @@ Both attributes are needed: the one-parameter form covers requests with no respo
 v1's `[assembly: EnableSynapseCqrsBoundaryEnforcement]` and `cfg.EnableCqrsBoundaryEnforcement()` were removed in v2 — see [Migrating to v2](./migration-v2.mdx#7-the-deprecated-cqrs-enforcement-opt-ins-are-removed).
 :::
 
+### Outbox discard on failure
+
+`OutboxDiscardOnFailureBehavior<TRequest>` / `OutboxDiscardOnFailureBehavior<TRequest, TResponse>` take back the outbox events a request stored when it fails or throws. It is opt-in and also runs outermost; see [Discard the events of a failed request](./outbox.mdx#discard-the-events-of-a-failed-request).
+
 ## Event pipeline behaviors
 
 Implement `IEventPipelineBehavior<TEvent>` for a specific event type:
