@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+using System.Reflection;
 using Microsoft.Extensions.DependencyInjection;
 using UnambitiousFx.Synapse.Abstractions;
 using UnambitiousFx.Synapse.Publish;
@@ -60,5 +62,61 @@ internal sealed class PipelineDescriber : IPipelineDescriber
             // behavior can apply.
             _ => new PipelineDescription([handler.GetType()], [])
         };
+    }
+
+    [RequiresDynamicCode("Builds a generic method over the request type at runtime. Use the generic overloads under Native AOT.")]
+    [RequiresUnreferencedCode("Looks up the generic overloads by reflection. Use the generic overloads when trimming.")]
+    public PipelineDescription? Describe(Type requestType)
+    {
+        ArgumentNullException.ThrowIfNull(requestType);
+
+        var responseType = requestType.GetInterfaces()
+            .Where(candidate => candidate.IsGenericType && candidate.GetGenericTypeDefinition() == typeof(IRequest<>))
+            .Select(candidate => candidate.GetGenericArguments()[0])
+            .FirstOrDefault();
+
+        if (responseType is not null)
+        {
+            return InvokeGeneric(nameof(Describe), requestType, responseType);
+        }
+
+        if (typeof(IRequest).IsAssignableFrom(requestType))
+        {
+            return InvokeGeneric(nameof(Describe), requestType);
+        }
+
+        throw new ArgumentException(
+            $"'{requestType}' does not implement IRequest or IRequest<TResponse>.", nameof(requestType));
+    }
+
+    [RequiresDynamicCode("Builds a generic method over the event type at runtime. Use the generic overloads under Native AOT.")]
+    [RequiresUnreferencedCode("Looks up the generic overloads by reflection. Use the generic overloads when trimming.")]
+    public PipelineDescription? DescribeEvent(Type eventType)
+    {
+        ArgumentNullException.ThrowIfNull(eventType);
+
+        if (eventType.IsValueType || !typeof(IEvent).IsAssignableFrom(eventType))
+        {
+            throw new ArgumentException($"'{eventType}' is not a reference type implementing IEvent.",
+                nameof(eventType));
+        }
+
+        return InvokeGeneric(nameof(DescribeEvent), eventType);
+    }
+
+    // The generic overload is picked by name and arity, since Describe(Type) shares its name with them.
+    [RequiresDynamicCode("Builds a generic method at runtime.")]
+    [RequiresUnreferencedCode("Looks up the generic overloads by reflection.")]
+    private PipelineDescription? InvokeGeneric(string name, params Type[] typeArguments)
+    {
+        var method = typeof(PipelineDescriber)
+            .GetMethods(BindingFlags.Instance | BindingFlags.Public)
+            .Single(candidate => candidate.Name == name &&
+                                 candidate.IsGenericMethodDefinition &&
+                                 candidate.GetGenericArguments().Length == typeArguments.Length)
+            .MakeGenericMethod(typeArguments);
+
+        // DoNotWrapExceptions so a throwing behavior constructor surfaces as itself, not as a TargetInvocationException.
+        return (PipelineDescription?)method.Invoke(this, BindingFlags.DoNotWrapExceptions, null, null, null);
     }
 }

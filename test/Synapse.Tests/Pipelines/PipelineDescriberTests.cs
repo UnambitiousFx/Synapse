@@ -223,6 +223,107 @@ public sealed class PipelineDescriberTests
         public List<string> Steps { get; } = [];
     }
 
+    [Fact]
+    public async Task Describe_WithARequestType_MatchesTheGenericOverload()
+    {
+        // Arrange (Given)
+        await using var provider = Build(new Trace(),
+            cfg => cfg.RegisterRequestPipelineBehavior<OuterBehavior<PlainCommand>, PlainCommand>());
+        var describer = provider.GetRequiredService<IPipelineDescriber>();
+
+        // Act (When)
+        var byType = describer.Describe(typeof(PlainCommand));
+        var generic = describer.Describe<PlainCommand>();
+
+        // Assert (Then)
+        AssertSameDescription(generic, byType);
+    }
+
+    [Fact]
+    public async Task Describe_WithARequestTypeThatHasAResponse_MatchesTheGenericOverload()
+    {
+        // Arrange (Given)
+        await using var provider = Build(new Trace(),
+            cfg => cfg.RegisterRequestPipelineBehavior<CountBehavior, CountQuery, int>());
+        var describer = provider.GetRequiredService<IPipelineDescriber>();
+
+        // Act (When)
+        var byType = describer.Describe(typeof(CountQuery));
+        var generic = describer.Describe<CountQuery, int>();
+
+        // Assert (Then)
+        AssertSameDescription(generic, byType);
+    }
+
+    [Fact]
+    public async Task DescribeEvent_WithAnEventType_MatchesTheGenericOverload()
+    {
+        // Arrange (Given)
+        await using var provider = BuildEvents(new Trace(), cfg =>
+        {
+            cfg.RegisterEventPipelineBehavior<OuterEventBehavior, EventExample>();
+            cfg.RegisterEventHandler<FirstEventHandler, EventExample>();
+        });
+        var describer = provider.GetRequiredService<IPipelineDescriber>();
+
+        // Act (When)
+        var byType = describer.DescribeEvent(typeof(EventExample));
+        var generic = describer.DescribeEvent<EventExample>();
+
+        // Assert (Then)
+        AssertSameDescription(generic, byType);
+    }
+
+    [Fact]
+    public async Task Describe_WithATypeThatIsNotARequest_ThrowsArgumentException()
+    {
+        // Arrange (Given)
+        await using var provider = Build(new Trace(), _ => { });
+        var describer = provider.GetRequiredService<IPipelineDescriber>();
+
+        // Act (When)
+        var exception = Record.Exception(() => describer.Describe(typeof(string)));
+
+        // Assert (Then)
+        Assert.IsType<ArgumentException>(exception);
+    }
+
+    [Fact]
+    public async Task DescribeEvent_WithATypeThatIsNotAnEvent_ThrowsArgumentException()
+    {
+        // Arrange (Given)
+        await using var provider = Build(new Trace(), _ => { });
+        var describer = provider.GetRequiredService<IPipelineDescriber>();
+
+        // Act (When)
+        var exception = Record.Exception(() => describer.DescribeEvent(typeof(string)));
+
+        // Assert (Then)
+        Assert.IsType<ArgumentException>(exception);
+    }
+
+    [Fact]
+    public async Task Describe_WithANullType_ThrowsArgumentNullException()
+    {
+        // Arrange (Given)
+        await using var provider = Build(new Trace(), _ => { });
+        var describer = provider.GetRequiredService<IPipelineDescriber>();
+
+        // Act (When)
+        var exception = Record.Exception(() => describer.Describe(null!));
+
+        // Assert (Then)
+        Assert.IsType<ArgumentNullException>(exception);
+    }
+
+    private static void AssertSameDescription(PipelineDescription? expected, PipelineDescription? actual)
+    {
+        Assert.NotNull(expected);
+        Assert.NotNull(actual);
+        Assert.Equal(expected.Handlers, actual.Handlers);
+        Assert.Equal(expected.Behaviors, actual.Behaviors);
+    }
+
     private sealed record PlainCommand : IRequest;
 
     private sealed class PlainCommandHandler(Trace trace) : IRequestHandler<PlainCommand>
