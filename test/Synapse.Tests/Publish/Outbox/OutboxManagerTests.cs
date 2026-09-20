@@ -435,4 +435,71 @@ public sealed class OutboxManagerTests
         Assert.Empty(captured!);
         Assert.False(accessor.ContextWasRead);
     }
+
+    [Fact]
+    public async Task DiscardStoredAsync_AfterStoring_DiscardsOnlyWhatThisScopeStored()
+    {
+        // Arrange (Given) — two scopes over one singleton storage, as two concurrent requests would be
+        var (_, eventDispatcher, metrics, logger) = CreateSubstitutes();
+        var storage = new InMemoryEventOutboxStorage();
+        var failingScope = BuildManager(storage, eventDispatcher, metrics, logger);
+        var otherScope = BuildManager(storage, eventDispatcher, metrics, logger);
+        var failed = new EventExample("failed-request");
+        var unrelated = new EventExample("other-request");
+        await failingScope.StoreAsync(failed, TestContext.Current.CancellationToken);
+        await otherScope.StoreAsync(unrelated, TestContext.Current.CancellationToken);
+
+        // Act (When)
+        var result = await failingScope.DiscardStoredAsync(TestContext.Current.CancellationToken);
+        var pending = await storage.GetPendingEventsAsync(TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.True(result.IsSuccess);
+        Assert.Same(unrelated, Assert.Single(pending).Event);
+    }
+
+    [Fact]
+    public async Task DiscardStoredAsync_CalledTwice_DiscardsOnce()
+    {
+        // Arrange (Given)
+        var (_, eventDispatcher, metrics, logger) = CreateSubstitutes();
+        var storage = Substitute.For<IEventOutboxStorage, IDiscardableOutboxStorage>();
+        storage.AddAsync(Arg.Any<EventExample>(), Arg.Any<IReadOnlyDictionary<string, string>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<Result>(Result.Success()));
+        var discardable = (IDiscardableOutboxStorage)storage;
+        discardable.DiscardAsync(Arg.Any<IReadOnlyCollection<IEvent>>(), Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<Result>(Result.Success()));
+        var manager = BuildManager(storage, eventDispatcher, metrics, logger);
+        await manager.StoreAsync(new EventExample("once"), TestContext.Current.CancellationToken);
+
+        // Act (When)
+        await manager.DiscardStoredAsync(TestContext.Current.CancellationToken);
+        await manager.DiscardStoredAsync(TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        await discardable.Received(1)
+            .DiscardAsync(Arg.Is<IReadOnlyCollection<IEvent>>(events => events.Count == 1),
+                Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task DiscardStoredAsync_WithStorageThatCannotDiscard_SucceedsAndLeavesEntries()
+    {
+        // Arrange (Given) — a transactional storage rolls back with the database, so there is nothing to discard
+        var (outboxStorage, eventDispatcher, metrics, logger) = CreateSubstitutes();
+        outboxStorage.AddAsync(Arg.Any<EventExample>(), Arg.Any<IReadOnlyDictionary<string, string>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<Result>(Result.Success()));
+        var manager = BuildManager(outboxStorage, eventDispatcher, metrics, logger);
+        await manager.StoreAsync(new EventExample("kept"), TestContext.Current.CancellationToken);
+
+        // Act (When)
+        var result = await manager.DiscardStoredAsync(TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.True(result.IsSuccess);
+        Assert.DoesNotContain(outboxStorage.ReceivedCalls(),
+            call => call.GetMethodInfo().Name == nameof(IDiscardableOutboxStorage.DiscardAsync));
+    }
 }

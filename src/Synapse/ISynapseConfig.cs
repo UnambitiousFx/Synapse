@@ -1,5 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using UnambitiousFx.Synapse.Abstractions;
+using UnambitiousFx.Synapse.Pipelines;
 using UnambitiousFx.Synapse.Publish.Orchestrators;
 using UnambitiousFx.Synapse.Publish.Outbox;
 
@@ -89,6 +90,27 @@ public interface ISynapseConfig
     ///     is closed (Native-AOT safe).
     /// </remarks>
     ISynapseConfig RegisterCqrsBoundaryEnforcement<TRequest, TResponse>()
+        where TRequest : IRequest<TResponse>
+        where TResponse : notnull;
+
+    /// <summary>
+    ///     Registers <see cref="OutboxDiscardOnFailureBehavior{TRequest}" /> for a specific request type (no-response
+    ///     form): the outbox events the request stored are discarded when it fails or throws.
+    /// </summary>
+    /// <remarks>
+    ///     Only meaningful with the in-memory outbox storage, which is not enlisted in the database transaction.
+    ///     Handlers the source generator discovers are wired automatically when the assembly carries
+    ///     <c>[assembly: SynapseGlobalBehavior(typeof(OutboxDiscardOnFailureBehavior&lt;&gt;))]</c>; this method is for
+    ///     the ones it cannot see. The registration is deduplicated and closed (Native-AOT safe).
+    /// </remarks>
+    ISynapseConfig RegisterOutboxDiscardOnFailure<TRequest>()
+        where TRequest : IRequest;
+
+    /// <summary>
+    ///     Registers <see cref="OutboxDiscardOnFailureBehavior{TRequest,TResponse}" /> for a specific request/response
+    ///     pair. See the no-response overload.
+    /// </summary>
+    ISynapseConfig RegisterOutboxDiscardOnFailure<TRequest, TResponse>()
         where TRequest : IRequest<TResponse>
         where TResponse : notnull;
 

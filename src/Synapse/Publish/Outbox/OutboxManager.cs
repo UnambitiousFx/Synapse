@@ -26,6 +26,7 @@ internal sealed class OutboxManager : IOutboxManager
     private readonly IEventOutboxStorage _outboxStorage;
     private readonly IContextPropagator _propagator;
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly List<IEvent> _stored = [];
 
     public OutboxManager(
         IEventOutboxStorage outboxStorage,
@@ -92,11 +93,48 @@ internal sealed class OutboxManager : IOutboxManager
         return combinedResult;
     }
 
-    public ValueTask<Result> StoreAsync<TEvent>(TEvent @event,
+    public async ValueTask<Result> StoreAsync<TEvent>(TEvent @event,
         CancellationToken cancellationToken)
         where TEvent : class, IEvent
     {
-        return _outboxStorage.AddAsync(@event, CaptureHeaders(), cancellationToken);
+        var result = await _outboxStorage.AddAsync(@event, CaptureHeaders(), cancellationToken);
+
+        // Only remembered when the storage can take entries back; a transactional one is rolled back with the
+        // database and would make this list dead weight.
+        if (result.IsSuccess && _outboxStorage is IDiscardableOutboxStorage)
+        {
+            lock (_stored)
+            {
+                _stored.Add(@event);
+            }
+        }
+
+        return result;
+    }
+
+    public ValueTask<Result> DiscardStoredAsync(CancellationToken cancellationToken)
+    {
+        if (_outboxStorage is not IDiscardableOutboxStorage discardable)
+        {
+            return new ValueTask<Result>(Result.Success());
+        }
+
+        IEvent[] events;
+        lock (_stored)
+        {
+            if (_stored.Count == 0)
+            {
+                return new ValueTask<Result>(Result.Success());
+            }
+
+            events = _stored.ToArray();
+            _stored.Clear();
+        }
+
+        _logger.LogWarning(
+            "Discarding {EventCount} outbox events stored by a request that did not complete successfully",
+            events.Length);
+        return discardable.DiscardAsync(events, cancellationToken);
     }
 
     /// <summary>

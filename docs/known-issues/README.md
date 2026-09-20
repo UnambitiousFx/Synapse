@@ -49,6 +49,7 @@ filed as a GitHub issue with minimal editing.
 | [041](041-duplicate-stored-header-keys-abort-the-outbox-batch.md) | Rebuilding an entry's headers with `ToDictionary` threw on keys differing only by case, from outside the `try`, so one badly-shaped row aborted the whole batch with nothing marked processed or failed | ✅ Resolved | Low | Outbox |
 | [042](042-restored-outbox-flow-never-reaches-the-handlers-context.md) | Dispatch used the entry's restored flow only to parent the activity: the stored baggage was dropped and handlers read the committing scope's `IContext`, so entries were dispatched under whichever request called `CommitAsync`; each entry now gets its own scope built from its own state | ✅ Resolved | **High** | Outbox |
 | [043](043-inject-propagates-the-activitys-trace-id-not-the-contexts.md) | `Inject` wrote the ambient activity's trace id rather than `IContext.TraceId`, so an untrusted edge propagated the caller's forged trace id onto outbound calls and into outbox entries; the context now wins when the two diverge | ✅ Resolved | Medium | Observability |
+| [068](068-in-memory-outbox-leaks-events-of-failed-commands.md) | The in-memory outbox storage is not enlisted in any transaction, so events emitted by a command that then failed were dispatched by the next unrelated `CommitAsync`; an opt-in `OutboxDiscardOnFailureBehavior` now takes them back and a Production host logs a startup warning | ✅ Resolved | Medium | Outbox |
 
 > **Discovery context:** 001–003 were found while building the pipeline-behavior showcase in
 > `examples/MinimalApi` on branch `feature/typed-pipeline-behaviors` against .NET 10 with
@@ -61,7 +62,8 @@ filed as a GitHub issue with minimal editing.
 > directory against the post-v2 source. 032–041 were found in a high-effort code review of the v2
 > trace-context rework (working-tree diff, multiple finder angles, each finding adversarially verified).
 > 042–043 were found in a code review of the committed v2 branch (`git diff main...HEAD`) and resolved on
-> `feat/context-propagation`.
+> `feat/context-propagation`. 068 was found while integrating Synapse into a modular monolith (issue #93) and
+> resolved on `fix/outbox-discard-on-failure`.
 >
 > Each file is the report as written at discovery. Where a later change replaced the mechanism a report
 > describes — most often the v2 context-propagation refactor, which removed `CorrelationContext`,
