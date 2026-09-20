@@ -23,6 +23,7 @@ public sealed class PipelinesApiTests
 
         // Assert (Then)
         var lines = body.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        Assert.NotEmpty(lines);
         Assert.Contains("CqrsBoundaryEnforcementBehavior", lines[0], StringComparison.Ordinal);
         Assert.Contains(lines, line => line.Contains("MetricsBehavior", StringComparison.Ordinal));
     }

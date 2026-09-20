@@ -9,7 +9,9 @@ namespace UnambitiousFx.Synapse.Pipelines;
 
 /// <summary>
 ///     Default <see cref="IPipelineDescriber" />: opens a scope per call, reads the pipeline from what the
-///     container resolves, and disposes the scope.
+///     container resolves, and disposes the scope. A proxied request reports <c>typeof(TRequestHandler)</c> and the
+///     non-proxied fallback and events report <c>handler.GetType()</c>; they coincide for every registration Synapse
+///     produces, but they are not interchangeable in general.
 /// </summary>
 internal sealed class PipelineDescriber : IPipelineDescriber
 {
@@ -70,6 +72,7 @@ internal sealed class PipelineDescriber : IPipelineDescriber
     {
         ArgumentNullException.ThrowIfNull(requestType);
 
+        // IRequest<TResponse> wins over IRequest; several IRequest<T> closures are ambiguous and the first is used.
         var responseType = requestType.GetInterfaces()
             .Where(candidate => candidate.IsGenericType && candidate.GetGenericTypeDefinition() == typeof(IRequest<>))
             .Select(candidate => candidate.GetGenericArguments()[0])

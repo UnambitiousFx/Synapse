@@ -136,11 +136,9 @@ public sealed class PipelineDescriberTests
         // Act (When)
         services.AddSynapse(_ => { });
         services.AddSynapse(_ => { });
-        using var provider = services.BuildServiceProvider();
 
         // Assert (Then)
-        Assert.Same(provider.GetRequiredService<IPipelineDescriber>(),
-            provider.GetRequiredService<IPipelineDescriber>());
+        Assert.Equal(1, services.Count(descriptor => descriptor.ServiceType == typeof(IPipelineDescriber)));
     }
 
     [Fact]
@@ -316,12 +314,27 @@ public sealed class PipelineDescriberTests
         Assert.IsType<ArgumentNullException>(exception);
     }
 
+    [Fact]
+    public async Task Describe_WithABehaviorWhoseConstructorThrows_SurfacesTheOriginalException()
+    {
+        // Arrange (Given)
+        await using var provider = Build(new Trace(),
+            cfg => cfg.RegisterRequestPipelineBehavior<ThrowingBehavior<PlainCommand>, PlainCommand>());
+        var describer = provider.GetRequiredService<IPipelineDescriber>();
+
+        // Act (When)
+        var exception = Record.Exception(() => describer.Describe(typeof(PlainCommand)));
+
+        // Assert (Then) — not wrapped in a TargetInvocationException
+        Assert.IsType<InvalidOperationException>(exception);
+    }
+
     private static void AssertSameDescription(PipelineDescription? expected, PipelineDescription? actual)
     {
         Assert.NotNull(expected);
         Assert.NotNull(actual);
-        Assert.Equal(expected.Handlers, actual.Handlers);
-        Assert.Equal(expected.Behaviors, actual.Behaviors);
+        Assert.NotEmpty(actual.Behaviors);
+        Assert.Equal(expected, actual);
     }
 
     private sealed record PlainCommand : IRequest;
@@ -383,6 +396,22 @@ public sealed class PipelineDescriberTests
 
     private sealed class UnorderedBehavior<TRequest>(Trace trace) : TracingBehavior<TRequest>(trace, "Unordered")
         where TRequest : IRequest;
+
+    private sealed class ThrowingBehavior<TRequest> : IRequestPipelineBehavior<TRequest>
+        where TRequest : IRequest
+    {
+        public ThrowingBehavior()
+        {
+            throw new InvalidOperationException("needs a real request");
+        }
+
+        public ValueTask<Result> HandleAsync(TRequest request,
+            RequestHandlerDelegate<TRequest> next,
+            CancellationToken cancellationToken = default)
+        {
+            return next(request, cancellationToken);
+        }
+    }
 
     private sealed class FirstTieBehavior<TRequest>(Trace trace) : TracingBehavior<TRequest>(trace, "FirstTie"),
         IOrderedPipelineBehavior

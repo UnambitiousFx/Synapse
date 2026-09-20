@@ -7,10 +7,12 @@ namespace UnambitiousFx.Synapse.Abstractions;
 ///     request traverses the security behaviors.
 /// </summary>
 /// <remarks>
-///     Describing resolves the behaviors from a fresh DI scope, because <see cref="IOrderedPipelineBehavior.Order" />
-///     is an instance property. A behavior whose constructor needs something that only exists inside a real request
-///     can therefore throw here, and a handler that only implements <see cref="IAsyncDisposable" /> makes disposing
-///     the scope throw.
+///     Describing resolves the handler and the behaviors from a fresh DI scope, then disposes it. The handler's
+///     whole constructor dependency graph is constructed (a <c>DbContext</c>, an <c>HttpClient</c>, any warm-up side
+///     effect), and the behaviors are instantiated because <see cref="IOrderedPipelineBehavior.Order" /> is an
+///     instance property. A handler or behavior whose constructor needs something that only exists inside a real
+///     request can therefore throw here, and a handler that only implements <see cref="IAsyncDisposable" /> makes
+///     disposing the scope throw.
 /// </remarks>
 public interface IPipelineDescriber
 {
@@ -43,6 +45,8 @@ public interface IPipelineDescriber
     /// <summary>
     ///     Describes the pipeline of a request known only as a <see cref="Type" />, for tests that loop over every
     ///     request in an assembly. Picks <see cref="IRequest" /> or <see cref="IRequest{TResponse}" /> from the type.
+    ///     When a type implements both, <see cref="IRequest{TResponse}" /> wins; a type with several
+    ///     <c>IRequest&lt;T&gt;</c> closures is ambiguous and which one is used is unspecified.
     /// </summary>
     /// <param name="requestType">A type implementing <see cref="IRequest" /> or <see cref="IRequest{TResponse}" />.</param>
     /// <returns>The description, or <c>null</c> when no handler is registered for the request.</returns>
