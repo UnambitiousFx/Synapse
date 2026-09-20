@@ -22,7 +22,7 @@ public interface IAuditableRequest
 
 /// <summary>
 ///     Marks a request as requiring an explicit permission.
-///     <c>AuthorizationBehavior&lt;TRequest&gt;</c> (registered as a runtime open-generic)
+///     <c>AuthorizationBehavior&lt;TRequest, TResponse&gt;</c> (closed by the source-generated <c>RegisterGroup</c>)
 ///     reads <see cref="RequiredPermission" /> and checks it against the
 ///     <c>X-User-Permissions</c> request header, short-circuiting the pipeline
 ///     on a mismatch without ever invoking the downstream handler.
