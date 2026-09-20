@@ -23,6 +23,7 @@ public sealed class ValidationTests
         var report = provider.ValidateSynapse();
 
         // Assert (Then)
+        Assert.Empty(report.Issues);
         Assert.True(report.IsValid, report.ToString());
     }
 }

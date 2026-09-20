@@ -63,7 +63,7 @@ public sealed class SynapseValidationStartupTests
         await StartHostedServices(provider);
 
         // Assert (Then)
-        Assert.Empty(sink.Warnings);
+        Assert.DoesNotContain(sink.Warnings, message => message.Contains("SYN", StringComparison.Ordinal));
     }
 
     [Fact]

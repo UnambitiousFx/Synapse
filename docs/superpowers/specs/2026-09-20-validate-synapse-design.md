@@ -8,7 +8,9 @@ Catch Synapse configuration mistakes at host start or in a test, instead of at t
 registered for a request that has no handler, two handlers for one request (all but the last registered are silently ignored today),
 a pipeline that cannot be resolved, and `Order` ties.
 
-## Public API (`Synapse.Abstractions`, `UnambitiousFx.Synapse.Abstractions`)
+## Public API
+
+`SynapseValidationExtensions` ships in the `Synapse` project (namespace `UnambitiousFx.Synapse`); the report, issue, severity and exception types are in `Synapse.Abstractions` (`UnambitiousFx.Synapse.Abstractions`).
 
 ```csharp
 public static class SynapseValidationExtensions
@@ -43,9 +45,9 @@ cover them yet).
 | Code | Severity | Rule |
 |---|---|---|
 | SYN001 | Error | A closed pipeline behavior is registered for a request/event type that has no handler. |
-| SYN002 | Error | Two or more handlers are registered for one request type (the container resolves the last registered handler; the others are silently ignored). Events are exempt: several handlers per event is normal. |
+| SYN002 | Error | Two or more distinct handler implementations are registered for one request type (the container resolves the last registered handler; the others are silently ignored). Registering the same handler type twice is not a conflict. Events are exempt: several handlers per event is normal. |
 | SYN003 | Error | The pipeline of a registered handler/event fails to resolve (missing dependency, throwing constructor). The exception message is included. |
-| SYN004 | Warning | Two behaviors in one pipeline share an `Order`. Legal; they keep registration order. |
+| SYN004 | Warning | Two behaviors in one pipeline share a declared `Order` (at least two implement `IOrderedPipelineBehavior`; groups made solely of Synapse's own built-ins are excluded). Legal; they keep registration order. |
 
 ## Design
 

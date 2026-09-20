@@ -46,9 +46,15 @@ internal static class SynapseValidator
                 continue;
             }
 
-            foreach (var tie in description.Behaviors.GroupBy(behavior => behavior.Order).Where(g => g.Count() > 1))
+            foreach (var tie in description.Behaviors.GroupBy(behavior => behavior.Order))
             {
-                var names = string.Join(", ", tie.Select(behavior => behavior.Type.Name));
+                var members = tie.ToList();
+                if (!IsUserDeclaredTie(members))
+                {
+                    continue;
+                }
+
+                var names = string.Join(", ", members.Select(behavior => DisplayName(behavior.Type)));
                 issues.Add(new SynapseValidationIssue("SYN004", SynapseValidationSeverity.Warning,
                     $"Behaviors {names} of the pipeline for '{type}' share Order {tie.Key}, so they run in " +
                     "registration order. Give them distinct Order values if the order matters.", type));
@@ -58,6 +64,26 @@ internal static class SynapseValidator
         return new SynapseValidationReport(issues
             .OrderBy(issue => issue.Code, StringComparer.Ordinal)
             .ThenBy(issue => issue.Type.FullName, StringComparer.Ordinal));
+    }
+
+    // Behaviors that declare no Order all report Last, and Synapse's own behaviors are not the user's to reorder,
+    // so only a tie between two user behaviors that opted into IOrderedPipelineBehavior is actionable.
+    private static bool IsUserDeclaredTie(List<BehaviorDescription> members)
+    {
+        if (members.Count < 2 ||
+            members.Count(behavior => typeof(IOrderedPipelineBehavior).IsAssignableFrom(behavior.Type)) < 2)
+        {
+            return false;
+        }
+
+        return members.Any(behavior => behavior.Type.Assembly != typeof(SynapseConfig).Assembly);
+    }
+
+    private static string DisplayName(Type type)
+    {
+        var name = type.Name;
+        var arity = name.IndexOf('`');
+        return arity < 0 ? name : name[..arity];
     }
 
     private static SynapseValidationIssue NoHandler(Type type)

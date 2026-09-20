@@ -266,18 +266,21 @@ public sealed class LoggingBehavior<TRequest, TResponse>
 
 ## Validating the configuration
 
-`ValidateSynapse()` inspects the registrations and reports mistakes that would otherwise surface only at the first request (or never). It never throws: it returns a `SynapseValidationReport` and you decide what to do with it.
+`ValidateSynapse()` inspects the registrations and reports mistakes that would otherwise surface only at the first request (or never). It never throws on findings (it throws `ArgumentNullException` for a null provider and `InvalidOperationException` if `AddSynapse` was never called): it returns a `SynapseValidationReport` and you decide what to do with it.
 
 | Code | Severity | What it catches | Fix |
 |---|---|---|---|
 | `SYN001` | Error | A closed pipeline behavior is registered for a request or event type that has no handler. | Register the handler, or remove the behavior. |
 | `SYN002` | Error | Two or more handlers are registered for one request type. Only the last registered one runs; the others are silently ignored. Events are exempt: several handlers per event is normal. | Keep one handler per request. |
 | `SYN003` | Error | The pipeline of a registered handler or event cannot be resolved (missing dependency, throwing constructor). The exception message is included. | Register the missing dependency or fix the constructor. |
-| `SYN004` | Warning | Two behaviors in one pipeline share an `Order`. Legal, they keep registration order. | Give them distinct `Order` values if the relative position matters. |
+| `SYN004` | Warning | Two behaviors in one pipeline share an `Order`. Legal, they keep registration order. Only behaviors that declare an `Order` through `IOrderedPipelineBehavior` can tie, and ties made solely of Synapse's own built-in behaviors are not reported. | Give them distinct `Order` values if the relative position matters. |
 
 Warnings do not make `report.IsValid` false. Assert on it in a test:
 
 ```csharp
+using UnambitiousFx.Synapse;                // ValidateSynapse()
+using UnambitiousFx.Synapse.Abstractions;   // SynapseValidationReport
+
 var report = provider.ValidateSynapse();
 
 Assert.True(report.IsValid, report.ToString());
@@ -298,8 +301,11 @@ services.AddSynapse(cfg =>
 - A request with neither a handler nor a behavior: nothing is registered, so there is nothing to inspect.
 - `[assembly: SynapseGlobalBehavior]` when the host's generated group is never registered (`cfg.AddRegisterGroup(new Host.RegisterGroup())`). The behaviors never reach the container, so the validator sees a valid configuration. A build-time analyzer is tracked in [#103](https://github.com/UnambitiousFx/Synapse/issues/103).
 - Stream requests: stream pipelines are not inspected yet.
+- An `IRequestPipelineBehavior<TRequest>` (void flavour) registered for an `IRequest<TResponse>` request: it never runs and is not reported.
 - Behaviors added to the `IServiceCollection` after `AddSynapse` returns.
 - Open-generic behaviors: DI closes them lazily over any request, so whether one applies to nothing is not decidable at runtime.
+
+Validation also resolves every registered handler and its behaviors once at startup (one throwaway scope per pipeline), so constructor side effects run at startup.
 
 ## See also
 

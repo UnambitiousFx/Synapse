@@ -157,6 +157,97 @@ public sealed class SynapseValidatorTests
     }
 
     [Fact]
+    public void ValidateSynapse_WithTwoBehaviorsThatDeclareNoOrder_ReportsNoTie()
+    {
+        // Arrange (Given)
+        using var provider = Build(cfg =>
+        {
+            cfg.RegisterRequestHandler<PlainHandler, PlainCommand>();
+            cfg.RegisterRequestPipelineBehavior<UnorderedBehavior<PlainCommand, First>, PlainCommand>();
+            cfg.RegisterRequestPipelineBehavior<UnorderedBehavior<PlainCommand, Second>, PlainCommand>();
+        });
+
+        // Act (When)
+        var report = provider.ValidateSynapse();
+
+        // Assert (Then)
+        Assert.Empty(report.Issues);
+    }
+
+    [Fact]
+    public void ValidateSynapse_WithAnOrderedAndAnUnorderedBehaviorAtTheSameOrder_ReportsNoTie()
+    {
+        // Arrange (Given)
+        using var provider = Build(cfg =>
+        {
+            cfg.RegisterRequestHandler<PlainHandler, PlainCommand>();
+            cfg.RegisterRequestPipelineBehavior<LastOrderedBehavior, PlainCommand>();
+            cfg.RegisterRequestPipelineBehavior<UnorderedBehavior<PlainCommand, First>, PlainCommand>();
+        });
+
+        // Act (When)
+        var report = provider.ValidateSynapse();
+
+        // Assert (Then)
+        Assert.Empty(report.Issues);
+    }
+
+    [Fact]
+    public void ValidateSynapse_WithATieBetweenTwoBuiltInBehaviors_ReportsNoTie()
+    {
+        // Arrange (Given)
+        using var provider = Build(cfg =>
+        {
+            cfg.RegisterRequestHandler<PlainHandler, PlainCommand>();
+            cfg.RegisterCqrsBoundaryEnforcement<PlainCommand>();
+            cfg.RegisterOutboxDiscardOnFailure<PlainCommand>();
+        });
+
+        // Act (When)
+        var report = provider.ValidateSynapse();
+
+        // Assert (Then)
+        Assert.Empty(report.Issues);
+    }
+
+    [Fact]
+    public void ValidateSynapse_WithATie_NamesTheBehaviorsWithoutTheArityMarker()
+    {
+        // Arrange (Given)
+        using var provider = Build(cfg =>
+        {
+            cfg.RegisterRequestHandler<PlainHandler, PlainCommand>();
+            cfg.RegisterRequestPipelineBehavior<OrderedBehavior<PlainCommand, First>, PlainCommand>();
+            cfg.RegisterRequestPipelineBehavior<OrderedBehavior<PlainCommand, Second>, PlainCommand>();
+        });
+
+        // Act (When)
+        var report = provider.ValidateSynapse();
+
+        // Assert (Then)
+        var message = Assert.Single(report.Warnings).Message;
+        Assert.Contains("OrderedBehavior, OrderedBehavior", message, StringComparison.Ordinal);
+        Assert.DoesNotContain("`", message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ValidateSynapse_WithTheSameHandlerRegisteredTwice_ReportsNoSyn002()
+    {
+        // Arrange (Given)
+        using var provider = Build(cfg =>
+        {
+            cfg.RegisterRequestHandler<PlainHandler, PlainCommand>();
+            cfg.RegisterRequestHandler<PlainHandler, PlainCommand>();
+        });
+
+        // Act (When)
+        var report = provider.ValidateSynapse();
+
+        // Assert (Then)
+        Assert.DoesNotContain(report.Issues, issue => issue.Code == "SYN002");
+    }
+
+    [Fact]
     public void ValidateSynapse_WithBehaviorsOfDistinctOrders_ReportsNoTie()
     {
         // Arrange (Given)
@@ -311,6 +402,21 @@ public sealed class SynapseValidatorTests
         public uint Order => typeof(TMarker) == typeof(Third) ? 20u : 10u;
 
         public ValueTask<Result> HandleAsync(TRequest request, RequestHandlerDelegate<TRequest> next,
+            CancellationToken cancellationToken = default) => next(request, cancellationToken);
+    }
+
+    private sealed class UnorderedBehavior<TRequest, TMarker> : IRequestPipelineBehavior<TRequest>
+        where TRequest : IRequest
+    {
+        public ValueTask<Result> HandleAsync(TRequest request, RequestHandlerDelegate<TRequest> next,
+            CancellationToken cancellationToken = default) => next(request, cancellationToken);
+    }
+
+    private sealed class LastOrderedBehavior : IRequestPipelineBehavior<PlainCommand>, IOrderedPipelineBehavior
+    {
+        public uint Order => IOrderedPipelineBehavior.Last;
+
+        public ValueTask<Result> HandleAsync(PlainCommand request, RequestHandlerDelegate<PlainCommand> next,
             CancellationToken cancellationToken = default) => next(request, cancellationToken);
     }
 

@@ -33,7 +33,7 @@ internal sealed class SynapseRegistry
     /// <summary>Describes the pipeline of one request or event type, keyed by that type.</summary>
     public IReadOnlyDictionary<Type, Func<IPipelineDescriber, PipelineDescription?>> Probes { get; }
 
-    /// <summary>The number of handler descriptors registered for each request type.</summary>
+    /// <summary>The number of distinct handler implementations registered for each request type.</summary>
     public IReadOnlyDictionary<Type, int> RequestHandlerCounts { get; }
 
     /// <summary>Event types with at least one handler descriptor.</summary>
@@ -49,7 +49,8 @@ internal sealed class SynapseRegistry
         IServiceCollection services,
         IReadOnlyDictionary<Type, Func<IPipelineDescriber, PipelineDescription?>> probes)
     {
-        var requestHandlerCounts = new Dictionary<Type, int>();
+        var requestHandlerImplementations = new Dictionary<Type, HashSet<Type>>();
+        var undistinguishedHandlers = new Dictionary<Type, int>();
         var eventsWithHandlers = new HashSet<Type>();
         var requestsWithBehaviors = new HashSet<Type>();
         var eventsWithBehaviors = new HashSet<Type>();
@@ -67,7 +68,25 @@ internal sealed class SynapseRegistry
 
             if (definition == typeof(IRequestHandler<>) || definition == typeof(IRequestHandler<,>))
             {
-                requestHandlerCounts[target] = requestHandlerCounts.GetValueOrDefault(target) + 1;
+                if (descriptor.IsKeyedService)
+                {
+                    continue;
+                }
+
+                if (!requestHandlerImplementations.TryGetValue(target, out var implementations))
+                {
+                    requestHandlerImplementations[target] = implementations = [];
+                }
+
+                // Factory/instance registrations have no implementation type: count each as distinct.
+                if (descriptor.ImplementationType is { } implementation)
+                {
+                    implementations.Add(implementation);
+                }
+                else
+                {
+                    undistinguishedHandlers[target] = undistinguishedHandlers.GetValueOrDefault(target) + 1;
+                }
             }
             else if (definition == typeof(IEventHandler<>))
             {
@@ -83,6 +102,10 @@ internal sealed class SynapseRegistry
                 eventsWithBehaviors.Add(target);
             }
         }
+
+        var requestHandlerCounts = requestHandlerImplementations.ToDictionary(
+            pair => pair.Key,
+            pair => pair.Value.Count + undistinguishedHandlers.GetValueOrDefault(pair.Key));
 
         return new SynapseRegistry(probes, requestHandlerCounts, eventsWithHandlers, requestsWithBehaviors,
             eventsWithBehaviors);
