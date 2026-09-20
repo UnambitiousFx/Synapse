@@ -16,4 +16,19 @@ internal static class PipelineBehaviorOrdering
             ? ordered.Order
             : IOrderedPipelineBehavior.Last;
     }
+
+    /// <summary>
+    ///     Reports already-sorted behaviors as their concrete type and declared order, for
+    ///     <see cref="IPipelineDescriber" />.
+    /// </summary>
+    public static IReadOnlyList<BehaviorDescription> Describe(IReadOnlyList<object> sortedBehaviors)
+    {
+        var described = new BehaviorDescription[sortedBehaviors.Count];
+        for (var i = 0; i < described.Length; i++)
+        {
+            described[i] = new BehaviorDescription(sortedBehaviors[i].GetType(), OrderOf(sortedBehaviors[i]));
+        }
+
+        return described;
+    }
 }

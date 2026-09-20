@@ -1,0 +1,245 @@
+using JetBrains.Annotations;
+using Microsoft.Extensions.DependencyInjection;
+using UnambitiousFx.Functional;
+using UnambitiousFx.Synapse.Abstractions;
+using UnambitiousFx.Synapse.Pipelines;
+
+namespace UnambitiousFx.Synapse.Tests.Pipelines;
+
+[TestSubject(typeof(PipelineDescriber))]
+public sealed class PipelineDescriberTests
+{
+    [Fact]
+    public async Task Describe_WithOrderedBehaviors_ListsThemOutermostFirstAsTheyExecute()
+    {
+        // Arrange (Given) — registered out of order on purpose
+        var trace = new Trace();
+        await using var provider = Build(trace, cfg =>
+        {
+            cfg.RegisterRequestPipelineBehavior<InnerBehavior<PlainCommand>, PlainCommand>();
+            cfg.RegisterRequestPipelineBehavior<UnorderedBehavior<PlainCommand>, PlainCommand>();
+            cfg.RegisterRequestPipelineBehavior<OuterBehavior<PlainCommand>, PlainCommand>();
+        });
+        var describer = provider.GetRequiredService<IPipelineDescriber>();
+
+        // Act (When)
+        var description = describer.Describe<PlainCommand>();
+        await Invoke(provider, new PlainCommand());
+
+        // Assert (Then) — the description is the executed chain, not a second opinion about it
+        Assert.NotNull(description);
+        Assert.Equal(new[] { typeof(PlainCommandHandler) }, description.Handlers);
+        Assert.Equal(
+            new[]
+            {
+                typeof(OuterBehavior<PlainCommand>),
+                typeof(InnerBehavior<PlainCommand>),
+                typeof(UnorderedBehavior<PlainCommand>)
+            },
+            description.Behaviors.Select(behavior => behavior.Type));
+        Assert.Equal(new uint[] { 5, 20, IOrderedPipelineBehavior.Last },
+            description.Behaviors.Select(behavior => behavior.Order));
+        Assert.Equal(new[] { "Outer", "Inner", "Unordered", "handler" }, trace.Steps);
+    }
+
+    [Fact]
+    public void Describe_WithBehaviorsSharingAnOrder_KeepsRegistrationOrder()
+    {
+        // Arrange (Given)
+        using var provider = Build(new Trace(), cfg =>
+        {
+            cfg.RegisterRequestPipelineBehavior<FirstTieBehavior<PlainCommand>, PlainCommand>();
+            cfg.RegisterRequestPipelineBehavior<SecondTieBehavior<PlainCommand>, PlainCommand>();
+        });
+
+        // Act (When)
+        var description = provider.GetRequiredService<IPipelineDescriber>().Describe<PlainCommand>();
+
+        // Assert (Then)
+        Assert.NotNull(description);
+        Assert.Equal(
+            new[] { typeof(FirstTieBehavior<PlainCommand>), typeof(SecondTieBehavior<PlainCommand>) },
+            description.Behaviors.Select(behavior => behavior.Type));
+    }
+
+    [Fact]
+    public void Describe_WithARequestThatHasAResponse_DescribesItsHandlerAndBehaviors()
+    {
+        // Arrange (Given)
+        using var provider = Build(new Trace(),
+            cfg => cfg.RegisterRequestPipelineBehavior<CountBehavior, CountQuery, int>());
+
+        // Act (When)
+        var description = provider.GetRequiredService<IPipelineDescriber>().Describe<CountQuery, int>();
+
+        // Assert (Then)
+        Assert.NotNull(description);
+        Assert.Equal(new[] { typeof(CountQueryHandler) }, description.Handlers);
+        Assert.Equal(new[] { typeof(CountBehavior) }, description.Behaviors.Select(behavior => behavior.Type));
+    }
+
+    [Fact]
+    public void Describe_WithNoBehaviors_ReturnsAnEmptyBehaviorList()
+    {
+        // Arrange (Given)
+        using var provider = Build(new Trace(), _ => { });
+
+        // Act (When)
+        var description = provider.GetRequiredService<IPipelineDescriber>().Describe<PlainCommand>();
+
+        // Assert (Then)
+        Assert.NotNull(description);
+        Assert.Empty(description.Behaviors);
+    }
+
+    [Fact]
+    public void Describe_WithNoHandlerRegistered_ReturnsNull()
+    {
+        // Arrange (Given)
+        var services = new ServiceCollection().AddLogging();
+        services.AddSynapse(_ => { });
+        using var provider = services.BuildServiceProvider();
+
+        // Act (When)
+        var description = provider.GetRequiredService<IPipelineDescriber>().Describe<PlainCommand>();
+
+        // Assert (Then)
+        Assert.Null(description);
+    }
+
+    [Fact]
+    public void Describe_WithAHandlerRegisteredOutsideSynapse_ReportsItWithNoBehaviors()
+    {
+        // Arrange (Given) — no proxy wraps it, so no behavior can be applied to it
+        var services = new ServiceCollection().AddLogging();
+        services.AddSingleton(new Trace());
+        services.AddSynapse(_ => { });
+        services.AddScoped<IRequestHandler<PlainCommand>, PlainCommandHandler>();
+        using var provider = services.BuildServiceProvider();
+
+        // Act (When)
+        var description = provider.GetRequiredService<IPipelineDescriber>().Describe<PlainCommand>();
+
+        // Assert (Then)
+        Assert.NotNull(description);
+        Assert.Equal(new[] { typeof(PlainCommandHandler) }, description.Handlers);
+        Assert.Empty(description.Behaviors);
+    }
+
+    [Fact]
+    public void AddSynapse_CalledTwice_RegistersOneSharedDescriber()
+    {
+        // Arrange (Given)
+        var services = new ServiceCollection().AddLogging();
+
+        // Act (When)
+        services.AddSynapse(_ => { });
+        services.AddSynapse(_ => { });
+        using var provider = services.BuildServiceProvider();
+
+        // Assert (Then)
+        Assert.Same(provider.GetRequiredService<IPipelineDescriber>(),
+            provider.GetRequiredService<IPipelineDescriber>());
+    }
+
+    private static ServiceProvider Build(Trace trace, Action<ISynapseConfig> configure)
+    {
+        var services = new ServiceCollection().AddLogging();
+        services.AddSingleton(trace);
+        services.AddSynapse(cfg =>
+        {
+            cfg.RegisterRequestHandler<PlainCommandHandler, PlainCommand>();
+            cfg.RegisterRequestHandler<CountQueryHandler, CountQuery, int>();
+            configure(cfg);
+        });
+        return services.BuildServiceProvider();
+    }
+
+    // One scope per invocation, as one request would have.
+    private static async Task Invoke<TRequest>(IServiceProvider provider, TRequest request)
+        where TRequest : IRequest
+    {
+        await using var scope = provider.CreateAsyncScope();
+        await scope.ServiceProvider.GetRequiredService<IInvoker>()
+            .InvokeAsync(request, TestContext.Current.CancellationToken);
+    }
+
+    private sealed class Trace
+    {
+        public List<string> Steps { get; } = [];
+    }
+
+    private sealed record PlainCommand : IRequest;
+
+    private sealed class PlainCommandHandler(Trace trace) : IRequestHandler<PlainCommand>
+    {
+        public ValueTask<Result> HandleAsync(PlainCommand request, CancellationToken cancellationToken = default)
+        {
+            trace.Steps.Add("handler");
+            return new ValueTask<Result>(Result.Success());
+        }
+    }
+
+    private sealed record CountQuery : IRequest<int>;
+
+    private sealed class CountQueryHandler : IRequestHandler<CountQuery, int>
+    {
+        public ValueTask<Result<int>> HandleAsync(CountQuery request, CancellationToken cancellationToken = default)
+        {
+            return new ValueTask<Result<int>>(Result.Success(1));
+        }
+    }
+
+    private sealed class CountBehavior : IRequestPipelineBehavior<CountQuery, int>
+    {
+        public ValueTask<Result<int>> HandleAsync(CountQuery request,
+            RequestHandlerDelegate<CountQuery, int> next,
+            CancellationToken cancellationToken = default)
+        {
+            return next(request, cancellationToken);
+        }
+    }
+
+    private abstract class TracingBehavior<TRequest>(Trace trace, string name) : IRequestPipelineBehavior<TRequest>
+        where TRequest : IRequest
+    {
+        public ValueTask<Result> HandleAsync(TRequest request,
+            RequestHandlerDelegate<TRequest> next,
+            CancellationToken cancellationToken = default)
+        {
+            trace.Steps.Add(name);
+            return next(request, cancellationToken);
+        }
+    }
+
+    private sealed class OuterBehavior<TRequest>(Trace trace) : TracingBehavior<TRequest>(trace, "Outer"),
+        IOrderedPipelineBehavior
+        where TRequest : IRequest
+    {
+        public uint Order => 5;
+    }
+
+    private sealed class InnerBehavior<TRequest>(Trace trace) : TracingBehavior<TRequest>(trace, "Inner"),
+        IOrderedPipelineBehavior
+        where TRequest : IRequest
+    {
+        public uint Order => 20;
+    }
+
+    private sealed class UnorderedBehavior<TRequest>(Trace trace) : TracingBehavior<TRequest>(trace, "Unordered")
+        where TRequest : IRequest;
+
+    private sealed class FirstTieBehavior<TRequest>(Trace trace) : TracingBehavior<TRequest>(trace, "FirstTie"),
+        IOrderedPipelineBehavior
+        where TRequest : IRequest
+    {
+        public uint Order => 10;
+    }
+
+    private sealed class SecondTieBehavior<TRequest>(Trace trace) : TracingBehavior<TRequest>(trace, "SecondTie"),
+        IOrderedPipelineBehavior
+        where TRequest : IRequest
+    {
+        public uint Order => 10;
+    }
+}
