@@ -80,4 +80,57 @@ internal static class SynapseSymbols
     {
         return IsInAbstractions(iface) && iface.MetadataName is "IRequest" or "IRequest`1";
     }
+
+    public static MessageInterface? GetBehaviorInterface(INamedTypeSymbol iface)
+    {
+        if (!IsInAbstractions(iface))
+        {
+            return null;
+        }
+
+        return iface.MetadataName switch
+        {
+            "IRequestPipelineBehavior`1" => new MessageInterface(HandlerKind.Request, iface.TypeArguments[0]),
+            "IRequestPipelineBehavior`2" =>
+                new MessageInterface(HandlerKind.RequestWithResponse, iface.TypeArguments[0]),
+            "IEventPipelineBehavior`1" => new MessageInterface(HandlerKind.Event, iface.TypeArguments[0]),
+            "IStreamRequestPipelineBehavior`2" => new MessageInterface(HandlerKind.Stream, iface.TypeArguments[0]),
+            _ => null
+        };
+    }
+
+    public static IEnumerable<INamedTypeSymbol> GetTypes(INamespaceSymbol root, CancellationToken cancellationToken)
+    {
+        foreach (var member in root.GetMembers())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (member is INamespaceSymbol child)
+            {
+                foreach (var type in GetTypes(child, cancellationToken))
+                {
+                    yield return type;
+                }
+            }
+            else if (member is INamedTypeSymbol named)
+            {
+                yield return named;
+                foreach (var nested in GetNested(named))
+                {
+                    yield return nested;
+                }
+            }
+        }
+    }
+
+    private static IEnumerable<INamedTypeSymbol> GetNested(INamedTypeSymbol type)
+    {
+        foreach (var nested in type.GetTypeMembers())
+        {
+            yield return nested;
+            foreach (var deeper in GetNested(nested))
+            {
+                yield return deeper;
+            }
+        }
+    }
 }
