@@ -121,6 +121,8 @@ With this setting, `EmitAsync(event)` and `EmitAsync(event, EmitMode.Default)` s
 
 :::warning Production storage
 The built-in `InMemoryEventOutboxStorage` is **not persistent** — all pending events are lost on restart. Replace it with a database-backed implementation before going to production.
+
+It is also **not transactional**: it is not enlisted in your database transaction. If a handler emits an event with `EmitMode.Outbox` and then fails or rolls back, the pending entry stays in memory and is dispatched by the next `IOutboxCommit.CommitAsync` call, typically triggered by an unrelated request. Use a storage that writes the entry in the same transaction as your data.
 :::
 
 ## Replace the storage for production
