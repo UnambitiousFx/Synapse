@@ -155,7 +155,7 @@ public sealed class BehaviorWithoutHandlersAnalyzerTests
     public async Task Analyze_WithAGlobalBehaviorEntryAndNoHandler_ReportsSyn102OnTheAttribute()
     {
         // Arrange (Given)
-        var source = AnalyzerTestHelper.Preamble + GlobalEntry + GenericBehavior.Replace("[PipelineBehavior]\n", string.Empty);
+        var source = AnalyzerTestHelper.Preamble + GlobalEntry + GenericBehavior.Replace("[PipelineBehavior]", string.Empty);
 
         // Act (When)
         var diagnostics = await AnalyzerTestHelper.RunAsync<BehaviorWithoutHandlersAnalyzer>(source);
@@ -171,7 +171,7 @@ public sealed class BehaviorWithoutHandlersAnalyzerTests
     {
         // Arrange (Given)
         var source = AnalyzerTestHelper.Preamble + GlobalEntry + MyRequestAndHandler +
-                     GenericBehavior.Replace("[PipelineBehavior]\n", string.Empty);
+                     GenericBehavior.Replace("[PipelineBehavior]", string.Empty);
 
         // Act (When)
         var diagnostics = await AnalyzerTestHelper.RunAsync<BehaviorWithoutHandlersAnalyzer>(source);
