@@ -115,7 +115,7 @@ public sealed class HandlerAttributeOnRecordAnalyzerTests
     }
 
     [Fact]
-    public async Task Analyze_WithoutAReferenceToSynapse_ReportsNothing()
+    public async Task Analyze_WithAnUnrelatedRecord_ReportsNothing()
     {
         // Arrange (Given)
         const string source = """

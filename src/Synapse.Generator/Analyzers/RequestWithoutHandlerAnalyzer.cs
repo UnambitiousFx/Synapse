@@ -30,7 +30,7 @@ public sealed class RequestWithoutHandlerAnalyzer : DiagnosticAnalyzer
 
     public override void Initialize(AnalysisContext context)
     {
-        context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);
+        context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.Analyze);
         context.EnableConcurrentExecution();
         context.RegisterCompilationStartAction(start =>
         {
@@ -64,7 +64,7 @@ public sealed class RequestWithoutHandlerAnalyzer : DiagnosticAnalyzer
                         continue;
                     }
 
-                    if (request.MessageType is ITypeParameterSymbol || request.MessageType is INamedTypeSymbol { IsGenericType: true })
+                    if (SynapseSymbols.ContainsTypeParameter(request.MessageType))
                     {
                         Interlocked.Exchange(ref hasGenericHandler, 1);
                         continue;
@@ -76,7 +76,7 @@ public sealed class RequestWithoutHandlerAnalyzer : DiagnosticAnalyzer
 
             start.RegisterCompilationEndAction(endContext =>
             {
-                if (hasGenericHandler == 1)
+                if (Volatile.Read(ref hasGenericHandler) == 1)
                 {
                     return;
                 }
@@ -88,7 +88,7 @@ public sealed class RequestWithoutHandlerAnalyzer : DiagnosticAnalyzer
                         continue;
                     }
 
-                    var location = request.Locations.FirstOrDefault(candidate => candidate.IsInSource);
+                    var location = SynapseSymbols.GetReportableLocation(request, endContext.CancellationToken);
                     if (location is null)
                     {
                         continue;

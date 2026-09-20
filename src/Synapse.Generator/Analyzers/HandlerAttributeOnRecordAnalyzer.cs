@@ -29,7 +29,7 @@ public sealed class HandlerAttributeOnRecordAnalyzer : DiagnosticAnalyzer
 
     public override void Initialize(AnalysisContext context)
     {
-        context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);
+        context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.Analyze);
         context.EnableConcurrentExecution();
         context.RegisterCompilationStartAction(start =>
         {
@@ -44,6 +44,11 @@ public sealed class HandlerAttributeOnRecordAnalyzer : DiagnosticAnalyzer
 
     private static void AnalyzeRecord(SyntaxNodeAnalysisContext context)
     {
+        if (SynapseSymbols.IsGenerated(context.Node.SyntaxTree, context.CancellationToken))
+        {
+            return;
+        }
+
         var record = (RecordDeclarationSyntax)context.Node;
         foreach (var attributeList in record.AttributeLists)
         {

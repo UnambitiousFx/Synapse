@@ -31,7 +31,7 @@ public sealed class BehaviorWithoutHandlersAnalyzer : DiagnosticAnalyzer
 
     public override void Initialize(AnalysisContext context)
     {
-        context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);
+        context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.Analyze);
         context.EnableConcurrentExecution();
         context.RegisterCompilationStartAction(start =>
         {
@@ -82,9 +82,21 @@ public sealed class BehaviorWithoutHandlersAnalyzer : DiagnosticAnalyzer
                         continue;
                     }
 
-                    var location = attribute.ApplicationSyntaxReference?
-                        .GetSyntax(endContext.CancellationToken).GetLocation() ?? Location.None;
-                    globalEntries.Add((behaviorType.OriginalDefinition, location));
+                    // A behavior declared in a referenced assembly is usually paired with a sibling of another arity
+                    // (open-generic pair) whose handlers this rule cannot attribute, so only local behaviors are checked.
+                    if (!SymbolEqualityComparer.Default.Equals(behaviorType.ContainingAssembly,
+                            endContext.Compilation.Assembly))
+                    {
+                        continue;
+                    }
+
+                    var syntax = attribute.ApplicationSyntaxReference?.GetSyntax(endContext.CancellationToken);
+                    if (syntax is null || SynapseSymbols.IsGenerated(syntax.SyntaxTree, endContext.CancellationToken))
+                    {
+                        continue;
+                    }
+
+                    globalEntries.Add((behaviorType.OriginalDefinition, syntax.GetLocation()));
                 }
 
                 if (behaviors.IsEmpty && globalEntries.Count == 0)
@@ -97,7 +109,7 @@ public sealed class BehaviorWithoutHandlersAnalyzer : DiagnosticAnalyzer
 
                 foreach (var behavior in behaviors)
                 {
-                    var location = behavior.Locations.FirstOrDefault(candidate => candidate.IsInSource);
+                    var location = SynapseSymbols.GetReportableLocation(behavior, endContext.CancellationToken);
                     if (location is not null)
                     {
                         Check(endContext, behavior, location, handlers);
@@ -151,28 +163,17 @@ public sealed class BehaviorWithoutHandlersAnalyzer : DiagnosticAnalyzer
                 return true;
             }
 
-            var constraints = parameter.ConstraintTypes.Where(constraint => !ContainsTypeParameter(constraint)).ToList();
+            var constraints = parameter.ConstraintTypes.Where(constraint => !SynapseSymbols.ContainsTypeParameter(constraint)).ToList();
             return candidates.Any(handler => constraints.All(constraint =>
                 compilation.ClassifyCommonConversion(handler.MessageType, constraint).IsImplicit));
         }
 
-        if (ContainsTypeParameter(target))
+        if (SynapseSymbols.ContainsTypeParameter(target))
         {
             return true;
         }
 
         return candidates.Any(handler => SymbolEqualityComparer.Default.Equals(handler.MessageType, target));
-    }
-
-    private static bool ContainsTypeParameter(ITypeSymbol type)
-    {
-        return type switch
-        {
-            ITypeParameterSymbol => true,
-            INamedTypeSymbol named => named.TypeArguments.Any(ContainsTypeParameter),
-            IArrayTypeSymbol array => ContainsTypeParameter(array.ElementType),
-            _ => false
-        };
     }
 
     private static IEnumerable<MessageInterface> ReferencedHandlers(Compilation compilation,
@@ -189,7 +190,7 @@ public sealed class BehaviorWithoutHandlersAnalyzer : DiagnosticAnalyzer
 
             foreach (var type in SynapseSymbols.GetTypes(assembly.GlobalNamespace, cancellationToken))
             {
-                if (type.TypeKind != TypeKind.Class || type.IsAbstract)
+                if (type.TypeKind is not (TypeKind.Class or TypeKind.Struct) || type.IsAbstract)
                 {
                     continue;
                 }

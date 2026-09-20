@@ -31,7 +31,7 @@ public sealed class UnattributedHandlerAnalyzer : DiagnosticAnalyzer
 
     public override void Initialize(AnalysisContext context)
     {
-        context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);
+        context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.Analyze);
         context.EnableConcurrentExecution();
         context.RegisterCompilationStartAction(start =>
         {
@@ -70,14 +70,14 @@ public sealed class UnattributedHandlerAnalyzer : DiagnosticAnalyzer
 
             start.RegisterCompilationEndAction(endContext =>
             {
-                if (anyAttributed == 0)
+                if (Volatile.Read(ref anyAttributed) == 0)
                 {
                     return;
                 }
 
                 foreach (var type in unattributed)
                 {
-                    var location = type.Locations.FirstOrDefault(candidate => candidate.IsInSource);
+                    var location = SynapseSymbols.GetReportableLocation(type, endContext.CancellationToken);
                     if (location is not null)
                     {
                         endContext.ReportDiagnostic(Diagnostic.Create(Rule, location, type.Name));
