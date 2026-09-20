@@ -908,13 +908,15 @@ public class SynapseGenerator : IIncrementalGenerator
             return default;
         }
 
-        // Only keep concrete named-type constraints (e.g. ICommand). Constraints that reference the
-        // behavior's own type parameters — such as `where TRequest : IRequest<TResponse>` — are satisfied
-        // by construction when the behavior is closed over a matching handler, so filtering on them would
-        // wrongly exclude every handler.
+        // Constraints that reference the behavior's own type parameters — such as
+        // `where TRequest : ICommand<TResponse>` — cannot be compared against a handler's concrete interfaces
+        // verbatim, so they are matched on their unbound generic definition (ICommand<TResponse>), which
+        // GetSatisfyingTypeNames also records. This scopes a behavior by a marker interface while the
+        // response-type agreement stays the compiler's job.
         var names = typeParameter.ConstraintTypes
-            .Where(c => !ContainsTypeParameter(c))
-            .Select(c => c.ToDisplayString())
+            .Select(c => ContainsTypeParameter(c)
+                ? c.OriginalDefinition.ToDisplayString()
+                : c.ToDisplayString())
             .ToList();
 
         return names.Count > 0 ? EquatableArray<string>.From(names) : default;
@@ -1072,6 +1074,10 @@ public class SynapseGenerator : IIncrementalGenerator
         foreach (var iface in type.AllInterfaces)
         {
             names.Add(iface.ToDisplayString());
+            if (iface.IsGenericType)
+            {
+                names.Add(iface.OriginalDefinition.ToDisplayString());
+            }
         }
 
         for (var baseType = type.BaseType; baseType is not null; baseType = baseType.BaseType)
