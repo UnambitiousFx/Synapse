@@ -79,6 +79,28 @@ public sealed class SynapseValidatorTests
     }
 
     [Fact]
+    public async Task InvokeAsync_WithTwoHandlersForOneRequest_RunsTheLastRegisteredHandler()
+    {
+        // Arrange (Given)
+        var ran = new List<string>();
+        var services = new ServiceCollection().AddLogging().AddSingleton(ran);
+        services.AddSynapse(cfg =>
+        {
+            cfg.RegisterRequestHandler<RecordingFirstHandler, RecordedCommand>();
+            cfg.RegisterRequestHandler<RecordingSecondHandler, RecordedCommand>();
+        });
+        using var provider = services.BuildServiceProvider();
+        var invoker = provider.GetRequiredService<IInvoker>();
+
+        // Act (When)
+        var result = await invoker.InvokeAsync(new RecordedCommand(), TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.True(result.IsSuccess);
+        Assert.Equal(["second"], ran);
+    }
+
+    [Fact]
     public void ValidateSynapse_WithSeveralHandlersForOneEvent_IsValid()
     {
         // Fan-out to many subscribers is the point of events
@@ -219,6 +241,8 @@ public sealed class SynapseValidatorTests
 
     private sealed record NeedyCommand : IRequest;
 
+    private sealed record RecordedCommand : IRequest;
+
     private sealed record PingEvent : IEvent;
 
     private interface IMissingDependency;
@@ -239,6 +263,24 @@ public sealed class SynapseValidatorTests
     {
         public ValueTask<Result> HandleAsync(PlainCommand request, CancellationToken cancellationToken = default) =>
             new(Result.Success());
+    }
+
+    private sealed class RecordingFirstHandler(List<string> ran) : IRequestHandler<RecordedCommand>
+    {
+        public ValueTask<Result> HandleAsync(RecordedCommand request, CancellationToken cancellationToken = default)
+        {
+            ran.Add("first");
+            return new(Result.Success());
+        }
+    }
+
+    private sealed class RecordingSecondHandler(List<string> ran) : IRequestHandler<RecordedCommand>
+    {
+        public ValueTask<Result> HandleAsync(RecordedCommand request, CancellationToken cancellationToken = default)
+        {
+            ran.Add("second");
+            return new(Result.Success());
+        }
     }
 
     private sealed class NeedyHandler(IMissingDependency dependency) : IRequestHandler<NeedyCommand>

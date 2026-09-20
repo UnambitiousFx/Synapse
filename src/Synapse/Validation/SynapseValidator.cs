@@ -22,8 +22,8 @@ internal static class SynapseValidator
         foreach (var (request, count) in registry.RequestHandlerCounts.Where(pair => pair.Value > 1))
         {
             issues.Add(new SynapseValidationIssue("SYN002", SynapseValidationSeverity.Error,
-                $"{count} handlers are registered for request '{request}'. Only the first is used; the others are " +
-                "silently ignored. Keep one handler per request.", request));
+                $"{count} handlers are registered for request '{request}'. Only the last registered one runs; the " +
+                "others are silently ignored. Keep one handler per request.", request));
         }
 
         foreach (var (type, probe) in registry.Probes)

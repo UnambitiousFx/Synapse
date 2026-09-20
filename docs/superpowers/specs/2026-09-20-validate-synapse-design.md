@@ -5,7 +5,7 @@ Issue: #102 (sub-issue of #96). Builds on `IPipelineDescriber` (#101).
 ## Goal
 
 Catch Synapse configuration mistakes at host start or in a test, instead of at the first request: a behavior
-registered for a request that has no handler, two handlers for one request (the second is silently ignored today),
+registered for a request that has no handler, two handlers for one request (all but the last registered are silently ignored today),
 a pipeline that cannot be resolved, and `Order` ties.
 
 ## Public API (`Synapse.Abstractions`, `UnambitiousFx.Synapse.Abstractions`)
@@ -43,7 +43,7 @@ cover them yet).
 | Code | Severity | Rule |
 |---|---|---|
 | SYN001 | Error | A closed pipeline behavior is registered for a request/event type that has no handler. |
-| SYN002 | Error | Two or more handlers are registered for one request type (`TryAdd` drops all but the first today). Events are exempt: several handlers per event is normal. |
+| SYN002 | Error | Two or more handlers are registered for one request type (the container resolves the last registered handler; the others are silently ignored). Events are exempt: several handlers per event is normal. |
 | SYN003 | Error | The pipeline of a registered handler/event fails to resolve (missing dependency, throwing constructor). The exception message is included. |
 | SYN004 | Warning | Two behaviors in one pipeline share an `Order`. Legal; they keep registration order. |
 
@@ -62,7 +62,7 @@ at registration time.
   `RegisterEventHandler<,>` (in both `SynapseConfig` and `DefaultDependencyInjectionBuilder`, which generated
   `RegisterGroup`s use) also record a probe: `(Type, Func<IPipelineDescriber, PipelineDescription?>)` such as
   `d => d.Describe<TRequest, TResponse>()`. This keeps the describer's generic entry points as the only path, so it
-  stays AOT-safe. Probes are keyed by request/event type (first wins, like the dispatchers).
+  stays AOT-safe. Probes are keyed by request/event type (first probe kept; they describe the same pipeline anyway).
 - **Validator.** Internal `SynapseValidator` runs the four checks over the registry and probes. It calls
   `IPipelineDescriber` (singleton, already registered), wraps each probe in try/catch for SYN003, and reports SYN004
   from adjacent equal `Order` values in `PipelineDescription.Behaviors`.

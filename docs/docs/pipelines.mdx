@@ -271,7 +271,7 @@ public sealed class LoggingBehavior<TRequest, TResponse>
 | Code | Severity | What it catches | Fix |
 |---|---|---|---|
 | `SYN001` | Error | A closed pipeline behavior is registered for a request or event type that has no handler. | Register the handler, or remove the behavior. |
-| `SYN002` | Error | Two or more handlers are registered for one request type. Only the first is used; the others are silently ignored. Events are exempt: several handlers per event is normal. | Keep one handler per request. |
+| `SYN002` | Error | Two or more handlers are registered for one request type. Only the last registered one runs; the others are silently ignored. Events are exempt: several handlers per event is normal. | Keep one handler per request. |
 | `SYN003` | Error | The pipeline of a registered handler or event cannot be resolved (missing dependency, throwing constructor). The exception message is included. | Register the missing dependency or fix the constructor. |
 | `SYN004` | Warning | Two behaviors in one pipeline share an `Order`. Legal, they keep registration order. | Give them distinct `Order` values if the relative position matters. |
 
