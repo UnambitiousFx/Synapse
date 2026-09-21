@@ -156,4 +156,37 @@ public sealed class CqrsMarkerAnalyzerTests
         // Assert (Then)
         Assert.Equal("SYN102", Assert.Single(diagnostics).Id);
     }
+
+    [Fact]
+    public async Task Syn102_WithACommandOnlyBehaviorAndOnlyAQueryHandler_ReportsNothingBecauseTheConstraintReferencesATypeParameter()
+    {
+        // This documents a known limit of SYN102, see known issue 069.
+        // Arrange (Given)
+        var source = AnalyzerTestHelper.Preamble + """
+            public sealed record GetQuery : IQuery<int>;
+
+            [RequestHandler<GetQuery, int>]
+            public sealed class GetHandler : IQueryHandler<GetQuery, int>
+            {
+                public ValueTask<Result<int>> HandleAsync(GetQuery request, CancellationToken ct = default)
+                    => ValueTask.FromResult(Result.Success(1));
+            }
+
+            [PipelineBehavior]
+            public sealed class TransactionBehavior<TRequest, TResponse> : IRequestPipelineBehavior<TRequest, TResponse>
+                where TRequest : ICommand<TResponse>
+                where TResponse : notnull
+            {
+                public ValueTask<Result<TResponse>> HandleAsync(TRequest request,
+                    RequestHandlerDelegate<TRequest, TResponse> next, CancellationToken ct = default)
+                    => next(request, ct);
+            }
+            """;
+
+        // Act (When)
+        var diagnostics = await AnalyzerTestHelper.RunAsync<BehaviorWithoutHandlersAnalyzer>(source);
+
+        // Assert (Then)
+        Assert.Empty(diagnostics);
+    }
 }

@@ -117,6 +117,19 @@ public sealed class CqrsMarkerShapeTests
         Assert.Same(baseHandler, derivedHandler);
     }
 
+    [Fact]
+    public void ICommandHandler_WithoutResponse_IsContravariantInTheCommand()
+    {
+        // Arrange (Given)
+        ICommandHandler<BaseVoidCommand> baseHandler = new BaseVoidCommandHandler();
+
+        // Act (When)
+        ICommandHandler<DerivedVoidCommand> derivedHandler = baseHandler;
+
+        // Assert (Then)
+        Assert.Same(baseHandler, derivedHandler);
+    }
+
     private sealed record VoidCommand : ICommand;
 
     private sealed record CreateCommand : ICommand<int>;
@@ -136,6 +149,18 @@ public sealed class CqrsMarkerShapeTests
         public ValueTask<Result<int>> HandleAsync(BaseCommand request, CancellationToken cancellationToken = default)
         {
             return ValueTask.FromResult(Result.Success(1));
+        }
+    }
+
+    private record BaseVoidCommand : ICommand;
+
+    private sealed record DerivedVoidCommand : BaseVoidCommand;
+
+    private sealed class BaseVoidCommandHandler : ICommandHandler<BaseVoidCommand>
+    {
+        public ValueTask<Result> HandleAsync(BaseVoidCommand request, CancellationToken cancellationToken = default)
+        {
+            return ValueTask.FromResult(Result.Success());
         }
     }
 }

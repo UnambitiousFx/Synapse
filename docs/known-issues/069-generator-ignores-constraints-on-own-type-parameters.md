@@ -84,10 +84,11 @@ dropped, which left the cross-product unfiltered.
 ### Resolution
 
 Constraints that reference the behavior's own type parameters are now recorded by their unbound generic definition
-(`ICommand<>`, `RequestBase<>`) and matched against the handler request's own type, its generic interfaces and its
+(the recorded key is the definition's display string, for example `ICommand<TResponse>` or `RequestBase<TResponse>`) and matched against the handler request's own type, its generic interfaces and its
 generic base types, and likewise the response type for constraints on `TResponse`. Only handlers that satisfy the
 constraint are closed over. Fixed in commits 6943fb7 and 118f523 (the latter keeps base-class and self-generic
-constraints when scoping behaviors).
+constraints when scoping behaviors). A constraint that is itself a type parameter
+(`where TRequest : TResponse, IRequest<TResponse>`) is not recorded, so it never filters.
 
 Known limits:
 

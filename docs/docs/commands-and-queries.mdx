@@ -27,6 +27,8 @@ public class CreateTaskCommandHandler : ICommandHandler<CreateTaskCommand, Guid>
 
 `ICommandHandler<TCommand>`, `ICommandHandler<TCommand, TResponse>` and `IQueryHandler<TQuery, TResponse>` are naming aliases of `IRequestHandler`: they add nothing at runtime. Registration still uses `[RequestHandler<...>]`, no marker is required, and existing `IRequest` code keeps working unchanged. The markers matter mainly for scoping behaviors, see [Applying a behavior to commands or queries only](./pipelines#applying-a-behavior-to-commands-or-queries-only).
 
+The markers are optional. Because they live in `UnambitiousFx.Synapse.Abstractions`, a file that imports that namespace and also your own `ICommand` or `IQuery<T>` from another namespace gets an ambiguous-reference error (CS0104) after upgrading. Either keep your own markers and disambiguate with an alias such as `using ICommand = MyApp.Messaging.ICommand;`, or migrate to the built-in ones.
+
 ## Requests with a response — `IRequest<TResponse>`
 
 Use `IRequest<TResponse>` when the operation produces a typed result:
