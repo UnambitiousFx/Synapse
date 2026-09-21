@@ -223,6 +223,38 @@ public sealed class CqrsMarkerGeneratorTests
     }
 
 
+    [Fact]
+    public void Generate_WithABehaviorConstrainedToABareTypeParameter_StillClosesItOverTheHandler()
+    {
+        // Arrange (Given)
+        const string fixture = """
+            public record Base;
+
+            public record Req : Base, IRequest<Base>;
+
+            [RequestHandler<Req, Base>]
+            public sealed class ReqHandler : IRequestHandler<Req, Base>
+            {
+                public ValueTask<Result<Base>> HandleAsync(Req request, CancellationToken ct = default)
+                    => ValueTask.FromResult(Result.Success<Base>(request));
+            }
+
+            [PipelineBehavior]
+            public sealed class BareBehavior<TRequest, TResponse> : IRequestPipelineBehavior<TRequest, TResponse>
+                where TRequest : TResponse, IRequest<TResponse>
+                where TResponse : notnull
+            {
+            """;
+        var source = Usings + fixture + BehaviorTail;
+
+        // Act (When)
+        var (generated, errors) = Run(source);
+
+        // Assert (Then)
+        Assert.Contains("BareBehavior<global::TestNs.Req, global::TestNs.Base>", generated);
+        Assert.Empty(errors);
+    }
+
     private static (string Generated, ImmutableArray<Diagnostic> Errors) Run(string source)
     {
         var compilation = CSharpCompilation.Create("TestAssembly", [CSharpSyntaxTree.ParseText(source)],

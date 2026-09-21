@@ -913,7 +913,10 @@ public class SynapseGenerator : IIncrementalGenerator
         // verbatim, so they are matched on their unbound generic definition (ICommand<TResponse>), which
         // GetSatisfyingTypeNames also records. This scopes a behavior by a marker interface while the
         // response-type agreement stays the compiler's job.
+        // A constraint that is itself a type parameter can never be matched, so it is not recorded and
+        // never filters.
         var names = typeParameter.ConstraintTypes
+            .Where(c => c is not ITypeParameterSymbol)
             .Select(c => ContainsTypeParameter(c)
                 ? c.OriginalDefinition.ToDisplayString()
                 : c.ToDisplayString())
