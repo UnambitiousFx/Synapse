@@ -6,14 +6,28 @@ description: Model operations as Commands and Queries using IRequest, IRequestHa
 
 # Commands and Queries
 
-In Synapse every operation that expects a response is modelled as a **request**. Commands and queries are both requests — the difference is a matter of intent and convention, not a technical distinction enforced by the framework.
+In Synapse every operation that expects a response is modelled as a **request**. Commands and queries are both requests — the difference is a matter of intent and convention, not a technical distinction enforced by the framework. To make that intent visible in your types you can optionally use the marker interfaces `ICommand`, `ICommand<TResponse>` and `IQuery<TResponse>` (in `UnambitiousFx.Synapse.Abstractions`). They are pure markers: the library treats them like any other request.
 
-| Concept     | Intent                                             | Marker interface                    |
-| ----------- | -------------------------------------------------- | ----------------------------------- |
-| **Command** | Mutates state, may return an ID or acknowledgement | `IRequest<TResponse>` or `IRequest` |
-| **Query**   | Reads state, always returns data                   | `IRequest<TResponse>`               |
+| Concept     | Intent                                             | Marker interface                                        |
+| ----------- | -------------------------------------------------- | ------------------------------------------------------- |
+| **Command** | Mutates state, may return an ID or acknowledgement | `ICommand` or `ICommand<TResponse>` (still an `IRequest` underneath) |
+| **Query**   | Reads state, always returns data                   | `IQuery<TResponse>`                                     |
 
-For strict command/query separation at runtime, see [Pipeline Behaviors — CQRS enforcement](./pipelines#cqrs-boundary-enforcement).
+For strict command/query separation at runtime, see [Pipeline Behaviors — CQRS enforcement](./pipelines#cqrs-boundary-enforcement). That behavior does not use the markers: it still blocks any request dispatched inside a handler.
+
+### Marker interfaces and handler aliases
+
+```csharp
+public record CreateTaskCommand(string Title) : ICommand<Guid>;
+public record GetTaskQuery(Guid TaskId) : IQuery<TaskDto>;
+
+[RequestHandler<CreateTaskCommand, Guid>]
+public class CreateTaskCommandHandler : ICommandHandler<CreateTaskCommand, Guid> { ... }
+```
+
+`ICommandHandler<TCommand>`, `ICommandHandler<TCommand, TResponse>` and `IQueryHandler<TQuery, TResponse>` are naming aliases of `IRequestHandler`: they add nothing at runtime. Registration still uses `[RequestHandler<...>]`, no marker is required, and existing `IRequest` code keeps working unchanged. The markers matter mainly for scoping behaviors, see [Applying a behavior to commands or queries only](./pipelines#applying-a-behavior-to-commands-or-queries-only).
+
+The markers are optional. Because they live in `UnambitiousFx.Synapse.Abstractions`, a file that imports that namespace and also your own `ICommand` or `IQuery<T>` from another namespace gets an ambiguous-reference error (CS0104) after upgrading. Either keep your own markers and disambiguate with an alias such as `using ICommand = MyApp.Messaging.ICommand;`, or migrate to the built-in ones.
 
 ## Requests with a response — `IRequest<TResponse>`
 

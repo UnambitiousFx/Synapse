@@ -144,6 +144,36 @@ services.AddSynapse(cfg =>
 
 Ordering is unaffected by where a behavior is declared or registered: it is decided at runtime by [`IOrderedPipelineBehavior`](#ordering). See [Modular monoliths](./modular-monolith) for a complete layout.
 
+## Applying a behavior to commands or queries only
+
+Constrain the open-generic behavior on a marker interface and it applies only to the requests that implement it. A behavior with `where TRequest : ICommand<TResponse>` (and `where TResponse : notnull`) runs for commands only:
+
+```csharp
+[PipelineBehavior]
+public sealed class TransactionBehavior<TRequest, TResponse>
+    : IRequestPipelineBehavior<TRequest, TResponse>
+    where TRequest : ICommand<TResponse>
+    where TResponse : notnull
+{
+    public async ValueTask<Result<TResponse>> HandleAsync(
+        TRequest request,
+        RequestHandlerDelegate<TRequest, TResponse> next,
+        CancellationToken cancellationToken = default)
+    {
+        // begin transaction, call next, commit or roll back
+        return await next(request, cancellationToken);
+    }
+}
+```
+
+The same works with `[assembly: SynapseGlobalBehavior(typeof(TransactionBehavior<,>))]` (source generator, Native-AOT safe) and with the runtime `AddOpenGenericRequestWithResponsePipelineBehavior(typeof(TransactionBehavior<,>))`: DI skips the closings whose constraints do not hold. The runtime path is not Native-AOT safe for value-type responses, so prefer `[PipelineBehavior]` under AOT. For requests without a response, use `where TRequest : ICommand` on an `IRequestPipelineBehavior<TRequest>`.
+
+There are no dedicated `AddCommandPipelineBehavior` helpers: the generic constraint is the scoping mechanism. The generator matches such a constraint against the handler's request type, so it works for any interface or base class, not only the markers.
+
+:::note Limit
+The `SYN102` analyzer does not evaluate constraints that reference the behavior's own type parameters (such as `ICommand<TResponse>`). A marker-scoped behavior that matches no handler is therefore silently never wired, and `SYN102` does not report it.
+:::
+
 ## Built-in behaviors
 
 ### `SimpleLoggingBehavior<TRequest, TResponse>` / `SimpleLoggingEventBehavior<TEvent>`
