@@ -249,8 +249,22 @@ public sealed class EfCoreEventOutboxStorage<TContext> : IEventOutboxStorage, ID
     {
         var type = Type.GetType(entity.EventType, throwOnError: true)!;
         var @event = (IEvent)JsonSerializer.Deserialize(entity.Payload, type)!;
-        var headers = JsonSerializer.Deserialize<Dictionary<string, string>>(entity.Headers)
-                      ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        // System.Text.Json does not preserve a dictionary's IEqualityComparer across a
+        // serialize/deserialize round trip, so the deserialized dictionary always comes back with the
+        // default (ordinal, case-sensitive) comparer. Headers are HTTP-header-like (traceparent,
+        // baggage) and looked up case-insensitively everywhere else in this codebase (OutboxEntry's own
+        // default, InMemoryEventOutboxStorage), so copy into a case-insensitive dictionary here too.
+        var deserializedHeaders = JsonSerializer.Deserialize<Dictionary<string, string>>(entity.Headers);
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (deserializedHeaders is not null)
+        {
+            foreach (var (key, value) in deserializedHeaders)
+            {
+                headers[key] = value;
+            }
+        }
+
         return new OutboxEntry(entity.Id, @event, headers);
     }
 }

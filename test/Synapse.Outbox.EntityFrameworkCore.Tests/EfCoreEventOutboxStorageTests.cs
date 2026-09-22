@@ -53,6 +53,30 @@ public sealed class EfCoreEventOutboxStorageTests
     }
 
     [Fact]
+    public async Task AddAsync_WithHeaders_SurfacesThemCaseInsensitivelyAfterARoundTrip()
+    {
+        // Arrange (Given) — System.Text.Json does not preserve a dictionary's IEqualityComparer
+        // across serialize/deserialize, so the rehydrated header lookup must still be
+        // case-insensitive like every other outbox header dictionary in this codebase.
+        await using var database = await SqliteInMemoryDatabase.CreateAsync(TestContext.Current.CancellationToken);
+        await using var context = database.CreateContext();
+        var storage = new EfCoreEventOutboxStorage<OutboxDbContext>(context);
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["TraceParent"] = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
+        };
+
+        // Act (When)
+        await storage.AddAsync(new OutboxTestEvent("with-headers-cased"), headers,
+            TestContext.Current.CancellationToken);
+        var pending = await storage.GetPendingEventsAsync(TestContext.Current.CancellationToken);
+
+        // Assert (Then) — looked up with a different casing than it was stored with
+        var entry = Assert.Single(pending);
+        Assert.Equal(headers["TraceParent"], entry.Headers["traceparent"]);
+    }
+
+    [Fact]
     public async Task MarkAsProcessedAsync_RemovesEntryFromPending()
     {
         // Arrange (Given)
