@@ -1,11 +1,20 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
     <ItemGroup>
+        <!-- Microsoft.Extensions.DependencyInjection / .Logging are deliberately NOT referenced
+             directly here: they arrive transitively (Microsoft.EntityFrameworkCore.Sqlite and the
+             Synapse project reference), and the central pins for them sit one patch below what EF Core
+             requires, so a direct reference trips NU1605 (warning-as-error). -->
         <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
     </ItemGroup>
 
     <ItemGroup>
         <ProjectReference Include="..\..\src\Synapse.Outbox.EntityFrameworkCore\Synapse.Outbox.EntityFrameworkCore.csproj" />
+        <!-- Test-only: lets one integration test build the documented end-to-end container
+             (AddDbContext + AddEfCoreEventOutbox + AddSynapse(SetEventOutboxStorage<...>)).
+             The shipped Synapse.Outbox.EntityFrameworkCore package deliberately does NOT depend on
+             Synapse itself — it only references Synapse.Abstractions. -->
+        <ProjectReference Include="..\..\src\Synapse\Synapse.csproj" />
     </ItemGroup>
 
 </Project>

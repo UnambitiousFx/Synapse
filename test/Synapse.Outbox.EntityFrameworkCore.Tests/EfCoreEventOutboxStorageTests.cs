@@ -130,11 +130,38 @@ public sealed class EfCoreEventOutboxStorageTests
             nextAttemptAt: nextAttempt, cancellationToken: TestContext.Current.CancellationToken);
         var attempts = await storage.GetAttemptCountAsync(stored.Id, TestContext.Current.CancellationToken);
         var retrying = await storage.GetRetryingCountAsync(TestContext.Current.CancellationToken);
+        var pending = await storage.GetPendingEventsAsync(TestContext.Current.CancellationToken);
 
-        // Assert (Then)
+        // Assert (Then) — it is still counted as retrying, but is withheld from dispatch until its
+        // scheduled NextAttemptAt passes.
         Assert.True(result.IsSuccess);
         Assert.Equal(1, attempts);
         Assert.Equal(1, retrying);
+        Assert.Empty(pending);
+    }
+
+    [Fact]
+    public async Task GetPendingEventsAsync_WithNextAttemptAtInThePast_ReturnsTheEntryAgain()
+    {
+        // Arrange (Given) — the companion of the back-off case above: once the scheduled retry time
+        // has passed, the entry becomes dispatchable again.
+        await using var database = await SqliteInMemoryDatabase.CreateAsync(TestContext.Current.CancellationToken);
+        await using var context = database.CreateContext();
+        var storage = new EfCoreEventOutboxStorage<OutboxDbContext>(context);
+        await storage.AddAsync(new OutboxTestEvent("retry-due"), NoHeaders,
+            TestContext.Current.CancellationToken);
+        var stored = Assert.Single(
+            await storage.GetPendingEventsAsync(TestContext.Current.CancellationToken));
+
+        // Act (When)
+        await storage.MarkAsFailedAsync(stored.Id, "transient failure", deadLetter: false,
+            nextAttemptAt: DateTimeOffset.UtcNow.AddMinutes(-1),
+            cancellationToken: TestContext.Current.CancellationToken);
+        var pending = await storage.GetPendingEventsAsync(TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        var entry = Assert.Single(pending);
+        Assert.Equal(stored.Id, entry.Id);
     }
 
     [Fact]
@@ -225,6 +252,29 @@ public sealed class EfCoreEventOutboxStorageTests
         var storage = new EfCoreEventOutboxStorage<OutboxDbContext>(context);
         var @event = new OutboxTestEvent("to-discard");
         await storage.AddAsync(@event, NoHeaders, TestContext.Current.CancellationToken);
+
+        // Act (When)
+        var result = await storage.DiscardAsync([@event], TestContext.Current.CancellationToken);
+        var pending = await storage.GetPendingEventsAsync(TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.True(result.IsSuccess);
+        Assert.Empty(pending);
+    }
+
+    [Fact]
+    public async Task DiscardAsync_SameEventReferenceStoredTwice_DiscardsBothRows()
+    {
+        // Arrange (Given) — the same event instance added twice produces two rows, and a discard must
+        // take both back, matching InMemoryEventOutboxStorage which discards every stored item whose
+        // event reference matches.
+        await using var database = await SqliteInMemoryDatabase.CreateAsync(TestContext.Current.CancellationToken);
+        await using var context = database.CreateContext();
+        var storage = new EfCoreEventOutboxStorage<OutboxDbContext>(context);
+        var @event = new OutboxTestEvent("stored-twice");
+        await storage.AddAsync(@event, NoHeaders, TestContext.Current.CancellationToken);
+        await storage.AddAsync(@event, NoHeaders, TestContext.Current.CancellationToken);
+        Assert.Equal(2, await storage.GetPendingCountAsync(TestContext.Current.CancellationToken));
 
         // Act (When)
         var result = await storage.DiscardAsync([@event], TestContext.Current.CancellationToken);

@@ -168,6 +168,32 @@ public sealed class SynapseMetrics : ISynapseMetrics
         return (scope.ServiceProvider.GetService<IEventOutboxStorage>(), scope);
     }
 
+    /// <summary>
+    ///     Blocks on a storage read issued from an observable-gauge callback and returns its result.
+    /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         <c>Meter.CreateObservableGauge</c> takes a plain synchronous <see cref="Func{TResult}" /> —
+    ///         <c>System.Diagnostics.Metrics</c> has no asynchronous observation callback — so the read has
+    ///         to be completed here, inside the scope that owns the storage, before that scope is disposed.
+    ///     </para>
+    ///     <para>
+    ///         Sampling the <see cref="ValueTask{T}" /> only when it happened to complete synchronously would
+    ///         be wrong for any storage that genuinely goes async (a database-backed one, for instance): the
+    ///         gauge would report its last-known value forever, and disposing the scope would tear the
+    ///         underlying connection or <c>DbContext</c> down underneath an in-flight query, producing an
+    ///         abandoned, unobserved <see cref="ObjectDisposedException" />. Blocking is safe here because
+    ///         these callbacks run on a meter-listener thread, not under a legacy
+    ///         <see cref="SynchronizationContext" /> that could deadlock.
+    ///     </para>
+    /// </remarks>
+    private static T Observe<T>(ValueTask<T> read)
+    {
+        return read.IsCompletedSuccessfully
+            ? read.Result
+            : read.AsTask().GetAwaiter().GetResult();
+    }
+
     private int ObserveOutboxQueueDepth()
     {
         var (storage, scope) = ResolveStorage();
@@ -179,12 +205,7 @@ public sealed class SynapseMetrics : ISynapseMetrics
 
         try
         {
-            var pendingCount = storage.GetPendingCountAsync(CancellationToken.None);
-            if (pendingCount.IsCompletedSuccessfully)
-            {
-                _lastKnownQueueDepth = pendingCount.Result;
-            }
-
+            _lastKnownQueueDepth = Observe(storage.GetPendingCountAsync(CancellationToken.None));
             return _lastKnownQueueDepth;
         }
         catch
@@ -210,12 +231,8 @@ public sealed class SynapseMetrics : ISynapseMetrics
 
         try
         {
-            var lag = storage.GetOldestPendingAgeAsync(CancellationToken.None);
-            if (lag.IsCompletedSuccessfully)
-            {
-                _lastKnownProcessingLagSeconds = lag.Result?.TotalSeconds ?? 0;
-            }
-
+            var lag = Observe(storage.GetOldestPendingAgeAsync(CancellationToken.None));
+            _lastKnownProcessingLagSeconds = lag?.TotalSeconds ?? 0;
             return _lastKnownProcessingLagSeconds;
         }
         catch
@@ -241,12 +258,7 @@ public sealed class SynapseMetrics : ISynapseMetrics
 
         try
         {
-            var retryingCount = storage.GetRetryingCountAsync(CancellationToken.None);
-            if (retryingCount.IsCompletedSuccessfully)
-            {
-                _lastKnownRetryingCount = retryingCount.Result;
-            }
-
+            _lastKnownRetryingCount = Observe(storage.GetRetryingCountAsync(CancellationToken.None));
             return _lastKnownRetryingCount;
         }
         catch
@@ -272,12 +284,7 @@ public sealed class SynapseMetrics : ISynapseMetrics
 
         try
         {
-            var deadLetterCount = storage.GetDeadLetterCountAsync(CancellationToken.None);
-            if (deadLetterCount.IsCompletedSuccessfully)
-            {
-                _lastKnownDeadLetterCount = deadLetterCount.Result;
-            }
-
+            _lastKnownDeadLetterCount = Observe(storage.GetDeadLetterCountAsync(CancellationToken.None));
             return _lastKnownDeadLetterCount;
         }
         catch

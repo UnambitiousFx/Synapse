@@ -64,6 +64,22 @@ services.AddSynapse(cfg =>
 `"outbox"`), so the table never collides with your own tables regardless of which context it lives
 in.
 
+:::warning Reach the storage through `IEventOutboxStorage`, not the concrete type
+
+`AddEfCoreEventOutbox<TContext>()` registers `EfCoreEventOutboxStorage<TContext>` as its own service,
+and `SetEventOutboxStorage<EfCoreEventOutboxStorage<TContext>>()` registers `IEventOutboxStorage` as a
+separate, independent descriptor. The container activates the two independently, so a single scope
+ends up holding **two** storage instances over the same `DbContext`.
+
+That only matters for `DiscardAsync`, which matches events by reference against what `AddAsync`
+recorded on that same instance. Inject `IOutboxDiscard` (or `IEventOutboxStorage`) — the path
+`AddSynapse` already wires — rather than injecting `EfCoreEventOutboxStorage<TContext>` directly: a
+directly-injected instance has never seen the events your application stored, so every discard
+through it silently does nothing. Every other operation is keyed by row id or queried straight from
+the database, so it behaves identically on either instance.
+
+:::
+
 ## Multi-`DbContext` (modular monolith)
 
 When a business `DbContext` and the outbox context must commit or roll back together — the point of
@@ -93,13 +109,26 @@ the same EF Core storage can double-dispatch a pending entry — the same limita
 storage already has today. A `FOR UPDATE SKIP LOCKED`-based (or equivalent) claiming dispatcher is
 tracked as a follow-up.
 
-`GetPendingEventsAsync` and `GetOldestPendingAgeAsync` only push the boolean-column filters (status,
-dispatched) down to SQL; the `NextAttemptAt` / `CreatedAt` filtering and ordering happen client-side,
-after `ToListAsync()`, via LINQ-to-Objects. This is a deliberate workaround for SQLite's EF Core
-provider, which cannot translate `DateTimeOffset` comparisons or ordering into SQL. It is correct on
-every provider — including PostgreSQL and SQL Server, where the comparison and ordering could be
-pushed down — but on SQLite it means the whole pending set is pulled into memory before filtering, so
-it is less efficient for large pending sets.
+`GetPendingEventsAsync` and `GetOldestPendingAgeAsync` only push the boolean-column filters
+(`Processed`, `DeadLetter`, `Discarded`) down to SQL. The `NextAttemptAt` filtering and the
+`CreatedAt` ordering/aggregation happen client-side, after `ToListAsync()`, via LINQ-to-Objects — **on
+every provider**, PostgreSQL and SQL Server included, not only on SQLite. So on any provider the whole
+not-yet-processed set is pulled into memory before the back-off filter is applied, which is less
+efficient the larger that set gets.
+
+This shape was originally forced by SQLite's EF Core provider, which cannot translate `DateTimeOffset`
+comparisons or ordering into SQL; rather than branch per provider it was applied uniformly, for one
+behavior that is correct everywhere. Pushing the `DateTimeOffset` predicate down — for example by
+mapping the column through a `ValueConverter<DateTimeOffset, long>` so it becomes sortable and
+comparable in SQL on every provider — is tracked as a follow-up.
+
+Outbox rows store their event's assembly-qualified CLR type name, and `GetPendingEventsAsync` /
+`GetDeadLetterEventsAsync` resolve it back with `Type.GetType(..., throwOnError: true)`. If you
+rename, move or delete an event type while rows referencing it are still pending, that resolution
+throws and the whole call fails — blocking dispatch of *every* pending entry, not just the offending
+one, and there is no in-library recovery: an operator has to fix the stored `EventType` value or
+delete the row by hand. Keep a type-forwarding shim, or migrate the stored type names, before
+renaming or removing an event type that may still have outbox rows.
 
 ## See also
 

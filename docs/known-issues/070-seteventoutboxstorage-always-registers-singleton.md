@@ -98,6 +98,22 @@ Singleton registration. A caller invoking `SetEventOutboxStorage<T>()` with no a
 `UnambitiousFx.Synapse.Outbox.EntityFrameworkCore`'s `EfCoreEventOutboxStorage<TContext>`; a caller
 that needs `Singleton` for a stateless, thread-safe storage passes it explicitly.
 
+### Note for release — public API breaks
+
+This fix carries two public API changes that need a mention in the release notes:
+
+- **`ISynapseConfig.SetEventOutboxStorage<TEventOutboxStorage>()` gained a
+  `ServiceLifetime lifetime = ServiceLifetime.Scoped` parameter.** Source-compatible for callers (the
+  argument is optional), but **binary-breaking** — a consumer compiled against the previous signature
+  must be recompiled — and **source-breaking for anyone implementing `ISynapseConfig` themselves**,
+  since the interface member's signature changed. It is also a *behavioral* break: a caller who was
+  relying on the old unconditional `Singleton` registration now gets `Scoped` unless they pass
+  `ServiceLifetime.Singleton` explicitly.
+- **`SynapseMetrics`'s public constructor's second parameter changed from `IEventOutboxStorage?` to
+  `IServiceScopeFactory?`.** Both source- and binary-breaking for anyone constructing
+  `SynapseMetrics` directly rather than resolving `ISynapseMetrics` from DI. The container-resolved
+  path is unaffected: `AddSynapse` passes the scope factory itself.
+
 **Verification.** `test/Synapse.Tests/SynapseConfigEventOutboxStorageLifetimeTests.cs` — asserts the
 default path stays `InMemoryEventOutboxStorage`/`Singleton`, a no-argument `SetEventOutboxStorage<T>()`
 registers `Scoped`, an explicit `ServiceLifetime.Singleton` is honored, and a scoped custom storage

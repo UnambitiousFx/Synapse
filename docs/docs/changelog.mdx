@@ -20,7 +20,7 @@ This page records issues discovered and resolved while hardening the library. Al
 | [029](https://github.com/UnambitiousFx/Synapse/blob/main/docs/known-issues/029-scoped-icontext-snapshot-diverges-from-accessor.md) | Scoped `IContext` cached a boxed snapshot while `WithCorrelationId` returned a new box, so a pre-middleware reader and the response header could report different correlation IDs; identity is now fixed at creation via `IInboundContextStore` | Medium |
 | [035](https://github.com/UnambitiousFx/Synapse/blob/main/docs/known-issues/035-shared-context-stores-are-not-thread-safe.md) | `Context` held baggage and features in plain dictionaries while the concurrent event orchestrator runs every handler against that one instance, so entries were lost, the byte counter drifted and enumeration threw; both stores are now copy-on-write | **High** |
 | [036](https://github.com/UnambitiousFx/Synapse/blob/main/docs/known-issues/036-concurrent-accessor-reads-mint-diverging-trace-ids.md) | `ContextHandler` built its context lazily without synchronization, so concurrent handlers in one scope each minted their own trace id and only one won the field; creation is now locked and double-checked | **High** |
-| [070](https://github.com/UnambitiousFx/Synapse/blob/worktree-ef-core-outbox/docs/known-issues/070-seteventoutboxstorage-always-registers-singleton.md) | SetEventOutboxStorage always registered the storage as Singleton, breaking scoped dependencies | Medium |
+| [070](https://github.com/UnambitiousFx/Synapse/blob/main/docs/known-issues/070-seteventoutboxstorage-always-registers-singleton.md) | `SetEventOutboxStorage` always registered the storage as Singleton, breaking scoped dependencies | Medium |
 
 ## Source Generator
 

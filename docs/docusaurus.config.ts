@@ -71,7 +71,12 @@ const config: Config = {
           },
           {
             filename: 'llms-outbox.txt',
-            includePatterns: ['outbox.mdx', 'events.mdx', 'observability.mdx'],
+            includePatterns: [
+              'outbox.mdx',
+              'outbox-entityframeworkcore.mdx',
+              'events.mdx',
+              'observability.mdx',
+            ],
             fullContent: true,
             title: 'Synapse Events, Outbox & Observability',
             description: 'Event publishing, the outbox pattern, and observability.',

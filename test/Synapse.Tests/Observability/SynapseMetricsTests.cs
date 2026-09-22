@@ -138,6 +138,42 @@ public sealed class SynapseMetricsTests : IDisposable
     }
 
     [Fact]
+    public void OutboxGauges_WithGenuinelyAsyncStorage_ReportCurrentValues()
+    {
+        // Arrange (Given) — a storage whose ValueTasks actually go async, as any real
+        // database-backed storage does. The observable-gauge callback is synchronous, so it must
+        // block on the read inside its scope; sampling the ValueTask only when it happens to have
+        // completed synchronously would report the last-known (zero) value forever and dispose the
+        // scope out from under the in-flight query.
+        var storage = new AsyncOutboxStorage(
+            pendingCount: 5,
+            oldestPendingAge: TimeSpan.FromSeconds(42),
+            retryingCount: 3,
+            deadLetterCount: 2);
+
+        var meterFactory = CreateMeterFactory();
+        _ = new SynapseMetrics(meterFactory, ScopeFactoryFor(storage));
+
+        var (measurements, listener) = ListenTo(ResolveMeter(meterFactory));
+        listener.Start();
+
+        // Act (When)
+        listener.RecordObservableInstruments();
+
+        // Assert (Then)
+        Assert.Equal(5, measurements["mediator.outbox.queue_depth"]);
+        Assert.Equal(42, measurements["mediator.outbox.processing_lag"]);
+        Assert.Equal(3, measurements["mediator.outbox.retrying_count"]);
+        Assert.Equal(2, measurements["mediator.outbox.dead_letter_count"]);
+
+        // ...and every read really did go async, so the values above cannot have come from a
+        // synchronously-completed ValueTask.
+        Assert.Equal(4, storage.AsynchronousReads);
+
+        listener.Dispose();
+    }
+
+    [Fact]
     public void OutboxGauges_WithoutStorage_ReportZero()
     {
         // Arrange (Given)
@@ -157,5 +193,71 @@ public sealed class SynapseMetricsTests : IDisposable
         Assert.Equal(0, measurements["mediator.outbox.dead_letter_count"]);
 
         listener.Dispose();
+    }
+
+    // A storage whose reads genuinely complete asynchronously, the way a database-backed one does.
+    // ConfigureAwait(false) keeps the continuation on the thread pool so blocking on it from the
+    // (synchronous) gauge callback cannot deadlock against any ambient SynchronizationContext.
+    private sealed class AsyncOutboxStorage(
+        int pendingCount,
+        TimeSpan oldestPendingAge,
+        int retryingCount,
+        int deadLetterCount) : IEventOutboxStorage
+    {
+        private int _asynchronousReads;
+
+        public int AsynchronousReads => Volatile.Read(ref _asynchronousReads);
+
+        private async ValueTask<T> ReadAsync<T>(T value)
+        {
+            await Task.Delay(1).ConfigureAwait(false);
+            Interlocked.Increment(ref _asynchronousReads);
+            return value;
+        }
+
+        public ValueTask<int> GetPendingCountAsync(CancellationToken cancellationToken = default)
+            => ReadAsync(pendingCount);
+
+        public ValueTask<TimeSpan?> GetOldestPendingAgeAsync(CancellationToken cancellationToken = default)
+            => ReadAsync<TimeSpan?>(oldestPendingAge);
+
+        public ValueTask<int> GetRetryingCountAsync(CancellationToken cancellationToken = default)
+            => ReadAsync(retryingCount);
+
+        public ValueTask<int> GetDeadLetterCountAsync(CancellationToken cancellationToken = default)
+            => ReadAsync(deadLetterCount);
+
+        public ValueTask<UnambitiousFx.Functional.Result> AddAsync<TEvent>(TEvent @event,
+            IReadOnlyDictionary<string, string> headers,
+            CancellationToken cancellationToken = default)
+            where TEvent : class, IEvent
+            => new(UnambitiousFx.Functional.Result.Success());
+
+        public ValueTask<IReadOnlyList<OutboxEntry>> GetPendingEventsAsync(
+            CancellationToken cancellationToken = default)
+            => new(Array.Empty<OutboxEntry>() as IReadOnlyList<OutboxEntry>);
+
+        public ValueTask<UnambitiousFx.Functional.Result> MarkAsProcessedAsync(Guid id,
+            CancellationToken cancellationToken = default)
+            => new(UnambitiousFx.Functional.Result.Success());
+
+        public ValueTask<UnambitiousFx.Functional.Result> ClearAsync(
+            CancellationToken cancellationToken = default)
+            => new(UnambitiousFx.Functional.Result.Success());
+
+        public ValueTask<UnambitiousFx.Functional.Result> MarkAsFailedAsync(Guid id,
+            string reason,
+            bool deadLetter,
+            DateTimeOffset? nextAttemptAt = null,
+            CancellationToken cancellationToken = default)
+            => new(UnambitiousFx.Functional.Result.Success());
+
+        public ValueTask<IReadOnlyList<OutboxEntry>> GetDeadLetterEventsAsync(
+            CancellationToken cancellationToken = default)
+            => new(Array.Empty<OutboxEntry>() as IReadOnlyList<OutboxEntry>);
+
+        public ValueTask<int?> GetAttemptCountAsync(Guid id,
+            CancellationToken cancellationToken = default)
+            => new((int?)null);
     }
 }
