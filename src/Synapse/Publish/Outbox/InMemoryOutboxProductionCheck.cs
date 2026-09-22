@@ -35,10 +35,15 @@ internal sealed class InMemoryOutboxProductionCheck : IHostedService
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
+        if (_environment?.IsProduction() != true)
+        {
+            return Task.CompletedTask;
+        }
+
         using var scope = _scopeFactory.CreateScope();
         var storage = scope.ServiceProvider.GetRequiredService<IEventOutboxStorage>();
 
-        if (storage is InMemoryEventOutboxStorage && _environment?.IsProduction() == true)
+        if (storage is InMemoryEventOutboxStorage)
         {
             _logger.LogWarning(
                 "The in-memory outbox storage is registered in a Production environment. It is not enlisted in your " +

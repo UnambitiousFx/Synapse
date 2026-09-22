@@ -76,6 +76,30 @@ public sealed class SynapseConfigEventOutboxStorageLifetimeTests
         Assert.IsType<RecordingOutboxStorage>(storage);
     }
 
+    [Fact]
+    public void ScopedCustomStorage_SynapseMetricsResolvedFromRootProvider_DoesNotThrow()
+    {
+        // Arrange (Given) — ISynapseMetrics is registered Singleton and its outbox gauges read
+        // IEventOutboxStorage. With a Scoped custom storage, resolving ISynapseMetrics itself from
+        // the ROOT provider (as ASP.NET Core does at host build/validation time) must not throw, and
+        // it must not capture the Scoped storage past that resolution — SynapseMetrics only reaches
+        // into it lazily per gauge observation via a short-lived scope.
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSynapse(cfg => cfg.SetEventOutboxStorage<RecordingOutboxStorage>());
+        var provider = services.BuildServiceProvider(new ServiceProviderOptions
+        {
+            ValidateScopes = true,
+            ValidateOnBuild = true
+        });
+
+        // Act (When)
+        var metrics = provider.GetRequiredService<UnambitiousFx.Synapse.Observability.ISynapseMetrics>();
+
+        // Assert (Then)
+        Assert.NotNull(metrics);
+    }
+
     private sealed class RecordingOutboxStorage : IEventOutboxStorage
     {
         public ValueTask<UnambitiousFx.Functional.Result> AddAsync<TEvent>(TEvent @event,

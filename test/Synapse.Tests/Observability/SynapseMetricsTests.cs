@@ -6,9 +6,18 @@ using UnambitiousFx.Synapse.Observability;
 
 namespace UnambitiousFx.Synapse.Tests.Observability;
 
-public sealed class SynapseMetricsTests
+public sealed class SynapseMetricsTests : IDisposable
 {
     private const string MeterName = "Unambitious.Synapse";
+    private readonly List<ServiceProvider> _providers = [];
+
+    public void Dispose()
+    {
+        foreach (var provider in _providers)
+        {
+            provider.Dispose();
+        }
+    }
 
     private static IMeterFactory CreateMeterFactory()
     {
@@ -23,6 +32,18 @@ public sealed class SynapseMetricsTests
     // that instance (not just the name) isolates this test from gauges leaked by other tests' meters.
     private static Meter ResolveMeter(IMeterFactory meterFactory)
         => meterFactory.Create(MeterName, "1.0.0");
+
+    // Mirrors the Singleton-consuming-Scoped-storage shape SynapseMetrics resolves through in
+    // production: builds a small provider around the given storage and hands back its scope factory,
+    // the same thing DependencyInjectionExtensions.AddSynapse passes to the SynapseMetrics constructor.
+    private IServiceScopeFactory ScopeFactoryFor(IEventOutboxStorage storage)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(storage);
+        var provider = services.BuildServiceProvider();
+        _providers.Add(provider);
+        return provider.GetRequiredService<IServiceScopeFactory>();
+    }
 
     private static (Dictionary<string, double> measurements, MeterListener listener) ListenTo(Meter meter)
     {
@@ -58,7 +79,7 @@ public sealed class SynapseMetricsTests
         storage.GetDeadLetterCountAsync(Arg.Any<CancellationToken>()).Returns(new ValueTask<int>(2));
 
         var meterFactory = CreateMeterFactory();
-        _ = new SynapseMetrics(meterFactory, storage);
+        _ = new SynapseMetrics(meterFactory, ScopeFactoryFor(storage));
 
         var (measurements, listener) = ListenTo(ResolveMeter(meterFactory));
         listener.Start();
@@ -90,7 +111,7 @@ public sealed class SynapseMetricsTests
             .Returns<ValueTask<int>>(_ => throw new InvalidOperationException("boom"));
 
         var meterFactory = CreateMeterFactory();
-        _ = new SynapseMetrics(meterFactory, storage);
+        _ = new SynapseMetrics(meterFactory, ScopeFactoryFor(storage));
 
         var (measurements, listener) = ListenTo(ResolveMeter(meterFactory));
         var readFailures = 0L;

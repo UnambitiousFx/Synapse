@@ -9,8 +9,18 @@ using UnambitiousFx.Synapse.Publish.Outbox;
 namespace UnambitiousFx.Synapse.Tests.Publish.Outbox;
 
 [TestSubject(typeof(InMemoryOutboxProductionCheck))]
-public sealed class InMemoryOutboxProductionCheckTests
+public sealed class InMemoryOutboxProductionCheckTests : IDisposable
 {
+    private readonly List<ServiceProvider> _providers = [];
+
+    public void Dispose()
+    {
+        foreach (var provider in _providers)
+        {
+            provider.Dispose();
+        }
+    }
+
     [Fact]
     public async Task StartAsync_WithInMemoryStorageInProduction_LogsAWarning()
     {
@@ -96,11 +106,13 @@ public sealed class InMemoryOutboxProductionCheckTests
         return environment;
     }
 
-    private static IServiceScopeFactory ScopeFactoryFor(IEventOutboxStorage storage)
+    private IServiceScopeFactory ScopeFactoryFor(IEventOutboxStorage storage)
     {
         var services = new ServiceCollection();
         services.AddSingleton(storage);
-        return services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
+        var provider = services.BuildServiceProvider();
+        _providers.Add(provider);
+        return provider.GetRequiredService<IServiceScopeFactory>();
     }
 
     private sealed class CapturingLogger : ILogger<InMemoryOutboxProductionCheck>
