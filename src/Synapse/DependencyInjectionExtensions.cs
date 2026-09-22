@@ -60,8 +60,8 @@ public static class DependencyInjectionExtensions
         services.TryAddSingleton<ISynapseMetrics>(sp =>
         {
             var meterFactory = sp.GetRequiredService<IMeterFactory>();
-            var eventOutboxStorage = sp.GetService<IEventOutboxStorage>();
-            return new SynapseMetrics(meterFactory, eventOutboxStorage);
+            var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
+            return new SynapseMetrics(meterFactory, scopeFactory);
         });
 
         return services.AddMetrics();

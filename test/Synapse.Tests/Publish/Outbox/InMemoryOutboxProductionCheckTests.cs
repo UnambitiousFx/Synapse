@@ -9,14 +9,24 @@ using UnambitiousFx.Synapse.Publish.Outbox;
 namespace UnambitiousFx.Synapse.Tests.Publish.Outbox;
 
 [TestSubject(typeof(InMemoryOutboxProductionCheck))]
-public sealed class InMemoryOutboxProductionCheckTests
+public sealed class InMemoryOutboxProductionCheckTests : IDisposable
 {
+    private readonly List<ServiceProvider> _providers = [];
+
+    public void Dispose()
+    {
+        foreach (var provider in _providers)
+        {
+            provider.Dispose();
+        }
+    }
+
     [Fact]
     public async Task StartAsync_WithInMemoryStorageInProduction_LogsAWarning()
     {
         // Arrange (Given)
         var logger = new CapturingLogger();
-        var check = new InMemoryOutboxProductionCheck(new InMemoryEventOutboxStorage(), logger,
+        var check = new InMemoryOutboxProductionCheck(ScopeFactoryFor(new InMemoryEventOutboxStorage()), logger,
             EnvironmentNamed(Environments.Production));
 
         // Act (When)
@@ -35,7 +45,7 @@ public sealed class InMemoryOutboxProductionCheckTests
     {
         // Arrange (Given)
         var logger = new CapturingLogger();
-        var check = new InMemoryOutboxProductionCheck(new InMemoryEventOutboxStorage(), logger,
+        var check = new InMemoryOutboxProductionCheck(ScopeFactoryFor(new InMemoryEventOutboxStorage()), logger,
             EnvironmentNamed(environmentName));
 
         // Act (When)
@@ -50,8 +60,8 @@ public sealed class InMemoryOutboxProductionCheckTests
     {
         // Arrange (Given)
         var logger = new CapturingLogger();
-        var check = new InMemoryOutboxProductionCheck(Substitute.For<IEventOutboxStorage>(), logger,
-            EnvironmentNamed(Environments.Production));
+        var check = new InMemoryOutboxProductionCheck(ScopeFactoryFor(Substitute.For<IEventOutboxStorage>()),
+            logger, EnvironmentNamed(Environments.Production));
 
         // Act (When)
         await check.StartAsync(TestContext.Current.CancellationToken);
@@ -65,7 +75,7 @@ public sealed class InMemoryOutboxProductionCheckTests
     {
         // Arrange (Given)
         var logger = new CapturingLogger();
-        var check = new InMemoryOutboxProductionCheck(new InMemoryEventOutboxStorage(), logger);
+        var check = new InMemoryOutboxProductionCheck(ScopeFactoryFor(new InMemoryEventOutboxStorage()), logger);
 
         // Act (When)
         await check.StartAsync(TestContext.Current.CancellationToken);
@@ -94,6 +104,15 @@ public sealed class InMemoryOutboxProductionCheckTests
         var environment = Substitute.For<IHostEnvironment>();
         environment.EnvironmentName.Returns(name);
         return environment;
+    }
+
+    private IServiceScopeFactory ScopeFactoryFor(IEventOutboxStorage storage)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(storage);
+        var provider = services.BuildServiceProvider();
+        _providers.Add(provider);
+        return provider.GetRequiredService<IServiceScopeFactory>();
     }
 
     private sealed class CapturingLogger : ILogger<InMemoryOutboxProductionCheck>

@@ -154,31 +154,15 @@ Things to know:
 
 ## Replace the storage for production
 
-The built-in `InMemoryEventOutboxStorage` is suitable for testing and simple scenarios. For production, replace it with a persistent implementation:
+The built-in `InMemoryEventOutboxStorage` is suitable for testing and simple scenarios. For production, replace it with a persistent implementation. `UnambitiousFx.Synapse.Outbox.EntityFrameworkCore` ships a ready-made, transactional one — see [EF Core outbox storage](./outbox-entityframeworkcore) for installation, the multi-`DbContext` (modular monolith) transaction-sharing pattern, and migrations. In short:
 
 ```csharp
-cfg.SetEventOutboxStorage<EfCoreEventOutboxStorage>();
-```
-
-Register `EfCoreEventOutboxStorage` in DI with whatever lifetime your database context uses, then implement `IEventOutboxStorage`:
-
-```csharp
-public class EfCoreEventOutboxStorage : IEventOutboxStorage
+services.AddDbContext<OutboxDbContext>(o => o.UseNpgsql(connectionString));
+services.AddEfCoreEventOutbox<OutboxDbContext>();
+services.AddSynapse(cfg =>
 {
-    private readonly AppDbContext _db;
-
-    public EfCoreEventOutboxStorage(AppDbContext db) => _db = db;
-
-    public async ValueTask<Result> AddAsync<TEvent>(TEvent @event, CancellationToken ct = default)
-        where TEvent : class, IEvent
-    {
-        _db.OutboxEvents.Add(OutboxEvent.From(@event));
-        await _db.SaveChangesAsync(ct);
-        return Result.Success();
-    }
-
-    // ... implement remaining members
-}
+    cfg.SetEventOutboxStorage<EfCoreEventOutboxStorage<OutboxDbContext>>();
+});
 ```
 
 ## Health check

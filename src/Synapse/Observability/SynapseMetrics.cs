@@ -1,4 +1,5 @@
 using System.Diagnostics.Metrics;
+using Microsoft.Extensions.DependencyInjection;
 using UnambitiousFx.Synapse.Abstractions;
 
 namespace UnambitiousFx.Synapse.Observability;
@@ -10,7 +11,7 @@ public sealed class SynapseMetrics : ISynapseMetrics
 {
     private readonly Counter<long> _dispatchFailures;
     private readonly Histogram<double> _dispatchLatency;
-    private readonly IEventOutboxStorage? _eventOutboxStorage;
+    private readonly IServiceScopeFactory? _scopeFactory;
     private readonly Counter<long> _outboxMetricReadFailures;
     private int _lastKnownRetryingCount;
     private int _lastKnownDeadLetterCount;
@@ -28,12 +29,18 @@ public sealed class SynapseMetrics : ISynapseMetrics
     ///     Initializes a new instance of the <see cref="SynapseMetrics" /> class.
     /// </summary>
     /// <param name="meterFactory">The meter factory for creating meters.</param>
-    /// <param name="eventOutboxStorage">Optional event outbox storage for queue depth metrics.</param>
+    /// <param name="scopeFactory">
+    ///     Optional scope factory used to resolve <see cref="IEventOutboxStorage" /> for the outbox observable
+    ///     gauges. A short-lived scope is opened per gauge observation rather than the storage being captured at
+    ///     construction: this type is registered Singleton, and <see cref="IEventOutboxStorage" /> can be
+    ///     registered Scoped (e.g. backed by a <c>DbContext</c>), so capturing it directly would be a captive
+    ///     dependency — resolvable at best, and a hard failure under <c>ValidateScopes</c>.
+    /// </param>
     public SynapseMetrics(
         IMeterFactory meterFactory,
-        IEventOutboxStorage? eventOutboxStorage = null)
+        IServiceScopeFactory? scopeFactory = null)
     {
-        _eventOutboxStorage = eventOutboxStorage;
+        _scopeFactory = scopeFactory;
         var meter = meterFactory.Create("Unambitious.Synapse", "1.0.0");
 
         // Event dispatch metrics
@@ -145,21 +152,60 @@ public sealed class SynapseMetrics : ISynapseMetrics
             new KeyValuePair<string, object?>("event.type", eventType));
     }
 
+    /// <summary>
+    ///     Opens a short-lived scope and resolves <see cref="IEventOutboxStorage" /> from it, or <c>null</c> when
+    ///     no scope factory was supplied or no storage is registered. Called once per gauge observation so this
+    ///     Singleton never holds a Scoped storage past the observation that needed it.
+    /// </summary>
+    private (IEventOutboxStorage? Storage, IServiceScope? Scope) ResolveStorage()
+    {
+        if (_scopeFactory == null)
+        {
+            return (null, null);
+        }
+
+        var scope = _scopeFactory.CreateScope();
+        return (scope.ServiceProvider.GetService<IEventOutboxStorage>(), scope);
+    }
+
+    /// <summary>
+    ///     Blocks on a storage read issued from an observable-gauge callback and returns its result.
+    /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         <c>Meter.CreateObservableGauge</c> takes a plain synchronous <see cref="Func{TResult}" /> —
+    ///         <c>System.Diagnostics.Metrics</c> has no asynchronous observation callback — so the read has
+    ///         to be completed here, inside the scope that owns the storage, before that scope is disposed.
+    ///     </para>
+    ///     <para>
+    ///         Sampling the <see cref="ValueTask{T}" /> only when it happened to complete synchronously would
+    ///         be wrong for any storage that genuinely goes async (a database-backed one, for instance): the
+    ///         gauge would report its last-known value forever, and disposing the scope would tear the
+    ///         underlying connection or <c>DbContext</c> down underneath an in-flight query, producing an
+    ///         abandoned, unobserved <see cref="ObjectDisposedException" />. Blocking is safe here because
+    ///         these callbacks run on a meter-listener thread, not under a legacy
+    ///         <see cref="SynchronizationContext" /> that could deadlock.
+    ///     </para>
+    /// </remarks>
+    private static T Observe<T>(ValueTask<T> read)
+    {
+        return read.IsCompletedSuccessfully
+            ? read.Result
+            : read.AsTask().GetAwaiter().GetResult();
+    }
+
     private int ObserveOutboxQueueDepth()
     {
-        if (_eventOutboxStorage == null)
+        var (storage, scope) = ResolveStorage();
+        if (storage == null)
         {
-            return 0;
+            scope?.Dispose();
+            return _lastKnownQueueDepth;
         }
 
         try
         {
-            var pendingCount = _eventOutboxStorage.GetPendingCountAsync(CancellationToken.None);
-            if (pendingCount.IsCompletedSuccessfully)
-            {
-                _lastKnownQueueDepth = pendingCount.Result;
-            }
-
+            _lastKnownQueueDepth = Observe(storage.GetPendingCountAsync(CancellationToken.None));
             return _lastKnownQueueDepth;
         }
         catch
@@ -168,23 +214,25 @@ public sealed class SynapseMetrics : ISynapseMetrics
                 new KeyValuePair<string, object?>("metric.name", "queue_depth"));
             return _lastKnownQueueDepth;
         }
+        finally
+        {
+            scope?.Dispose();
+        }
     }
 
     private double ObserveOutboxProcessingLag()
     {
-        if (_eventOutboxStorage == null)
+        var (storage, scope) = ResolveStorage();
+        if (storage == null)
         {
-            return 0;
+            scope?.Dispose();
+            return _lastKnownProcessingLagSeconds;
         }
 
         try
         {
-            var lag = _eventOutboxStorage.GetOldestPendingAgeAsync(CancellationToken.None);
-            if (lag.IsCompletedSuccessfully)
-            {
-                _lastKnownProcessingLagSeconds = lag.Result?.TotalSeconds ?? 0;
-            }
-
+            var lag = Observe(storage.GetOldestPendingAgeAsync(CancellationToken.None));
+            _lastKnownProcessingLagSeconds = lag?.TotalSeconds ?? 0;
             return _lastKnownProcessingLagSeconds;
         }
         catch
@@ -193,23 +241,24 @@ public sealed class SynapseMetrics : ISynapseMetrics
                 new KeyValuePair<string, object?>("metric.name", "processing_lag"));
             return _lastKnownProcessingLagSeconds;
         }
+        finally
+        {
+            scope?.Dispose();
+        }
     }
 
     private int ObserveOutboxRetryingCount()
     {
-        if (_eventOutboxStorage == null)
+        var (storage, scope) = ResolveStorage();
+        if (storage == null)
         {
-            return 0;
+            scope?.Dispose();
+            return _lastKnownRetryingCount;
         }
 
         try
         {
-            var retryingCount = _eventOutboxStorage.GetRetryingCountAsync(CancellationToken.None);
-            if (retryingCount.IsCompletedSuccessfully)
-            {
-                _lastKnownRetryingCount = retryingCount.Result;
-            }
-
+            _lastKnownRetryingCount = Observe(storage.GetRetryingCountAsync(CancellationToken.None));
             return _lastKnownRetryingCount;
         }
         catch
@@ -218,23 +267,24 @@ public sealed class SynapseMetrics : ISynapseMetrics
                 new KeyValuePair<string, object?>("metric.name", "retrying_count"));
             return _lastKnownRetryingCount;
         }
+        finally
+        {
+            scope?.Dispose();
+        }
     }
 
     private int ObserveOutboxDeadLetterCount()
     {
-        if (_eventOutboxStorage == null)
+        var (storage, scope) = ResolveStorage();
+        if (storage == null)
         {
-            return 0;
+            scope?.Dispose();
+            return _lastKnownDeadLetterCount;
         }
 
         try
         {
-            var deadLetterCount = _eventOutboxStorage.GetDeadLetterCountAsync(CancellationToken.None);
-            if (deadLetterCount.IsCompletedSuccessfully)
-            {
-                _lastKnownDeadLetterCount = deadLetterCount.Result;
-            }
-
+            _lastKnownDeadLetterCount = Observe(storage.GetDeadLetterCountAsync(CancellationToken.None));
             return _lastKnownDeadLetterCount;
         }
         catch
@@ -242,6 +292,10 @@ public sealed class SynapseMetrics : ISynapseMetrics
             _outboxMetricReadFailures.Add(1,
                 new KeyValuePair<string, object?>("metric.name", "dead_letter_count"));
             return _lastKnownDeadLetterCount;
+        }
+        finally
+        {
+            scope?.Dispose();
         }
     }
 }
