@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\..\src\Synapse.Outbox.EntityFrameworkCore\Synapse.Outbox.EntityFrameworkCore.csproj" />
+    </ItemGroup>
+
+</Project>
