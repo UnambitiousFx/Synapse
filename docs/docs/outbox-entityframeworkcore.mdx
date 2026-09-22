@@ -1,0 +1,108 @@
+---
+sidebar_position: 10.5
+title: EF Core Outbox Storage
+description: A transactional, multi-DbContext-friendly IEventOutboxStorage backed by EF Core.
+---
+
+# EF Core Outbox Storage
+
+`UnambitiousFx.Synapse.Outbox.EntityFrameworkCore` is a transactional `IEventOutboxStorage`
+implementation backed by EF Core. It writes outbox entries through whatever `DbContext` it is given,
+so a stored entry lands in that context's ambient transaction — the same guarantee `EmitMode.Outbox`
+exists for.
+
+## Install
+
+```bash
+dotnet add package UnambitiousFx.Synapse.Outbox.EntityFrameworkCore
+```
+
+## Choose a schema story
+
+### Standalone `OutboxDbContext` (the common case)
+
+```csharp
+services.AddDbContext<OutboxDbContext>(o => o.UseNpgsql(connectionString));
+services.AddEfCoreEventOutbox<OutboxDbContext>();
+services.AddSynapse(cfg =>
+{
+    cfg.SetEventOutboxStorage<EfCoreEventOutboxStorage<OutboxDbContext>>();
+});
+```
+
+Generate its migrations like any other context, in your own project:
+
+```bash
+dotnet ef migrations add InitialOutbox --context OutboxDbContext
+```
+
+### Embed the table in your own `DbContext`
+
+If you'd rather keep the outbox table under your existing context's migration history instead of a
+separate one, apply `OutboxEntityTypeConfiguration` yourself:
+
+```csharp
+public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
+{
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.ApplyConfiguration(new OutboxEntityTypeConfiguration());
+        // ... your own entities
+    }
+}
+```
+
+```csharp
+services.AddEfCoreEventOutbox<AppDbContext>();
+services.AddSynapse(cfg =>
+{
+    cfg.SetEventOutboxStorage<EfCoreEventOutboxStorage<AppDbContext>>();
+});
+```
+
+`OutboxEntityTypeConfiguration`'s constructor takes an optional `schema` parameter (default
+`"outbox"`), so the table never collides with your own tables regardless of which context it lives
+in.
+
+## Multi-`DbContext` (modular monolith)
+
+When a business `DbContext` and the outbox context must commit or roll back together — the point of
+the outbox pattern — share one `DbTransaction` across them with `Database.UseTransactionAsync`:
+
+```csharp
+await using var tx = await businessContext.Database.BeginTransactionAsync(ct);
+await outboxContext.Database.UseTransactionAsync(tx.GetDbTransaction(), ct);
+
+businessContext.Tasks.Add(task);
+await businessContext.SaveChangesAsync(ct);                                    // business save
+
+await emitter.EmitAsync(new TaskCreatedEvent(task.Id), EmitMode.Outbox, ct);    // outbox write,
+                                                                                  // same DbTransaction
+
+await tx.CommitAsync(ct);   // both commit together; either rolls back together
+```
+
+See also [Modular Monolith](./modular-monolith) for the broader module-boundary picture this fits
+into.
+
+## Limitations
+
+`GetPendingEventsAsync` has no row-locking. Running more than one instance of the process that calls
+`IOutboxCommit.CommitAsync()` (or any other caller of `IOutboxManager.ProcessPendingAsync`) against
+the same EF Core storage can double-dispatch a pending entry — the same limitation the in-memory
+storage already has today. A `FOR UPDATE SKIP LOCKED`-based (or equivalent) claiming dispatcher is
+tracked as a follow-up.
+
+`GetPendingEventsAsync` and `GetOldestPendingAgeAsync` only push the boolean-column filters (status,
+dispatched) down to SQL; the `NextAttemptAt` / `CreatedAt` filtering and ordering happen client-side,
+after `ToListAsync()`, via LINQ-to-Objects. This is a deliberate workaround for SQLite's EF Core
+provider, which cannot translate `DateTimeOffset` comparisons or ordering into SQL. It is correct on
+every provider — including PostgreSQL and SQL Server, where the comparison and ordering could be
+pushed down — but on SQLite it means the whole pending set is pulled into memory before filtering, so
+it is less efficient for large pending sets.
+
+## See also
+
+- [Outbox Pattern](./outbox) — the general outbox contract, retry/dead-letter behavior, health check.
+- [Modular Monolith](./modular-monolith) — module boundaries this storage's multi-`DbContext` support
+  is designed for.
