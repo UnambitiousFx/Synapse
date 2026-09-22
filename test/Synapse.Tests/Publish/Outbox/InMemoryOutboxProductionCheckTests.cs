@@ -16,7 +16,7 @@ public sealed class InMemoryOutboxProductionCheckTests
     {
         // Arrange (Given)
         var logger = new CapturingLogger();
-        var check = new InMemoryOutboxProductionCheck(new InMemoryEventOutboxStorage(), logger,
+        var check = new InMemoryOutboxProductionCheck(ScopeFactoryFor(new InMemoryEventOutboxStorage()), logger,
             EnvironmentNamed(Environments.Production));
 
         // Act (When)
@@ -35,7 +35,7 @@ public sealed class InMemoryOutboxProductionCheckTests
     {
         // Arrange (Given)
         var logger = new CapturingLogger();
-        var check = new InMemoryOutboxProductionCheck(new InMemoryEventOutboxStorage(), logger,
+        var check = new InMemoryOutboxProductionCheck(ScopeFactoryFor(new InMemoryEventOutboxStorage()), logger,
             EnvironmentNamed(environmentName));
 
         // Act (When)
@@ -50,8 +50,8 @@ public sealed class InMemoryOutboxProductionCheckTests
     {
         // Arrange (Given)
         var logger = new CapturingLogger();
-        var check = new InMemoryOutboxProductionCheck(Substitute.For<IEventOutboxStorage>(), logger,
-            EnvironmentNamed(Environments.Production));
+        var check = new InMemoryOutboxProductionCheck(ScopeFactoryFor(Substitute.For<IEventOutboxStorage>()),
+            logger, EnvironmentNamed(Environments.Production));
 
         // Act (When)
         await check.StartAsync(TestContext.Current.CancellationToken);
@@ -65,7 +65,7 @@ public sealed class InMemoryOutboxProductionCheckTests
     {
         // Arrange (Given)
         var logger = new CapturingLogger();
-        var check = new InMemoryOutboxProductionCheck(new InMemoryEventOutboxStorage(), logger);
+        var check = new InMemoryOutboxProductionCheck(ScopeFactoryFor(new InMemoryEventOutboxStorage()), logger);
 
         // Act (When)
         await check.StartAsync(TestContext.Current.CancellationToken);
@@ -94,6 +94,13 @@ public sealed class InMemoryOutboxProductionCheckTests
         var environment = Substitute.For<IHostEnvironment>();
         environment.EnvironmentName.Returns(name);
         return environment;
+    }
+
+    private static IServiceScopeFactory ScopeFactoryFor(IEventOutboxStorage storage)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(storage);
+        return services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
     }
 
     private sealed class CapturingLogger : ILogger<InMemoryOutboxProductionCheck>

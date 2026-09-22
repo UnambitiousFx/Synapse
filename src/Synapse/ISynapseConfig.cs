@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using Microsoft.Extensions.DependencyInjection;
 using UnambitiousFx.Synapse.Abstractions;
 using UnambitiousFx.Synapse.Pipelines;
 using UnambitiousFx.Synapse.Publish.Orchestrators;
@@ -252,9 +253,15 @@ public interface ISynapseConfig
     /// <summary>
     ///     Configures the mediator to use the specified implementation for event outbox storage.
     /// </summary>
+    /// <param name="lifetime">
+    ///     The DI lifetime to register the storage with. Defaults to <see cref="ServiceLifetime.Scoped"/>,
+    ///     which is required for a storage backed by a scoped dependency such as a <c>DbContext</c>. Pass
+    ///     <see cref="ServiceLifetime.Singleton"/> explicitly for a storage that is thread-safe and holds no
+    ///     scoped dependency, such as the built-in in-memory one.
+    /// </param>
     ISynapseConfig SetEventOutboxStorage<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
-        TEventOutboxStorage>()
+        TEventOutboxStorage>(ServiceLifetime lifetime = ServiceLifetime.Scoped)
         where TEventOutboxStorage : class, IEventOutboxStorage;
 
     /// <summary>

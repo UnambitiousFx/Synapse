@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using UnambitiousFx.Synapse.Abstractions;
@@ -12,26 +13,32 @@ namespace UnambitiousFx.Synapse.Publish.Outbox;
 ///     accepts losing pending events on restart, so refusing to start would break those users. It is checked at
 ///     startup rather than at registration so that a storage swapped in through DI after
 ///     <c>AddSynapse</c> is taken into account. Apps that run without a generic host never start hosted services
-///     and so never see it.
+///     and so never see it. <see cref="IEventOutboxStorage" /> is now resolved through a short-lived scope rather
+///     than injected directly: a custom storage can be registered Scoped (e.g. backed by a <c>DbContext</c>), and
+///     this hosted service is itself a Singleton, so a direct constructor dependency would be a captive-dependency
+///     violation under <c>ValidateScopes</c>.
 /// </remarks>
 internal sealed class InMemoryOutboxProductionCheck : IHostedService
 {
     private readonly IHostEnvironment? _environment;
     private readonly ILogger<InMemoryOutboxProductionCheck> _logger;
-    private readonly IEventOutboxStorage _storage;
+    private readonly IServiceScopeFactory _scopeFactory;
 
-    public InMemoryOutboxProductionCheck(IEventOutboxStorage storage,
+    public InMemoryOutboxProductionCheck(IServiceScopeFactory scopeFactory,
         ILogger<InMemoryOutboxProductionCheck> logger,
         IHostEnvironment? environment = null)
     {
-        _storage = storage;
+        _scopeFactory = scopeFactory;
         _logger = logger;
         _environment = environment;
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        if (_storage is InMemoryEventOutboxStorage && _environment?.IsProduction() == true)
+        using var scope = _scopeFactory.CreateScope();
+        var storage = scope.ServiceProvider.GetRequiredService<IEventOutboxStorage>();
+
+        if (storage is InMemoryEventOutboxStorage && _environment?.IsProduction() == true)
         {
             _logger.LogWarning(
                 "The in-memory outbox storage is registered in a Production environment. It is not enlisted in your " +

@@ -40,6 +40,8 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
     [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
     private Type _eventOutBoxStorage = typeof(InMemoryEventOutboxStorage);
 
+    private ServiceLifetime _eventOutBoxStorageLifetime = ServiceLifetime.Singleton;
+
     private Action<OutboxOptions> _outboxConfigure = _ => { };
 
     // ── Pipeline behaviors ───────────────────────────────────────────────────
@@ -374,10 +376,11 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
 
     public ISynapseConfig SetEventOutboxStorage<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
-    TEventOutboxStorage>()
+    TEventOutboxStorage>(ServiceLifetime lifetime = ServiceLifetime.Scoped)
         where TEventOutboxStorage : class, IEventOutboxStorage
     {
         _eventOutBoxStorage = typeof(TEventOutboxStorage);
+        _eventOutBoxStorageLifetime = lifetime;
         return this;
     }
 
@@ -448,7 +451,8 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
 
         services.AddSingleton(SynapseRegistry.Create(services, _probes));
 
-        services.AddSingleton(typeof(IEventOutboxStorage), _eventOutBoxStorage);
+        services.Add(new ServiceDescriptor(typeof(IEventOutboxStorage), _eventOutBoxStorage,
+            _eventOutBoxStorageLifetime));
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, InMemoryOutboxProductionCheck>());
         if (_validateOnStart)
         {
