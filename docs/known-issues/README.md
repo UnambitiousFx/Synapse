@@ -53,6 +53,7 @@ filed as a GitHub issue with minimal editing.
 | [069](069-generator-ignores-constraints-on-own-type-parameters.md) | The generator ignored every generic constraint that references the behavior's own type parameters (such as `where TRequest : ICommand<TResponse>`), so a `[PipelineBehavior]` / `SynapseGlobalBehavior` behavior was closed over every handler and the generated code failed with CS0311; such constraints are now matched by their unbound generic definition against the handler request's and response's interfaces and base types | ✅ Resolved | Medium | Generator |
 | [070](070-seteventoutboxstorage-always-registers-singleton.md) | `SetEventOutboxStorage` always registered the storage as Singleton, breaking scoped dependencies | ✅ Resolved | Medium | Core DI |
 | [071](071-eventoutboxstorage-and-concrete-storage-are-independent-instances.md) | `SetEventOutboxStorage<T>()` registered `IEventOutboxStorage` as an independent descriptor for `T`, so a caller who also self-registered `T` (e.g. `AddEfCoreEventOutbox`) got two separate instances per scope | ✅ Resolved | Medium | Core DI |
+| [072](072-referencedhandlers-counts-internal-types-as-handlers.md) | SYN102's `ReferencedHandlers()` scanned every type in a referenced assembly with no accessibility filter, so `Synapse.dll`'s own internal `ProxyRequestHandler<,>` registration plumbing was picked up as a real handler — silently defeating SYN102 for any open-generic behavior constrained to bare `IRequest`; the scan is now restricted to public types | ✅ Resolved | Medium | Generator |
 
 > **Discovery context:** 001–003 were found while building the pipeline-behavior showcase in
 > `examples/MinimalApi` on branch `feature/typed-pipeline-behaviors` against .NET 10 with
@@ -69,7 +70,8 @@ filed as a GitHub issue with minimal editing.
 > resolved on `fix/outbox-discard-on-failure`. 069 was found while implementing the `ICommand` / `IQuery` markers
 > (issue #94) and resolved on `feat/cqrs-markers`. 070 was found while building the EF Core outbox storage
 > (issue #92) and resolved on `worktree-ef-core-outbox`. 071 was filed as issue #113, found in a
-> follow-up review of #110, and resolved on `fix/outbox-storage-forwarding`.
+> follow-up review of #110, and resolved on `fix/outbox-storage-forwarding`. 072 was found while
+> implementing the SYN105 analyzer (issue #91) and resolved on `worktree-syn105-global-behavior`.
 >
 > Each file is the report as written at discovery. Where a later change replaced the mechanism a report
 > describes — most often the v2 context-propagation refactor, which removed `CorrelationContext`,

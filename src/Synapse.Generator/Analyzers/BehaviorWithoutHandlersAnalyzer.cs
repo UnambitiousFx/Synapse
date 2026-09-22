@@ -190,7 +190,11 @@ public sealed class BehaviorWithoutHandlersAnalyzer : DiagnosticAnalyzer
 
             foreach (var type in SynapseSymbols.GetTypes(assembly.GlobalNamespace, cancellationToken))
             {
-                if (type.TypeKind is not (TypeKind.Class or TypeKind.Struct) || type.IsAbstract)
+                // Only public types are handlers a consumer could plausibly have declared: an internal type in a
+                // referenced assembly (e.g. Synapse's own ProxyRequestHandler<,> plumbing) is implementation detail,
+                // never something this analyzer should count as "a real handler this behavior applies to".
+                if (type.TypeKind is not (TypeKind.Class or TypeKind.Struct) || type.IsAbstract
+                    || type.DeclaredAccessibility != Accessibility.Public)
                 {
                     continue;
                 }

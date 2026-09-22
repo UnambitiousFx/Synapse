@@ -196,6 +196,40 @@ public sealed class BehaviorWithoutHandlersAnalyzerTests
     }
 
     [Fact]
+    public async Task Analyze_WithOnlyAnInternalOpenGenericHandlerInAReferencedAssembly_ReportsSyn102()
+    {
+        // Regression test: an *internal* type in a referenced assembly must never count as a real handler.
+        // UnambitiousFx.Synapse.dll ships an internal ProxyRequestHandler<THandler, TRequest>
+        // : IRequestHandler<TRequest> where TRequest : IRequest as registration plumbing. Before
+        // ReferencedHandlers() filtered on DeclaredAccessibility, this shape made SYN102 silently never fire
+        // for any behavior constrained to bare IRequest: the proxy's own TRequest type parameter (constrained
+        // only to IRequest) satisfied MayApply's ClassifyCommonConversion check against the behavior's IRequest
+        // constraint, so the behavior looked "applied" even with zero real handlers anywhere. This fixture
+        // reproduces the same shape (internal generic handler over an unconstrained-but-for-IRequest type
+        // parameter) in an isolated referenced assembly, so the regression is pinned independently of
+        // Synapse.dll's own internals ever changing.
+        // Arrange (Given)
+        var referenced = AnalyzerTestHelper.Preamble + """
+            internal sealed class InternalProxyHandler<THandler, TRequest> : IRequestHandler<TRequest>
+                where THandler : class, IRequestHandler<TRequest>
+                where TRequest : IRequest
+            {
+                public ValueTask<Result> HandleAsync(TRequest request, CancellationToken ct = default)
+                    => ValueTask.FromResult(Result.Success());
+            }
+            """;
+        var source = AnalyzerTestHelper.Preamble + GenericBehavior;
+
+        // Act (When)
+        var diagnostics = await AnalyzerTestHelper.RunWithReferenceAsync<BehaviorWithoutHandlersAnalyzer>(referenced, source);
+
+        // Assert (Then)
+        var diagnostic = Assert.Single(diagnostics);
+        Assert.Equal("SYN102", diagnostic.Id);
+        Assert.Contains("LoggingBehavior", diagnostic.GetMessage());
+    }
+
+    [Fact]
     public async Task Analyze_WithAnEventBehaviorAndNoEventHandler_ReportsSyn102()
     {
         // a request handler must not satisfy an event behavior
