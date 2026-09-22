@@ -139,7 +139,7 @@ services.AddSynapse(cfg =>
 ```
 
 :::warning The host's own group must be registered
-`[assembly: SynapseGlobalBehavior]` is emitted into the host assembly's generated `RegisterGroup` (or your `[RegisterGroup]` partial class). If that group is never passed to `AddRegisterGroup`, the attributes are accepted, **nothing fails, and the behaviors never run** ([`ValidateSynapse`](#validating-the-configuration) cannot detect this either). This matters most for security behaviors such as authorization. Add a test that dispatches one request from each module and asserts that the expected behaviors ran.
+`[assembly: SynapseGlobalBehavior]` is emitted into the host assembly's generated `RegisterGroup` (or your `[RegisterGroup]` partial class). If that group is never passed to `AddRegisterGroup`, the attributes are accepted, **nothing fails, and the behaviors never run** ([`ValidateSynapse`](#validating-the-configuration) cannot detect this either — the [`SYN105`](./source-generator#diagnostics) analyzer catches it at build time instead). This matters most for security behaviors such as authorization. Add a test that dispatches one request from each module and asserts that the expected behaviors ran.
 :::
 
 Ordering is unaffected by where a behavior is declared or registered: it is decided at runtime by [`IOrderedPipelineBehavior`](#ordering). See [Modular monoliths](./modular-monolith) for a complete layout.
@@ -329,7 +329,7 @@ services.AddSynapse(cfg =>
 ### What it cannot catch
 
 - A request with neither a handler nor a behavior: nothing is registered, so there is nothing to inspect.
-- `[assembly: SynapseGlobalBehavior]` when the host's generated group is never registered (`cfg.AddRegisterGroup(new Host.RegisterGroup())`). The behaviors never reach the container, so the validator sees a valid configuration. A build-time analyzer is tracked in [#103](https://github.com/UnambitiousFx/Synapse/issues/103).
+- `[assembly: SynapseGlobalBehavior]` when the host's generated group is never registered (`cfg.AddRegisterGroup(new Host.RegisterGroup())`). The behaviors never reach the container, so the validator sees a valid configuration. The build-time [`SYN105`](./source-generator#diagnostics) analyzer catches this instead.
 - Stream requests: stream pipelines are not inspected yet.
 - An `IRequestPipelineBehavior<TRequest>` (void flavour) registered for an `IRequest<TResponse>` request: it never runs and is not reported.
 - Behaviors added to the `IServiceCollection` after `AddSynapse` returns.
