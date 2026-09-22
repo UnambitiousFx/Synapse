@@ -9,3 +9,4 @@ SYN101 | Synapse.Analyzers | Warning | RequestWithoutHandlerAnalyzer
 SYN102 | Synapse.Analyzers | Warning | BehaviorWithoutHandlersAnalyzer
 SYN103 | Synapse.Analyzers | Warning | HandlerAttributeOnRecordAnalyzer
 SYN104 | Synapse.Analyzers | Warning | UnattributedHandlerAnalyzer
+SYN105 | Synapse.Analyzers | Warning | GlobalBehaviorRegisterGroupAnalyzer
