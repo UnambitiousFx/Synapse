@@ -470,9 +470,9 @@ public class SynapseGenerator : IIncrementalGenerator
                 return;
             }
 
-            var (emitNamespace, emitClassName, emitAsPartial) = registerGroupTarget is { } target
-                ? (target.Namespace, target.ClassName, true)
-                : (rootNamespace, "RegisterGroup", false);
+            var (emitNamespace, emitClassName) = RegisterGroupNaming.Resolve(rootNamespace,
+                registerGroupTarget is { } target ? (target.Namespace, target.ClassName) : null);
+            var emitAsPartial = registerGroupTarget is not null;
 
             ctx.AddSource("RegisterGroup.g.cs",
                 RegisterGroupFactory.Create(emitNamespace, emitClassName, emitAsPartial, AbstractionsNamespace,
