@@ -2,6 +2,8 @@ using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Diagnostics;
+using Microsoft.Extensions.DependencyInjection;
+using UnambitiousFx.Synapse;
 using UnambitiousFx.Synapse.Abstractions;
 
 namespace UnambitiousFx.Synapse.Generator.Tests.Analyzers;
@@ -91,6 +93,8 @@ internal static class AnalyzerTestHelper
             .ToList();
         references.Add(MetadataReference.CreateFromFile(typeof(PipelineBehaviorAttribute).Assembly.Location));
         references.Add(MetadataReference.CreateFromFile(typeof(UnambitiousFx.Functional.Result).Assembly.Location));
+        references.Add(MetadataReference.CreateFromFile(typeof(ISynapseConfig).Assembly.Location));
+        references.Add(MetadataReference.CreateFromFile(typeof(IServiceCollection).Assembly.Location));
         return references;
     }
 }

@@ -170,7 +170,7 @@ The generator is an `IIncrementalGenerator` — it only re-generates when a hand
 
 ## Diagnostics
 
-The same `UnambitiousFx.Synapse.Generator` package also ships Roslyn analyzers. They report registration mistakes at compile time and all four default to `Warning`. `SYN103` is live in the editor. `SYN101`, `SYN102` and `SYN104` are compilation-end analyzers: they need the whole assembly, so they report on a build or a full-solution analysis rather than as you type.
+The same `UnambitiousFx.Synapse.Generator` package also ships Roslyn analyzers. They report registration mistakes at compile time and all five default to `Warning`. `SYN103` is live in the editor. `SYN101`, `SYN102`, `SYN104` and `SYN105` are compilation-end analyzers: they need the whole assembly, so they report on a build or a full-solution analysis rather than as you type.
 
 | ID | When it fires | Fix |
 |---|---|---|
@@ -178,6 +178,7 @@ The same `UnambitiousFx.Synapse.Generator` package also ships Roslyn analyzers. 
 | `SYN102` | A `[PipelineBehavior]` behavior (or an `[assembly: SynapseGlobalBehavior(...)]` entry) applies to no handler visible from this assembly (for example its generic constraint matches no request), so it never runs. A `[PipelineBehavior]` in a shared library with no handlers of its own is inert in the consuming host too (see [modular monolith](./modular-monolith)), so the warning is real. Global entries whose behavior type comes from a referenced assembly are not reported. | Widen or correct the constraint, or delete the behavior. For a shared library, declare `[assembly: SynapseGlobalBehavior(typeof(...))]` in the composition root instead. |
 | `SYN103` | A handler attribute is placed on a `record`. The generator ignores records, so the handler is not registered. | Declare the handler as a `class`. |
 | `SYN104` | A class implements a handler interface but has no handler attribute, in an assembly that uses the attributes elsewhere. | Add the attribute, or register the handler manually and silence the rule for that class with `#pragma warning disable SYN104`. |
+| `SYN105` | `[assembly: SynapseGlobalBehavior(...)]` is declared and this assembly calls `AddSynapse(...)` (so it is a composition root), but no `AddRegisterGroup(...)` call registers this assembly's own generated group — the attribute is accepted and the behavior never runs, with no error anywhere else. An assembly that declares the attribute with no `AddSynapse(...)` call of its own (a shared library, not a host) is not reported: the attribute is inert there regardless, since assembly attributes are not inherited by referencing assemblies. | Register this assembly's own generated group: `cfg.AddRegisterGroup(new <ThisAssembly>.RegisterGroup())` (or your `[RegisterGroup]` partial's name), alongside the other groups. |
 
 Disable a rule per project or per folder with an `.editorconfig` entry:
 
@@ -191,7 +192,7 @@ Two limits to keep in mind:
 - `SYN101` only sees the current assembly. A request whose handler is in another project needs the rule disabled in the project that declares the request.
 - `SYN104` cannot see manual registration. A handler you register by hand with `RegisterRequestHandler` or `RegisterEventHandler` is still reported when it has no attribute; silence it per class with `#pragma warning disable SYN104`, or disable the rule.
 
-The analyzers work at compile time and complement the runtime [`ValidateSynapse()`](./pipelines#validating-the-configuration) check. Neither detects a host that never registers its generated group with `AddRegisterGroup` (tracked in #91): in that case no handler is registered and no diagnostic is reported.
+The analyzers work at compile time and complement the runtime [`ValidateSynapse()`](./pipelines#validating-the-configuration) check. `SYN105` catches the `[assembly: SynapseGlobalBehavior]` case of this (issue #91): a plain handler group that is never registered at all is a different, louder failure — it fails at the first dispatch attempt instead of staying silent, so no analyzer is needed for it.
 
 ## See also
 

@@ -61,7 +61,7 @@ services.AddSynapse(cfg =>
 ```
 
 :::warning
-If `Host.RegisterGroup` is not registered, the `SynapseGlobalBehavior` attributes have no effect and no error is raised. See [Sharing behaviors across projects](./pipelines#sharing-behaviors-across-projects).
+If `Host.RegisterGroup` is not registered, the `SynapseGlobalBehavior` attributes have no effect and no error is raised — `SYN105` catches this at build time once the host also calls `AddSynapse(...)`; see [Diagnostics](./source-generator#diagnostics) and [Sharing behaviors across projects](./pipelines#sharing-behaviors-across-projects).
 :::
 
 With behaviors at orders 10 (trace), 20 (scope), 30 (access), 40 (validation), a request from either module executes as:
