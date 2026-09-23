@@ -60,3 +60,7 @@ nunit-*.xml
 # Rider
 .idea
 *.sln.DotSettings.user
+
+# Superpowers scratch plans/specs (working docs, not for commit)
+docs/superpowers/plans/
+docs/superpowers/specs/
