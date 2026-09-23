@@ -15,23 +15,14 @@ public static class ServiceCollectionExtensions
     ///     inside <c>AddSynapse</c> to wire it as the active outbox storage.
     /// </summary>
     /// <remarks>
-    ///     <para>
-    ///         <b>Reach the storage through <c>IOutboxDiscard</c> / <c>IEventOutboxStorage</c>, never by
-    ///         injecting <see cref="EfCoreEventOutboxStorage{TContext}" /> directly.</b> This method
-    ///         registers the concrete type as its own service, and
-    ///         <c>SetEventOutboxStorage&lt;EfCoreEventOutboxStorage&lt;TContext&gt;&gt;()</c> registers
-    ///         <c>IEventOutboxStorage</c> as a separate, independent descriptor. The container activates the
-    ///         two independently, so one scope ends up holding <em>two</em> storage instances over the same
-    ///         <typeparamref name="TContext" />.
-    ///     </para>
-    ///     <para>
-    ///         That matters for <c>DiscardAsync</c> only, which matches events by reference against what
-    ///         <c>AddAsync</c> recorded on that same instance. An instance obtained by injecting the
-    ///         concrete type has never seen the events the application stored through
-    ///         <c>IEventOutboxStorage</c>, so every discard through it silently no-ops. Every other
-    ///         operation is keyed by row id or queried from the database, so it behaves identically on
-    ///         either instance.
-    ///     </para>
+    ///     Call this <b>before</b> <c>AddSynapse</c>.
+    ///     <c>SetEventOutboxStorage&lt;EfCoreEventOutboxStorage&lt;TContext&gt;&gt;()</c> forwards
+    ///     <c>IEventOutboxStorage</c> to whatever concrete-type registration already exists for
+    ///     <see cref="EfCoreEventOutboxStorage{TContext}" />, so both resolve to the same instance per
+    ///     scope — but only if that registration exists yet. Called after <c>AddSynapse</c>, there is
+    ///     nothing to forward to and <c>IEventOutboxStorage</c> falls back to constructing its own,
+    ///     independent instance, so a directly-injected <see cref="EfCoreEventOutboxStorage{TContext}" />
+    ///     never sees what <c>IEventOutboxStorage</c> consumers wrote.
     /// </remarks>
     /// <typeparam name="TContext">The <see cref="DbContext" /> type that owns the outbox table.</typeparam>
     public static IServiceCollection AddEfCoreEventOutbox<TContext>(this IServiceCollection services)

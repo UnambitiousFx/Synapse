@@ -451,8 +451,16 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
 
         services.AddSingleton(SynapseRegistry.Create(services, _probes));
 
-        services.Add(new ServiceDescriptor(typeof(IEventOutboxStorage), _eventOutBoxStorage,
-            _eventOutBoxStorageLifetime));
+        // If the storage type is already registered as itself (e.g. AddEfCoreEventOutbox<TContext>()),
+        // forward IEventOutboxStorage to that registration instead of adding an independent descriptor
+        // for the same implementation type — two descriptors mean two instances per scope, so a caller
+        // who injects the concrete type directly never sees what IEventOutboxStorage consumers wrote.
+        var ownRegistration = services.FirstOrDefault(d => d.ServiceType == _eventOutBoxStorage);
+        services.Add(ownRegistration is not null
+            ? new ServiceDescriptor(typeof(IEventOutboxStorage),
+                sp => sp.GetRequiredService(_eventOutBoxStorage), ownRegistration.Lifetime)
+            : new ServiceDescriptor(typeof(IEventOutboxStorage), _eventOutBoxStorage,
+                _eventOutBoxStorageLifetime));
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, InMemoryOutboxProductionCheck>());
         if (_validateOnStart)
         {

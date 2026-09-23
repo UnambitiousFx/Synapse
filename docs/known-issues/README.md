@@ -52,6 +52,7 @@ filed as a GitHub issue with minimal editing.
 | [068](068-in-memory-outbox-leaks-events-of-failed-commands.md) | The in-memory outbox storage is not enlisted in any transaction, so events emitted by a command that then failed were dispatched by the next unrelated `CommitAsync`; an opt-in `OutboxDiscardOnFailureBehavior` now takes them back and a Production host logs a startup warning | ✅ Resolved | Medium | Outbox |
 | [069](069-generator-ignores-constraints-on-own-type-parameters.md) | The generator ignored every generic constraint that references the behavior's own type parameters (such as `where TRequest : ICommand<TResponse>`), so a `[PipelineBehavior]` / `SynapseGlobalBehavior` behavior was closed over every handler and the generated code failed with CS0311; such constraints are now matched by their unbound generic definition against the handler request's and response's interfaces and base types | ✅ Resolved | Medium | Generator |
 | [070](070-seteventoutboxstorage-always-registers-singleton.md) | `SetEventOutboxStorage` always registered the storage as Singleton, breaking scoped dependencies | ✅ Resolved | Medium | Core DI |
+| [071](071-eventoutboxstorage-and-concrete-storage-are-independent-instances.md) | `SetEventOutboxStorage<T>()` registered `IEventOutboxStorage` as an independent descriptor for `T`, so a caller who also self-registered `T` (e.g. `AddEfCoreEventOutbox`) got two separate instances per scope | ✅ Resolved | Medium | Core DI |
 
 > **Discovery context:** 001–003 were found while building the pipeline-behavior showcase in
 > `examples/MinimalApi` on branch `feature/typed-pipeline-behaviors` against .NET 10 with
@@ -67,7 +68,8 @@ filed as a GitHub issue with minimal editing.
 > `feat/context-propagation`. 068 was found while integrating Synapse into a modular monolith (issue #93) and
 > resolved on `fix/outbox-discard-on-failure`. 069 was found while implementing the `ICommand` / `IQuery` markers
 > (issue #94) and resolved on `feat/cqrs-markers`. 070 was found while building the EF Core outbox storage
-> (issue #92) and resolved on `worktree-ef-core-outbox`.
+> (issue #92) and resolved on `worktree-ef-core-outbox`. 071 was filed as issue #113, found in a
+> follow-up review of #110, and resolved on `fix/outbox-storage-forwarding`.
 >
 > Each file is the report as written at discovery. Where a later change replaced the mechanism a report
 > describes — most often the v2 context-propagation refactor, which removed `CorrelationContext`,

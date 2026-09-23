@@ -96,4 +96,36 @@ public sealed class EfCoreOutboxServiceRegistrationTests
         var entry = Assert.Single(pending);
         Assert.Equal("wired", Assert.IsType<Support.OutboxTestEvent>(entry.Event).Name);
     }
+
+    [Fact]
+    public async Task DocumentedRegistration_IEventOutboxStorageAndConcreteTypeShareOneInstancePerScope()
+    {
+        // Arrange (Given) — issue #113: AddEfCoreEventOutbox registers the concrete type as its own
+        // service, and SetEventOutboxStorage separately registers IEventOutboxStorage. A caller who
+        // resolves EfCoreEventOutboxStorage<TContext> directly (e.g. to call DiscardAsync outside the
+        // IOutboxDiscard path) must land on the exact instance the IEventOutboxStorage consumers use in
+        // that scope — otherwise DiscardAsync no-ops against events it never saw.
+        await using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddDbContext<OutboxDbContext>(o => o.UseSqlite(connection));
+        services.AddEfCoreEventOutbox<OutboxDbContext>();
+        services.AddSynapse(cfg => cfg.SetEventOutboxStorage<EfCoreEventOutboxStorage<OutboxDbContext>>());
+
+        await using var provider = services.BuildServiceProvider(new ServiceProviderOptions
+        {
+            ValidateScopes = true,
+            ValidateOnBuild = true
+        });
+
+        // Act (When)
+        using var scope = provider.CreateScope();
+        var viaInterface = scope.ServiceProvider.GetRequiredService<IEventOutboxStorage>();
+        var viaConcreteType = scope.ServiceProvider.GetRequiredService<EfCoreEventOutboxStorage<OutboxDbContext>>();
+
+        // Assert (Then)
+        Assert.Same(viaConcreteType, viaInterface);
+    }
 }

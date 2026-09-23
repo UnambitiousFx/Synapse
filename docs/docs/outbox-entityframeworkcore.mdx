@@ -64,19 +64,13 @@ services.AddSynapse(cfg =>
 `"outbox"`), so the table never collides with your own tables regardless of which context it lives
 in.
 
-:::warning Reach the storage through `IEventOutboxStorage`, not the concrete type
+:::note Call `AddEfCoreEventOutbox<TContext>()` before `AddSynapse`
 
-`AddEfCoreEventOutbox<TContext>()` registers `EfCoreEventOutboxStorage<TContext>` as its own service,
-and `SetEventOutboxStorage<EfCoreEventOutboxStorage<TContext>>()` registers `IEventOutboxStorage` as a
-separate, independent descriptor. The container activates the two independently, so a single scope
-ends up holding **two** storage instances over the same `DbContext`.
-
-That only matters for `DiscardAsync`, which matches events by reference against what `AddAsync`
-recorded on that same instance. Inject `IOutboxDiscard` (or `IEventOutboxStorage`) — the path
-`AddSynapse` already wires — rather than injecting `EfCoreEventOutboxStorage<TContext>` directly: a
-directly-injected instance has never seen the events your application stored, so every discard
-through it silently does nothing. Every other operation is keyed by row id or queried straight from
-the database, so it behaves identically on either instance.
+`SetEventOutboxStorage<EfCoreEventOutboxStorage<TContext>>()` forwards `IEventOutboxStorage` to
+whatever `AddEfCoreEventOutbox<TContext>()` already registered, so both resolve to the **same**
+instance per scope — but only if `AddEfCoreEventOutbox<TContext>()` runs first, as shown above. Call
+it after `AddSynapse` and the forwarding has nothing to find, so `IEventOutboxStorage` falls back to
+constructing its own independent instance instead.
 
 :::
 
