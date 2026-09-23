@@ -1,11 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
     <ItemGroup>
-        <!-- Microsoft.Extensions.DependencyInjection / .Logging are deliberately NOT referenced
-             directly here: they arrive transitively (Microsoft.EntityFrameworkCore.Sqlite and the
-             Synapse project reference), and the central pins for them sit one patch below what EF Core
-             requires, so a direct reference trips NU1605 (warning-as-error). -->
         <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
     </ItemGroup>
 
     <ItemGroup>
