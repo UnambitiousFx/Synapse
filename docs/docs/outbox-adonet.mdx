@@ -107,6 +107,11 @@ lease on the rest and returns them. Instances running the dispatcher against one
 split the backlog between them rather than contend for it, and no entry is claimed twice. See
 [Running several instances](./outbox#running-several-instances) for the lease semantics.
 
+Set a `BatchSize` in `ConfigureOutbox`. It defaults to unlimited, and with a database-backed storage an
+unlimited claim is one statement that locks and returns the entire backlog, all read into memory at
+once. A bounded batch keeps each claim short, and the dispatcher polls again straight away after a full
+one.
+
 ## Limitations
 
 Rows store their event's assembly-qualified CLR type name, which is resolved again with

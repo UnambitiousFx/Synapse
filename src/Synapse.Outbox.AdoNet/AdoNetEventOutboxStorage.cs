@@ -66,7 +66,8 @@ public sealed class AdoNetEventOutboxStorage : IEventOutboxStorage, IDiscardable
                 // Connection, while Npgsql keeps it and throws InvalidOperationException once it is used.
                 if (transaction.Connection is not { } connection)
                 {
-                    return CompletedTransactionFailure();
+                    return CompletedTransactionFailure(
+                        "The outbox transaction enlisted in this scope has already been committed or rolled back.");
                 }
 
                 try
@@ -75,9 +76,12 @@ public sealed class AdoNetEventOutboxStorage : IEventOutboxStorage, IDiscardable
                     command.Transaction = transaction;
                     await command.ExecuteNonQueryAsync(cancellationToken);
                 }
-                catch (InvalidOperationException)
+                catch (InvalidOperationException ex)
                 {
-                    return CompletedTransactionFailure();
+                    // Most likely a completed transaction, but the driver's own message is kept: the same exception
+                    // type also covers other invalid connection states.
+                    return CompletedTransactionFailure(
+                        $"Could not store the entry in the outbox transaction enlisted in this scope: {ex.Message}");
                 }
             }
             else
@@ -280,11 +284,11 @@ public sealed class AdoNetEventOutboxStorage : IEventOutboxStorage, IDiscardable
         }
     }
 
-    private static Result CompletedTransactionFailure()
+    private static Result CompletedTransactionFailure(string reason)
     {
         return Result.Failure(
-            "The outbox transaction enlisted in this scope has already been committed or rolled back. Enlist the " +
-            "new transaction, or call AdoNetOutboxTransaction.Clear() to store outside one.");
+            $"{reason} If it has completed, enlist the new transaction, or call AdoNetOutboxTransaction.Clear() to " +
+            "store outside one.");
     }
 
     private DbCommand CreateInsert<TEvent>(DbConnection connection,
