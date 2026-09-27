@@ -72,6 +72,53 @@ jobs:
           files: ./test-results/junit/*.xml
           token: ${{ secrets.CODECOV_TOKEN }}
 
+  database-integration:
+    name: Database Integration Tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      sqlserver:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: "Y"
+          MSSQL_SA_PASSWORD: "Synapse_Test_1"
+        ports:
+          - 1433:1433
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P Synapse_Test_1 -C -Q 'SELECT 1'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      SYNAPSE_TEST_POSTGRES: "Host=localhost;Port=5432;Username=postgres;Password=postgres;Database=postgres"
+      SYNAPSE_TEST_SQLSERVER: "Server=localhost,1433;User Id=sa;Password=Synapse_Test_1;TrustServerCertificate=True"
+      # Makes a missing connection string fail the run instead of skipping the database tests.
+      SYNAPSE_REQUIRE_DB_TESTS: "1"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            ${{ env.DOTNET_VERSION }}
+
+      - name: Test the ADO.NET outbox against PostgreSQL and SQL Server
+        run: dotnet test --project test/Synapse.Outbox.AdoNet.Tests/Synapse.Outbox.AdoNet.Tests.csproj --configuration Release
+
   native-aot:
     name: Native AOT Validation
     runs-on: ubuntu-latest

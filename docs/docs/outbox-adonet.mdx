@@ -1,0 +1,122 @@
+---
+sidebar_position: 10.6
+title: ADO.NET Outbox Storage
+description: A transactional IEventOutboxStorage for PostgreSQL and SQL Server over plain ADO.NET, without EF Core.
+---
+
+# ADO.NET Outbox Storage
+
+`UnambitiousFx.Synapse.Outbox.AdoNet` is a transactional `IEventOutboxStorage` for applications that
+talk to PostgreSQL or SQL Server directly, without Entity Framework Core. A stored entry joins the
+`DbTransaction` your business writes run in, so it commits or rolls back with them. That is the
+guarantee `EmitMode.Outbox` exists for.
+
+The package depends only on `System.Data.Common`. You bring the driver (Npgsql or
+Microsoft.Data.SqlClient) and register its `DbDataSource`.
+
+## Install
+
+```bash
+dotnet add package UnambitiousFx.Synapse.Outbox.AdoNet
+```
+
+## Register it
+
+Call `AddAdoNetEventOutbox` **before** `AddSynapse`, then make it the active storage.
+
+### PostgreSQL
+
+```csharp
+services.AddNpgsqlDataSource(connectionString);   // Npgsql.DependencyInjection
+services.AddAdoNetEventOutbox(o => o.Dialect = OutboxSqlDialect.PostgreSql);
+services.AddSynapse(cfg =>
+{
+    cfg.SetEventOutboxStorage<AdoNetEventOutboxStorage>();
+});
+```
+
+### SQL Server
+
+```csharp
+services.AddSingleton<DbDataSource>(SqlClientFactory.Instance.CreateDataSource(connectionString));
+services.AddAdoNetEventOutbox(o => o.Dialect = OutboxSqlDialect.SqlServer);
+services.AddSynapse(cfg =>
+{
+    cfg.SetEventOutboxStorage<AdoNetEventOutboxStorage>();
+});
+```
+
+`Schema` (default `outbox`) and `Table` (default `outbox_events`) set where the table lives. They are
+embedded in the SQL, so only plain identifiers are accepted. Anything else throws at registration.
+
+## Create the table
+
+There are no migrations. The options produce the script, and you run it with whatever tool already
+manages your schema, or once at startup:
+
+```csharp
+var options = new AdoNetOutboxOptions { Dialect = OutboxSqlDialect.PostgreSql };
+string script = options.GetCreateTableScript();
+```
+
+The script is idempotent. It creates the schema, the table, and a filtered index over the pending
+entries, and skips anything that already exists.
+
+## Store an event in your transaction
+
+Hand the transaction your business writes run in to the scope's `AdoNetOutboxTransaction` before
+emitting:
+
+```csharp
+public sealed class CreateOrderHandler(
+    DbDataSource dataSource,
+    AdoNetOutboxTransaction outboxTransaction,
+    IEmitter emitter) : IRequestHandler<CreateOrderCommand>
+{
+    public async ValueTask<Result> HandleAsync(CreateOrderCommand command, CancellationToken ct = default)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(ct);
+        await using var transaction = await connection.BeginTransactionAsync(ct);
+        outboxTransaction.Enlist(transaction);
+
+        // ... your INSERT/UPDATE commands on connection, with Transaction = transaction ...
+
+        await emitter.EmitAsync(new OrderCreated(command.OrderId), EmitMode.Outbox, ct); // same transaction
+
+        await transaction.CommitAsync(ct);   // the order and its event commit together
+        return Result.Success();
+    }
+}
+```
+
+Without an enlisted transaction, each stored entry is written on its own connection and committed
+immediately, like the in-memory storage but durable.
+
+Only storing enlists. Reading, claiming and marking entries always use connections of their own,
+because they happen after your transaction has committed, usually from the
+[background dispatcher](./outbox#dispatch-in-the-background) or a later `CommitAsync`. Call
+`CommitAsync` after committing your transaction: entries that are not committed yet are not visible to
+it, so it would have nothing to dispatch.
+
+## Multiple instances
+
+`AdoNetEventOutboxStorage` implements `IClaimableOutboxStorage` with each database's native row-skipping
+lock: `FOR UPDATE SKIP LOCKED` on PostgreSQL, and `UPDLOCK, READPAST, ROWLOCK` on SQL Server. A
+single statement locks a batch of due entries, skips the ones another instance holds, stamps a
+lease on the rest and returns them. Instances running the dispatcher against one table therefore
+split the backlog between them rather than contend for it, and no entry is claimed twice. See
+[Running several instances](./outbox#running-several-instances) for the lease semantics.
+
+## Limitations
+
+Rows store their event's assembly-qualified CLR type name, which is resolved again with
+`Type.GetType(..., throwOnError: true)` when entries are read. If you rename, move or delete an event
+type while rows referencing it are still pending, reading fails for the whole batch until an operator
+fixes the stored `event_type` or deletes the row. Keep a type-forwarding shim, or update the stored
+names, before renaming or removing an event type that may still have outbox rows.
+
+## See also
+
+- [Outbox Pattern](./outbox): the general outbox contract, retries, dead-lettering, the background
+  dispatcher and the health check.
+- [EF Core Outbox Storage](./outbox-entityframeworkcore): the same guarantees for applications on EF Core.

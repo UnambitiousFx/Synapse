@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <ItemGroup>
+        <PackageReference Include="Npgsql" />
+        <PackageReference Include="Microsoft.Data.SqlClient" />
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+        <PackageReference Include="Microsoft.Extensions.Logging" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\..\src\Synapse.Outbox.AdoNet\Synapse.Outbox.AdoNet.csproj" />
+        <!-- Test-only: lets the end-to-end tests build the documented container
+             (AddAdoNetEventOutbox + AddSynapse(SetEventOutboxStorage<...>)). The shipped package only
+             references Synapse.Abstractions. -->
+        <ProjectReference Include="..\..\src\Synapse\Synapse.csproj" />
+    </ItemGroup>
+
+</Project>
