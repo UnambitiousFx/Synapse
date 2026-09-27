@@ -108,6 +108,8 @@ public sealed class EfCoreEventOutboxStorage<TContext> : IEventOutboxStorage, ID
             .Where(e => !e.Processed && !e.DeadLetter && !e.Discarded)
             .Where(e => e.NextAttemptAt == null || e.NextAttemptAt <= now)
             .OrderBy(e => e.CreatedAt)
+            // Rows stored within the same tick would otherwise drain in an unspecified order.
+            .ThenBy(e => e.Id)
             .ToListAsync(cancellationToken);
 
         return rows.Select(ToOutboxEntry).ToList();

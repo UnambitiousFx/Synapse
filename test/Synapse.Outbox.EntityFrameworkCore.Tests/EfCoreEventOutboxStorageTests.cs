@@ -177,11 +177,14 @@ public sealed class EfCoreEventOutboxStorageTests
         // Act (When)
         await storage.GetPendingEventsAsync(TestContext.Current.CancellationToken);
 
-        // Assert (Then) — the back-off predicate and the ordering are part of the query itself, so rows
-        // still backing off never leave the database
+        // Assert (Then) — guards against a regression to client-side evaluation: the back-off predicate
+        // and the ordering must be part of the query itself, so rows still backing off never leave the
+        // database. This inspects EF Core's generated SQLite text, so it is kept loose (no table alias,
+        // no exact formatting); if an EF Core upgrade still breaks it, adjust the patterns rather than
+        // the query.
         var sql = Assert.Single(recorder.Commands);
-        Assert.Contains("\"NextAttemptAt\" <=", sql);
-        Assert.Contains("ORDER BY \"o\".\"CreatedAt\"", sql);
+        Assert.Matches("\"NextAttemptAt\"\\s*<=", sql);
+        Assert.Matches("ORDER BY\\s+(\"\\w+\"\\.)?\"CreatedAt\"", sql);
     }
 
     [Fact]
@@ -204,6 +207,28 @@ public sealed class EfCoreEventOutboxStorageTests
         // Assert (Then)
         Assert.Equal(["oldest", "middle", "newest"],
             pending.Select(e => Assert.IsType<OutboxTestEvent>(e.Event).Name));
+    }
+
+    [Fact]
+    public async Task GetPendingEventsAsync_WithEntriesSharingCreatedAt_OrdersThemById()
+    {
+        // Arrange (Given) — same tick, inserted in descending id order
+        await using var database = await SqliteInMemoryDatabase.CreateAsync(TestContext.Current.CancellationToken);
+        await using var context = database.CreateContext();
+        var storage = new EfCoreEventOutboxStorage<OutboxDbContext>(context);
+        var createdAt = DateTimeOffset.UtcNow.AddMinutes(-1);
+        var second = CreateRow("second", createdAt);
+        second.Id = Guid.Parse("00000000-0000-0000-0000-000000000002");
+        var first = CreateRow("first", createdAt);
+        first.Id = Guid.Parse("00000000-0000-0000-0000-000000000001");
+        context.OutboxEvents.AddRange(second, first);
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        // Act (When)
+        var pending = await storage.GetPendingEventsAsync(TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.Equal([first.Id, second.Id], pending.Select(e => e.Id));
     }
 
     [Fact]
