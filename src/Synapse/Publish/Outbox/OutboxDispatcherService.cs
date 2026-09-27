@@ -33,7 +33,12 @@ internal sealed class OutboxDispatcherService : BackgroundService
         _logger = logger;
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    /// <remarks>
+    ///     The options are validated here rather than in <see cref="ExecuteAsync" /> so an invalid configuration fails
+    ///     host startup on every target framework: from .NET 10, <see cref="BackgroundService.StartAsync" /> no longer
+    ///     runs <see cref="ExecuteAsync" /> synchronously, and a throw there would only fault the background task.
+    /// </remarks>
+    public override Task StartAsync(CancellationToken cancellationToken)
     {
         if (_options.PollingInterval <= TimeSpan.Zero)
         {
@@ -42,6 +47,11 @@ internal sealed class OutboxDispatcherService : BackgroundService
                 $"positive, but was {_options.PollingInterval}.");
         }
 
+        return base.StartAsync(cancellationToken);
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
         // Everything before the first await runs on the host's startup path; yield so a slow first poll does
         // not hold up the rest of the application starting.
         await Task.Yield();

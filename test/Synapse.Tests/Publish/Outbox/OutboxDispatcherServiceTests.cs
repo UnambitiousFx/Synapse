@@ -96,18 +96,17 @@ public sealed class OutboxDispatcherServiceTests
     }
 
     [Fact]
-    public async Task AddOutboxDispatcher_WithANonPositivePollingInterval_FailsTheService()
+    public async Task AddOutboxDispatcher_WithANonPositivePollingInterval_FailsToStart()
     {
         // Arrange (Given)
         await using var provider = BuildProvider(new EventRecorder(),
             cfg => cfg.AddOutboxDispatcher(o => o.PollingInterval = TimeSpan.Zero));
 
         // Act (When)
-        var dispatcher = await StartDispatcherAsync(provider);
+        var exception = await Record.ExceptionAsync(() => StartDispatcherAsync(provider));
 
         // Assert (Then)
-        Assert.NotNull(dispatcher.ExecuteTask);
-        await Assert.ThrowsAsync<InvalidOperationException>(() => dispatcher.ExecuteTask!);
+        Assert.IsType<InvalidOperationException>(exception);
     }
 
     [Fact]
