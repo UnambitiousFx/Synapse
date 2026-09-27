@@ -1,5 +1,6 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 
 namespace UnambitiousFx.Synapse.Outbox.EntityFrameworkCore.Tests.Support;
 
@@ -33,10 +34,11 @@ public sealed class SqliteInMemoryDatabase : IAsyncDisposable
         return database;
     }
 
-    public OutboxDbContext CreateContext()
+    public OutboxDbContext CreateContext(params IInterceptor[] interceptors)
     {
         var options = new DbContextOptionsBuilder<OutboxDbContext>()
             .UseSqlite(ConnectionString)
+            .AddInterceptors(interceptors)
             .Options;
         return new OutboxDbContext(options);
     }

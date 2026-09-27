@@ -113,4 +113,51 @@ public sealed class OutboxEntityTypeConfigurationTests
         Assert.Equal("embedded-widget-created", @event.Name);
         Assert.Equal(1, await context.Records.CountAsync(TestContext.Current.CancellationToken));
     }
+
+    [Fact]
+    public async Task DateTimeOffsetColumns_AreStoredAsUtcTicks()
+    {
+        // Arrange (Given)
+        await using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        var options = new DbContextOptionsBuilder<OutboxDbContext>()
+            .UseSqlite(connection)
+            .Options;
+        await using var context = new OutboxDbContext(options);
+        await context.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
+        var createdAt = new DateTimeOffset(2026, 9, 27, 12, 0, 0, TimeSpan.FromHours(2));
+        var entity = new OutboxEntity
+        {
+            Id = Guid.NewGuid(),
+            EventType = "System.String",
+            Payload = "\"ticks\"",
+            Headers = "{}",
+            CreatedAt = createdAt,
+            ProcessedAt = createdAt.AddMinutes(1),
+            NextAttemptAt = createdAt.AddMinutes(2)
+        };
+
+        // Act (When)
+        context.OutboxEvents.Add(entity);
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            "SELECT \"CreatedAt\", \"ProcessedAt\", \"NextAttemptAt\" FROM \"outbox_events\"";
+        await using var reader = await command.ExecuteReaderAsync(TestContext.Current.CancellationToken);
+        await reader.ReadAsync(TestContext.Current.CancellationToken);
+        var rawValues = new[] { reader.GetValue(0), reader.GetValue(1), reader.GetValue(2) };
+        await reader.DisposeAsync();
+        context.ChangeTracker.Clear();
+        var reloaded = await context.OutboxEvents
+            .SingleAsync(e => e.Id == entity.Id, TestContext.Current.CancellationToken);
+
+        // Assert (Then) — raw columns are integers of UTC ticks; reading back yields the same instant
+        // at a zero offset
+        Assert.Equal(
+            new object[] { createdAt.UtcTicks, createdAt.AddMinutes(1).UtcTicks, createdAt.AddMinutes(2).UtcTicks },
+            rawValues);
+        Assert.Equal(createdAt, reloaded.CreatedAt);
+        Assert.Equal(TimeSpan.Zero, reloaded.CreatedAt.Offset);
+        Assert.Equal(createdAt.AddMinutes(2), reloaded.NextAttemptAt);
+    }
 }

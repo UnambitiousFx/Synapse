@@ -96,33 +96,21 @@ public sealed class EfCoreEventOutboxStorage<TContext> : IEventOutboxStorage, ID
     ///         the stored type names, before renaming or removing an event type that may still have pending
     ///         outbox rows.
     ///     </para>
-    ///     <para>
-    ///         The <c>NextAttemptAt</c> filtering and <c>CreatedAt</c> ordering run client-side on every
-    ///         provider — see the comment in the method body.
-    ///     </para>
     /// </remarks>
     public async ValueTask<IReadOnlyList<OutboxEntry>> GetPendingEventsAsync(
         CancellationToken cancellationToken = default)
     {
-        // Only the boolean-column filter is pushed down to SQL. The NextAttemptAt filter and the
-        // CreatedAt ordering run client-side, after the round trip, on EVERY provider — not just
-        // SQLite. The SQLite provider cannot translate ORDER BY, or a WHERE predicate combining a
-        // boolean column with a DateTimeOffset comparison, over a DateTimeOffset column (a
-        // longstanding EF Core Sqlite provider limitation); rather than branching per provider, the
-        // same client-side shape is used everywhere for one behaviour that is correct on all of them.
-        // Pushing the DateTimeOffset predicate down (e.g. via a ValueConverter to a sortable integer)
-        // is tracked as a follow-up.
+        // The whole predicate and ordering translate to SQL because OutboxEntityTypeConfiguration
+        // stores the DateTimeOffset columns as UTC ticks; `now` is converted the same way.
         var now = DateTimeOffset.UtcNow;
         var rows = await _context.Set<OutboxEntity>()
             .AsNoTracking()
             .Where(e => !e.Processed && !e.DeadLetter && !e.Discarded)
-            .ToListAsync(cancellationToken);
-
-        return rows
             .Where(e => e.NextAttemptAt == null || e.NextAttemptAt <= now)
             .OrderBy(e => e.CreatedAt)
-            .Select(ToOutboxEntry)
-            .ToList();
+            .ToListAsync(cancellationToken);
+
+        return rows.Select(ToOutboxEntry).ToList();
     }
 
     /// <inheritdoc />
@@ -244,20 +232,13 @@ public sealed class EfCoreEventOutboxStorage<TContext> : IEventOutboxStorage, ID
     /// <inheritdoc />
     public async ValueTask<TimeSpan?> GetOldestPendingAgeAsync(CancellationToken cancellationToken = default)
     {
-        // The CreatedAt aggregation runs client-side, on every provider, for the same reason as in
-        // GetPendingEventsAsync — the SQLite provider cannot translate ORDER BY or MIN over a
-        // DateTimeOffset column, and one uniform shape is used across providers rather than branching.
-        var createdAtValues = await _context.Set<OutboxEntity>()
+        var oldestCreatedAt = await _context.Set<OutboxEntity>()
             .Where(e => !e.Processed && !e.DeadLetter && !e.Discarded)
-            .Select(e => e.CreatedAt)
-            .ToListAsync(cancellationToken);
+            .OrderBy(e => e.CreatedAt)
+            .Select(e => (DateTimeOffset?)e.CreatedAt)
+            .FirstOrDefaultAsync(cancellationToken);
 
-        if (createdAtValues.Count == 0)
-        {
-            return null;
-        }
-
-        return DateTimeOffset.UtcNow - createdAtValues.Min();
+        return oldestCreatedAt is null ? null : DateTimeOffset.UtcNow - oldestCreatedAt.Value;
     }
 
     /// <inheritdoc />
