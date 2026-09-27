@@ -117,7 +117,20 @@ jobs:
             ${{ env.DOTNET_VERSION }}
 
       - name: Test the ADO.NET outbox against PostgreSQL and SQL Server
-        run: dotnet test --project test/Synapse.Outbox.AdoNet.Tests/Synapse.Outbox.AdoNet.Tests.csproj --configuration Release
+        run: >
+          dotnet test --project test/Synapse.Outbox.AdoNet.Tests/Synapse.Outbox.AdoNet.Tests.csproj
+          --configuration Release
+          --coverage --coverage-output-format cobertura
+          --results-directory ./test-results
+
+      # The main matrix skips these tests for lack of databases, so this is the only run that covers the
+      # ADO.NET storage; Codecov merges this upload with the matrix's for the same commit.
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v7
+        with:
+          files: ./test-results/*.cobertura.xml
+          disable_search: true
+          token: ${{ secrets.CODECOV_TOKEN }}
 
   native-aot:
     name: Native AOT Validation
