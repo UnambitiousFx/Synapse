@@ -88,6 +88,69 @@ public sealed class OutboxManagerTests
     }
 
     [Fact]
+    public async Task ProcessPendingAsync_WithAClaimableStorage_ClaimsTheBatchInsteadOfReadingPending()
+    {
+        // Arrange (Given)
+        var (_, eventDispatcher, metrics, logger) = CreateSubstitutes();
+        var outboxStorage = Substitute.For<IEventOutboxStorage, IClaimableOutboxStorage>();
+        var claimable = (IClaimableOutboxStorage)outboxStorage;
+        var entryId = Guid.NewGuid();
+        claimable.ClaimPendingEventsAsync(Arg.Any<int?>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<IReadOnlyList<OutboxEntry>>(
+                new[] { new OutboxEntry(entryId, new EventExample("claimed")) }));
+        outboxStorage.MarkAsProcessedAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(Result.Success()));
+        var dispatcherOptions = new EventDispatcherOptions
+        {
+            Dispatchers = new Dictionary<Type, DispatchEventDelegate>
+            {
+                [typeof(EventExample)] = (_, _, _) => ValueTask.FromResult(Result.Success())
+            }
+        };
+        var outboxOptions = new OutboxOptions { BatchSize = 10, ClaimLeaseDuration = TimeSpan.FromMinutes(2) };
+        var manager = BuildManager(outboxStorage, eventDispatcher, metrics, logger, dispatcherOptions, outboxOptions);
+
+        // Act (When)
+        var batch = await manager.ProcessBatchAsync(TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.True(batch.Result.IsSuccess);
+        Assert.Equal(1, batch.Count);
+        await claimable.Received(1).ClaimPendingEventsAsync(10, TimeSpan.FromMinutes(2), Arg.Any<CancellationToken>());
+        await outboxStorage.DidNotReceive().GetPendingEventsAsync(Arg.Any<CancellationToken>());
+        await outboxStorage.Received(1).MarkAsProcessedAsync(entryId, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ProcessBatchAsync_WithoutAClaimableStorage_TakesAtMostTheBatchSizeFromPending()
+    {
+        // Arrange (Given)
+        var (outboxStorage, eventDispatcher, metrics, logger) = CreateSubstitutes();
+        outboxStorage.GetPendingEventsAsync(Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<IReadOnlyList<OutboxEntry>>(Enumerable.Range(0, 3)
+                .Select(i => new OutboxEntry(Guid.NewGuid(), new EventExample($"event-{i}")))
+                .ToArray()));
+        outboxStorage.MarkAsProcessedAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(Result.Success()));
+        var dispatcherOptions = new EventDispatcherOptions
+        {
+            Dispatchers = new Dictionary<Type, DispatchEventDelegate>
+            {
+                [typeof(EventExample)] = (_, _, _) => ValueTask.FromResult(Result.Success())
+            }
+        };
+        var manager = BuildManager(outboxStorage, eventDispatcher, metrics, logger, dispatcherOptions,
+            new OutboxOptions { BatchSize = 2 });
+
+        // Act (When)
+        var batch = await manager.ProcessBatchAsync(TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.Equal(2, batch.Count);
+        await outboxStorage.Received(2).MarkAsProcessedAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task ProcessPendingAsync_WhenNoPendingEvents_ReturnsSuccess()
     {
         // Arrange (Given)

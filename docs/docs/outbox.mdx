@@ -85,6 +85,50 @@ under another request's identity, which matters because `CommitAsync` drains wha
 the calling scope stored. See [Propagation](./propagation.mdx#outbound-the-outbox).
 :::
 
+## Dispatch in the background
+
+Instead of calling `CommitAsync` yourself, or as well as it, let a hosted service poll the outbox and
+dispatch whatever is pending:
+
+```csharp
+services.AddSynapse(cfg =>
+{
+    cfg.AddOutboxDispatcher(opts => opts.PollingInterval = TimeSpan.FromSeconds(2));
+});
+```
+
+The dispatcher polls every `PollingInterval` (default 5 seconds). When a poll dispatches a full
+`BatchSize` batch successfully, it polls again straight away rather than waiting. Each poll runs in
+its own DI scope, and a poll that fails (for example because the database is unreachable) is logged
+and retried at the next interval. Retry, dead-letter and batch settings are the ones from
+`ConfigureOutbox`, shared with `CommitAsync`. Only generic-host applications start hosted services.
+
+### Running several instances
+
+Before dispatching, entries are **claimed** from a storage that implements `IClaimableOutboxStorage`,
+as the in-memory and [EF Core](./outbox-entityframeworkcore) storages do. A claimed entry is hidden from
+every other claimer, so several instances of your application, and `CommitAsync` calls running alongside
+the dispatcher, never hand the same entry out twice. `CommitAsync` claims too.
+
+A claim is a lease rather than a held lock. Marking the entry processed or failed releases it. If an
+instance crashes mid-batch, its entries become claimable again once `ClaimLeaseDuration` (default 5
+minutes) has passed. Delivery stays at-least-once, so keep the lease comfortably longer than a batch
+takes to dispatch: an entry whose lease runs out mid-dispatch can be claimed and dispatched by another
+instance too.
+
+:::caution Set a `BatchSize` when running several instances
+
+`BatchSize` is unlimited by default, so a single poll claims the **whole** backlog under one lease.
+After an outage or a burst, draining that backlog can take longer than `ClaimLeaseDuration`, and
+another instance can then claim and dispatch the entries still waiting in the same batch. A finite
+`BatchSize` keeps each claim small enough to finish well within its lease. The dispatcher polls
+again straight away after a full batch, so throughput doesn't suffer.
+
+:::
+
+A custom storage that does not implement `IClaimableOutboxStorage` still works. The dispatcher logs a
+warning at startup, because without claiming two processors can dispatch the same entry.
+
 ## Configure the outbox
 
 Set outbox options in `AddSynapse`:
@@ -97,7 +141,8 @@ services.AddSynapse(cfg =>
         opts.MaxRetryAttempts  = 5;
         opts.InitialRetryDelay = TimeSpan.FromSeconds(1);
         opts.BackoffFactor     = 2.0;   // exponential: 1s, 2s, 4s, 8s, 16s
-        opts.BatchSize         = 100;   // max events per CommitAsync call
+        opts.BatchSize         = 100;   // max events per CommitAsync call or dispatcher poll
+        opts.ClaimLeaseDuration = TimeSpan.FromMinutes(5);
     });
 });
 ```
@@ -107,7 +152,8 @@ services.AddSynapse(cfg =>
 | `MaxRetryAttempts`  | `3`             | Number of delivery attempts before marking the event as failed. |
 | `InitialRetryDelay` | `TimeSpan.Zero` | Delay before the first retry.                                   |
 | `BackoffFactor`     | `2.0`           | Multiplier applied to the delay for each subsequent retry.      |
-| `BatchSize`         | unlimited       | Cap the number of events dispatched per `CommitAsync` call.     |
+| `BatchSize`         | unlimited       | Cap the number of events dispatched per `CommitAsync` call or dispatcher poll. |
+| `ClaimLeaseDuration` | 5 minutes      | How long a claimed entry stays hidden from other processors if it is never marked processed or failed. |
 
 ## Configure the default emit mode
 

@@ -50,17 +50,20 @@ internal sealed class OutboxManager : IOutboxManager
 
     public async ValueTask<Result> ProcessPendingAsync(CancellationToken cancellationToken)
     {
+        var batch = await ProcessBatchAsync(cancellationToken);
+        return batch.Result;
+    }
+
+    public async ValueTask<OutboxBatchResult> ProcessBatchAsync(CancellationToken cancellationToken)
+    {
         _logger.LogDebug("Processing pending events from outbox");
 
-        var pendingEvents = await _outboxStorage.GetPendingEventsAsync(cancellationToken);
-        var entries = _outboxOptions.BatchSize.HasValue
-            ? pendingEvents.Take(_outboxOptions.BatchSize.Value).ToList()
-            : pendingEvents.ToList();
+        var entries = await TakeBatchAsync(cancellationToken);
 
         if (entries.Count == 0)
         {
             _logger.LogDebug("No pending events found in outbox");
-            return Result.Success();
+            return new OutboxBatchResult(0, Result.Success());
         }
 
         _logger.LogInformation(
@@ -90,7 +93,29 @@ internal sealed class OutboxManager : IOutboxManager
                 entries.Count, combinedResult.ToString());
         }
 
-        return combinedResult;
+        return new OutboxBatchResult(entries.Count, combinedResult);
+    }
+
+    /// <summary>
+    ///     Takes the next batch to dispatch, claiming it when the storage can hand each entry to a single processor.
+    /// </summary>
+    /// <remarks>
+    ///     Claiming is used on every path, the manual <see cref="IOutboxCommit.CommitAsync" /> included, not only
+    ///     by the background dispatcher: a commit and a dispatcher running side by side would otherwise both read
+    ///     the same unclaimed entries.
+    /// </remarks>
+    private async ValueTask<IReadOnlyList<OutboxEntry>> TakeBatchAsync(CancellationToken cancellationToken)
+    {
+        if (_outboxStorage is IClaimableOutboxStorage claimable)
+        {
+            return await claimable.ClaimPendingEventsAsync(_outboxOptions.BatchSize,
+                _outboxOptions.ClaimLeaseDuration, cancellationToken);
+        }
+
+        var pendingEvents = await _outboxStorage.GetPendingEventsAsync(cancellationToken);
+        return _outboxOptions.BatchSize.HasValue
+            ? pendingEvents.Take(_outboxOptions.BatchSize.Value).ToList()
+            : pendingEvents;
     }
 
     public async ValueTask<Result> StoreAsync<TEvent>(TEvent @event,

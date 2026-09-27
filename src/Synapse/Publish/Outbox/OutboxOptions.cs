@@ -25,4 +25,15 @@ public sealed record OutboxOptions
     ///     The maximum number of events processed per commit invocation.
     /// </summary>
     public int? BatchSize { get; set; }
+
+    /// <summary>
+    ///     How long a processor holds the entries it claimed from a storage that implements
+    ///     <see cref="Abstractions.IClaimableOutboxStorage" />. Marking an entry processed or failed releases it
+    ///     sooner; an entry whose processor crashed becomes claimable again once this elapses.
+    /// </summary>
+    /// <remarks>
+    ///     Keep it comfortably longer than dispatching one batch takes: if a lease expires mid-dispatch, another
+    ///     processor can claim and dispatch the same entry.
+    /// </remarks>
+    public TimeSpan ClaimLeaseDuration { get; set; } = TimeSpan.FromMinutes(5);
 }

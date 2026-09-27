@@ -11,6 +11,118 @@ public sealed class InMemoryEventOutboxStorageTests
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
     [Fact]
+    public async Task ClaimPendingEventsAsync_ReturnsEntriesOldestFirstAndHidesThemFromOtherReaders()
+    {
+        // Arrange (Given)
+        var storage = new InMemoryEventOutboxStorage();
+        await storage.AddAsync(new EventExample("first"), NoHeaders, TestContext.Current.CancellationToken);
+        await Task.Delay(5, TestContext.Current.CancellationToken);
+        await storage.AddAsync(new EventExample("second"), NoHeaders, TestContext.Current.CancellationToken);
+
+        // Act (When)
+        var claimed = await storage.ClaimPendingEventsAsync(null, TimeSpan.FromMinutes(5),
+            TestContext.Current.CancellationToken);
+        var claimedAgain = await storage.ClaimPendingEventsAsync(null, TimeSpan.FromMinutes(5),
+            TestContext.Current.CancellationToken);
+        var pending = await storage.GetPendingEventsAsync(TestContext.Current.CancellationToken);
+
+        // Assert (Then) — still counted as pending work, just not handed out twice
+        Assert.Equal(["first", "second"], claimed.Select(e => ((EventExample)e.Event).Name));
+        Assert.Empty(claimedAgain);
+        Assert.Empty(pending);
+        Assert.Equal(2, await storage.GetPendingCountAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task ClaimPendingEventsAsync_WithMaxCount_ClaimsAtMostThatMany()
+    {
+        // Arrange (Given)
+        var storage = new InMemoryEventOutboxStorage();
+        for (var i = 0; i < 3; i++)
+        {
+            await storage.AddAsync(new EventExample($"event-{i}"), NoHeaders, TestContext.Current.CancellationToken);
+        }
+
+        // Act (When)
+        var first = await storage.ClaimPendingEventsAsync(2, TimeSpan.FromMinutes(5),
+            TestContext.Current.CancellationToken);
+        var rest = await storage.ClaimPendingEventsAsync(2, TimeSpan.FromMinutes(5),
+            TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.Equal(2, first.Count);
+        Assert.Single(rest);
+    }
+
+    [Fact]
+    public async Task ClaimPendingEventsAsync_AfterTheLeaseExpires_ClaimsTheEntryAgain()
+    {
+        // Arrange (Given) — a processor that claimed and then crashed never marks the entry
+        var storage = new InMemoryEventOutboxStorage();
+        await storage.AddAsync(new EventExample("orphaned"), NoHeaders, TestContext.Current.CancellationToken);
+        var crashed = await storage.ClaimPendingEventsAsync(null, TimeSpan.Zero,
+            TestContext.Current.CancellationToken);
+
+        // Act (When)
+        var reclaimed = await storage.ClaimPendingEventsAsync(null, TimeSpan.FromMinutes(5),
+            TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.Equal(Assert.Single(crashed).Id, Assert.Single(reclaimed).Id);
+    }
+
+    [Fact]
+    public async Task MarkAsFailedAsync_OnAClaimedEntry_ReleasesTheClaimForTheRetry()
+    {
+        // Arrange (Given)
+        var storage = new InMemoryEventOutboxStorage();
+        await storage.AddAsync(new EventExample("retry-me"), NoHeaders, TestContext.Current.CancellationToken);
+        var claimed = Assert.Single(await storage.ClaimPendingEventsAsync(null, TimeSpan.FromMinutes(5),
+            TestContext.Current.CancellationToken));
+
+        // Act (When)
+        await storage.MarkAsFailedAsync(claimed.Id, "transient", deadLetter: false,
+            cancellationToken: TestContext.Current.CancellationToken);
+        var retried = await storage.ClaimPendingEventsAsync(null, TimeSpan.FromMinutes(5),
+            TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.Equal(claimed.Id, Assert.Single(retried).Id);
+    }
+
+    [Fact]
+    public async Task ClaimPendingEventsAsync_FromConcurrentCallers_HandsEachEntryOutOnce()
+    {
+        // Arrange (Given)
+        var storage = new InMemoryEventOutboxStorage();
+        for (var i = 0; i < 500; i++)
+        {
+            await storage.AddAsync(new EventExample($"event-{i}"), NoHeaders, TestContext.Current.CancellationToken);
+        }
+
+        // Act (When) — several processors draining in small batches at the same time
+        var claimers = Enumerable.Range(0, 8).Select(_ => Task.Run(async () =>
+        {
+            var ids = new List<Guid>();
+            while (true)
+            {
+                var batch = await storage.ClaimPendingEventsAsync(7, TimeSpan.FromMinutes(5));
+                if (batch.Count == 0)
+                {
+                    return ids;
+                }
+
+                ids.AddRange(batch.Select(e => e.Id));
+            }
+        }, TestContext.Current.CancellationToken));
+        var claimedIds = (await Task.WhenAll(claimers)).SelectMany(ids => ids).ToList();
+
+        // Assert (Then)
+        Assert.Equal(500, claimedIds.Count);
+        Assert.Equal(500, claimedIds.Distinct().Count());
+    }
+
+    [Fact]
     public async Task AddAsync_WithCapturedHeaders_SurfacesThemOnThePendingEntry()
     {
         // Arrange (Given) — the headers captured at store time are what let a later dispatch be traced back

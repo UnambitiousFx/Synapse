@@ -14,6 +14,13 @@ internal interface IOutboxManager
     ValueTask<Result> ProcessPendingAsync(CancellationToken cancellationToken);
 
     /// <summary>
+    ///     Processes one batch of pending events, claiming them first when the storage supports it.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>How many events the batch held, and the combined result of dispatching them.</returns>
+    ValueTask<OutboxBatchResult> ProcessBatchAsync(CancellationToken cancellationToken);
+
+    /// <summary>
     ///     Stores the specified event in the outbox for later processing.
     /// </summary>
     /// <param name="event">The event to be stored.</param>
@@ -37,3 +44,10 @@ internal interface IOutboxManager
     /// </returns>
     ValueTask<Result> DiscardStoredAsync(CancellationToken cancellationToken);
 }
+
+/// <summary>
+///     The outcome of processing one outbox batch.
+/// </summary>
+/// <param name="Count">The number of events the batch held.</param>
+/// <param name="Result">The combined result of dispatching them.</param>
+internal readonly record struct OutboxBatchResult(int Count, Result Result);

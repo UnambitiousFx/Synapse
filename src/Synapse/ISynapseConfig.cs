@@ -275,6 +275,20 @@ public interface ISynapseConfig
     ISynapseConfig ConfigureOutbox(Action<OutboxOptions> configure);
 
     /// <summary>
+    ///     Adds a hosted service that polls the outbox and dispatches pending events in the background, so events
+    ///     stored with <see cref="EmitMode.Outbox" /> are delivered without an explicit
+    ///     <see cref="IOutboxCommit.CommitAsync" /> call. That call keeps working alongside it.
+    /// </summary>
+    /// <remarks>
+    ///     Several instances of an application can run the dispatcher against one shared storage when the storage
+    ///     implements <see cref="IClaimableOutboxStorage" />, as the built-in in-memory and EF Core storages do. Only
+    ///     generic-host applications start hosted services.
+    /// </remarks>
+    /// <param name="configure">Optionally configures the polling interval.</param>
+    /// <returns>The same config, for chaining.</returns>
+    ISynapseConfig AddOutboxDispatcher(Action<OutboxDispatcherOptions>? configure = null);
+
+    /// <summary>
     ///     Adds a request validator.
     /// </summary>
     ISynapseConfig AddValidator<
