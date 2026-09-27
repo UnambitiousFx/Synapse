@@ -44,4 +44,15 @@ public sealed class OutboxEntity
 
     /// <summary>When the entry becomes eligible for its next attempt, if it is currently backing off.</summary>
     public DateTimeOffset? NextAttemptAt { get; set; }
+
+    /// <summary>
+    ///     When the current claim on the entry expires, if a processor has claimed it through
+    ///     <see cref="Abstractions.IClaimableOutboxStorage" />. Cleared when the entry is marked processed or failed.
+    /// </summary>
+    public DateTimeOffset? ClaimedUntil { get; set; }
+
+    /// <summary>
+    ///     Identifies the claim call that holds the entry, so that call can read back exactly the rows it won.
+    /// </summary>
+    public Guid? ClaimToken { get; set; }
 }

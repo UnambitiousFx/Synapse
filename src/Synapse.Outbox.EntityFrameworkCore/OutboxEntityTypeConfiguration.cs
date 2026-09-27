@@ -41,6 +41,7 @@ public sealed class OutboxEntityTypeConfiguration(string schema = "outbox")
         builder.Property(e => e.CreatedAt).IsRequired().HasConversion(UtcTicksConverter);
         builder.Property(e => e.ProcessedAt).HasConversion(UtcTicksConverter);
         builder.Property(e => e.NextAttemptAt).HasConversion(UtcTicksConverter);
+        builder.Property(e => e.ClaimedUntil).HasConversion(UtcTicksConverter);
 
         builder.HasIndex(e => new { e.Processed, e.DeadLetter, e.Discarded, e.NextAttemptAt })
             .HasDatabaseName("ix_outbox_events_pending");

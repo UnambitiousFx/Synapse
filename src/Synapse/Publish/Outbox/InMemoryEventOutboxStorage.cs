@@ -33,9 +33,13 @@ namespace UnambitiousFx.Synapse.Publish.Outbox;
 /// <threadsafety>
 ///     This class is thread-safe and can be safely accessed from multiple threads concurrently.
 /// </threadsafety>
-public sealed class InMemoryEventOutboxStorage : IEventOutboxStorage, IDiscardableOutboxStorage
+public sealed class InMemoryEventOutboxStorage : IEventOutboxStorage, IDiscardableOutboxStorage, IClaimableOutboxStorage
 {
     private readonly ConcurrentBag<Item> _items = [];
+
+    // Serializes claiming against the operations that release a claim, so a claimer never observes an item
+    // halfway through being marked (claim released but not yet flagged processed).
+    private readonly object _claimLock = new();
 
     /// <inheritdoc />
     public ValueTask<IReadOnlyList<OutboxEntry>> GetPendingEventsAsync(CancellationToken cancellationToken = default)
@@ -43,12 +47,38 @@ public sealed class InMemoryEventOutboxStorage : IEventOutboxStorage, IDiscardab
         // Returns items ready for dispatch (not processed, not dead-letter, and past scheduled time)
         var now = DateTimeOffset.UtcNow;
         IReadOnlyList<OutboxEntry> pending = _items
-            .Where(item =>
-                item is { Processed: false, DeadLetter: false, Discarded: false } &&
-                (item.NextAttemptAt is null || item.NextAttemptAt <= now))
+            .Where(item => IsClaimable(item, now))
             .Select(item => new OutboxEntry(item.Id, item.Event, item.Headers))
             .ToList();
         return new ValueTask<IReadOnlyList<OutboxEntry>>(pending);
+    }
+
+    /// <inheritdoc />
+    public ValueTask<IReadOnlyList<OutboxEntry>> ClaimPendingEventsAsync(int? maxCount,
+        TimeSpan leaseDuration,
+        CancellationToken cancellationToken = default)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var claimedUntil = now + leaseDuration;
+        List<OutboxEntry> claimed;
+
+        lock (_claimLock)
+        {
+            var candidates = _items
+                .Where(item => IsClaimable(item, now))
+                .OrderBy(item => item.CreatedAt)
+                .ThenBy(item => item.Id);
+            var batch = maxCount.HasValue ? candidates.Take(maxCount.Value) : candidates;
+
+            claimed = [];
+            foreach (var item in batch)
+            {
+                item.ClaimedUntil = claimedUntil;
+                claimed.Add(new OutboxEntry(item.Id, item.Event, item.Headers));
+            }
+        }
+
+        return new ValueTask<IReadOnlyList<OutboxEntry>>(claimed);
     }
 
     /// <inheritdoc />
@@ -60,10 +90,15 @@ public sealed class InMemoryEventOutboxStorage : IEventOutboxStorage, IDiscardab
             return new ValueTask<Result>(Result.Failure($"Outbox item '{id}' was not found in the outbox storage"));
         }
 
-        item.Processed = true;
-        item.ProcessedAt = DateTimeOffset.UtcNow;
-        item.LastError = null;
-        item.NextAttemptAt = null;
+        lock (_claimLock)
+        {
+            item.Processed = true;
+            item.ProcessedAt = DateTimeOffset.UtcNow;
+            item.LastError = null;
+            item.NextAttemptAt = null;
+            item.ClaimedUntil = null;
+        }
+
         return new ValueTask<Result>(Result.Success());
     }
 
@@ -113,16 +148,21 @@ public sealed class InMemoryEventOutboxStorage : IEventOutboxStorage, IDiscardab
             return new ValueTask<Result>(Result.Failure($"Outbox item '{id}' was not found in the outbox storage"));
         }
 
-        item.Attempts++;
-        item.LastError = reason;
-        if (deadLetter)
+        lock (_claimLock)
         {
-            item.DeadLetter = true;
-            item.NextAttemptAt = null;
-        }
-        else
-        {
-            item.NextAttemptAt = nextAttemptAt;
+            item.Attempts++;
+            item.LastError = reason;
+            if (deadLetter)
+            {
+                item.DeadLetter = true;
+                item.NextAttemptAt = null;
+            }
+            else
+            {
+                item.NextAttemptAt = nextAttemptAt;
+            }
+
+            item.ClaimedUntil = null;
         }
 
         return new ValueTask<Result>(Result.Success());
@@ -188,6 +228,13 @@ public sealed class InMemoryEventOutboxStorage : IEventOutboxStorage, IDiscardab
         return new ValueTask<TimeSpan?>(age);
     }
 
+    private static bool IsClaimable(Item item, DateTimeOffset now)
+    {
+        return item is { Processed: false, DeadLetter: false, Discarded: false } &&
+               (item.NextAttemptAt is null || item.NextAttemptAt <= now) &&
+               (item.ClaimedUntil is null || item.ClaimedUntil <= now);
+    }
+
     private bool TryFindItem(Guid id, out Item item)
     {
         var foundItem = _items.FirstOrDefault(i => i.Id == id);
@@ -224,5 +271,6 @@ public sealed class InMemoryEventOutboxStorage : IEventOutboxStorage, IDiscardab
         public bool DeadLetter { get; set; }
         public bool Discarded { get; set; }
         public DateTimeOffset? NextAttemptAt { get; set; }
+        public DateTimeOffset? ClaimedUntil { get; set; }
     }
 }

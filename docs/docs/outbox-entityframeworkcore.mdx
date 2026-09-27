@@ -74,6 +74,28 @@ constructing its own independent instance instead.
 
 :::
 
+## Multiple instances
+
+`EfCoreEventOutboxStorage` implements `IClaimableOutboxStorage`, so several instances of your
+application can run the [background dispatcher](./outbox#dispatch-in-the-background) (or call
+`CommitAsync`) against one outbox table without dispatching an entry twice.
+
+A claim is two statements and needs no provider-specific SQL. The storage first selects candidate
+rows. It then runs one conditional `UPDATE` that stamps a lease (`ClaimedUntil`) and a per-call
+`ClaimToken` only on candidates that are still unclaimed, and reads back the rows carrying its token.
+The database re-checks that condition against each row as it updates it, so when two instances race
+for the same row, exactly one wins it. Unlike `FOR UPDATE SKIP LOCKED`, instances under heavy
+contention can pick overlapping candidates and end up with smaller batches, but no row is ever
+claimed twice.
+
+:::note Upgrading
+
+Claiming adds two nullable columns, `ClaimedUntil` (UTC ticks, like the other timestamps) and
+`ClaimToken`. Run `dotnet ef migrations add` for the context that owns the outbox table. The change is
+additive, so existing rows need no conversion.
+
+:::
+
 ## Timestamp storage
 
 `OutboxEntityTypeConfiguration` stores every `DateTimeOffset` column (`CreatedAt`, `ProcessedAt`,
@@ -161,14 +183,8 @@ into.
 
 ## Limitations
 
-`GetPendingEventsAsync` has no row-locking. Running more than one instance of the process that calls
-`IOutboxCommit.CommitAsync()` (or any other caller of `IOutboxManager.ProcessPendingAsync`) against
-the same EF Core storage can double-dispatch a pending entry — the same limitation the in-memory
-storage already has today. A `FOR UPDATE SKIP LOCKED`-based (or equivalent) claiming dispatcher is
-tracked as a follow-up.
-
-Outbox rows store their event's assembly-qualified CLR type name, and `GetPendingEventsAsync` /
-`GetDeadLetterEventsAsync` resolve it back with `Type.GetType(..., throwOnError: true)`. If you
+Outbox rows store their event's assembly-qualified CLR type name, and `GetPendingEventsAsync`,
+`ClaimPendingEventsAsync` and `GetDeadLetterEventsAsync` resolve it back with `Type.GetType(..., throwOnError: true)`. If you
 rename, move or delete an event type while rows referencing it are still pending, that resolution
 throws and the whole call fails — blocking dispatch of *every* pending entry, not just the offending
 one, and there is no in-library recovery: an operator has to fix the stored `EventType` value or

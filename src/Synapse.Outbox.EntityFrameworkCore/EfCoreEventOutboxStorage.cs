@@ -26,7 +26,8 @@ namespace UnambitiousFx.Synapse.Outbox.EntityFrameworkCore;
 ///     </para>
 /// </remarks>
 /// <typeparam name="TContext">The <see cref="DbContext" /> type that owns the outbox table.</typeparam>
-public sealed class EfCoreEventOutboxStorage<TContext> : IEventOutboxStorage, IDiscardableOutboxStorage
+public sealed class EfCoreEventOutboxStorage<TContext>
+    : IEventOutboxStorage, IDiscardableOutboxStorage, IClaimableOutboxStorage
     where TContext : DbContext
 {
     private readonly TContext _context;
@@ -103,12 +104,67 @@ public sealed class EfCoreEventOutboxStorage<TContext> : IEventOutboxStorage, ID
         // The whole predicate and ordering translate to SQL because OutboxEntityTypeConfiguration
         // stores the DateTimeOffset columns as UTC ticks; `now` is converted the same way.
         var now = DateTimeOffset.UtcNow;
-        var rows = await _context.Set<OutboxEntity>()
+        var rows = await Claimable(now)
             .AsNoTracking()
-            .Where(e => !e.Processed && !e.DeadLetter && !e.Discarded)
-            .Where(e => e.NextAttemptAt == null || e.NextAttemptAt <= now)
             .OrderBy(e => e.CreatedAt)
             // Rows stored within the same tick would otherwise drain in an unspecified order.
+            .ThenBy(e => e.Id)
+            .ToListAsync(cancellationToken);
+
+        return rows.Select(ToOutboxEntry).ToList();
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    ///     <para>
+    ///         Claiming is two statements, neither of which needs a transaction or provider-specific SQL. The first
+    ///         picks candidate ids; the second is a single conditional <c>UPDATE</c> that stamps this call's token
+    ///         and lease only on candidates that are still unclaimed. The database applies each row's update
+    ///         atomically and re-checks the condition against the committed row, so when two processes race for the
+    ///         same candidate exactly one of them wins it; the loser simply gets fewer rows. The rows carrying this
+    ///         call's token are then read back.
+    ///     </para>
+    ///     <para>
+    ///         Unlike <c>FOR UPDATE SKIP LOCKED</c>, contending processes can pick overlapping candidates and so
+    ///         claim smaller batches under heavy contention, but no entry is ever handed to two of them. Rows carry
+    ///         the same hazard as <see cref="GetPendingEventsAsync" /> when their stored event type no longer
+    ///         resolves.
+    ///     </para>
+    /// </remarks>
+    public async ValueTask<IReadOnlyList<OutboxEntry>> ClaimPendingEventsAsync(int? maxCount,
+        TimeSpan leaseDuration,
+        CancellationToken cancellationToken = default)
+    {
+        var now = DateTimeOffset.UtcNow;
+        DateTimeOffset? claimedUntil = now + leaseDuration;
+        Guid? token = Guid.NewGuid();
+
+        var candidates = Claimable(now)
+            .OrderBy(e => e.CreatedAt)
+            .ThenBy(e => e.Id)
+            .Select(e => e.Id);
+        var candidateIds = await (maxCount.HasValue ? candidates.Take(maxCount.Value) : candidates)
+            .ToListAsync(cancellationToken);
+        if (candidateIds.Count == 0)
+        {
+            return [];
+        }
+
+        var claimedCount = await Claimable(now)
+            .Where(e => candidateIds.Contains(e.Id))
+            .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(e => e.ClaimedUntil, claimedUntil)
+                    .SetProperty(e => e.ClaimToken, token),
+                cancellationToken);
+        if (claimedCount == 0)
+        {
+            return [];
+        }
+
+        var rows = await _context.Set<OutboxEntity>()
+            .AsNoTracking()
+            .Where(e => e.ClaimToken == token)
+            .OrderBy(e => e.CreatedAt)
             .ThenBy(e => e.Id)
             .ToListAsync(cancellationToken);
 
@@ -129,6 +185,7 @@ public sealed class EfCoreEventOutboxStorage<TContext> : IEventOutboxStorage, ID
         entity.ProcessedAt = DateTimeOffset.UtcNow;
         entity.LastError = null;
         entity.NextAttemptAt = null;
+        ReleaseClaim(entity);
 
         return await TrySaveChangesAsync(cancellationToken);
     }
@@ -183,6 +240,8 @@ public sealed class EfCoreEventOutboxStorage<TContext> : IEventOutboxStorage, ID
         {
             entity.NextAttemptAt = nextAttemptAt;
         }
+
+        ReleaseClaim(entity);
 
         return await TrySaveChangesAsync(cancellationToken);
     }
@@ -273,6 +332,35 @@ public sealed class EfCoreEventOutboxStorage<TContext> : IEventOutboxStorage, ID
         }
 
         return await TrySaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    ///     Clears the entry's claim and forces both columns into the next save.
+    /// </summary>
+    /// <remarks>
+    ///     The claim is written with <c>ExecuteUpdateAsync</c>, which bypasses the change tracker. When this context
+    ///     is still tracking the row from <see cref="AddAsync{TEvent}" /> (a commit in the scope that stored the
+    ///     event), the tracked copy already reads null, so assigning null alone would not be detected as a change
+    ///     and the claim would stay in the database until its lease expired.
+    /// </remarks>
+    private void ReleaseClaim(OutboxEntity entity)
+    {
+        entity.ClaimedUntil = null;
+        entity.ClaimToken = null;
+        var entry = _context.Entry(entity);
+        entry.Property(e => e.ClaimedUntil).IsModified = true;
+        entry.Property(e => e.ClaimToken).IsModified = true;
+    }
+
+    /// <summary>
+    ///     Rows that are pending, due for dispatch and not held by an unexpired claim.
+    /// </summary>
+    private IQueryable<OutboxEntity> Claimable(DateTimeOffset now)
+    {
+        return _context.Set<OutboxEntity>()
+            .Where(e => !e.Processed && !e.DeadLetter && !e.Discarded)
+            .Where(e => e.NextAttemptAt == null || e.NextAttemptAt <= now)
+            .Where(e => e.ClaimedUntil == null || e.ClaimedUntil <= now);
     }
 
     private async ValueTask<Result> TrySaveChangesAsync(CancellationToken cancellationToken)
