@@ -74,6 +74,70 @@ constructing its own independent instance instead.
 
 :::
 
+## Timestamp storage
+
+`OutboxEntityTypeConfiguration` stores every `DateTimeOffset` column (`CreatedAt`, `ProcessedAt`,
+`NextAttemptAt`) as a 64-bit integer of UTC ticks (`DateTimeOffset.UtcTicks`), not as the provider's
+native date/time type. Two things follow from that:
+
+- The pending-entry query (the `NextAttemptAt` back-off filter and the `CreatedAt` ordering) and the
+  oldest-pending-age lookup run entirely in SQL on every provider, SQLite included, so entries still
+  backing off never leave the database and `ix_outbox_events_pending` can serve the filter.
+- Values read back through EF Core come back with a zero offset. The instant is preserved; the
+  original offset is not. If you query the table with raw SQL, the columns hold ticks, not dates.
+
+:::caution Upgrading from an earlier version
+
+Earlier versions mapped those columns to the provider's native type (`TEXT` on SQLite,
+`datetimeoffset` on SQL Server, `timestamp with time zone` on PostgreSQL). After upgrading, run
+`dotnet ef migrations add` for the context that owns the outbox table. EF Core generates a column type
+change, but it does not convert the values already stored. The simplest path is to drain the outbox
+first, so no pending rows are left. Otherwise, edit the migration to convert the data, as shown below.
+Test the migration against a copy of your data first.
+
+:::
+
+### Converting existing rows
+
+A stored value is .NET ticks: 100-nanosecond intervals since `0001-01-01T00:00:00Z`, which is
+**not** the Unix epoch. The conversion is `unix_seconds × 10,000,000 + 621,355,968,000,000,000`. The
+snippets below assume the default `outbox` schema and EF Core's default column names. Repeat them for
+`ProcessedAt` and `NextAttemptAt`.
+
+**PostgreSQL:** the generated `AlterColumn` fails, because PostgreSQL cannot cast `timestamptz` to
+`bigint` on its own. Replace each call with a `USING` clause. PostgreSQL rebuilds the indexes on the
+column itself.
+
+```csharp
+migrationBuilder.Sql("""
+    ALTER TABLE outbox.outbox_events
+        ALTER COLUMN "CreatedAt" TYPE bigint
+        USING (EXTRACT(EPOCH FROM "CreatedAt") * 10000000)::bigint + 621355968000000000;
+    """);
+```
+
+**SQL Server:** `datetimeoffset` cannot be altered to `bigint` in place. Add a `bigint` column, fill
+it, drop `ix_outbox_events_pending` (it covers `NextAttemptAt`) and the old column, rename the new
+column, then recreate the index. The value to fill it with is:
+
+```sql
+DATEDIFF_BIG(microsecond, CAST('0001-01-01' AS datetime2(7)),
+             CAST(SWITCHOFFSET([CreatedAt], '+00:00') AS datetime2(7))) * 10
+    + DATEPART(nanosecond, [CreatedAt]) / 100 % 10
+```
+
+**SQLite:** the generated migration rebuilds the table and copies the old text values across
+unchanged. Add an `UPDATE` after the rebuild. SQLite's date functions keep millisecond precision, so
+converted values are rounded to the nearest millisecond. That is enough to keep the drain order.
+
+```csharp
+migrationBuilder.Sql("""
+    UPDATE "outbox_events"
+    SET "CreatedAt" = CAST(ROUND((julianday("CreatedAt") - julianday('0001-01-01')) * 86400000) AS INTEGER) * 10000
+    WHERE typeof("CreatedAt") = 'text';
+    """);
+```
+
 ## Multi-`DbContext` (modular monolith)
 
 When a business `DbContext` and the outbox context must commit or roll back together — the point of
@@ -102,19 +166,6 @@ into.
 the same EF Core storage can double-dispatch a pending entry — the same limitation the in-memory
 storage already has today. A `FOR UPDATE SKIP LOCKED`-based (or equivalent) claiming dispatcher is
 tracked as a follow-up.
-
-`GetPendingEventsAsync` and `GetOldestPendingAgeAsync` only push the boolean-column filters
-(`Processed`, `DeadLetter`, `Discarded`) down to SQL. The `NextAttemptAt` filtering and the
-`CreatedAt` ordering/aggregation happen client-side, after `ToListAsync()`, via LINQ-to-Objects — **on
-every provider**, PostgreSQL and SQL Server included, not only on SQLite. So on any provider the whole
-not-yet-processed set is pulled into memory before the back-off filter is applied, which is less
-efficient the larger that set gets.
-
-This shape was originally forced by SQLite's EF Core provider, which cannot translate `DateTimeOffset`
-comparisons or ordering into SQL; rather than branch per provider it was applied uniformly, for one
-behavior that is correct everywhere. Pushing the `DateTimeOffset` predicate down — for example by
-mapping the column through a `ValueConverter<DateTimeOffset, long>` so it becomes sortable and
-comparable in SQL on every provider — is tracked as a follow-up.
 
 Outbox rows store their event's assembly-qualified CLR type name, and `GetPendingEventsAsync` /
 `GetDeadLetterEventsAsync` resolve it back with `Type.GetType(..., throwOnError: true)`. If you

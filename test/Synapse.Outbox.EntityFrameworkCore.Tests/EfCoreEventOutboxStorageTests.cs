@@ -1,3 +1,4 @@
+using System.Text.Json;
 using JetBrains.Annotations;
 using UnambitiousFx.Synapse.Abstractions;
 using UnambitiousFx.Synapse.Outbox.EntityFrameworkCore.Tests.Support;
@@ -165,6 +166,94 @@ public sealed class EfCoreEventOutboxStorageTests
     }
 
     [Fact]
+    public async Task GetPendingEventsAsync_FiltersBackOffAndOrdersByCreatedAtInSql()
+    {
+        // Arrange (Given)
+        await using var database = await SqliteInMemoryDatabase.CreateAsync(TestContext.Current.CancellationToken);
+        var recorder = new CommandTextRecorder();
+        await using var context = database.CreateContext(recorder);
+        var storage = new EfCoreEventOutboxStorage<OutboxDbContext>(context);
+
+        // Act (When)
+        await storage.GetPendingEventsAsync(TestContext.Current.CancellationToken);
+
+        // Assert (Then) — guards against a regression to client-side evaluation: the back-off predicate
+        // and the ordering must be part of the query itself, so rows still backing off never leave the
+        // database. This inspects EF Core's generated SQLite text, so it is kept loose (no table alias,
+        // no exact formatting); if an EF Core upgrade still breaks it, adjust the patterns rather than
+        // the query.
+        var sql = Assert.Single(recorder.Commands);
+        Assert.Matches("\"NextAttemptAt\"\\s*<=", sql);
+        Assert.Matches("ORDER BY\\s+(\"\\w+\"\\.)?\"CreatedAt\"", sql);
+    }
+
+    [Fact]
+    public async Task GetPendingEventsAsync_WithSeveralEntries_ReturnsThemOldestFirst()
+    {
+        // Arrange (Given) — inserted out of CreatedAt order
+        await using var database = await SqliteInMemoryDatabase.CreateAsync(TestContext.Current.CancellationToken);
+        await using var context = database.CreateContext();
+        var storage = new EfCoreEventOutboxStorage<OutboxDbContext>(context);
+        var now = DateTimeOffset.UtcNow;
+        context.OutboxEvents.AddRange(
+            CreateRow("middle", now.AddMinutes(-5)),
+            CreateRow("newest", now.AddMinutes(-1)),
+            CreateRow("oldest", now.AddHours(-1)));
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        // Act (When)
+        var pending = await storage.GetPendingEventsAsync(TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.Equal(["oldest", "middle", "newest"],
+            pending.Select(e => Assert.IsType<OutboxTestEvent>(e.Event).Name));
+    }
+
+    [Fact]
+    public async Task GetPendingEventsAsync_WithEntriesSharingCreatedAt_OrdersThemById()
+    {
+        // Arrange (Given) — same tick, inserted in descending id order
+        await using var database = await SqliteInMemoryDatabase.CreateAsync(TestContext.Current.CancellationToken);
+        await using var context = database.CreateContext();
+        var storage = new EfCoreEventOutboxStorage<OutboxDbContext>(context);
+        var createdAt = DateTimeOffset.UtcNow.AddMinutes(-1);
+        var second = CreateRow("second", createdAt);
+        second.Id = Guid.Parse("00000000-0000-0000-0000-000000000002");
+        var first = CreateRow("first", createdAt);
+        first.Id = Guid.Parse("00000000-0000-0000-0000-000000000001");
+        context.OutboxEvents.AddRange(second, first);
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        // Act (When)
+        var pending = await storage.GetPendingEventsAsync(TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.Equal([first.Id, second.Id], pending.Select(e => e.Id));
+    }
+
+    [Fact]
+    public async Task GetPendingEventsAsync_NextAttemptAtWithNonUtcOffset_ComparesByInstant()
+    {
+        // Arrange (Given) — offsets chosen so each row's local wall-clock time points the opposite way
+        // from its actual instant: a comparison on the offset-carrying representation would get both wrong
+        await using var database = await SqliteInMemoryDatabase.CreateAsync(TestContext.Current.CancellationToken);
+        await using var context = database.CreateContext();
+        var storage = new EfCoreEventOutboxStorage<OutboxDbContext>(context);
+        var now = DateTimeOffset.UtcNow;
+        context.OutboxEvents.AddRange(
+            CreateRow("due", now.AddMinutes(-10), now.AddMinutes(-10).ToOffset(TimeSpan.FromHours(14))),
+            CreateRow("backing-off", now.AddMinutes(-5), now.AddMinutes(10).ToOffset(TimeSpan.FromHours(-12))));
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        // Act (When)
+        var pending = await storage.GetPendingEventsAsync(TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        var entry = Assert.Single(pending);
+        Assert.Equal("due", Assert.IsType<OutboxTestEvent>(entry.Event).Name);
+    }
+
+    [Fact]
     public async Task MarkAsFailedAsync_DeadLetter_MovesEntryToDeadLetterQueue()
     {
         // Arrange (Given)
@@ -220,6 +309,30 @@ public sealed class EfCoreEventOutboxStorageTests
         // Assert (Then)
         Assert.NotNull(age);
         Assert.True(age.Value >= TimeSpan.Zero);
+    }
+
+    [Fact]
+    public async Task GetOldestPendingAgeAsync_WithSeveralEntries_ReturnsTheAgeOfTheOldestPendingOne()
+    {
+        // Arrange (Given) — the oldest row overall is already processed, so it must not count
+        await using var database = await SqliteInMemoryDatabase.CreateAsync(TestContext.Current.CancellationToken);
+        await using var context = database.CreateContext();
+        var storage = new EfCoreEventOutboxStorage<OutboxDbContext>(context);
+        var now = DateTimeOffset.UtcNow;
+        var processed = CreateRow("processed", now.AddDays(-1));
+        processed.Processed = true;
+        context.OutboxEvents.AddRange(
+            processed,
+            CreateRow("recent", now.AddMinutes(-1)),
+            CreateRow("oldest-pending", now.AddHours(-2)));
+        await context.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        // Act (When)
+        var age = await storage.GetOldestPendingAgeAsync(TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.NotNull(age);
+        Assert.InRange(age.Value, TimeSpan.FromHours(2), TimeSpan.FromHours(3));
     }
 
     [Fact]
@@ -326,5 +439,20 @@ public sealed class EfCoreEventOutboxStorageTests
         // GetAttemptCountAsync finds it by id regardless of status, proving it was not deleted/altered)
         Assert.True(result.IsSuccess);
         Assert.Equal(0, attempts);
+    }
+
+    private static OutboxEntity CreateRow(string name,
+        DateTimeOffset createdAt,
+        DateTimeOffset? nextAttemptAt = null)
+    {
+        return new OutboxEntity
+        {
+            Id = Guid.NewGuid(),
+            EventType = typeof(OutboxTestEvent).AssemblyQualifiedName!,
+            Payload = JsonSerializer.Serialize(new OutboxTestEvent(name)),
+            Headers = "{}",
+            CreatedAt = createdAt,
+            NextAttemptAt = nextAttemptAt
+        };
     }
 }
