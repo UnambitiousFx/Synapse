@@ -163,7 +163,8 @@ public sealed class EfCoreEventOutboxStorage<TContext>
 
         var rows = await _context.Set<OutboxEntity>()
             .AsNoTracking()
-            .Where(e => e.ClaimToken == token)
+            // The id filter lets the read-back seek by primary key; the token keeps only the rows this call won.
+            .Where(e => candidateIds.Contains(e.Id) && e.ClaimToken == token)
             .OrderBy(e => e.CreatedAt)
             .ThenBy(e => e.Id)
             .ToListAsync(cancellationToken);

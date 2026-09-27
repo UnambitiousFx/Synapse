@@ -116,6 +116,16 @@ minutes) has passed. Delivery stays at-least-once, so keep the lease comfortably
 takes to dispatch: an entry whose lease runs out mid-dispatch can be claimed and dispatched by another
 instance too.
 
+:::caution Set a `BatchSize` when running several instances
+
+`BatchSize` is unlimited by default, so a single poll claims the **whole** backlog under one lease.
+After an outage or a burst, draining that backlog can take longer than `ClaimLeaseDuration`, and
+another instance can then claim and dispatch the entries still waiting in the same batch. A finite
+`BatchSize` keeps each claim small enough to finish well within its lease. The dispatcher polls
+again straight away after a full batch, so throughput doesn't suffer.
+
+:::
+
 A custom storage that does not implement `IClaimableOutboxStorage` still works. The dispatcher logs a
 warning at startup, because without claiming two processors can dispatch the same entry.
 
