@@ -29,15 +29,18 @@ public sealed class OutboxDispatcherServiceTests
                 .EmitAsync(new EventExample("background"), EmitMode.Outbox, TestContext.Current.CancellationToken);
         }
 
-        // Act (When)
+        var storage = provider.GetRequiredService<IEventOutboxStorage>();
+
+        // Act (When) — waits for the entry to be marked processed, not just handled: stopping in between cancels
+        // the mark, which leaves the entry for redelivery rather than failing it
         var dispatcher = await StartDispatcherAsync(provider);
-        var dispatched = await WaitUntilAsync(() => recorder.Dispatched.Count == 1);
+        var dispatched = await WaitUntilAsync(async () => recorder.Dispatched.Count == 1 &&
+                                                          await storage.GetPendingCountAsync() == 0);
         await dispatcher.StopAsync(TestContext.Current.CancellationToken);
 
         // Assert (Then)
         Assert.True(dispatched);
         Assert.Equal(["background"], recorder.Dispatched);
-        var storage = provider.GetRequiredService<IEventOutboxStorage>();
         Assert.Equal(0, await storage.GetPendingCountAsync(TestContext.Current.CancellationToken));
     }
 
@@ -148,12 +151,17 @@ public sealed class OutboxDispatcherServiceTests
         return dispatcher;
     }
 
-    private static async Task<bool> WaitUntilAsync(Func<bool> condition)
+    private static Task<bool> WaitUntilAsync(Func<bool> condition)
+    {
+        return WaitUntilAsync(() => new ValueTask<bool>(condition()));
+    }
+
+    private static async Task<bool> WaitUntilAsync(Func<ValueTask<bool>> condition)
     {
         var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
         while (DateTime.UtcNow < deadline)
         {
-            if (condition())
+            if (await condition())
             {
                 return true;
             }
@@ -161,7 +169,7 @@ public sealed class OutboxDispatcherServiceTests
             await Task.Delay(10, TestContext.Current.CancellationToken);
         }
 
-        return condition();
+        return await condition();
     }
 
     private sealed class EventRecorder

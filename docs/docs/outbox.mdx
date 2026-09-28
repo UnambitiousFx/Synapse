@@ -106,7 +106,7 @@ and retried at the next interval. Retry, dead-letter and batch settings are the 
 ### Running several instances
 
 Before dispatching, entries are **claimed** from a storage that implements `IClaimableOutboxStorage`,
-as the in-memory and [EF Core](./outbox-entityframeworkcore) storages do. A claimed entry is hidden from
+as the in-memory, [EF Core](./outbox-entityframeworkcore) and [ADO.NET](./outbox-adonet) storages do. A claimed entry is hidden from
 every other claimer, so several instances of your application, and `CommitAsync` calls running alongside
 the dispatcher, never hand the same entry out twice. `CommitAsync` claims too.
 
@@ -200,7 +200,7 @@ Things to know:
 
 ## Replace the storage for production
 
-The built-in `InMemoryEventOutboxStorage` is suitable for testing and simple scenarios. For production, replace it with a persistent implementation. `UnambitiousFx.Synapse.Outbox.EntityFrameworkCore` ships a ready-made, transactional one — see [EF Core outbox storage](./outbox-entityframeworkcore) for installation, the multi-`DbContext` (modular monolith) transaction-sharing pattern, and migrations. In short:
+The built-in `InMemoryEventOutboxStorage` is suitable for testing and simple scenarios. For production, replace it with a persistent implementation. `UnambitiousFx.Synapse.Outbox.EntityFrameworkCore` ships a ready-made, transactional one — see [EF Core outbox storage](./outbox-entityframeworkcore) for installation, the multi-`DbContext` (modular monolith) transaction-sharing pattern, and migrations. Without EF Core, `UnambitiousFx.Synapse.Outbox.AdoNet` does the same over plain ADO.NET for PostgreSQL and SQL Server — see [ADO.NET outbox storage](./outbox-adonet). With EF Core, in short:
 
 ```csharp
 services.AddDbContext<OutboxDbContext>(o => o.UseNpgsql(connectionString));

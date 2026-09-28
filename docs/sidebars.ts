@@ -26,6 +26,7 @@ const sidebars: SidebarsConfig = {
       items: [
         'outbox',
         'outbox-entityframeworkcore',
+        'outbox-adonet',
         'aspnetcore',
         'source-generator',
         'modular-monolith',
