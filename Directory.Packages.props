@@ -43,6 +43,7 @@
     <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="10.0.12" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.12" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.12" />
+    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.14" />
   </ItemGroup>
   <ItemGroup Condition="'$(TargetFramework)' == 'net9.0'">
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="9.0.20" />
@@ -58,6 +59,7 @@
     <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="9.0.20" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="9.0.20" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="9.0.20" />
+    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="9.0.22" />
   </ItemGroup>
   <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="8.0.31" />
@@ -73,5 +75,6 @@
     <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="8.0.31" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="8.0.31" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.31" />
+    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="8.0.2" />
   </ItemGroup>
 </Project>
