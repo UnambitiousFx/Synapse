@@ -54,6 +54,11 @@
         <None Include="$([MSBuild]::GetPathOfFileAbove('icon.png'))" Pack="true" PackagePath="\" />
     </ItemGroup>
 
+    <!-- Agent Skills (agentskills.io) shipped at skills/<name>/SKILL.md in the package -->
+    <ItemGroup Condition="Exists('skills')">
+        <None Include="skills/**/*" Pack="true" PackagePath="skills/" />
+    </ItemGroup>
+
     <ItemGroup>
         <InternalsVisibleTo Include="$(AssemblyName).Tests" />
         <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
