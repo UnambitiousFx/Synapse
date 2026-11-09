@@ -25,6 +25,7 @@
         <Project Path="src\Synapse\Synapse.csproj" />
         <Project Path="src\Synapse.Outbox.EntityFrameworkCore\Synapse.Outbox.EntityFrameworkCore.csproj" />
         <Project Path="src\Synapse.Outbox.AdoNet\Synapse.Outbox.AdoNet.csproj" />
+        <Project Path="src\Synapse.FluentValidation\Synapse.FluentValidation.csproj" />
     </Folder>
     <Folder Name="/test/">
         <Project Path="test/Synapse.AspNetCore.Tests/Synapse.AspNetCore.Tests.csproj" />
@@ -32,6 +33,7 @@
         <Project Path="test\Synapse.Tests\Synapse.Tests.csproj" />
         <Project Path="test\Synapse.Outbox.EntityFrameworkCore.Tests\Synapse.Outbox.EntityFrameworkCore.Tests.csproj" />
         <Project Path="test\Synapse.Outbox.AdoNet.Tests\Synapse.Outbox.AdoNet.Tests.csproj" />
+        <Project Path="test\Synapse.FluentValidation.Tests\Synapse.FluentValidation.Tests.csproj" />
     </Folder>
     <Folder Name="/_/">
         <File Path="build.props" />

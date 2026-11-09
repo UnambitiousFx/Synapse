@@ -160,6 +160,8 @@ public sealed class CreateTaskValidator : IRequestValidator<CreateTaskCommand>
 
 Without the generator: `cfg.AddValidator<CreateTaskValidator, CreateTaskCommand, Guid>()` **and** `cfg.RegisterRequestPipelineBehavior<RequestValidationBehavior<CreateTaskCommand, Guid>, CreateTaskCommand, Guid>()`. A failing validator stops the pipeline; the handler is not called.
 
+FluentValidation: reference `UnambitiousFx.Synapse.FluentValidation` and call `services.AddSynapseFluentValidation()`; every registered `IValidator<TRequest>` then runs for `Result` and `Result<T>` requests and a failure returns a `ValidationFailure` with field, message and code per error. Do not hand-write a FluentValidation behavior.
+
 ## Outbox
 
 `EmitMode.Outbox` stores the event; it is dispatched by `IOutboxCommit.CommitAsync(ct)` (call it after your transaction commits) or by `cfg.AddOutboxDispatcher(...)` in the background. Each entry is dispatched in a **new DI scope**: handlers do not share the caller's `DbContext`. Durable storage: `UnambitiousFx.Synapse.Outbox.EntityFrameworkCore` or `.AdoNet`. If the app never uses the outbox, `cfg.DisableInMemoryOutboxProductionWarning()` silences the startup warning about the in-memory storage in Production.
