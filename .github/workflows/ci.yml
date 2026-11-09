@@ -210,7 +210,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: '24'
+          node-version: '26'
 
       - name: Build Docker image
         run: docker build -t minimalapi -f examples/MinimalApi/Dockerfile .
