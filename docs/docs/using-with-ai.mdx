@@ -83,7 +83,7 @@ every build:
   version is not deleted from the destination.
 - **Transitive.** Skills come from every referenced UnambitiousFx package,
   including ones pulled in by another package (for example
-  `UnambitiousFx.Functional`, from the version that ships the same target).
+  `UnambitiousFx.Functional` 2.2.0 and later).
 - **Never breaks the build.** A failed copy (read-only or locked destination) is
   logged as warnings (`MSB3021`, `MSB3026`, `MSB3027`). If you build with
   `-warnaserror` / `MSBuildTreatWarningsAsErrors`, add
