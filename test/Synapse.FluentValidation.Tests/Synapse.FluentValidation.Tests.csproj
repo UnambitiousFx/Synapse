@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+        <PackageReference Include="Microsoft.Extensions.Logging" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\..\src\Synapse.FluentValidation\Synapse.FluentValidation.csproj" />
+        <!-- Test-only: end-to-end dispatch through AddSynapse. The shipped package only references
+             Synapse.Abstractions. -->
+        <ProjectReference Include="..\..\src\Synapse\Synapse.csproj" />
+    </ItemGroup>
+
+</Project>

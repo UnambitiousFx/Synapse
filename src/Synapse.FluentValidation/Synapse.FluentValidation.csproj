@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFrameworks>$(LibraryTargetFrameworks)</TargetFrameworks>
+        <Description>FluentValidation integration for UnambitiousFx.Synapse: runs every IValidator&lt;TRequest&gt; in the request pipeline and short-circuits with a ValidationFailure.</Description>
+        <!-- The behaviors are registered as open generics, closed by the container at runtime. -->
+        <IsAotCompatible>false</IsAotCompatible>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\Synapse.Abstractions\Synapse.Abstractions.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="FluentValidation" />
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    </ItemGroup>
+
+</Project>

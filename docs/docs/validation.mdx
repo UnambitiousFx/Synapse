@@ -83,9 +83,27 @@ cfg.AddValidator<DuplicateCheckValidator, CreateTaskCommand, Guid>();
 // Both run; both failures are reported if both fail
 ```
 
+## FluentValidation
+
+`UnambitiousFx.Synapse.FluentValidation` runs every `IValidator<TRequest>` registered in the container, for both `Result` and `Result<T>` requests. Nothing to write per request.
+
+```bash
+dotnet add package UnambitiousFx.Synapse.FluentValidation
+```
+
+```csharp
+services.AddValidatorsFromAssemblyContaining<Program>(); // FluentValidation.DependencyInjectionExtensions
+services.AddSynapse(cfg => cfg.AddRegisterGroup(new RegisterGroup()));
+services.AddSynapseFluentValidation(o => o.Order = IOrderedPipelineBehavior.Middle); // order is optional
+```
+
+When a validator fails, the handler is not called and the result holds one `ValidationFailure` with every error of every validator. Each `ValidationError` keeps the property name (`Field`, `null` for object-level rules), the message and the FluentValidation error code. The behavior runs at `IOrderedPipelineBehavior.Last` by default, like the built-in validation behavior.
+
+The behaviors are registered as open generics, so this package is not Native-AOT compatible.
+
 ## External validation libraries
 
-`IRequestValidator<T>` is just an interface — you can adapt any validation library. Here is an example adapting FluentValidation:
+`IRequestValidator<T>` is just an interface — you can adapt any validation library. Here is an example adapting FluentValidation by hand:
 
 ```csharp
 public class FluentCreateTaskValidator : IRequestValidator<CreateTaskCommand>
