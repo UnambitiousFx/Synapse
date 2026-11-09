@@ -1,12 +1,12 @@
 ---
 title: Using these docs with AI
-description: Point Claude, Cursor, Copilot and other AI assistants at the Synapse docs via llms.txt and the Context7 MCP server.
+description: Point Claude, Cursor, Copilot and other AI assistants at the Synapse docs via llms.txt and the Context7 MCP server, and use the Agent Skills shipped in the NuGet packages.
 ---
 
 # Using these docs with AI
 
 These docs are built to be consumed by AI coding assistants, not just humans.
-There are two ways to plug them in.
+There are three ways to plug them in.
 
 ## 1. llms.txt (zero setup)
 
@@ -47,3 +47,49 @@ MCP settings, then reference the `/UnambitiousFx/Synapse` library in prompts.
 Several unrelated projects are named "Synapse" on Context7. Always use the
 fully-qualified ID `/UnambitiousFx/Synapse` to get these docs.
 :::
+
+## 3. Agent skills shipped in the packages
+
+The NuGet packages ship [Agent Skills](https://agentskills.io): `SKILL.md` files
+that tell coding agents how to use the library correctly.
+
+| Package | Skill |
+|---------|-------|
+| `UnambitiousFx.Synapse` | `unambitiousfx-synapse` |
+| `UnambitiousFx.Synapse.AspNetCore` | `unambitiousfx-synapse-aspnetcore` |
+
+`dotnet restore` places them under `~/.nuget/packages/<id>/<version>/skills/`,
+but agents only load skills from their own folders. Set
+`UnambitiousFxSkillsDestination` to have the packages copy their skills there on
+every build:
+
+```xml title="Directory.Build.props"
+<Project>
+  <PropertyGroup>
+    <UnambitiousFxSkillsDestination>$(MSBuildThisFileDirectory).claude/skills</UnambitiousFxSkillsDestination>
+  </PropertyGroup>
+</Project>
+```
+
+| Agent | Destination |
+|-------|-------------|
+| Claude Code | `.claude/skills` |
+| GitHub Copilot | `.github/skills` |
+| Codex and others, `dotnet-package-skills` | `.agents/skills` |
+
+- **Opt-in.** Nothing is written unless the property is set.
+- **Always current.** The copy runs on build (unchanged files are skipped), so a
+  package update also updates the skill. A skill removed or renamed in a newer
+  version is not deleted from the destination.
+- **Transitive.** Skills come from every referenced UnambitiousFx package,
+  including ones pulled in by another package (for example
+  `UnambitiousFx.Functional`, from the version that ships the same target).
+- **Never breaks the build.** A failed copy (read-only or locked destination) is
+  logged as warnings (`MSB3021`, `MSB3026`, `MSB3027`). If you build with
+  `-warnaserror` / `MSBuildTreatWarningsAsErrors`, add
+  `MSB3021;MSB3026;MSB3027` to `MSBuildWarningsNotAsErrors` to keep them
+  warnings.
+
+Since the folder is regenerated on build, you can add it to `.gitignore`; commit
+it instead if agents should have the skills in a fresh clone before the first
+build.

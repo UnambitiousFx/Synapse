@@ -54,9 +54,12 @@
         <None Include="$([MSBuild]::GetPathOfFileAbove('icon.png'))" Pack="true" PackagePath="\" />
     </ItemGroup>
 
-    <!-- Agent Skills (agentskills.io) shipped at skills/<name>/SKILL.md in the package -->
+    <!-- Agent Skills (agentskills.io) shipped at skills/<name>/SKILL.md in the package,
+         plus an opt-in buildTransitive target that copies them into the consumer's repo -->
     <ItemGroup Condition="Exists('skills')">
         <None Include="skills/**/*" Pack="true" PackagePath="skills/" />
+        <None Include="$(MSBuildThisFileDirectory)buildTransitive/UnambitiousFx.Skills.targets"
+              Pack="true" PackagePath="buildTransitive/$(PackageId).targets" Visible="false" />
     </ItemGroup>
 
     <ItemGroup>
