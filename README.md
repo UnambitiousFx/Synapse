@@ -36,6 +36,19 @@ A lightweight, **high-performance** mediator implementation for .NET with first-
 dotnet add package UnambitiousFx.Synapse
 ```
 
+### Agent skills
+
+`UnambitiousFx.Synapse` and `UnambitiousFx.Synapse.AspNetCore` ship [Agent Skills](https://agentskills.io) (`skills/<name>/SKILL.md`) that teach AI coding agents the real API. To have them copied into your repository on every build, always matching the referenced package version, set a destination (for example in `Directory.Build.props`):
+
+```xml
+<PropertyGroup>
+  <!-- .claude/skills (Claude Code), .github/skills (GitHub Copilot), .agents/skills (others) -->
+  <UnambitiousFxSkillsDestination>$(MSBuildThisFileDirectory).claude/skills</UnambitiousFxSkillsDestination>
+</PropertyGroup>
+```
+
+Nothing is copied unless the property is set. See [Using these docs with AI](https://synapse.unambitiousfx.com/docs/using-with-ai#3-agent-skills-shipped-in-the-packages) for details.
+
 ## 🚀 Quick Start
 
 ### Register mediator services

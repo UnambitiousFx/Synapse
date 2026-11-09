@@ -1,0 +1,28 @@
+<Project>
+    <!--
+        Packed as buildTransitive/<PackageId>.targets in every UnambitiousFx package that ships skills/.
+        Opt-in: copies the package's Agent Skills to $(UnambitiousFxSkillsDestination) on build, so the
+        copy always matches the referenced package version.
+
+        Each package adds its skills to the shared item; the target is identical in every package, so
+        whichever import defines it last copies the skills of all referenced UnambitiousFx packages once.
+        Keep this file identical across UnambitiousFx repositories.
+    -->
+    <ItemGroup Condition="'$(UnambitiousFxSkillsDestination)' != ''">
+        <_UnambitiousFxSkill Include="$(MSBuildThisFileDirectory)../skills/**/*" />
+    </ItemGroup>
+
+    <Target Name="_UnambitiousFxCopySkills"
+            BeforeTargets="Build"
+            Condition="'$(UnambitiousFxSkillsDestination)' != '' and '@(_UnambitiousFxSkill)' != ''">
+        <!-- Multi-targeted consumers run this once per TFM in parallel: a few short retries absorb the
+             transient lock without stalling the build on a destination that is really not writable
+             ($(CopyRetryCount) would wait ~10 s per TFM). A copy failure is a warning, never an error. -->
+        <Copy SourceFiles="@(_UnambitiousFxSkill)"
+              DestinationFiles="@(_UnambitiousFxSkill->'$(UnambitiousFxSkillsDestination)/%(RecursiveDir)%(Filename)%(Extension)')"
+              SkipUnchangedFiles="true"
+              Retries="2"
+              RetryDelayMilliseconds="200"
+              ContinueOnError="true" />
+    </Target>
+</Project>
