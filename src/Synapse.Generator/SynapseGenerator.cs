@@ -51,6 +51,11 @@ public class SynapseGenerator : IIncrementalGenerator
     private const string StreamRequestPipelineBehaviorInterfaceName =
         $"{AbstractionsNamespace}.IStreamRequestPipelineBehavior";
 
+    private const string ResultPipelineBehaviorInterfaceName =
+        $"{AbstractionsNamespace}.IResultPipelineBehavior";
+
+    private const string FunctionalNamespace = "UnambitiousFx.Functional";
+
     /// <summary>
     ///     Display format that yields the fully-qualified name (with <c>global::</c> prefix and the full
     ///     enclosing-type chain) but omits generic type parameters — so nested types register correctly and
@@ -318,7 +323,7 @@ public class SynapseGenerator : IIncrementalGenerator
                         new DiagnosticDescriptor(
                             "MDG008",
                             "Invalid pipeline behavior",
-                            "[PipelineBehavior] is applied to a class that does not implement any known pipeline interface. Ensure the class implements IRequestPipelineBehavior<>, IEventPipelineBehavior<>, or IStreamRequestPipelineBehavior<,>.",
+                            "[PipelineBehavior] is applied to a class that does not implement any known pipeline interface. Ensure the class implements IRequestPipelineBehavior<>, IResultPipelineBehavior<,>, IEventPipelineBehavior<>, or IStreamRequestPipelineBehavior<,>.",
                             "Synapse.Generator",
                             DiagnosticSeverity.Warning,
                             true),
@@ -361,7 +366,7 @@ public class SynapseGenerator : IIncrementalGenerator
                         "[SynapseGlobalBehavior] requires a typeof(...) argument naming a pipeline behavior type."),
                     GlobalBehaviorProblem.NoPipelineInterface => (
                         "MDG013", "Invalid global behavior",
-                        $"[SynapseGlobalBehavior(typeof({diagnostic.TypeName}))] names a type that implements no known pipeline interface. Ensure it implements IRequestPipelineBehavior<>, IEventPipelineBehavior<>, or IStreamRequestPipelineBehavior<,>."),
+                        $"[SynapseGlobalBehavior(typeof({diagnostic.TypeName}))] names a type that implements no known pipeline interface. Ensure it implements IRequestPipelineBehavior<>, IResultPipelineBehavior<,>, IEventPipelineBehavior<>, or IStreamRequestPipelineBehavior<,>."),
                     GlobalBehaviorProblem.Inaccessible => (
                         "MDG014", "Inaccessible global behavior",
                         $"[SynapseGlobalBehavior(typeof({diagnostic.TypeName}))] names a non-public type; the generated registration cannot reference it. Make the behavior type public."),
@@ -761,9 +766,109 @@ public class SynapseGenerator : IIncrementalGenerator
                     BuildClosingTypeArgumentMap(classSymbol, iface, isOpenGeneric),
                     GetSpecialConstraints(iface.TypeArguments[0]), GetSpecialConstraints(iface.TypeArguments[1])));
             }
+            else if (ifaceFullName == $"{ResultPipelineBehaviorInterfaceName}`2" && iface.TypeArguments.Length == 2)
+            {
+                AddResultBehaviors(behaviors, classSymbol, iface, isOpenGeneric, className, @namespace,
+                    fullyQualifiedName);
+            }
         }
 
         return behaviors;
+    }
+
+    /// <summary>
+    ///     Analyzes an <c>IResultPipelineBehavior&lt;TRequest, TResult&gt;</c> implementation. An open
+    ///     <c>TResult</c> applies to both request shapes, so it yields one behavior per shape; a concrete
+    ///     <c>Result</c> or <c>Result&lt;TResponse&gt;</c> yields only the matching shape.
+    /// </summary>
+    private static void AddResultBehaviors(List<BehaviorDetail> behaviors,
+        INamedTypeSymbol classSymbol,
+        INamedTypeSymbol iface,
+        bool isOpenGeneric,
+        string className,
+        string @namespace,
+        string fullyQualifiedName)
+    {
+        var requestArg = iface.TypeArguments[0];
+        var resultArg = iface.TypeArguments[1];
+        var requestType = isOpenGeneric ? requestArg.Name : ToEmitName(requestArg);
+        var map = BuildResultClosingTypeArgumentMap(classSymbol, requestArg, resultArg, isOpenGeneric);
+
+        if (resultArg is ITypeParameterSymbol)
+        {
+            behaviors.Add(new BehaviorDetail(className, @namespace, fullyQualifiedName, BehaviorKind.ResultRequest,
+                isOpenGeneric, requestType, null, GetConstraintNames(requestArg), default, map,
+                GetSpecialConstraints(requestArg)));
+            behaviors.Add(new BehaviorDetail(className, @namespace, fullyQualifiedName,
+                BehaviorKind.ResultRequestWithResponse, isOpenGeneric, requestType, null,
+                GetConstraintNames(requestArg), default, map, GetSpecialConstraints(requestArg)));
+            return;
+        }
+
+        // Any other IResult implementation is not a request result Synapse can close over.
+        if (resultArg is not INamedTypeSymbol { Name: "Result" } result
+            || result.ContainingNamespace?.ToDisplayString() != FunctionalNamespace)
+        {
+            return;
+        }
+
+        if (result.Arity == 0)
+        {
+            behaviors.Add(new BehaviorDetail(className, @namespace, fullyQualifiedName, BehaviorKind.ResultRequest,
+                isOpenGeneric, requestType, null, GetConstraintNames(requestArg), default, map,
+                GetSpecialConstraints(requestArg)));
+            return;
+        }
+
+        var responseArg = result.TypeArguments[0];
+        var responseType = isOpenGeneric && responseArg is ITypeParameterSymbol
+            ? responseArg.Name
+            : ToEmitName(responseArg);
+        behaviors.Add(new BehaviorDetail(className, @namespace, fullyQualifiedName,
+            BehaviorKind.ResultRequestWithResponse, isOpenGeneric, requestType, responseType,
+            GetConstraintNames(requestArg), GetConstraintNames(responseArg), map,
+            GetSpecialConstraints(requestArg), GetSpecialConstraints(responseArg)));
+    }
+
+    /// <summary>
+    ///     Like <see cref="BuildClosingTypeArgumentMap" /> for a result behavior: the class parameter bound to
+    ///     <c>TRequest</c> maps to <c>0</c>, the one bound to <c>TResult</c> to <c>2</c> (the whole result type),
+    ///     and the one bound to <c>TResponse</c> inside <c>Result&lt;TResponse&gt;</c> to <c>1</c>.
+    /// </summary>
+    private static EquatableArray<int> BuildResultClosingTypeArgumentMap(INamedTypeSymbol classSymbol,
+        ITypeSymbol requestArg,
+        ITypeSymbol resultArg,
+        bool isOpenGeneric)
+    {
+        if (!isOpenGeneric || classSymbol.TypeParameters.Length == 0)
+        {
+            return default;
+        }
+
+        var map = new int[classSymbol.TypeParameters.Length];
+        for (var i = 0; i < map.Length; i++)
+        {
+            map[i] = -1;
+        }
+
+        Bind(requestArg, 0);
+        Bind(resultArg, 2);
+        if (resultArg is INamedTypeSymbol { Arity: 1 } result)
+        {
+            Bind(result.TypeArguments[0], 1);
+        }
+
+        return EquatableArray<int>.From(map);
+
+        void Bind(ITypeSymbol argument, int slot)
+        {
+            if (argument is ITypeParameterSymbol { TypeParameterKind: TypeParameterKind.Type } typeParameter
+                && SymbolEqualityComparer.Default.Equals(typeParameter.ContainingType, classSymbol)
+                && typeParameter.Ordinal < map.Length)
+            {
+                map[typeParameter.Ordinal] = slot;
+            }
+        }
     }
 
     private static ValidatorScan? GetValidatorDetail(GeneratorAttributeSyntaxContext ctx)

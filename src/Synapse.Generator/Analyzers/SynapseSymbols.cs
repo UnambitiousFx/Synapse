@@ -8,7 +8,10 @@ internal enum HandlerKind
     Request,
     RequestWithResponse,
     Event,
-    Stream
+    Stream,
+
+    /// <summary>A result behavior whose result type is a type parameter: applies to both request shapes.</summary>
+    AnyRequest
 }
 
 internal readonly struct MessageInterface
@@ -134,8 +137,20 @@ internal static class SynapseSymbols
                 new MessageInterface(HandlerKind.RequestWithResponse, iface.TypeArguments[0]),
             "IEventPipelineBehavior`1" => new MessageInterface(HandlerKind.Event, iface.TypeArguments[0]),
             "IStreamRequestPipelineBehavior`2" => new MessageInterface(HandlerKind.Stream, iface.TypeArguments[0]),
+            "IResultPipelineBehavior`2" => new MessageInterface(GetResultShape(iface.TypeArguments[1]),
+                iface.TypeArguments[0]),
             _ => null
         };
+    }
+
+    // IResultPipelineBehavior<TRequest, Result> targets no-response requests, <TRequest, Result<T>> requests
+    // with a response, and an open TResult both.
+    private static HandlerKind GetResultShape(ITypeSymbol result)
+    {
+        return result is INamedTypeSymbol { Name: "Result", ContainingNamespace: var ns } named
+               && ns.ToDisplayString() == "UnambitiousFx.Functional"
+            ? named.Arity == 0 ? HandlerKind.Request : HandlerKind.RequestWithResponse
+            : HandlerKind.AnyRequest;
     }
 
     public static IEnumerable<INamedTypeSymbol> GetTypes(INamespaceSymbol root, CancellationToken cancellationToken)

@@ -144,6 +144,7 @@ public sealed class TransactionBehavior<TRequest, TResponse>
 - CQRS enforcement for the whole graph (host only):
   `[assembly: SynapseGlobalBehavior(typeof(CqrsBoundaryEnforcementBehavior<>))]` and `[assembly: SynapseGlobalBehavior(typeof(CqrsBoundaryEnforcementBehavior<,>))]`.
 - Closed manual registration: `cfg.RegisterRequestPipelineBehavior<TBehavior, TRequest, TResponse>()`.
+- Logic that does not depend on the response type (validation, auth, exception mapping): write it **once** as `IResultPipelineBehavior<TRequest, TResult> where TResult : IResult` instead of two classes. `next.InvokeAsync(request, ct)` continues, `next.Fail(failure)` short-circuits with the right `Result`/`Result<T>`. Same `[PipelineBehavior]` / `IOrderedPipelineBehavior` rules.
 
 ## Validation
 

@@ -73,6 +73,39 @@ public sealed class AuditDeleteTaskBehavior : IRequestPipelineBehavior<DeleteTas
 cfg.RegisterRequestPipelineBehavior<AuditDeleteTaskBehavior, DeleteTaskCommand>();
 ```
 
+## One behavior for both request shapes
+
+Cross-cutting logic that does not depend on the response type (validation, authorization, mapping exceptions to failures, logging) would otherwise be written twice, once per interface above. Implement `IResultPipelineBehavior<TRequest, TResult>` instead: Synapse closes it with `TResult = Result` for `IRequest` requests and `TResult = Result<TResponse>` for `IRequest<TResponse>` requests.
+
+```csharp
+[PipelineBehavior]
+public sealed class ValidationBehavior<TRequest, TResult>(IEnumerable<IValidator<TRequest>> validators)
+    : IResultPipelineBehavior<TRequest, TResult>, IOrderedPipelineBehavior
+    where TResult : IResult
+{
+    public uint Order => IOrderedPipelineBehavior.Middle;
+
+    public async ValueTask<TResult> HandleAsync(
+        TRequest request,
+        RequestNext<TRequest, TResult> next,
+        CancellationToken cancellationToken = default)
+    {
+        if (Validate(request) is { } failure)
+            return next.Fail(failure);               // Result.Failure(...) or Result.Failure<T>(...)
+
+        var result = await next.InvokeAsync(request, cancellationToken);
+        // result.IsSuccess / result.TryGetFailure(...) are available here
+        return result;
+    }
+}
+```
+
+- `next.InvokeAsync` runs the rest of the pipeline; `next.Fail` builds a failure of the request's shape without calling it.
+- `[PipelineBehavior]` and `[assembly: SynapseGlobalBehavior(typeof(ValidationBehavior<,>))]` register it for every handler, AOT-safe. Without the generator: `cfg.AddOpenGenericResultPipelineBehavior(typeof(ValidationBehavior<,>))`, or the closed `cfg.RegisterResultPipelineBehavior<TBehavior, TRequest>()` / `<TBehavior, TRequest, TResponse>()`.
+- Close `TResult` yourself to target one shape only: `IResultPipelineBehavior<TRequest, Result>` applies to requests without response, `IResultPipelineBehavior<TRequest, Result<TResponse>>` to requests with one.
+- Result behaviors and typed behaviors share one chain ordered by `IOrderedPipelineBehavior`. On equal `Order`, typed behaviors run first.
+- To unit-test one, build the continuation by hand: `new RequestNext<MyRequest, Result>((r, ct) => ..., Result.Failure)`.
+
 ## Applying a behavior to every handler
 
 Naming each request/response pair is fine for one-off behaviors, but cross-cutting concerns (logging, tracing, auth) usually apply to *all* handlers. Make the behavior **open-generic** and mark it `[PipelineBehavior]` — the Synapse source generator discovers it, infers the kind/arity from the implemented interface, and emits one closed (Native-AOT-safe) registration per matching handler:

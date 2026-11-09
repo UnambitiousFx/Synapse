@@ -152,6 +152,14 @@ internal static class RegisterGroupFactory
                 sb.AppendLine(
                     $"        builder.RegisterStreamRequestPipelineBehavior<{behaviorType}, {requestType}, {itemType}>();");
                 break;
+            case BehaviorKind.ResultRequest:
+                sb.AppendLine(
+                    $"        builder.RegisterResultPipelineBehavior<{behaviorType}, {requestType}>();");
+                break;
+            case BehaviorKind.ResultRequestWithResponse when behavior.FullResponseOrItemTypeName is { } responseType:
+                sb.AppendLine(
+                    $"        builder.RegisterResultPipelineBehavior<{behaviorType}, {requestType}, {responseType}>();");
+                break;
         }
     }
 
@@ -224,6 +232,36 @@ internal static class RegisterGroupFactory
                         $"        builder.RegisterStreamRequestPipelineBehavior<{closedBehavior}, {req}, {itemType}>();");
                     break;
                 }
+                case BehaviorKind.ResultRequest when handler.HandlerType == HandlerType.RequestHandler
+                                                     && handler.FullResponseType is null
+                                                     && Satisfies(behavior.RequestConstraints,
+                                                         handler.TargetSatisfyingTypes)
+                                                     && SatisfiesSpecial(behavior.RequestSpecialConstraints,
+                                                         handler.RequestShape):
+                {
+                    var req = handler.FullTargetTypeName;
+                    var closedBehavior = CloseBehavior(behavior, behaviorBaseName, req, null, ResultTypeName);
+                    sb.AppendLine($"        builder.RegisterResultPipelineBehavior<{closedBehavior}, {req}>();");
+                    break;
+                }
+                case BehaviorKind.ResultRequestWithResponse when handler.HandlerType == HandlerType.RequestHandler
+                                                                 && handler.FullResponseType is { } resp
+                                                                 && Satisfies(behavior.RequestConstraints,
+                                                                     handler.TargetSatisfyingTypes)
+                                                                 && Satisfies(behavior.ResponseConstraints,
+                                                                     handler.ResponseSatisfyingTypes)
+                                                                 && SatisfiesSpecial(behavior.RequestSpecialConstraints,
+                                                                     handler.RequestShape)
+                                                                 && SatisfiesSpecial(behavior.ResponseSpecialConstraints,
+                                                                     handler.ResponseShape):
+                {
+                    var req = handler.FullTargetTypeName;
+                    var closedBehavior = CloseBehavior(behavior, behaviorBaseName, req, resp,
+                        $"{ResultTypeName}<{resp}>");
+                    sb.AppendLine(
+                        $"        builder.RegisterResultPipelineBehavior<{closedBehavior}, {req}, {resp}>();");
+                    break;
+                }
             }
         }
     }
@@ -232,11 +270,13 @@ internal static class RegisterGroupFactory
     ///     Builds the closed behavior type name by substituting each of the class's own type parameters with
     ///     the concrete request/response type, in class-declaration order. The order and arity come from
     ///     <see cref="BehaviorDetail.ClosingTypeArgumentMap" /> (index <c>0</c> → request/event, <c>1</c> →
-    ///     response/item) so a class whose generic arity or parameter order differs from its interface closes
+    ///     response/item, <c>2</c> → result type of a result behavior) so a class whose generic arity or parameter order differs from its interface closes
     ///     correctly. Falls back to the interface arity when no map is recorded (legacy / safety).
     /// </summary>
+    private const string ResultTypeName = "global::UnambitiousFx.Functional.Result";
+
     private static string CloseBehavior(BehaviorDetail behavior, string behaviorBaseName, string request,
-        string? response)
+        string? response, string? result = null)
     {
         if (behavior.ClosingTypeArgumentMap.Count == 0)
         {
@@ -245,7 +285,12 @@ internal static class RegisterGroupFactory
                 : $"{behaviorBaseName}<{request}, {response}>";
         }
 
-        var args = behavior.ClosingTypeArgumentMap.Select(i => i == 1 ? response! : request);
+        var args = behavior.ClosingTypeArgumentMap.Select(i => i switch
+        {
+            1 => response!,
+            2 => result!,
+            _ => request
+        });
         return $"{behaviorBaseName}<{string.Join(", ", args)}>";
     }
 

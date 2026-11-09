@@ -1,3 +1,4 @@
+using UnambitiousFx.Functional;
 using System.Diagnostics.CodeAnalysis;
 using System.Diagnostics.Metrics;
 using Microsoft.Extensions.DependencyInjection;
@@ -147,6 +148,45 @@ public static class DependencyInjectionExtensions
         where TResponse : notnull
     {
         var serviceType = typeof(IRequestPipelineBehavior<TRequest, TResponse>);
+        var implementationType = typeof(TBehavior);
+        ThrowOnLifetimeConflict(services, serviceType, implementationType, lifetime);
+        services.TryAddEnumerable(new ServiceDescriptor(serviceType, implementationType, lifetime));
+        return services;
+    }
+
+    /// <summary>
+    ///     Registers a result pipeline behavior closed over <see cref="Result" />. Deduplicated like the other
+    ///     behaviors.
+    /// </summary>
+    internal static IServiceCollection RegisterResultPipelineBehavior<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+        TBehavior, TRequest>(
+        this IServiceCollection services,
+        ServiceLifetime lifetime = ServiceLifetime.Scoped)
+        where TBehavior : class, IResultPipelineBehavior<TRequest, Result>
+        where TRequest : IRequest
+    {
+        var serviceType = typeof(IResultPipelineBehavior<TRequest, Result>);
+        var implementationType = typeof(TBehavior);
+        ThrowOnLifetimeConflict(services, serviceType, implementationType, lifetime);
+        services.TryAddEnumerable(new ServiceDescriptor(serviceType, implementationType, lifetime));
+        return services;
+    }
+
+    /// <summary>
+    ///     Registers a result pipeline behavior closed over <see cref="Result{TValue}" />. Deduplicated like the
+    ///     other behaviors.
+    /// </summary>
+    internal static IServiceCollection RegisterResultPipelineBehavior<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+        TBehavior, TRequest, TResponse>(
+        this IServiceCollection services,
+        ServiceLifetime lifetime = ServiceLifetime.Scoped)
+        where TBehavior : class, IResultPipelineBehavior<TRequest, Result<TResponse>>
+        where TRequest : IRequest<TResponse>
+        where TResponse : notnull
+    {
+        var serviceType = typeof(IResultPipelineBehavior<TRequest, Result<TResponse>>);
         var implementationType = typeof(TBehavior);
         ThrowOnLifetimeConflict(services, serviceType, implementationType, lifetime);
         services.TryAddEnumerable(new ServiceDescriptor(serviceType, implementationType, lifetime));

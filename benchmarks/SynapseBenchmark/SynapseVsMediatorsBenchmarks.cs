@@ -45,6 +45,8 @@ public class SynapseVsMediatorsBenchmarks
     private IInvoker _synapseInvokerBase = default!;
     private IInvoker _synapseInvoker1Beh = default!;
     private IInvoker _synapseInvoker3Beh = default!;
+    private IInvoker _synapseInvoker1ResultBeh = default!;
+    private IInvoker _synapseInvoker3ResultBeh = default!;
     private RequestWithResponseHandler _synapseDirectHandlerRr = default!;
     private RequestWithoutResponseHandler _synapseDirectHandlerVoid = default!;
 
@@ -59,6 +61,8 @@ public class SynapseVsMediatorsBenchmarks
         _synapseEmitterBase = ourBaseSp.GetRequiredService<IEmitter>();
         _synapseInvoker1Beh = our1BehSp.GetRequiredService<IInvoker>();
         _synapseInvoker3Beh = our3BehSp.GetRequiredService<IInvoker>();
+        _synapseInvoker1ResultBeh = BuildOurSp(1, true, true).GetRequiredService<IInvoker>();
+        _synapseInvoker3ResultBeh = BuildOurSp(3, true, true).GetRequiredService<IInvoker>();
         _synapseDirectHandlerRr = ourBaseSp.GetRequiredService<RequestWithResponseHandler>();
         _synapseDirectHandlerVoid = ourBaseSp.GetRequiredService<RequestWithoutResponseHandler>();
 
@@ -79,7 +83,7 @@ public class SynapseVsMediatorsBenchmarks
         _mediator3Beh = mediator3BehSp.GetRequiredService<Mediator.IMediator>();
     }
 
-    private static IServiceProvider BuildOurSp(int behaviors, bool slimContext)
+    private static IServiceProvider BuildOurSp(int behaviors, bool slimContext, bool resultBehaviors = false)
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -94,6 +98,18 @@ public class SynapseVsMediatorsBenchmarks
             cfg.RegisterEventHandler<OurEventHandler3, SynapseEvent>();
             cfg.RegisterEventHandler<OurEventHandler4, SynapseEvent>();
             cfg.RegisterEventHandler<OurEventHandler5, SynapseEvent>();
+
+            // Result behaviors: one open-generic type per behavior covers both request kinds
+            if (resultBehaviors)
+            {
+                Type[] types = [typeof(OurNoOpResultBehavior1<,>), typeof(OurNoOpResultBehavior2<,>), typeof(OurNoOpResultBehavior3<,>)];
+                foreach (var type in types.Take(behaviors))
+                {
+                    cfg.AddOpenGenericResultPipelineBehavior(type);
+                }
+
+                behaviors = 0;
+            }
 
             // Request pipeline behaviors (open-generic so they apply to both request kinds)
             if (behaviors >= 1)
@@ -289,6 +305,13 @@ public class SynapseVsMediatorsBenchmarks
         return res.TryGet(out var v, out _) ? v! : -1;
     }
 
+    [BenchmarkCategory("Pipeline (1 behavior)"), Benchmark(Description = "Synapse (result behavior)")]
+    public async Task<int> Synapse_Send_1ResultBehavior()
+    {
+        var res = await _synapseInvoker1ResultBeh.InvokeAsync(RrRequest);
+        return res.TryGet(out var v, out _) ? v! : -1;
+    }
+
     [BenchmarkCategory("Pipeline (1 behavior)"), Benchmark(Description = "MediatR")]
     public Task<int> MediatR_Send_1Behavior()
     {
@@ -307,6 +330,13 @@ public class SynapseVsMediatorsBenchmarks
     public async Task<int> Synapse_Send_3Behaviors()
     {
         var res = await _synapseInvoker3Beh.InvokeAsync(RrRequest);
+        return res.TryGet(out var v, out _) ? v! : -1;
+    }
+
+    [BenchmarkCategory("Pipeline (3 behaviors)"), Benchmark(Description = "Synapse (result behaviors)")]
+    public async Task<int> Synapse_Send_3ResultBehaviors()
+    {
+        var res = await _synapseInvoker3ResultBeh.InvokeAsync(RrRequest);
         return res.TryGet(out var v, out _) ? v! : -1;
     }
 
@@ -347,6 +377,30 @@ public class SynapseVsMediatorsBenchmarks
         {
             return ValueTask.FromResult(Result.Success());
         }
+    }
+
+    public sealed class OurNoOpResultBehavior1<TRequest, TResult> : IResultPipelineBehavior<TRequest, TResult>
+        where TResult : IResult
+    {
+        public ValueTask<TResult> HandleAsync(TRequest request, RequestNext<TRequest, TResult> next,
+            CancellationToken cancellationToken = default)
+            => next.InvokeAsync(request, cancellationToken);
+    }
+
+    public sealed class OurNoOpResultBehavior2<TRequest, TResult> : IResultPipelineBehavior<TRequest, TResult>
+        where TResult : IResult
+    {
+        public ValueTask<TResult> HandleAsync(TRequest request, RequestNext<TRequest, TResult> next,
+            CancellationToken cancellationToken = default)
+            => next.InvokeAsync(request, cancellationToken);
+    }
+
+    public sealed class OurNoOpResultBehavior3<TRequest, TResult> : IResultPipelineBehavior<TRequest, TResult>
+        where TResult : IResult
+    {
+        public ValueTask<TResult> HandleAsync(TRequest request, RequestNext<TRequest, TResult> next,
+            CancellationToken cancellationToken = default)
+            => next.InvokeAsync(request, cancellationToken);
     }
 
     public sealed class OurNoOpBehavior1<TRequest> : IRequestPipelineBehavior<TRequest>

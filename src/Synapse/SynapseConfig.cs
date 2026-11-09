@@ -69,6 +69,27 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
         return this;
     }
 
+    public ISynapseConfig RegisterResultPipelineBehavior<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+    TBehavior, TRequest>()
+        where TBehavior : class, IResultPipelineBehavior<TRequest, Result>
+        where TRequest : IRequest
+    {
+        _actions.Add(svc => svc.RegisterResultPipelineBehavior<TBehavior, TRequest>());
+        return this;
+    }
+
+    public ISynapseConfig RegisterResultPipelineBehavior<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+    TBehavior, TRequest, TResponse>()
+        where TBehavior : class, IResultPipelineBehavior<TRequest, Result<TResponse>>
+        where TRequest : IRequest<TResponse>
+        where TResponse : notnull
+    {
+        _actions.Add(svc => svc.RegisterResultPipelineBehavior<TBehavior, TRequest, TResponse>());
+        return this;
+    }
+
     public ISynapseConfig RegisterEventPipelineBehavior<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
     TBehavior, TEvent>()
@@ -133,6 +154,14 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
         Type openGenericBehaviorType)
     {
         return AddOpenGenericBehavior(typeof(IRequestPipelineBehavior<,>), openGenericBehaviorType);
+    }
+
+    [RequiresDynamicCode(OpenGenericBehaviorAotMessage)]
+    public ISynapseConfig AddOpenGenericResultPipelineBehavior(
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+        Type openGenericBehaviorType)
+    {
+        return AddOpenGenericBehavior(typeof(IResultPipelineBehavior<,>), openGenericBehaviorType);
     }
 
     public ISynapseConfig AddOpenGenericEventPipelineBehavior(

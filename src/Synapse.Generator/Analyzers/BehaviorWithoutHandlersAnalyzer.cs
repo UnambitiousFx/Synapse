@@ -150,7 +150,10 @@ public sealed class BehaviorWithoutHandlersAnalyzer : DiagnosticAnalyzer
 
     private static bool MayApply(Compilation compilation, MessageInterface pipeline, List<MessageInterface> handlers)
     {
-        var candidates = handlers.Where(handler => handler.Kind == pipeline.Kind).ToList();
+        var candidates = handlers.Where(handler => handler.Kind == pipeline.Kind
+                                                   || (pipeline.Kind == HandlerKind.AnyRequest
+                                                       && handler.Kind is HandlerKind.Request
+                                                           or HandlerKind.RequestWithResponse)).ToList();
         var target = pipeline.MessageType;
 
         if (target is ITypeParameterSymbol parameter)

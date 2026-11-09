@@ -93,7 +93,8 @@ internal sealed class SynapseRegistry
                 eventsWithHandlers.Add(target);
             }
             else if (definition == typeof(IRequestPipelineBehavior<>) ||
-                     definition == typeof(IRequestPipelineBehavior<,>))
+                     definition == typeof(IRequestPipelineBehavior<,>) ||
+                     definition == typeof(IResultPipelineBehavior<,>))
             {
                 requestsWithBehaviors.Add(target);
             }

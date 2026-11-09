@@ -46,6 +46,65 @@ public sealed class BehaviorWithoutHandlersAnalyzerTests
     }
 
     [Fact]
+    public async Task Analyze_WithAnOpenResultBehaviorAndOnlyAResponseHandler_ReportsNothing()
+    {
+        // Arrange (Given) — an open TResult covers requests with a response too
+        var source = AnalyzerTestHelper.Preamble + """
+            public sealed record MyQuery : IRequest<int>;
+
+            [RequestHandler<MyQuery, int>]
+            public sealed class MyQueryHandler : IRequestHandler<MyQuery, int>
+            {
+                public ValueTask<Result<int>> HandleAsync(MyQuery request, CancellationToken ct = default)
+                    => ValueTask.FromResult(Result.Success(1));
+            }
+
+            [PipelineBehavior]
+            public sealed class AnyBehavior<TRequest, TResult> : IResultPipelineBehavior<TRequest, TResult>
+                where TResult : IResult
+            {
+                public ValueTask<TResult> HandleAsync(TRequest request, RequestNext<TRequest, TResult> next,
+                    CancellationToken ct = default) => next.InvokeAsync(request, ct);
+            }
+            """;
+
+        // Act (When)
+        var diagnostics = await AnalyzerTestHelper.RunAsync<BehaviorWithoutHandlersAnalyzer>(source);
+
+        // Assert (Then)
+        Assert.Empty(diagnostics);
+    }
+
+    [Fact]
+    public async Task Analyze_WithAResultBehaviorOverResultAndOnlyAResponseHandler_ReportsSyn102()
+    {
+        // Arrange (Given) — closed over Result, it only applies to requests without a response
+        var source = AnalyzerTestHelper.Preamble + """
+            public sealed record MyQuery : IRequest<int>;
+
+            [RequestHandler<MyQuery, int>]
+            public sealed class MyQueryHandler : IRequestHandler<MyQuery, int>
+            {
+                public ValueTask<Result<int>> HandleAsync(MyQuery request, CancellationToken ct = default)
+                    => ValueTask.FromResult(Result.Success(1));
+            }
+
+            [PipelineBehavior]
+            public sealed class CommandBehavior<TRequest> : IResultPipelineBehavior<TRequest, Result>
+            {
+                public ValueTask<Result> HandleAsync(TRequest request, RequestNext<TRequest, Result> next,
+                    CancellationToken ct = default) => next.InvokeAsync(request, ct);
+            }
+            """;
+
+        // Act (When)
+        var diagnostics = await AnalyzerTestHelper.RunAsync<BehaviorWithoutHandlersAnalyzer>(source);
+
+        // Assert (Then)
+        Assert.Equal("SYN102", Assert.Single(diagnostics).Id);
+    }
+
+    [Fact]
     public async Task Analyze_WithAnOpenGenericBehaviorAndNoHandlerAtAll_ReportsSyn102OnTheBehavior()
     {
         // Arrange (Given)
