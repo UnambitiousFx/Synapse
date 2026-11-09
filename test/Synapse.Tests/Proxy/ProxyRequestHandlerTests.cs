@@ -25,7 +25,7 @@ public sealed class ProxyRequestHandlerTests
         };
         var proxy =
             new ProxyRequestHandler<RequestWithResponseExampleHandler, RequestWithResponseExample, int>(handler,
-                [behavior]);
+                [behavior], []);
         var request = new RequestWithResponseExample();
 
         var result = await proxy.HandleAsync(request, TestContext.Current.CancellationToken);

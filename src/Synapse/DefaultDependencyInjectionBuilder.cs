@@ -222,6 +222,27 @@ internal sealed class DefaultDependencyInjectionBuilder : IDependencyInjectionBu
         return this;
     }
 
+    public IDependencyInjectionBuilder RegisterResultPipelineBehavior<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+    TBehavior, TRequest>()
+        where TBehavior : class, IResultPipelineBehavior<TRequest, Result>
+        where TRequest : IRequest
+    {
+        _actions.Add(services => services.RegisterResultPipelineBehavior<TBehavior, TRequest>());
+        return this;
+    }
+
+    public IDependencyInjectionBuilder RegisterResultPipelineBehavior<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+    TBehavior, TRequest, TResponse>()
+        where TBehavior : class, IResultPipelineBehavior<TRequest, Result<TResponse>>
+        where TRequest : IRequest<TResponse>
+        where TResponse : notnull
+    {
+        _actions.Add(services => services.RegisterResultPipelineBehavior<TBehavior, TRequest, TResponse>());
+        return this;
+    }
+
     public IDependencyInjectionBuilder RegisterCqrsBoundaryEnforcement<TRequest>()
         where TRequest : IRequest
     {

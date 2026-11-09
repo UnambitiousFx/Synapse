@@ -108,7 +108,8 @@ public readonly record struct BehaviorDetail
     /// <summary>
     ///     For an open-generic behavior: one entry per class type parameter (in class-declaration order),
     ///     holding the index of the implemented interface's type argument that binds it (<c>0</c> = request /
-    ///     event slot, <c>1</c> = response / item slot), or <c>-1</c> when the parameter is bound by no
+    ///     event slot, <c>1</c> = response / item slot, <c>2</c> = the whole result type of a result behavior,
+    ///     i.e. <c>Result</c> or <c>Result&lt;TResponse&gt;</c>), or <c>-1</c> when the parameter is bound by no
     ///     interface type argument and therefore cannot be inferred. Empty for closed behaviors. Drives the
     ///     order and arity of type arguments emitted when the class is closed over a matching handler.
     /// </summary>
@@ -231,5 +232,11 @@ public enum BehaviorKind
     Event,
 
     /// <summary><c>IStreamRequestPipelineBehavior&lt;TRequest, TItem&gt;</c>.</summary>
-    StreamRequest
+    StreamRequest,
+
+    /// <summary><c>IResultPipelineBehavior&lt;TRequest, TResult&gt;</c> closed over <c>Result</c> (no response).</summary>
+    ResultRequest,
+
+    /// <summary><c>IResultPipelineBehavior&lt;TRequest, TResult&gt;</c> closed over <c>Result&lt;TResponse&gt;</c>.</summary>
+    ResultRequestWithResponse
 }

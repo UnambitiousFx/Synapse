@@ -1741,6 +1741,139 @@ public sealed class GeneratorBehaviorTests
             "Generated code should compile, but got: " + string.Join("; ", errors.Select(e => e.ToString())));
     }
 
+    // ── Result behaviors (IResultPipelineBehavior) ────────────────────────
+
+    private const string ResultBehaviorHandlers = """
+            using System.Threading;
+            using System.Threading.Tasks;
+            using UnambitiousFx.Functional;
+            using UnambitiousFx.Synapse.Abstractions;
+
+            namespace TestNs;
+
+            public sealed record MyCommand : IRequest;
+
+            [RequestHandler<MyCommand>]
+            public sealed class MyCommandHandler : IRequestHandler<MyCommand>
+            {
+                public ValueTask<Result> HandleAsync(MyCommand request, CancellationToken ct = default)
+                    => ValueTask.FromResult(Result.Success());
+            }
+
+            public sealed record MyQuery : IRequest<int>;
+
+            [RequestHandler<MyQuery, int>]
+            public sealed class MyQueryHandler : IRequestHandler<MyQuery, int>
+            {
+                public ValueTask<Result<int>> HandleAsync(MyQuery request, CancellationToken ct = default)
+                    => ValueTask.FromResult(Result.Success(42));
+            }
+
+            """;
+
+    [Fact]
+    public void OpenGenericResultBehavior_RegistersForBothRequestShapes()
+    {
+        // Arrange (Given)
+        const string source = ResultBehaviorHandlers + """
+
+            [PipelineBehavior]
+            public sealed class ValidationBehavior<TRequest, TResult> : IResultPipelineBehavior<TRequest, TResult>
+                where TResult : IResult
+            {
+                public ValueTask<TResult> HandleAsync(TRequest request, RequestNext<TRequest, TResult> next, CancellationToken ct = default)
+                    => next.InvokeAsync(request, ct);
+            }
+            """;
+
+        // Act (When)
+        var generated = RunGeneratorAndGetRegistrationGroup(source);
+
+        // Assert (Then)
+        Assert.Contains(
+            "builder.RegisterResultPipelineBehavior<global::TestNs.ValidationBehavior<global::TestNs.MyCommand, global::UnambitiousFx.Functional.Result>, global::TestNs.MyCommand>()",
+            generated);
+        Assert.Contains(
+            "builder.RegisterResultPipelineBehavior<global::TestNs.ValidationBehavior<global::TestNs.MyQuery, global::UnambitiousFx.Functional.Result<int>>, global::TestNs.MyQuery, int>()",
+            generated);
+        AssertGeneratedCompiles(source);
+    }
+
+    [Fact]
+    public void OpenGenericResultBehavior_OverResult_RegistersOnlyNoResponseRequests()
+    {
+        // Arrange (Given)
+        const string source = ResultBehaviorHandlers + """
+
+            [PipelineBehavior]
+            public sealed class CommandOnlyBehavior<TRequest> : IResultPipelineBehavior<TRequest, Result>
+            {
+                public ValueTask<Result> HandleAsync(TRequest request, RequestNext<TRequest, Result> next, CancellationToken ct = default)
+                    => next.InvokeAsync(request, ct);
+            }
+            """;
+
+        // Act (When)
+        var generated = RunGeneratorAndGetRegistrationGroup(source);
+
+        // Assert (Then)
+        Assert.Contains(
+            "builder.RegisterResultPipelineBehavior<global::TestNs.CommandOnlyBehavior<global::TestNs.MyCommand>, global::TestNs.MyCommand>()",
+            generated);
+        Assert.DoesNotContain("CommandOnlyBehavior<global::TestNs.MyQuery>", generated);
+        AssertGeneratedCompiles(source);
+    }
+
+    [Fact]
+    public void OpenGenericResultBehavior_OverResultOfResponse_RegistersOnlyResponseRequests()
+    {
+        // Arrange (Given) — parameters declared response-first to check the closing order
+        const string source = ResultBehaviorHandlers + """
+
+            [PipelineBehavior]
+            public sealed class QueryOnlyBehavior<TResponse, TRequest> : IResultPipelineBehavior<TRequest, Result<TResponse>>
+                where TResponse : notnull
+            {
+                public ValueTask<Result<TResponse>> HandleAsync(TRequest request, RequestNext<TRequest, Result<TResponse>> next, CancellationToken ct = default)
+                    => next.InvokeAsync(request, ct);
+            }
+            """;
+
+        // Act (When)
+        var generated = RunGeneratorAndGetRegistrationGroup(source);
+
+        // Assert (Then)
+        Assert.Contains(
+            "builder.RegisterResultPipelineBehavior<global::TestNs.QueryOnlyBehavior<int, global::TestNs.MyQuery>, global::TestNs.MyQuery, int>()",
+            generated);
+        Assert.Single(generated.Split('\n'), line => line.Contains("TestNs.QueryOnlyBehavior<"));
+        AssertGeneratedCompiles(source);
+    }
+
+    [Fact]
+    public void ClosedResultBehavior_EmitsSingleRegistration()
+    {
+        // Arrange (Given)
+        const string source = ResultBehaviorHandlers + """
+
+            [PipelineBehavior]
+            public sealed class MyQueryBehavior : IResultPipelineBehavior<MyQuery, Result<int>>
+            {
+                public ValueTask<Result<int>> HandleAsync(MyQuery request, RequestNext<MyQuery, Result<int>> next, CancellationToken ct = default)
+                    => next.InvokeAsync(request, ct);
+            }
+            """;
+
+        // Act (When)
+        var generated = RunGeneratorAndGetRegistrationGroup(source);
+
+        // Assert (Then)
+        Assert.Contains(
+            "builder.RegisterResultPipelineBehavior<global::TestNs.MyQueryBehavior, global::TestNs.MyQuery, int>()",
+            generated);
+        AssertGeneratedCompiles(source);
+    }
+
     private static string RunGeneratorWithReference(string referencedSource, string mainSource)
     {
         var referencedCompilation = CSharpCompilation.Create(

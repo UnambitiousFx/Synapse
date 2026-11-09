@@ -210,6 +210,27 @@ public interface IDependencyInjectionBuilder
         where TResponse : notnull;
 
     /// <summary>
+    ///     Registers a result pipeline behavior closed over <see cref="UnambitiousFx.Functional.Result" /> for a
+    ///     request type without response.
+    /// </summary>
+    IDependencyInjectionBuilder RegisterResultPipelineBehavior<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+        TBehavior, TRequest>()
+        where TBehavior : class, IResultPipelineBehavior<TRequest, UnambitiousFx.Functional.Result>
+        where TRequest : IRequest;
+
+    /// <summary>
+    ///     Registers a result pipeline behavior closed over <see cref="UnambitiousFx.Functional.Result{TValue}" /> for a
+    ///     request/response pair.
+    /// </summary>
+    IDependencyInjectionBuilder RegisterResultPipelineBehavior<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+        TBehavior, TRequest, TResponse>()
+        where TBehavior : class, IResultPipelineBehavior<TRequest, UnambitiousFx.Functional.Result<TResponse>>
+        where TRequest : IRequest<TResponse>
+        where TResponse : notnull;
+
+    /// <summary>
     ///     Registers the CQRS boundary enforcement behavior for a specific request type (without response).
     ///     The behavior runs outermost via <see cref="IOrderedPipelineBehavior.First" />. The registration is
     ///     deduplicated, so the same request may be covered by more than one opted-in assembly's generated

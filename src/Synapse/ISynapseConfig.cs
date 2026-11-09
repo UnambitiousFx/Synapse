@@ -1,3 +1,4 @@
+using UnambitiousFx.Functional;
 using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.DependencyInjection;
 using UnambitiousFx.Synapse.Abstractions;
@@ -114,6 +115,38 @@ public interface ISynapseConfig
     ISynapseConfig RegisterOutboxDiscardOnFailure<TRequest, TResponse>()
         where TRequest : IRequest<TResponse>
         where TResponse : notnull;
+
+    /// <summary>
+    ///     Registers a result pipeline behavior closed over <see cref="Result" /> for a request type without
+    ///     response. Prefer <c>[PipelineBehavior]</c> on an open-generic behavior: the source generator then
+    ///     registers it for every request, in both shapes.
+    /// </summary>
+    ISynapseConfig RegisterResultPipelineBehavior<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+        TBehavior, TRequest>()
+        where TBehavior : class, IResultPipelineBehavior<TRequest, Result>
+        where TRequest : IRequest;
+
+    /// <summary>
+    ///     Registers a result pipeline behavior closed over <see cref="Result{TValue}" /> for a request/response pair.
+    /// </summary>
+    ISynapseConfig RegisterResultPipelineBehavior<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+        TBehavior, TRequest, TResponse>()
+        where TBehavior : class, IResultPipelineBehavior<TRequest, Result<TResponse>>
+        where TRequest : IRequest<TResponse>
+        where TResponse : notnull;
+
+    /// <summary>
+    ///     Registers an open-generic result pipeline behavior (e.g. <c>typeof(ValidationBehavior&lt;,&gt;)</c>
+    ///     implementing <see cref="IResultPipelineBehavior{TRequest,TResult}" />) for every request, in both shapes,
+    ///     using the MS DI open-generic registration mechanism.
+    /// </summary>
+    /// <param name="openGenericBehaviorType">An open-generic type with two type parameters (request, result).</param>
+    [RequiresDynamicCode(OpenGenericBehaviorAotMessage)]
+    ISynapseConfig AddOpenGenericResultPipelineBehavior(
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+        Type openGenericBehaviorType);
 
     /// <summary>
     ///     Registers an open-generic request pipeline behavior (no-response form) using the MS DI open-generic
