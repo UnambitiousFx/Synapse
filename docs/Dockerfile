@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # Node 24 matches .github/workflows/docs.yml so a local build reproduces CI.
-FROM node:24-bookworm-slim AS deps
+FROM node:26-bookworm-slim AS deps
 WORKDIR /app
 # Corepack resolves the exact pnpm pinned by package.json#packageManager.
 RUN corepack enable
