@@ -162,7 +162,7 @@ Without the generator: `cfg.AddValidator<CreateTaskValidator, CreateTaskCommand,
 
 ## Outbox
 
-`EmitMode.Outbox` stores the event; it is dispatched by `IOutboxCommit.CommitAsync(ct)` (call it after your transaction commits) or by `cfg.AddOutboxDispatcher(...)` in the background. Each entry is dispatched in a **new DI scope**: handlers do not share the caller's `DbContext`. Durable storage: `UnambitiousFx.Synapse.Outbox.EntityFrameworkCore` or `.AdoNet`.
+`EmitMode.Outbox` stores the event; it is dispatched by `IOutboxCommit.CommitAsync(ct)` (call it after your transaction commits) or by `cfg.AddOutboxDispatcher(...)` in the background. Each entry is dispatched in a **new DI scope**: handlers do not share the caller's `DbContext`. Durable storage: `UnambitiousFx.Synapse.Outbox.EntityFrameworkCore` or `.AdoNet`. If the app never uses the outbox, `cfg.DisableInMemoryOutboxProductionWarning()` silences the startup warning about the in-memory storage in Production.
 
 ## Testing
 

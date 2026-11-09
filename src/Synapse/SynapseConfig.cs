@@ -44,6 +44,7 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
 
     private Action<OutboxOptions> _outboxConfigure = _ => { };
     private Action<OutboxDispatcherOptions>? _outboxDispatcherConfigure;
+    private bool _inMemoryOutboxProductionWarning = true;
 
     // ── Pipeline behaviors ───────────────────────────────────────────────────
 
@@ -403,6 +404,12 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
         return this;
     }
 
+    public ISynapseConfig DisableInMemoryOutboxProductionWarning()
+    {
+        _inMemoryOutboxProductionWarning = false;
+        return this;
+    }
+
     public ISynapseConfig AddValidator<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
     TValidator, TRequest>()
@@ -468,7 +475,11 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
                 sp => sp.GetRequiredService(_eventOutBoxStorage), ownRegistration.Lifetime)
             : new ServiceDescriptor(typeof(IEventOutboxStorage), _eventOutBoxStorage,
                 _eventOutBoxStorageLifetime));
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, InMemoryOutboxProductionCheck>());
+        if (_inMemoryOutboxProductionWarning)
+        {
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, InMemoryOutboxProductionCheck>());
+        }
+
         if (_outboxDispatcherConfigure is not null)
         {
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, OutboxDispatcherService>());

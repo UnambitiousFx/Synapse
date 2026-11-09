@@ -289,6 +289,18 @@ public interface ISynapseConfig
     ISynapseConfig AddOutboxDispatcher(Action<OutboxDispatcherOptions>? configure = null);
 
     /// <summary>
+    ///     Stops Synapse from logging a startup warning when the in-memory outbox storage runs in a Production
+    ///     environment.
+    /// </summary>
+    /// <remarks>
+    ///     Use it when the application never emits with <see cref="EmitMode.Outbox" />, so there are no pending events
+    ///     to lose and the warning is noise. Keep the warning if the outbox is used: the in-memory storage loses
+    ///     pending events on restart.
+    /// </remarks>
+    /// <returns>The same config, for chaining.</returns>
+    ISynapseConfig DisableInMemoryOutboxProductionWarning();
+
+    /// <summary>
     ///     Adds a request validator.
     /// </summary>
     ISynapseConfig AddValidator<
