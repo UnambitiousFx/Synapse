@@ -99,6 +99,20 @@ public sealed class InMemoryOutboxProductionCheckTests : IDisposable
         Assert.Single(provider.GetServices<IHostedService>().OfType<InMemoryOutboxProductionCheck>());
     }
 
+    [Fact]
+    public void AddSynapse_WithProductionWarningDisabled_DoesNotRegisterTheCheck()
+    {
+        // Arrange (Given)
+        var services = new ServiceCollection().AddLogging();
+
+        // Act (When)
+        services.AddSynapse(cfg => cfg.DisableInMemoryOutboxProductionWarning());
+        using var provider = services.BuildServiceProvider();
+
+        // Assert (Then)
+        Assert.Empty(provider.GetServices<IHostedService>().OfType<InMemoryOutboxProductionCheck>());
+    }
+
     private static IHostEnvironment EnvironmentNamed(string name)
     {
         var environment = Substitute.For<IHostEnvironment>();
