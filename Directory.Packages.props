@@ -16,8 +16,8 @@
     <PackageVersion Include="NSubstitute" Version="6.2.0" />
     <PackageVersion Include="Npgsql" Version="10.0.3" />
     <PackageVersion Include="Microsoft.Data.SqlClient" Version="7.1.1" />
-    <PackageVersion Include="UnambitiousFx.Functional" Version="2.1.0" />
-    <PackageVersion Include="UnambitiousFx.Functional.AspNetCore" Version="2.1.0" />
+    <PackageVersion Include="UnambitiousFx.Functional" Version="2.2.0" />
+    <PackageVersion Include="UnambitiousFx.Functional.AspNetCore" Version="2.2.0" />
     <!-- xunit.v3 defaults to Microsoft.Testing.Platform v1; mtp-v2 selects the v2 core to match
          Microsoft.Testing.Extensions.CodeCoverage/TrxReport, which target MTP v2. -->
     <PackageVersion Include="xunit.v3.mtp-v2" Version="4.0.3" />
