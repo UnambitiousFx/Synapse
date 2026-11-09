@@ -1,38 +1,62 @@
 name: Release
 
+# Every successful CI run of a push to main releases the version computed from conventional commits
+# (feat → minor, fix/perf → patch, `!`/BREAKING CHANGE → major, anything else → no release).
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 env:
   DOTNET_VERSION: '10.0.x'
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
+  SEMANTIC_RELEASE_VERSION: '25'
+  SEMANTIC_RELEASE_PLUGINS: conventional-changelog-conventionalcommits@9
 
 jobs:
   release:
     name: Build and Publish Release
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      packages: write
+      issues: write
+      pull-requests: write
       id-token: write
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
         with:
+          # The commit CI validated, not whatever main points to now.
+          ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
 
-      - name: Extract version from tag
-        id: get_version
-        run: |
-          TAG_NAME=${GITHUB_REF#refs/tags/v}
-          echo "VERSION=$TAG_NAME" >> $GITHUB_OUTPUT
-          echo "Releasing version: $TAG_NAME"
+      # semantic-release needs a local main branch; if main moved on since, it skips and the newer run releases.
+      - name: Point main at the validated commit
+        run: git switch -C main
+
+      # Dry run first: the tag and GitHub release are only created once the packages are on NuGet,
+      # so a failed push can simply be re-run.
+      - name: Compute next version
+        id: next
+        uses: cycjimmy/semantic-release-action@v8
+        with:
+          dry_run: true
+          semantic_version: ${{ env.SEMANTIC_RELEASE_VERSION }}
+          extra_plugins: ${{ env.SEMANTIC_RELEASE_PLUGINS }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup .NET
+        if: steps.next.outputs.new_release_published == 'true'
         uses: actions/setup-dotnet@v6
         with:
           dotnet-version: |
@@ -41,18 +65,31 @@ jobs:
             ${{ env.DOTNET_VERSION }}
 
       - name: Restore dependencies
+        if: steps.next.outputs.new_release_published == 'true'
         run: dotnet restore Synapse.slnx
 
       - name: Build
-        run: dotnet build Synapse.slnx --no-restore --configuration Release /p:Version=${{ steps.get_version.outputs.VERSION }}
+        if: steps.next.outputs.new_release_published == 'true'
+        run: dotnet build Synapse.slnx --no-restore --configuration Release /p:Version=${{ steps.next.outputs.new_release_version }}
 
       - name: NuGet login (OIDC)
+        if: steps.next.outputs.new_release_published == 'true'
         uses: NuGet/login@v1
         id: nuget_login
         with:
           user: ${{ secrets.NUGET_USER }}
 
       - name: Publish to NuGet
+        if: steps.next.outputs.new_release_published == 'true'
         run: |
           dotnet nuget push ./local_packages/*.nupkg --api-key ${{ steps.nuget_login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
           dotnet nuget push ./local_packages/*.snupkg --api-key ${{ steps.nuget_login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+
+      - name: Create tag and GitHub release
+        if: steps.next.outputs.new_release_published == 'true'
+        uses: cycjimmy/semantic-release-action@v8
+        with:
+          semantic_version: ${{ env.SEMANTIC_RELEASE_VERSION }}
+          extra_plugins: ${{ env.SEMANTIC_RELEASE_PLUGINS }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

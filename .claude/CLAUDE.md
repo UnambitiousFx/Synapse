@@ -84,3 +84,26 @@ Use `/changelog` skill (severity/area/summary must match across files). Then `cd
 - Small, focused PRs.
 - Add/update tests for behavioral changes; benchmarks for perf changes.
 - Document non-obvious design decisions in PR description.
+
+## Commits & Branches
+
+semantic-release derives the next version from commit messages (see `CONTRIBUTING.md`), so these rules decide what gets released.
+
+- Commits and PR titles follow [Conventional Commits](https://www.conventionalcommits.org/): `type(scope)?: summary`, imperative, lowercase, no trailing period.
+- `feat` → minor, `fix`/`perf` → patch. `docs`, `test`, `refactor`, `build`, `ci`, `chore`, `style`, `revert` → no release.
+- Breaking change: `type!:` or a `BREAKING CHANGE:` footer → major. Required for any public API break.
+- PRs are squash-merged with the PR title as the commit message: the PR title is what counts (checked by `pr-title.yml`).
+- Branches: `<type>/<issue>-<slug>`, or `<type>/<slug>` without an issue; kebab-case, `type` from the list above (e.g. `feat/148-fluentvalidation`, `fix/95-hide-500-details`, `ci/semantic-release`).
+
+## Labels
+
+Always label a PR or issue when opening it (`gh pr create --label`, `gh issue create --label`). Use existing labels only (`gh label list`), never create new ones, and add every label that applies (a `feat!:` gets `enhancement` + `breaking`).
+
+| Change | Label |
+|---|---|
+| `feat` / feature request | `enhancement` |
+| `fix` / bug report | `bug` |
+| `docs` | `documentation` |
+| `ci` | `ci` |
+| dependency update | `dependencies` |
+| `!` / `BREAKING CHANGE` | `breaking` |
