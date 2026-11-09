@@ -327,11 +327,12 @@ Compare results before and after your changes.
 
 (For maintainers)
 
-1. Update `CHANGELOG.md` with the new version and date
-2. Update version in `Directory.Build.props`
-3. Create a git tag: `git tag v1.2.3`
-4. Push tag: `git push origin v1.2.3`
-5. CI will automatically build and publish to NuGet
+Releases are automatic. Every push to `main` that passes CI runs [semantic-release](https://semantic-release.gitbook.io/) (`.github/workflows/release.yml`):
+
+- `feat:` → minor, `fix:`/`perf:` → patch, `!` or a `BREAKING CHANGE:` footer → major; other types don't release.
+- The packages are pushed to NuGet first, then the `vX.Y.Z` tag and the GitHub release (generated notes, `.nupkg` attached) are created.
+
+PRs are squash-merged with the PR title as the commit message, so the PR title must follow Conventional Commits (checked by `.github/workflows/pr-title.yml`).
 
 ## License
 
