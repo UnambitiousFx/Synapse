@@ -163,6 +163,10 @@ Without the generator: `cfg.AddValidator<CreateTaskValidator, CreateTaskCommand,
 
 FluentValidation: reference `UnambitiousFx.Synapse.FluentValidation` and call `services.AddSynapseFluentValidation()`; every registered `IValidator<TRequest>` then runs for `Result` and `Result<T>` requests and a failure returns a `ValidationFailure` with field, message and code per error. Do not hand-write a FluentValidation behavior.
 
+## Transactions
+
+Mark a request `ITransactional` (`record CloseEnvelope(Guid Id) : ICommand, ITransactional;`) and call `cfg.AddTransactions<TManager>()`: the handler runs inside `ITransactionManager.BeginAsync`, committed on a successful `Result`, rolled back on a failure or exception. Do not open transactions by hand in handlers. EF Core: `services.AddEfCoreTransactions(t => t.Enlist<ModuleDbContext>().Enlist<OutboxDbContext>())` then `cfg.AddTransactions<EfCoreTransactionManager>()`; every enlisted context must share one Scoped `DbConnection`, nested transactional commands get savepoints, and the outbox is flushed after the outermost commit. Native AOT: `[assembly: SynapseGlobalBehavior(typeof(TransactionBehavior<,>))]` plus `cfg.AddTransactionManager<TManager>()` instead.
+
 ## Outbox
 
 `EmitMode.Outbox` stores the event; it is dispatched by `IOutboxCommit.CommitAsync(ct)` (call it after your transaction commits) or by `cfg.AddOutboxDispatcher(...)` in the background. Each entry is dispatched in a **new DI scope**: handlers do not share the caller's `DbContext`. Durable storage: `UnambitiousFx.Synapse.Outbox.EntityFrameworkCore` or `.AdoNet`. If the app never uses the outbox, `cfg.DisableInMemoryOutboxProductionWarning()` silences the startup warning about the in-memory storage in Production.

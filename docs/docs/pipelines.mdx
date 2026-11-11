@@ -259,6 +259,10 @@ v1's `[assembly: EnableSynapseCqrsBoundaryEnforcement]` and `cfg.EnableCqrsBound
 
 `OutboxDiscardOnFailureBehavior<TRequest>` / `OutboxDiscardOnFailureBehavior<TRequest, TResponse>` take back the outbox events a request stored when it fails or throws. It is opt-in and also runs outermost; see [Discard the events of a failed request](./outbox.mdx#discard-the-events-of-a-failed-request).
 
+### Transactions
+
+`TransactionBehavior<TRequest, TResult>` runs every `ITransactional` request inside a transaction that commits on a successful `Result` and rolls back on a failure or an exception, with savepoints for nested commands. Wire it with `cfg.AddTransactions<TManager>()`; see [Transactions](./transactions.mdx).
+
 ## Event pipeline behaviors
 
 Implement `IEventPipelineBehavior<TEvent>` for a specific event type:

@@ -141,6 +141,34 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
         return this;
     }
 
+    [RequiresDynamicCode(OpenGenericBehaviorAotMessage)]
+    public ISynapseConfig AddTransactions<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+    TManager>(Action<TransactionBehaviorOptions>? configure = null)
+        where TManager : class, ITransactionManager
+    {
+        AddTransactionManager<TManager>(configure);
+        // TryAddEnumerable so calling this twice does not run the behavior twice.
+        _actions.Add(svc => svc.TryAddEnumerable(ServiceDescriptor.Scoped(typeof(IResultPipelineBehavior<,>),
+            typeof(TransactionBehavior<,>))));
+        return this;
+    }
+
+    public ISynapseConfig AddTransactionManager<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+    TManager>(Action<TransactionBehaviorOptions>? configure = null)
+        where TManager : class, ITransactionManager
+    {
+        var options = new TransactionBehaviorOptions();
+        configure?.Invoke(options);
+        _actions.Add(svc =>
+        {
+            svc.Replace(ServiceDescriptor.Singleton(options));
+            svc.Replace(ServiceDescriptor.Scoped<ITransactionManager, TManager>());
+        });
+        return this;
+    }
+
     public ISynapseConfig AddOpenGenericRequestPipelineBehavior(
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
         Type openGenericBehaviorType)
