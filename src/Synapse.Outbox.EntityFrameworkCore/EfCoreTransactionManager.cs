@@ -2,6 +2,8 @@ using System.Data.Common;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using UnambitiousFx.Synapse.Abstractions;
 
 namespace UnambitiousFx.Synapse.Outbox.EntityFrameworkCore;
@@ -33,14 +35,26 @@ namespace UnambitiousFx.Synapse.Outbox.EntityFrameworkCore;
 ///         events in the same transaction as the business data.
 ///     </para>
 ///     <para>
+///         The flush never fails the commit. An exception it throws is logged and swallowed, and so is a cancellation
+///         of the request's token: by then the writes are durable, so reporting a failure would invite a retry that
+///         repeats them. The events stay in the outbox, and a later <see cref="IOutboxCommit.CommitAsync" /> or the
+///         background dispatcher delivers them once any claim taken by the failed flush has expired.
+///     </para>
+///     <para>
+///         Savepoints only compose within one dependency injection scope. A nested command dispatched from a child
+///         scope gets its own contexts and connection, and therefore its own root transaction.
+///     </para>
+///     <para>
 ///         A rollback reverts the database, not the change trackers: entities a rolled-back scope saved stay
-///         tracked as unchanged. Do not keep using them in the same scope after a failure.
+///         tracked as unchanged, so a later <c>SaveChangesAsync</c> in the enclosing scope does not see that they
+///         are gone. Do not keep using them after a failure.
 ///     </para>
 /// </remarks>
 public sealed class EfCoreTransactionManager : ITransactionManager
 {
     private static long _savepointCounter;
 
+    private readonly ILogger _logger;
     private readonly EfCoreTransactionOptions _options;
     private readonly IServiceProvider _services;
     private DbContext[]? _contexts;
@@ -51,10 +65,14 @@ public sealed class EfCoreTransactionManager : ITransactionManager
     /// </summary>
     /// <param name="services">The scope's service provider, used to resolve the enlisted contexts.</param>
     /// <param name="options">The contexts to enlist and the outbox flush setting.</param>
-    public EfCoreTransactionManager(IServiceProvider services, EfCoreTransactionOptions options)
+    /// <param name="logger">Logs a post-commit outbox flush that failed. Optional.</param>
+    public EfCoreTransactionManager(IServiceProvider services,
+        EfCoreTransactionOptions options,
+        ILogger<EfCoreTransactionManager>? logger = null)
     {
         _services = services;
         _options = options;
+        _logger = logger ?? NullLogger<EfCoreTransactionManager>.Instance;
     }
 
     /// <inheritdoc />
@@ -176,7 +194,7 @@ public sealed class EfCoreTransactionManager : ITransactionManager
         }
     }
 
-    private void Complete(int depth)
+    private void EnsureInnermost(int depth)
     {
         if (depth != _depth)
         {
@@ -184,10 +202,12 @@ public sealed class EfCoreTransactionManager : ITransactionManager
                 "A transaction scope was completed while a scope nested inside it was still open. Complete " +
                 "nested scopes first.");
         }
-
-        _depth--;
     }
 
+    /// <summary>
+    ///     Dispatches the pending outbox events once the outermost transaction has committed. Never throws: see the
+    ///     class remarks.
+    /// </summary>
     private async ValueTask FlushOutboxAsync(CancellationToken cancellationToken)
     {
         // A canceled request leaves the stored events pending for the next commit or the background dispatcher;
@@ -197,11 +217,26 @@ public sealed class EfCoreTransactionManager : ITransactionManager
             return;
         }
 
-        if (_services.GetService<IOutboxCommit>() is { } outboxCommit)
+        try
         {
-            // A failed dispatch is recorded by the outbox itself (retry, dead letter), and the transaction has
-            // committed, so the request's own outcome does not change.
-            await outboxCommit.CommitAsync(cancellationToken);
+            if (_services.GetService<IOutboxCommit>() is { } outboxCommit)
+            {
+                // A failed dispatch is recorded by the outbox itself (retry, dead letter), and the transaction has
+                // committed, so the request's own outcome does not change.
+                await outboxCommit.CommitAsync(cancellationToken);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Swallowed on purpose, unlike a cancellation anywhere else: the commit has already completed, so
+            // surfacing it would report a durable write as canceled.
+            _logger.LogInformation(
+                "The outbox flush after a committed transaction was canceled; the pending events stay in the outbox");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "The outbox flush after a committed transaction failed; the pending events stay in the outbox");
         }
     }
 
@@ -220,8 +255,11 @@ public sealed class EfCoreTransactionManager : ITransactionManager
                 throw new InvalidOperationException("The transaction scope has already been completed.");
             }
 
-            manager.Complete(depth);
+            manager.EnsureInnermost(depth);
+            // Completed before the commit: if it throws, disposing the transaction below rolls it back, and a
+            // second rollback from DisposeAsync would only fail on the disposed transaction.
             _completed = true;
+            manager._depth = depth - 1;
             try
             {
                 await transaction.CommitAsync(cancellationToken);
@@ -283,16 +321,12 @@ public sealed class EfCoreTransactionManager : ITransactionManager
                 throw new InvalidOperationException("The transaction scope has already been completed.");
             }
 
-            manager.Complete(depth);
+            manager.EnsureInnermost(depth);
+            // Completed only once the release succeeded, so disposing after a failed release still rolls back.
+            await transaction.ReleaseSavepointAsync(name, cancellationToken);
             _completed = true;
-            try
-            {
-                await transaction.ReleaseSavepointAsync(name, cancellationToken);
-            }
-            finally
-            {
-                await LeaveAsync(joined);
-            }
+            manager._depth = depth - 1;
+            await LeaveAsync(joined);
         }
 
         public async ValueTask DisposeAsync()
@@ -306,6 +340,7 @@ public sealed class EfCoreTransactionManager : ITransactionManager
             manager._depth = depth - 1;
             try
             {
+                // ROLLBACK TO leaves the savepoint defined; that is harmless and it disappears with the transaction.
                 await transaction.RollbackToSavepointAsync(name, CancellationToken.None);
             }
             finally

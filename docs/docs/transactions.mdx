@@ -112,6 +112,11 @@ public sealed class CloseEnvelopeHandler(EnvelopesDbContext db, IInvoker invoker
 This also covers a transaction the application opened itself on the first context: the Synapse scope becomes a
 savepoint in it and leaves the commit to you.
 
+Savepoints only compose when the nested command is dispatched in the **same DI scope**, through the `IInvoker`
+the outer handler received. A nested command dispatched from a child scope (`IServiceScopeFactory.CreateScope()`)
+gets its own contexts and its own connection, so it opens a separate root transaction that commits on its own. On
+SQLite that second connection can also deadlock against the outer transaction's write lock.
+
 ### The outbox
 
 Enlisting the context that owns the outbox table puts the stored events in the same transaction as the business
@@ -123,6 +128,12 @@ its own connection, which can only see committed rows (see
 [Each entry is dispatched in its own scope](./outbox.mdx#flush-after-your-side-effects-commit)). A failed
 dispatch is retried or dead-lettered by the outbox and does not change the request's result: its data is already
 committed.
+
+The flush never fails the request. If it throws, for example on a database error or an event type that no longer
+loads, or if the request's token is canceled while it runs, the manager logs it and the request still returns
+its successful result. Reporting a failure for writes that are already durable would invite a retry that repeats
+them. The events stay in the outbox, and the next `CommitAsync` or the background dispatcher delivers them, once
+any claim the failed flush took has expired.
 
 If the [background dispatcher](./outbox.mdx#dispatch-in-the-background) delivers your events, turn the flush off
 to save the claim query it costs on every commit:
@@ -137,9 +148,22 @@ services.AddEfCoreTransactions(t =>
 
 ### Change trackers are not rolled back
 
-A rollback reverts the database, not EF Core's change trackers. Entities saved by a scope that rolled back stay
-tracked as `Unchanged`, and entities it added without saving stay `Added`. Do not keep working with them in the
-same DI scope after a failure: a later `SaveChangesAsync` would see them.
+:::warning A rollback leaves the change tracker out of step with the database
+
+A rollback reverts the database, not EF Core's change trackers. This matters most after a **nested** rollback,
+because the outer command keeps running in the same DI scope:
+
+- Entities the inner command saved stay tracked as `Unchanged`, although their rows are gone. EF Core believes
+  they exist, so a later `SaveChangesAsync` in the outer scope writes nothing for them and the outer command can
+  carry on from stale state without any error. Changing one of them makes that `SaveChangesAsync` issue an
+  `UPDATE` for a row that does not exist.
+- Entities it added without saving stay `Added`, so the outer command's next `SaveChangesAsync` inserts them.
+
+After a nested command fails, do not reuse the entities it touched. Reload what the outer command needs, or detach
+those entries (`context.Entry(entity).State = EntityState.Detached`). The manager does not clear the trackers
+itself, because that would also drop the outer command's own pending changes.
+
+:::
 
 ## Pipeline position
 

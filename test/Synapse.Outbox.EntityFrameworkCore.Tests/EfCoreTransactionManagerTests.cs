@@ -201,6 +201,40 @@ public sealed class EfCoreTransactionManagerTests
     }
 
     [Fact]
+    public async Task CommitAsync_WhenTheSavepointReleaseThrows_DisposeStillRollsBackToTheSavepoint()
+    {
+        // Arrange (Given)
+        await using var database = await TransactionTestDatabase.CreateAsync(Ct);
+        var interceptor = new FailingSavepointReleaseInterceptor();
+        var services = new ServiceCollection();
+        database.AddContexts(services, interceptor);
+        services.AddScoped<EfCoreTransactionManager>();
+        await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        await using var scope = provider.CreateAsyncScope();
+        var (manager, business, _) = Resolve(scope);
+        Exception? releaseFailure;
+
+        // Act (When)
+        await using (var outer = await manager.BeginAsync(Ct))
+        {
+            await AddRecordAsync(business, "outer");
+            await using (var inner = await manager.BeginAsync(Ct))
+            {
+                await AddRecordAsync(business, "inner");
+                interceptor.FailNextRelease = true;
+                releaseFailure = await Record.ExceptionAsync(async () => await inner.CommitAsync(Ct));
+            }
+
+            // The inner scope counts as closed again, so the outer one may commit.
+            await outer.CommitAsync(Ct);
+        }
+
+        // Assert (Then)
+        Assert.IsType<InvalidOperationException>(releaseFailure);
+        Assert.Equal(["outer"], await database.CommittedRecordsAsync(Ct));
+    }
+
+    [Fact]
     public async Task CommitAsync_OuterScopeBeforeTheNestedOne_Throws()
     {
         // Arrange (Given)

@@ -1,5 +1,6 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace UnambitiousFx.Synapse.Outbox.EntityFrameworkCore.Tests.Support;
@@ -34,10 +35,12 @@ public sealed class TransactionTestDatabase : IAsyncDisposable
     ///     Registers a Scoped <see cref="SqliteConnection" /> and both contexts on it, and enlists both in the
     ///     transaction manager, business context first.
     /// </summary>
-    public IServiceCollection AddContexts(IServiceCollection services)
+    public IServiceCollection AddContexts(IServiceCollection services, params IInterceptor[] businessInterceptors)
     {
         services.AddScoped(_ => new SqliteConnection(_database.ConnectionString));
-        services.AddDbContext<BusinessDbContext>((sp, o) => o.UseSqlite(sp.GetRequiredService<SqliteConnection>()));
+        services.AddDbContext<BusinessDbContext>((sp, o) => o
+            .UseSqlite(sp.GetRequiredService<SqliteConnection>())
+            .AddInterceptors(businessInterceptors));
         services.AddDbContext<OutboxDbContext>((sp, o) => o.UseSqlite(sp.GetRequiredService<SqliteConnection>()));
         services.AddEfCoreTransactions(t => t.Enlist<BusinessDbContext>().Enlist<OutboxDbContext>());
         return services;

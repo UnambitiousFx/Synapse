@@ -1,5 +1,6 @@
 using JetBrains.Annotations;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using UnambitiousFx.Functional;
 using UnambitiousFx.Functional.Failures;
 using UnambitiousFx.Synapse.Abstractions;
@@ -53,6 +54,36 @@ public sealed class EfCoreTransactionBehaviorTests
         Assert.Empty(recorder.Dispatched);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task InvokeAsync_WhenTheOutboxFlushFailsAfterTheCommit_StillSucceedsAndKeepsTheEventPending(
+        bool cancelTheRequest)
+    {
+        // Arrange (Given) — the flush either throws or sees the request's token canceled while it runs
+        await using var database = await TransactionTestDatabase.CreateAsync(Ct);
+        var recorder = new EventRecorder();
+        using var requestCancellation = CancellationTokenSource.CreateLinkedTokenSource(Ct);
+        var fault = new FlushFault(cancelTheRequest ? requestCancellation : null);
+        await using var provider = BuildProvider(database, recorder, services =>
+        {
+            services.AddSingleton(fault);
+            services.Replace(ServiceDescriptor.Scoped<IOutboxCommit, FaultyOutboxCommit>());
+        });
+        await using var scope = provider.CreateAsyncScope();
+        var invoker = scope.ServiceProvider.GetRequiredService<IInvoker>();
+
+        // Act (When)
+        var result = await invoker.InvokeAsync(new CreateRecord("envelope", Fail: false), requestCancellation.Token);
+
+        // Assert (Then)
+        Assert.True(fault.Called);
+        Assert.True(result.IsSuccess);
+        Assert.Equal(["envelope"], await database.CommittedRecordsAsync(Ct));
+        Assert.False(Assert.Single(await database.CommittedOutboxRowsAsync(Ct)).Processed);
+        Assert.Empty(recorder.Dispatched);
+    }
+
     [Fact]
     public async Task InvokeAsync_WhenNestedCommandFails_KeepsTheOuterCommandWork()
     {
@@ -101,7 +132,9 @@ public sealed class EfCoreTransactionBehaviorTests
         };
     }
 
-    private static ServiceProvider BuildProvider(TransactionTestDatabase database, EventRecorder recorder)
+    private static ServiceProvider BuildProvider(TransactionTestDatabase database,
+        EventRecorder recorder,
+        Action<IServiceCollection>? configure = null)
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -117,6 +150,7 @@ public sealed class EfCoreTransactionBehaviorTests
             cfg.RegisterRequestHandler<SaveWithoutTransactionHandler, SaveWithoutTransaction, bool>();
             cfg.RegisterEventHandler<RecordCreatedHandler, RecordCreated>();
         });
+        configure?.Invoke(services);
         return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
     }
 
@@ -149,6 +183,33 @@ public sealed class EfCoreTransactionBehaviorTests
             {
                 _dispatched.Add(name);
             }
+        }
+    }
+
+    /// <summary>What the faulty outbox commit does: cancel the request's token, or throw an infrastructure error.</summary>
+    public sealed class FlushFault(CancellationTokenSource? cancelRequest)
+    {
+        public bool Called { get; private set; }
+
+        public void Raise(CancellationToken cancellationToken)
+        {
+            Called = true;
+            if (cancelRequest is null)
+            {
+                throw new InvalidOperationException("Simulated outbox infrastructure failure.");
+            }
+
+            cancelRequest.Cancel();
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+    }
+
+    private sealed class FaultyOutboxCommit(FlushFault fault) : IOutboxCommit
+    {
+        public ValueTask<Result> CommitAsync(CancellationToken cancellationToken = default)
+        {
+            fault.Raise(cancellationToken);
+            return new ValueTask<Result>(Result.Success());
         }
     }
 
