@@ -83,7 +83,7 @@ A tool error is a `CallToolResult` with `IsError = true`. The model reads it and
 | Option            | Default | Effect |
 | ----------------- | ------- | ------ |
 | `HideExistence`   | `true`  | `NotFoundFailure` and `UnauthorizedFailure` give the same `NOT_FOUND` answer. |
-| `MaxAnswerLength` | `null`  | Longer answers are cut to this many characters and flagged. `null` means no limit. |
+| `MaxAnswerLength` | `null`  | Longer answers are cut to this many UTF-16 code units and flagged. `null` means no limit. |
 | `JsonContext`     | `null`  | Source-generated context used to serialize answers. Without it, `McpJsonUtilities.DefaultOptions` is used. |
 
 ### Existence hiding
@@ -101,10 +101,10 @@ The original message is dropped too, because a not-found message often names the
 With `MaxAnswerLength` set, a longer answer is cut and followed by a second text block:
 
 ```text
-[Answer truncated: showing the first 50000 of 182344 characters. The JSON above is incomplete; narrow the request to get the rest.]
+[Answer truncated: showing the first 50000 of 182344 UTF-16 code units. The JSON above is incomplete; narrow the request to get the rest.]
 ```
 
-The result's `_meta` also carries `unambitiousfx.synapse/truncated: true` and `unambitiousfx.synapse/originalLength`. The cut never splits a surrogate pair. Failures are never cut.
+Lengths are counted in UTF-16 code units (`string.Length`), not Unicode scalar values or UTF-8 bytes: most emoji count as two, and the encoded payload can be larger than the limit. The result's `_meta` also carries `unambitiousfx.synapse/truncated: true` and `unambitiousfx.synapse/originalLength`, in the same unit. The cut never splits a surrogate pair. Failures are never cut.
 
 ### NativeAOT
 
@@ -125,7 +125,7 @@ A type missing from the context throws `InvalidOperationException` naming the ty
 | Failure | Tool error text |
 | ------- | --------------- |
 | `NotFoundFailure`, `UnauthorizedFailure` (with `HideExistence`) | `NOT_FOUND: The requested item was not found.` |
-| `ExceptionalFailure` | `<code>: An unexpected error occurred.` — exception messages can hold internals |
+| `ExceptionalFailure`, alone or at any depth inside an `AggregateFailure` | `<code>: An unexpected error occurred.` — exception messages can hold internals |
 | Anything else | `<code>: <message>` |
 
 The code is also in `_meta` under `unambitiousfx.synapse/failureCode`, so a client can branch on it without parsing the text.

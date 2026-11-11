@@ -83,7 +83,7 @@ internal sealed class McpInvoker : IMcpInvoker
         }
 
         var notice = string.Create(CultureInfo.InvariantCulture,
-            $"[Answer truncated: showing the first {cut} of {json.Length} characters. The JSON above is incomplete; narrow the request to get the rest.]");
+            $"[Answer truncated: showing the first {cut} of {json.Length} UTF-16 code units. The JSON above is incomplete; narrow the request to get the rest.]");
 
         return new CallToolResult
         {

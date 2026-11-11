@@ -17,8 +17,9 @@ namespace UnambitiousFx.Synapse.ModelContextProtocol;
 ///             <see cref="FailureCodes.NotFound" /> with <see cref="HiddenMessage" />.
 ///         </item>
 ///         <item>
-///             An <see cref="ExceptionalFailure" /> gives <see cref="UnexpectedMessage" />: an exception message can
-///             hold internals (SQL, paths, stack details) that an assistant must not read back to a user.
+///             An <see cref="ExceptionalFailure" />, alone or at any depth inside an <see cref="AggregateFailure" />,
+///             gives <see cref="UnexpectedMessage" /> with the outer failure's code: an exception message can hold
+///             internals (SQL, paths, stack details) that an assistant must not read back to a user.
 ///         </item>
 ///         <item>Every other failure gives its own code and message.</item>
 ///     </list>
@@ -53,12 +54,14 @@ public sealed class DefaultMcpFailurePolicy : IMcpFailurePolicy
         ArgumentNullException.ThrowIfNull(failure);
 
         if (_hideExistence &&
-            HidesExistence(failure))
+            Contains(failure, static f => f is NotFoundFailure or UnauthorizedFailure))
         {
             return Error(FailureCodes.NotFound, HiddenMessage);
         }
 
-        if (failure is ExceptionalFailure)
+        // Checked at every depth, not only at the top: an aggregate's message is today a fixed text, but nothing in
+        // the Functional contract promises it will never be built from the inner messages.
+        if (Contains(failure, static f => f is ExceptionalFailure))
         {
             return Error(failure.Code, UnexpectedMessage);
         }
@@ -66,26 +69,26 @@ public sealed class DefaultMcpFailurePolicy : IMcpFailurePolicy
         return Error(failure.Code, failure.Message);
     }
 
-    private static bool HidesExistence(Failure failure)
+    private static bool Contains(Failure failure,
+        Func<Failure, bool> predicate)
     {
-        switch (failure)
+        if (predicate(failure))
         {
-            case NotFoundFailure:
-            case UnauthorizedFailure:
-                return true;
-            case AggregateFailure aggregate:
-                foreach (var inner in aggregate.Errors)
-                {
-                    if (HidesExistence(inner))
-                    {
-                        return true;
-                    }
-                }
-
-                return false;
-            default:
-                return false;
+            return true;
         }
+
+        if (failure is AggregateFailure aggregate)
+        {
+            foreach (var inner in aggregate.Errors)
+            {
+                if (Contains(inner, predicate))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private static CallToolResult Error(string code,

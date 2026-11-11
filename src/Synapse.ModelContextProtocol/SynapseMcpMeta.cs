@@ -15,7 +15,7 @@ public static class SynapseMcpMeta
     public const string Truncated = "unambitiousfx.synapse/truncated";
 
     /// <summary>
-    ///     The length, in characters, of the answer before it was truncated.
+    ///     The length of the answer before it was truncated, in UTF-16 code units (<see cref="string.Length" />).
     /// </summary>
     public const string OriginalLength = "unambitiousfx.synapse/originalLength";
 

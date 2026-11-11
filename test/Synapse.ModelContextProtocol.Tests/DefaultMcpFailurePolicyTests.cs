@@ -96,7 +96,7 @@ public sealed class DefaultMcpFailurePolicyTests
     {
         // Arrange (Given)
         var sut = CreateSut(hideExistence: true);
-        var failure = new ExceptionalFailure(new InvalidOperationException("connection string Password=hunter2"));
+        var failure = Exceptional();
 
         // Act (When)
         var result = sut.ToToolError(failure);
@@ -104,7 +104,31 @@ public sealed class DefaultMcpFailurePolicyTests
         // Assert (Then)
         Assert.True(result.IsError);
         Assert.Equal($"{failure.Code}: {DefaultMcpFailurePolicy.UnexpectedMessage}", Text(result));
-        Assert.DoesNotContain("hunter2", Text(result));
+        Assert.DoesNotContain(Secret, Text(result));
+    }
+
+    public static TheoryData<Failure> AggregatesHoldingAnException =>
+    [
+        new AggregateFailure([Exceptional()]),
+        new AggregateFailure([new ValidationFailure("Label is required."), Exceptional()]),
+        new AggregateFailure([new ConflictFailure("a"), new AggregateFailure([new BadRequestFailure("b"), Exceptional()])])
+    ];
+
+    [Theory]
+    [MemberData(nameof(AggregatesHoldingAnException))]
+    public void ToToolError_WithAggregateHoldingExceptionalFailure_RedactsTheMessage(Failure failure)
+    {
+        // Arrange (Given)
+        var sut = CreateSut(hideExistence: true);
+
+        // Act (When)
+        var result = sut.ToToolError(failure);
+
+        // Assert (Then)
+        Assert.True(result.IsError);
+        Assert.Equal($"{failure.Code}: {DefaultMcpFailurePolicy.UnexpectedMessage}", Text(result));
+        Assert.DoesNotContain(Secret, Text(result));
+        Assert.DoesNotContain(Secret, result.Meta!.ToJsonString());
     }
 
     [Fact]
@@ -119,6 +143,13 @@ public sealed class DefaultMcpFailurePolicyTests
 
         // Assert (Then)
         Assert.StartsWith($"{failure.Code}: ", Text(result));
+    }
+
+    private const string Secret = "Password=hunter2";
+
+    private static ExceptionalFailure Exceptional()
+    {
+        return new ExceptionalFailure(new InvalidOperationException($"connection string {Secret}"));
     }
 
     private static DefaultMcpFailurePolicy CreateSut(bool hideExistence)

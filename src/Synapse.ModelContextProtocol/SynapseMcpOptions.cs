@@ -34,13 +34,23 @@ public sealed class SynapseMcpOptions
     public bool HideExistence { get; set; } = true;
 
     /// <summary>
-    ///     The largest answer, in characters, sent back to the client. <c>null</c>, the default, means no limit.
+    ///     The largest answer sent back to the client, in UTF-16 code units (<see cref="string.Length" />).
+    ///     <c>null</c>, the default, means no limit.
     /// </summary>
     /// <remarks>
-    ///     A longer answer is cut to this length and followed by a second text block saying it was truncated and how
-    ///     long it was, so the assistant knows it did not see everything and can ask for less (a filter, a page).
-    ///     The result's <c>_meta</c> also carries <see cref="SynapseMcpMeta.Truncated" />. A truncated answer is no
-    ///     longer valid JSON, which is why the flag is explicit rather than left for the client to notice.
+    ///     <para>
+    ///         The length is counted in UTF-16 code units, not Unicode scalar values and not UTF-8 bytes: a character
+    ///         outside the Basic Multilingual Plane (most emoji) counts as two, and the encoded payload can be larger
+    ///         than this number. The cut never separates the two halves of a surrogate pair, so a truncated answer can
+    ///         be one code unit shorter than the limit.
+    ///     </para>
+    ///     <para>
+    ///         A longer answer is cut to this length and followed by a second text block saying it was truncated and
+    ///         how long it was, so the assistant knows it did not see everything and can ask for less (a filter, a
+    ///         page). The result's <c>_meta</c> also carries <see cref="SynapseMcpMeta.Truncated" /> and
+    ///         <see cref="SynapseMcpMeta.OriginalLength" />, in the same unit. A truncated answer is no longer valid
+    ///         JSON, which is why the flag is explicit rather than left for the client to notice.
+    ///     </para>
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">The value is zero or negative.</exception>
     public int? MaxAnswerLength
