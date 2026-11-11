@@ -210,9 +210,7 @@ public sealed class EfCoreTransactionManager : ITransactionManager
     /// </summary>
     private async ValueTask FlushOutboxAsync(CancellationToken cancellationToken)
     {
-        // A canceled request leaves the stored events pending for the next commit or the background dispatcher;
-        // the data they describe is already committed.
-        if (!_options.FlushOutboxOnCommit || cancellationToken.IsCancellationRequested)
+        if (!_options.FlushOutboxOnCommit)
         {
             return;
         }

@@ -201,11 +201,114 @@ public sealed class EfCoreTransactionManagerTests
     }
 
     [Fact]
+    public async Task BeginAsync_ContextInAnotherTransaction_ThrowsAndOpensNoTransaction()
+    {
+        // Arrange (Given) — the outbox context already runs its own transaction, on a private database so the two
+        // transactions do not contend for SQLite's write lock
+        await using var database = await TransactionTestDatabase.CreateAsync(Ct);
+        var services = new ServiceCollection();
+        services.AddScoped(_ => new SqliteConnection(database.ConnectionString));
+        services.AddDbContext<BusinessDbContext>((sp, o) => o.UseSqlite(sp.GetRequiredService<SqliteConnection>()));
+        services.AddDbContext<OutboxDbContext>(o => o.UseSqlite("DataSource=:memory:"));
+        services.AddEfCoreTransactions(t => t.Enlist<BusinessDbContext>().Enlist<OutboxDbContext>());
+        services.AddScoped<EfCoreTransactionManager>();
+        await using var provider = services.BuildServiceProvider();
+        await using var scope = provider.CreateAsyncScope();
+        var (manager, business, outbox) = Resolve(scope);
+        await using var outboxTransaction = await outbox.Database.BeginTransactionAsync(Ct);
+
+        // Act (When)
+        var exception = await Record.ExceptionAsync(async () => await manager.BeginAsync(Ct));
+
+        // Assert (Then) — the transaction it opened on the first context is gone, the other one is untouched
+        var invalid = Assert.IsType<InvalidOperationException>(exception);
+        Assert.Contains("another transaction", invalid.Message);
+        Assert.Null(business.Database.CurrentTransaction);
+        Assert.Same(outboxTransaction, outbox.Database.CurrentTransaction);
+    }
+
+    [Fact]
+    public async Task BeginAsync_WhenTheSavepointCannotBeCreated_ThrowsAndLeavesNoContextJoined()
+    {
+        // Arrange (Given) — an application transaction on the first context only, so the scope has to join the
+        // outbox context to it before creating the savepoint
+        await using var database = await TransactionTestDatabase.CreateAsync(Ct);
+        var interceptor = new FailingSavepointInterceptor();
+        var services = new ServiceCollection();
+        database.AddContexts(services, interceptor);
+        services.AddScoped<EfCoreTransactionManager>();
+        await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        await using var scope = provider.CreateAsyncScope();
+        var (manager, business, outbox) = Resolve(scope);
+        await using var applicationTransaction = await business.Database.BeginTransactionAsync(Ct);
+        interceptor.FailNextCreate = true;
+
+        // Act (When)
+        var exception = await Record.ExceptionAsync(async () => await manager.BeginAsync(Ct));
+
+        // Assert (Then) — the outbox context is detached again and the application transaction is still usable
+        Assert.IsType<InvalidOperationException>(exception);
+        Assert.Null(outbox.Database.CurrentTransaction);
+        Assert.Same(applicationTransaction, business.Database.CurrentTransaction);
+        await using (var retry = await manager.BeginAsync(Ct))
+        {
+            await AddRecordAsync(business, "after-retry");
+            await retry.CommitAsync(Ct);
+        }
+
+        await applicationTransaction.CommitAsync(Ct);
+        Assert.Equal(["after-retry"], await database.CommittedRecordsAsync(Ct));
+    }
+
+    [Fact]
+    public async Task BeginAsync_ConstructedWithoutAnyEnlistedContext_Throws()
+    {
+        // Arrange (Given) — built by hand, bypassing the check AddEfCoreTransactions makes
+        await using var provider = new ServiceCollection().BuildServiceProvider();
+        var manager = new EfCoreTransactionManager(provider, new EfCoreTransactionOptions());
+
+        // Act (When)
+        var exception = await Record.ExceptionAsync(async () => await manager.BeginAsync(Ct));
+
+        // Assert (Then)
+        var invalid = Assert.IsType<InvalidOperationException>(exception);
+        Assert.Contains(nameof(EfCoreTransactionOptions.Enlist), invalid.Message);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CommitAsync_CalledTwice_ThrowsAndKeepsTheFirstCommit(bool nested)
+    {
+        // Arrange (Given)
+        await using var database = await TransactionTestDatabase.CreateAsync(Ct);
+        await using var provider = BuildProvider(database);
+        await using var scope = provider.CreateAsyncScope();
+        var (manager, business, _) = Resolve(scope);
+        await using var outer = await manager.BeginAsync(Ct);
+        var target = nested ? await manager.BeginAsync(Ct) : outer;
+        await AddRecordAsync(business, "committed-once");
+        await target.CommitAsync(Ct);
+
+        // Act (When)
+        var exception = await Record.ExceptionAsync(async () => await target.CommitAsync(Ct));
+        if (nested)
+        {
+            await target.DisposeAsync();
+            await outer.CommitAsync(Ct);
+        }
+
+        // Assert (Then)
+        Assert.IsType<InvalidOperationException>(exception);
+        Assert.Equal(["committed-once"], await database.CommittedRecordsAsync(Ct));
+    }
+
+    [Fact]
     public async Task CommitAsync_WhenTheSavepointReleaseThrows_DisposeStillRollsBackToTheSavepoint()
     {
         // Arrange (Given)
         await using var database = await TransactionTestDatabase.CreateAsync(Ct);
-        var interceptor = new FailingSavepointReleaseInterceptor();
+        var interceptor = new FailingSavepointInterceptor();
         var services = new ServiceCollection();
         database.AddContexts(services, interceptor);
         services.AddScoped<EfCoreTransactionManager>();

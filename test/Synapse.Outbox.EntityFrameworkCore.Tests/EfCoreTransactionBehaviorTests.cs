@@ -85,6 +85,29 @@ public sealed class EfCoreTransactionBehaviorTests
     }
 
     [Fact]
+    public async Task InvokeAsync_WithFlushOutboxOnCommitOff_CommitsButLeavesTheEventForTheDispatcher()
+    {
+        // Arrange (Given) — a later AddEfCoreTransactions call replaces the options of the first
+        await using var database = await TransactionTestDatabase.CreateAsync(Ct);
+        var recorder = new EventRecorder();
+        await using var provider = BuildProvider(database, recorder, services =>
+            services.AddEfCoreTransactions(t =>
+            {
+                t.Enlist<BusinessDbContext>().Enlist<OutboxDbContext>();
+                t.FlushOutboxOnCommit = false;
+            }));
+
+        // Act (When)
+        var result = await InvokeAsync(provider, new CreateRecord("envelope", Fail: false));
+
+        // Assert (Then)
+        Assert.True(result.IsSuccess);
+        Assert.Equal(["envelope"], await database.CommittedRecordsAsync(Ct));
+        Assert.False(Assert.Single(await database.CommittedOutboxRowsAsync(Ct)).Processed);
+        Assert.Empty(recorder.Dispatched);
+    }
+
+    [Fact]
     public async Task InvokeAsync_WhenNestedCommandFails_KeepsTheOuterCommandWork()
     {
         // Arrange (Given)

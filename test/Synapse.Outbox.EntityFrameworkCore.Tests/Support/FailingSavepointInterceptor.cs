@@ -4,12 +4,28 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 namespace UnambitiousFx.Synapse.Outbox.EntityFrameworkCore.Tests.Support;
 
 /// <summary>
-///     Makes the next savepoint release throw once armed. Armed by hand, because EF Core's own
+///     Makes the next savepoint creation or release throw once armed. Armed by hand, because EF Core's own
 ///     <c>SaveChanges</c> also creates and releases savepoints inside a transaction.
 /// </summary>
-public sealed class FailingSavepointReleaseInterceptor : DbTransactionInterceptor
+public sealed class FailingSavepointInterceptor : DbTransactionInterceptor
 {
+    public bool FailNextCreate { get; set; }
+
     public bool FailNextRelease { get; set; }
+
+    public override ValueTask<InterceptionResult> CreatingSavepointAsync(DbTransaction transaction,
+        TransactionEventData eventData,
+        InterceptionResult result,
+        CancellationToken cancellationToken = default)
+    {
+        if (FailNextCreate)
+        {
+            FailNextCreate = false;
+            throw new InvalidOperationException("Simulated savepoint creation failure.");
+        }
+
+        return base.CreatingSavepointAsync(transaction, eventData, result, cancellationToken);
+    }
 
     public override ValueTask<InterceptionResult> ReleasingSavepointAsync(DbTransaction transaction,
         TransactionEventData eventData,
