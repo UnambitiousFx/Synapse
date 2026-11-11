@@ -79,7 +79,7 @@ Closes #123
 
 ### Prerequisites
 
-- [.NET 10 SDK](https://dotnet.microsoft.com/download) or later
+- [.NET 11 SDK](https://dotnet.microsoft.com/download) or later
 - An IDE: [JetBrains Rider](https://www.jetbrains.com/rider/), [Visual Studio 2022](https://visualstudio.microsoft.com/), or [VS Code](https://code.visualstudio.com/)
 - Git for version control
 
