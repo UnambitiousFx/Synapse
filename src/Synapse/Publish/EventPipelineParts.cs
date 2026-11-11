@@ -12,8 +12,7 @@ internal static class EventPipelineParts
 {
     /// <summary>
     ///     Resolves the handlers subscribed to <typeparamref name="TEvent" /> and the behaviors declared for exactly
-    ///     that type, the behaviors ordered by runtime pipeline position. The stable sort keeps registration order
-    ///     for behaviors that share an <c>Order</c>.
+    ///     that type, the behaviors ordered by runtime pipeline position (see <see cref="PipelineOrdering" />).
     /// </summary>
     public static (IEventHandler<TEvent>[] Handlers, IEventPipelineBehavior<TEvent>[] Behaviors) Resolve<TEvent>(
         IDependencyResolver resolver)
@@ -22,9 +21,11 @@ internal static class EventPipelineParts
         var resolved = resolver.GetServices<IEventHandler<TEvent>>();
         var handlers = resolved as IEventHandler<TEvent>[] ?? resolved.ToArray();
 
-        var behaviors = resolver.GetServices<IEventPipelineBehavior<TEvent>>()
-            .OrderBy(PipelineBehaviorOrdering.OrderOf)
-            .ToArray();
+        var resolvedBehaviors = resolver.GetServices<IEventPipelineBehavior<TEvent>>();
+        var ordering = resolver.GetService<PipelineOrdering>() ?? PipelineOrdering.Empty;
+        var behaviors = ordering.Sort(typeof(IEventPipelineBehavior<TEvent>),
+            resolvedBehaviors as IEventPipelineBehavior<TEvent>[] ?? resolvedBehaviors.ToArray(),
+            static behavior => behavior);
 
         return (handlers, behaviors);
     }

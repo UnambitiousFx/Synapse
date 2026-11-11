@@ -10,3 +10,5 @@ SYN102 | Synapse.Analyzers | Warning | BehaviorWithoutHandlersAnalyzer
 SYN103 | Synapse.Analyzers | Warning | HandlerAttributeOnRecordAnalyzer
 SYN104 | Synapse.Analyzers | Warning | UnattributedHandlerAnalyzer
 SYN105 | Synapse.Analyzers | Warning | GlobalBehaviorRegisterGroupAnalyzer
+MDG018 | Synapse.Generator | Error | BehaviorOrderingAnalysis
+MDG019 | Synapse.Generator | Error | BehaviorOrderingAnalysis

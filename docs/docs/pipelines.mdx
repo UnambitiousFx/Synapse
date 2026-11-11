@@ -30,7 +30,7 @@ flowchart LR
     B1 -- Result --> Invoker
 ```
 
-Each behavior can inspect or modify the request and the result on both sides of `next(...)`. Order is controlled explicitly by [`IOrderedPipelineBehavior`](#ordering) — not by registration order.
+Each behavior can inspect or modify the request and the result on both sides of `next(...)`. Order is controlled explicitly by [`IOrderedPipelineBehavior`](#ordering) and [stages and `Before`/`After` constraints](#stages-and-relative-ordering) — not by registration order.
 
 ## Request pipeline behaviors
 
@@ -148,7 +148,7 @@ Registering an open-generic behavior at runtime (`AddOpenGenericRequestPipelineB
 [assembly: SynapseGlobalBehavior(typeof(CompanyShared.LoggingBehavior<,>))]
 ```
 
-Pass the **unbound** generic definition (`typeof(Foo<,>)`) — a non-generic `typeof` is the only way to hand an open generic to an attribute. The behavior type must be `public` and implement one of the pipeline interfaces; its open-generic constraints (named-type and `class`/`struct`/`unmanaged`/`notnull`/`new()`) are honoured, and pipeline position is controlled by the behavior implementing `IOrderedPipelineBehavior`. The same cross-assembly and `[assembly: DisableSynapseCrossAssemblyBehaviors]` rules apply.
+Pass the **unbound** generic definition (`typeof(Foo<,>)`) — a non-generic `typeof` is the only way to hand an open generic to an attribute. The behavior type must be `public` and implement one of the pipeline interfaces; its open-generic constraints (named-type and `class`/`struct`/`unmanaged`/`notnull`/`new()`) are honoured, and pipeline position is controlled by the behavior implementing `IOrderedPipelineBehavior`, or by the `Stage`/`Before`/`After` of a `[PipelineBehavior]` on the packaged behavior itself, which the generator reads from the reference (see [Stages and relative ordering](#stages-and-relative-ordering)). The same cross-assembly and `[assembly: DisableSynapseCrossAssemblyBehaviors]` rules apply.
 
 ### Sharing behaviors across projects
 
@@ -327,6 +327,59 @@ public sealed class LoggingBehavior<TRequest, TResponse>
 
 `IOrderedPipelineBehavior` exposes three convenience positions: `First` (`uint.MinValue`), `Middle` (`uint.MaxValue / 2`), and `Last` (`uint.MaxValue`). For example, register logging at `First` so it captures the full round-trip, and validation closer to the handler.
 
+### Stages and relative ordering
+
+Raw numbers do not compose across modules and packages: a behavior shipped in a package cannot know the numbers an application picked. A behavior can instead declare a **stage** and **`Before`/`After` constraints** on other behaviors:
+
+```csharp
+[PipelineBehavior(Stage = PipelineStage.Authorization, After = typeof(ActorBehavior<,>))]
+public sealed class AuditBehavior<TRequest, TResponse> : IRequestPipelineBehavior<TRequest, TResponse>
+    where TRequest : IRequest<TResponse>
+    where TResponse : notnull
+{
+    // ...
+}
+```
+
+`PipelineStage` lists well-known stages, outermost first: `Observability`, `Authentication`, `Authorization`, `Validation`, `Transaction`, `Handler`. `Before`/`After` take the open-generic definition (`typeof(ActorBehavior<,>)`, matching every closed form) or a concrete type (matching only it). A constraint naming a behavior that is not in a given pipeline is ignored for that pipeline.
+
+The source generator reads these properties and emits the matching registration. Without the generator (a behavior registered by hand, or a package's behavior), declare the same thing at runtime; calling it again for the same behavior adds constraints:
+
+```csharp
+services.AddSynapse(cfg =>
+{
+    cfg.RegisterRequestPipelineBehavior<AuditBehavior<CreateTask, TaskId>, CreateTask, TaskId>();
+    cfg.ConfigureBehaviorOrdering(typeof(AuditBehavior<,>), PipelineStage.Authorization,
+        after: typeof(ActorBehavior<,>));
+});
+```
+
+The attribute alone is not read at runtime: without the generator, use `ConfigureBehaviorOrdering`.
+
+#### How the order is resolved
+
+1. **Group by stage.** A behavior belongs to the stage it declares. A behavior that declares none belongs to the stage whose `Order` band contains its `Order` (below). Stages run in enum order.
+2. **Apply `Before`/`After`.** Within a stage, constraints are edges of a stable topological sort. Across stages, a constraint must agree with the stage order: `Before` an earlier stage is impossible and reported.
+3. **Break ties** with `Order` (a behavior without one counts as `Last`), then registration order.
+
+Each stage owns a contiguous band of `Order` values, exposed by `PipelineStages.StartOf(stage)` and `PipelineStages.Of(order)`:
+
+| Stage | `Order` band | Holds |
+|---|---|---|
+| `Observability` | `0` to `0x1FFF_FFFF` | `First` |
+| `Authentication` | `0x2000_0000` to `0x3FFF_FFFF` | |
+| `Authorization` | `0x4000_0000` to `0x5FFF_FFFF` | |
+| `Validation` | `0x6000_0000` to `0x7FFF_FFFF` | `Middle` |
+| `Transaction` | `0x8000_0000` to `0x9FFF_FFFF` | |
+| `Handler` | `0xA000_0000` to `0xFFFF_FFFF` | `Last` |
+
+Because the bands are contiguous and increasing, **a pipeline in which no behavior declares a stage or a constraint runs in exactly the order `Order` alone gives**, ties included: existing behaviors keep their position. Behaviors that only set `Order` also interleave predictably with staged ones; for example `Order = 10` runs in `Observability`, before any `Authorization` behavior. A package that prefers numbers can still target a stage with `PipelineStages.StartOf(PipelineStage.Transaction) + 10`.
+
+The order is resolved once per pipeline, when it is first built, and cached; dispatching a request does not pay for it. A cycle or an impossible constraint throws `PipelineOrderingException` when that pipeline is built, and is reported earlier:
+
+- at build time by the generator, when it can see the declarations: `MDG018` for a `Before`/`After` cycle, `MDG019` for a constraint that contradicts two declared stages or names the behavior itself;
+- at startup by [`ValidateSynapse()`](#validating-the-configuration) otherwise (`SYN005`, `SYN006`).
+
 ## Validating the configuration
 
 `ValidateSynapse()` inspects the registrations and reports mistakes that would otherwise surface only at the first request (or never). It never throws on findings (it throws `ArgumentNullException` for a null provider and `InvalidOperationException` if `AddSynapse` was never called): it returns a `SynapseValidationReport` and you decide what to do with it.
@@ -336,7 +389,9 @@ public sealed class LoggingBehavior<TRequest, TResponse>
 | `SYN001` | Error | A closed pipeline behavior is registered for a request or event type that has no handler. | Register the handler, or remove the behavior. |
 | `SYN002` | Error | Two or more handlers are registered for one request type. Only the last registered one runs; the others are silently ignored. Events are exempt: several handlers per event is normal. | Keep one handler per request. |
 | `SYN003` | Error | The pipeline of a registered handler or event cannot be resolved (missing dependency, throwing constructor). The exception message is included. | Register the missing dependency or fix the constructor. |
-| `SYN004` | Warning | Two behaviors in one pipeline share an `Order`. Legal, they keep registration order. Only behaviors that declare an `Order` through `IOrderedPipelineBehavior` can tie, and ties made solely of Synapse's own built-in behaviors are not reported. | Give them distinct `Order` values if the relative position matters. |
+| `SYN004` | Warning | Two behaviors in one pipeline share a stage and an `Order`, and no `Before`/`After` constraint orders them. Legal, they keep registration order. Only behaviors that declare an `Order` through `IOrderedPipelineBehavior` can tie, and ties made solely of Synapse's own built-in behaviors are not reported. | Give them distinct `Order` values, or a `Before`/`After` constraint, if the relative position matters. |
+| `SYN005` | Error | The `Before`/`After` constraints of a pipeline's behaviors form a cycle. | Remove one of the constraints. |
+| `SYN006` | Error | An ordering declaration cannot be satisfied: a constraint contradicts the stages (a `Validation` behavior declared `Before` an `Observability` one), or one behavior is declared in two stages. | Change a stage or drop the constraint. |
 
 Warnings do not make `report.IsValid` false. Assert on it in a test:
 
@@ -392,7 +447,7 @@ Assert.Contains(pipeline.Behaviors, b =>
     b.Type.IsGenericType && b.Type.GetGenericTypeDefinition() == typeof(AuthorizationBehavior<,>));
 ```
 
-`Behaviors` is outermost first; each entry carries the concrete behavior type and the `Order` it declared (`IOrderedPipelineBehavior.Last` when it declares none). Behaviors that share an `Order` keep their registration order. `Describe` returns `null` when nothing handles the message.
+`Behaviors` is outermost first, in the resolved order; each entry carries the concrete behavior type, the `Order` it declared (`IOrderedPipelineBehavior.Last` when it declares none), and the `Stage` it runs in (declared, or implied by its `Order`). `Describe` returns `null` when nothing handles the message.
 
 To check every request in an assembly, use the non-generic overloads. `IsRequest` stands for your own predicate for request types (for example, concrete types that implement `IRequest` or `IRequest<>`). `Describe` returns `null` for a request nothing handles, so decide what that means for your test instead of suppressing it:
 
@@ -407,7 +462,7 @@ foreach (var requestType in typeof(PurgeCompletedTasksCommand).Assembly.GetTypes
 }
 ```
 
-`PipelineDescription` has structural equality, so two descriptions with the same handlers and behaviors in the same order are equal, and `ToString()` prints them as `Order Name`.
+`PipelineDescription` has structural equality, so two descriptions with the same handlers and behaviors in the same order are equal, and `ToString()` prints them as `Stage Order Name`.
 
 :::note
 `Describe(Type)` and `DescribeEvent(Type)` build a generic method at runtime, so they are not Native-AOT safe: use them in tests, and the generic overloads (which are AOT safe) in an application.

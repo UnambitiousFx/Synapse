@@ -7,6 +7,13 @@ namespace UnambitiousFx.Synapse.Abstractions;
 ///     interface is treated as <see cref="Last" /> (innermost). Ordering is stable: behaviors that
 ///     share an <see cref="Order" /> keep their registration order.
 /// </summary>
+/// <remarks>
+///     <see cref="Order" /> is the tie-breaker of a richer model: behaviors are first grouped by
+///     <see cref="PipelineStage" /> (declared, or implied by the band of <see cref="PipelineStages" /> that contains
+///     <see cref="Order" />), then ordered by their <c>Before</c>/<c>After</c> constraints, then by <see cref="Order" />,
+///     then by registration order. A pipeline in which no behavior declares a stage or a constraint is therefore
+///     sorted by <see cref="Order" /> alone. See <see cref="PipelineBehaviorAttribute" />.
+/// </remarks>
 public interface IOrderedPipelineBehavior
 {
     /// <summary>

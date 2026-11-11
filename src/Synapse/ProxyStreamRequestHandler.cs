@@ -15,14 +15,19 @@ namespace UnambitiousFx.Synapse;
 /// <typeparam name="TItem">The type of items yielded by the stream.</typeparam>
 internal sealed class ProxyStreamRequestHandler<TRequestHandler, TRequest, TItem>(
     TRequestHandler handler,
-    IEnumerable<IStreamRequestPipelineBehavior<TRequest, TItem>> behaviors)
+    IEnumerable<IStreamRequestPipelineBehavior<TRequest, TItem>> behaviors,
+    PipelineOrdering? ordering = null)
     : IStreamRequestHandler<TRequest, TItem>
     where TRequestHandler : class, IStreamRequestHandler<TRequest, TItem>
     where TRequest : IStreamRequest<TItem>
     where TItem : notnull
 {
     private readonly ImmutableArray<IStreamRequestPipelineBehavior<TRequest, TItem>> _behaviors =
-        [.. behaviors.OrderBy(PipelineBehaviorOrdering.OrderOf)];
+    [
+        .. (ordering ?? PipelineOrdering.Empty).Sort(
+            typeof(ProxyStreamRequestHandler<TRequestHandler, TRequest, TItem>), behaviors.ToArray(),
+            static behavior => behavior)
+    ];
 
     // Unlike the request/event proxies, the streaming chain is NOT composed once in the constructor:
     // StreamRequestHandlerDelegate<TItem> takes no parameters, so each behavior's `next` must capture the

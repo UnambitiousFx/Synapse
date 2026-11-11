@@ -12,8 +12,8 @@ namespace UnambitiousFx.Synapse.Abstractions;
 ///     order the dispatcher fans out to, which is registration order.
 /// </param>
 /// <param name="Behaviors">
-///     The behaviors in execution order, outermost first. Behaviors that share an <c>Order</c> keep their
-///     registration order.
+///     The behaviors in execution order, outermost first: grouped by <see cref="BehaviorDescription.Stage" />, then
+///     ordered by their <c>Before</c>/<c>After</c> constraints, their <c>Order</c>, and finally registration order.
 /// </param>
 public sealed record PipelineDescription(
     IReadOnlyList<Type> Handlers,
@@ -52,7 +52,7 @@ public sealed record PipelineDescription(
     }
 
     /// <summary>
-    ///     Lists the handlers, then the behaviors as <c>Order Name</c>, outermost first.
+    ///     Lists the handlers, then the behaviors as <c>Stage Order Name</c>, outermost first.
     /// </summary>
     /// <returns>A readable multi-line description.</returns>
     public override string ToString()
@@ -60,7 +60,7 @@ public sealed record PipelineDescription(
         var text = new StringBuilder();
         text.Append("Handlers: ").AppendJoin(", ", Handlers.Select(handler => handler.Name));
         text.Append("; Behaviors (outermost first): ")
-            .AppendJoin(", ", Behaviors.Select(behavior => $"{behavior.Order} {behavior.Type.Name}"));
+            .AppendJoin(", ", Behaviors.Select(behavior => $"{behavior.Stage} {behavior.Order} {behavior.Type.Name}"));
         return text.ToString();
     }
 }

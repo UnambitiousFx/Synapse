@@ -13,6 +13,7 @@ internal sealed class ProxyRequestHandler<TRequestHandler, TRequest>
     private static readonly Func<Failure, Result> Fail = Result.Failure;
 
     private readonly object[] _behaviors;
+    private readonly PipelineOrdering _ordering;
     // The behavior chain is composed once here rather than recursed per dispatch: each dispatch then
     // just invokes the head delegate, with no per-behavior closure allocation on the hot path. The proxy
     // shares its handler's lifetime, so a singleton handler composes the chain exactly once.
@@ -20,19 +21,24 @@ internal sealed class ProxyRequestHandler<TRequestHandler, TRequest>
 
     public ProxyRequestHandler(TRequestHandler handler,
         IEnumerable<IRequestPipelineBehavior<TRequest>> behaviors,
-        IEnumerable<IResultPipelineBehavior<TRequest, Result>> resultBehaviors)
+        IEnumerable<IResultPipelineBehavior<TRequest, Result>> resultBehaviors,
+        PipelineOrdering? ordering = null)
     {
-        // Both behavior kinds share one chain, ordered by runtime pipeline position
-        // (IOrderedPipelineBehavior); the stable sort keeps registration order for behaviors that share an
-        // Order, typed behaviors before result behaviors.
+        _ordering = ordering ?? PipelineOrdering.Empty;
+
+        // Both behavior kinds share one chain, ordered by runtime pipeline position; typed behaviors come before
+        // result behaviors in registration order. With no stage or Before/After declared this is the stable sort by
+        // IOrderedPipelineBehavior.Order; PipelineOrdering resolves it once per pipeline and caches it.
         // Tagged with their kind so a class implementing both interfaces runs as the kind it was registered as.
-        var sorted = behaviors.Select(b => (Behavior: (object)b, IsResult: false))
+        var tagged = behaviors.Select(b => (Behavior: (object)b, IsResult: false))
             .Concat(resultBehaviors.Select(b => (Behavior: (object)b, IsResult: true)))
-            .OrderBy(x => PipelineBehaviorOrdering.OrderOf(x.Behavior)).ToArray();
+            .ToArray();
+        var sorted = _ordering.Sort(typeof(ProxyRequestHandler<TRequestHandler, TRequest>), tagged,
+            static x => x.Behavior);
         _behaviors = Array.ConvertAll(sorted, x => x.Behavior);
 
         RequestHandlerDelegate<TRequest> next = handler.HandleAsync;
-        // Wrap in reverse so the lowest-Order behavior ends up outermost (runs first).
+        // Wrap in reverse so the first sorted behavior ends up outermost (runs first).
         for (var i = sorted.Length - 1; i >= 0; i--)
         {
             var captured = next;
@@ -54,7 +60,8 @@ internal sealed class ProxyRequestHandler<TRequestHandler, TRequest>
 
     Type IPipelineInfo.HandlerType => typeof(TRequestHandler);
 
-    IReadOnlyList<BehaviorDescription> IPipelineInfo.Behaviors => PipelineBehaviorOrdering.Describe(_behaviors);
+    IReadOnlyList<BehaviorDescription> IPipelineInfo.Behaviors =>
+        PipelineBehaviorOrdering.Describe(_behaviors, _ordering);
 
     public ValueTask<Result> HandleAsync(TRequest request,
         CancellationToken cancellationToken = default)
@@ -72,21 +79,27 @@ internal sealed class ProxyRequestHandler<TRequestHandler, TRequest, TResponse>
     private static readonly Func<Failure, Result<TResponse>> Fail = Result.Failure<TResponse>;
 
     private readonly object[] _behaviors;
+    private readonly PipelineOrdering _ordering;
     // See the no-response proxy above: the chain is composed once and invoked per dispatch.
     private readonly RequestHandlerDelegate<TRequest, TResponse> _pipeline;
 
     public ProxyRequestHandler(TRequestHandler handler,
         IEnumerable<IRequestPipelineBehavior<TRequest, TResponse>> behaviors,
-        IEnumerable<IResultPipelineBehavior<TRequest, Result<TResponse>>> resultBehaviors)
+        IEnumerable<IResultPipelineBehavior<TRequest, Result<TResponse>>> resultBehaviors,
+        PipelineOrdering? ordering = null)
     {
+        _ordering = ordering ?? PipelineOrdering.Empty;
+
         // Tagged with their kind so a class implementing both interfaces runs as the kind it was registered as.
-        var sorted = behaviors.Select(b => (Behavior: (object)b, IsResult: false))
+        var tagged = behaviors.Select(b => (Behavior: (object)b, IsResult: false))
             .Concat(resultBehaviors.Select(b => (Behavior: (object)b, IsResult: true)))
-            .OrderBy(x => PipelineBehaviorOrdering.OrderOf(x.Behavior)).ToArray();
+            .ToArray();
+        var sorted = _ordering.Sort(typeof(ProxyRequestHandler<TRequestHandler, TRequest, TResponse>), tagged,
+            static x => x.Behavior);
         _behaviors = Array.ConvertAll(sorted, x => x.Behavior);
 
         RequestHandlerDelegate<TRequest, TResponse> next = handler.HandleAsync;
-        // Wrap in reverse so the lowest-Order behavior ends up outermost (runs first).
+        // Wrap in reverse so the first sorted behavior ends up outermost (runs first).
         for (var i = sorted.Length - 1; i >= 0; i--)
         {
             var captured = next;
@@ -108,7 +121,8 @@ internal sealed class ProxyRequestHandler<TRequestHandler, TRequest, TResponse>
 
     Type IPipelineInfo.HandlerType => typeof(TRequestHandler);
 
-    IReadOnlyList<BehaviorDescription> IPipelineInfo.Behaviors => PipelineBehaviorOrdering.Describe(_behaviors);
+    IReadOnlyList<BehaviorDescription> IPipelineInfo.Behaviors =>
+        PipelineBehaviorOrdering.Describe(_behaviors, _ordering);
 
     public ValueTask<Result<TResponse>> HandleAsync(TRequest request,
         CancellationToken cancellationToken = default)

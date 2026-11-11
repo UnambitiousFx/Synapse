@@ -2,6 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.DependencyInjection;
 using UnambitiousFx.Functional;
 using UnambitiousFx.Synapse.Abstractions;
+using UnambitiousFx.Synapse.Pipelines;
 using UnambitiousFx.Synapse.Resolvers;
 
 namespace UnambitiousFx.Synapse;
@@ -297,6 +298,16 @@ internal sealed class DefaultDependencyInjectionBuilder : IDependencyInjectionBu
         where TResponse : notnull
     {
         _actions.Add(services => services.RegisterValidator<TValidator, TRequest, TResponse>());
+        return this;
+    }
+
+    public IDependencyInjectionBuilder ConfigureBehaviorOrdering(Type behaviorType,
+        PipelineStage? stage = null,
+        Type? before = null,
+        Type? after = null)
+    {
+        var rule = BehaviorOrderingRule.Create(behaviorType, stage, before, after);
+        _actions.Add(services => services.AddSingleton(rule));
         return this;
     }
 

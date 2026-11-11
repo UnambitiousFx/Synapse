@@ -15,7 +15,8 @@ internal static class RegisterGroupFactory
         ImmutableArray<HandlerDetail> behaviorTargets,
         bool crossAssemblyBehaviorsDisabled,
         ImmutableArray<ValidatorDetail> validators,
-        EventInfo eventInfo)
+        EventInfo eventInfo,
+        ImmutableArray<BehaviorOrderingDetail> orderings = default)
     {
         var sb = new StringBuilder();
 
@@ -95,6 +96,8 @@ internal static class RegisterGroupFactory
             }
         }
 
+        EmitBehaviorOrderings(sb, abstractionsNamespace, orderings);
+
         // Emit validator registrations last so the validation behavior lands innermost (closest to the
         // handler). Each call registers the validator and the closed RequestValidationBehavior that runs it;
         // the behavior registration is deduplicated, so multiple validators for one request wire it once.
@@ -107,6 +110,32 @@ internal static class RegisterGroupFactory
 
         sb.AppendLine("}");
         return SourceText.From(sb.ToString(), Encoding.UTF8);
+    }
+
+    // One call per attributed behavior, sorted for reproducible output. The runtime resolves the order from these
+    // rules; a target that the register group cannot reference (a non-public type of another assembly) is dropped.
+    private static void EmitBehaviorOrderings(StringBuilder sb,
+        string abstractionsNamespace,
+        ImmutableArray<BehaviorOrderingDetail> orderings)
+    {
+        if (orderings.IsDefaultOrEmpty)
+        {
+            return;
+        }
+
+        foreach (var ordering in orderings.Where(ordering => ordering.HasEmittableDeclaration)
+                     .OrderBy(ordering => ordering.BehaviorKey, StringComparer.Ordinal))
+        {
+            var stage = ordering.HasStage
+                ? ordering.StageName is { } name
+                    ? $"global::{abstractionsNamespace}.PipelineStage.{name}"
+                    : $"(global::{abstractionsNamespace}.PipelineStage){ordering.Stage}"
+                : "null";
+            var before = ordering.BeforeTypeOf is { } beforeType ? $"typeof({beforeType})" : "null";
+            var after = ordering.AfterTypeOf is { } afterType ? $"typeof({afterType})" : "null";
+            sb.AppendLine(
+                $"        builder.ConfigureBehaviorOrdering(typeof({ordering.BehaviorKey}), {stage}, {before}, {after});");
+        }
     }
 
     private static void EmitValidatorRegistrations(StringBuilder sb, ImmutableArray<ValidatorDetail> validators)

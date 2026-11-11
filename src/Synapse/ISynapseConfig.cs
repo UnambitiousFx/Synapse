@@ -64,6 +64,31 @@ public interface ISynapseConfig
         where TItem : notnull;
 
     /// <summary>
+    ///     Declares where a behavior runs relative to the others: the runtime equivalent of
+    ///     <c>[PipelineBehavior(Stage = ..., Before = ..., After = ...)]</c>, for behaviors the source generator does
+    ///     not see (registered by hand, or shipped in a package). Calling it again for the same behavior adds
+    ///     constraints. The order is resolved when a pipeline is first built, and <c>ValidateSynapse</c> reports a
+    ///     cycle (SYN005) or a constraint that contradicts the stages (SYN006) at startup.
+    /// </summary>
+    /// <param name="behaviorType">
+    ///     The behavior: an open-generic definition such as <c>typeof(AuditBehavior&lt;,&gt;)</c> to cover every closed
+    ///     form, or a concrete type.
+    /// </param>
+    /// <param name="stage">The stage the behavior runs in, or <c>null</c> to keep the one implied by its <c>Order</c>.</param>
+    /// <param name="before">A behavior this one runs before (outside of), matched like <paramref name="behaviorType" />, or <c>null</c>.</param>
+    /// <param name="after">A behavior this one runs after (inside of), matched like <paramref name="behaviorType" />, or <c>null</c>.</param>
+    /// <returns>The same config, for chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="behaviorType" /> is <c>null</c>.</exception>
+    /// <exception cref="ArgumentException">
+    ///     Nothing is declared, <paramref name="stage" /> is not a defined stage, or <paramref name="before" /> or
+    ///     <paramref name="after" /> names the behavior itself.
+    /// </exception>
+    ISynapseConfig ConfigureBehaviorOrdering(Type behaviorType,
+        PipelineStage? stage = null,
+        Type? before = null,
+        Type? after = null);
+
+    /// <summary>
     ///     Registers CQRS boundary enforcement for a specific request type (no-response form).
     /// </summary>
     /// <remarks>
