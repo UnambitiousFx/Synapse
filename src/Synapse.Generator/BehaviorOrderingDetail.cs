@@ -16,8 +16,12 @@ public readonly record struct BehaviorOrderingDetail
         string? beforeTypeOf,
         string? afterKey,
         string? afterTypeOf,
-        LocationInfo? location)
+        LocationInfo? location,
+        string? beforeBinding = null,
+        string? afterBinding = null)
     {
+        BeforeBinding = beforeBinding;
+        AfterBinding = afterBinding;
         BehaviorKey = behaviorKey;
         Stage = stage;
         StageName = stageName;
@@ -51,6 +55,16 @@ public readonly record struct BehaviorOrderingDetail
 
     /// <summary>The <c>After</c> target as written, ready for <c>typeof</c>, or null; see <see cref="BeforeTypeOf" />.</summary>
     public string? AfterTypeOf { get; }
+
+    /// <summary>
+    ///     The type arguments of a closed generic <c>Before</c> target (<c>typeof(Scope&lt;MyQuery, int&gt;)</c> gives
+    ///     <c>global::Ns.MyQuery, int</c>), or null when the target is open or not generic. A closed target only
+    ///     matches the pipeline of those type arguments, which cycle detection must respect.
+    /// </summary>
+    public string? BeforeBinding { get; }
+
+    /// <summary>The type arguments of a closed generic <c>After</c> target; see <see cref="BeforeBinding" />.</summary>
+    public string? AfterBinding { get; }
 
     /// <summary>Where to report diagnostics: the behavior class, or null for a behavior from a referenced assembly.</summary>
     public LocationInfo? Location { get; }
@@ -107,7 +121,15 @@ public readonly record struct BehaviorOrderingDetail
         return new BehaviorOrderingDetail(KeyOf(behavior), stage, stageName,
             before is null ? null : KeyOf(before), TypeOfOperand(before, compilation),
             after is null ? null : KeyOf(after), TypeOfOperand(after, compilation),
-            location);
+            location, BindingOf(before), BindingOf(after));
+    }
+
+    private static string? BindingOf(INamedTypeSymbol? type)
+    {
+        return type is { IsGenericType: true, IsUnboundGenericType: false }
+            ? string.Join(", ", type.TypeArguments.Select(argument =>
+                argument.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)))
+            : null;
     }
 
     /// <summary>The definition of <paramref name="type" /> as a <c>typeof</c> operand, generics unbound.</summary>

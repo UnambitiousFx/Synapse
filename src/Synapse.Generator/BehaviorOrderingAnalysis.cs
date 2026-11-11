@@ -51,9 +51,9 @@ internal static class BehaviorOrderingAnalysis
         }
 
         var byKey = orderings.ToDictionary(ordering => ordering.BehaviorKey, StringComparer.Ordinal);
-        var successors = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        var edges = new List<Edge>();
 
-        void AddEdge(string first, string then, BehaviorOrderingDetail declaredBy)
+        void AddEdge(string first, string then, string? binding, BehaviorOrderingDetail declaredBy)
         {
             if (byKey.TryGetValue(first, out var firstDetail) && byKey.TryGetValue(then, out var thenDetail) &&
                 firstDetail.HasStage && thenDetail.HasStage && firstDetail.Stage > thenDetail.Stage)
@@ -65,15 +65,7 @@ internal static class BehaviorOrderingAnalysis
                 return;
             }
 
-            if (!successors.TryGetValue(first, out var list))
-            {
-                successors[first] = list = [];
-            }
-
-            if (!list.Contains(then))
-            {
-                list.Add(then);
-            }
+            edges.Add(new Edge(first, then, binding));
         }
 
         foreach (var ordering in orderings)
@@ -87,7 +79,7 @@ internal static class BehaviorOrderingAnalysis
                 }
                 else
                 {
-                    AddEdge(ordering.BehaviorKey, before, ordering);
+                    AddEdge(ordering.BehaviorKey, before, ordering.BeforeBinding, ordering);
                 }
             }
 
@@ -100,18 +92,13 @@ internal static class BehaviorOrderingAnalysis
                 }
                 else
                 {
-                    AddEdge(after, ordering.BehaviorKey, ordering);
+                    AddEdge(after, ordering.BehaviorKey, ordering.AfterBinding, ordering);
                 }
             }
         }
 
-        foreach (var component in StronglyConnectedComponents(successors))
+        foreach (var component in Cycles(edges))
         {
-            if (component.Count < 2)
-            {
-                continue;
-            }
-
             var members = string.Join(", ", component.Select(key => $"'{Display(key)}'"));
             var path = string.Join(" -> ", component.Concat([component[0]]).Select(Display));
             foreach (var key in component)
@@ -135,6 +122,64 @@ internal static class BehaviorOrderingAnalysis
     private static string Display(string key)
     {
         return BehaviorOrderingDetail.DisplayName(key);
+    }
+
+    // A constraint edge between behavior definitions. Binding is the type arguments of a closed target, so the edge
+    // only exists in the pipeline closed over them; null means it applies to every pipeline that has both behaviors.
+    private readonly struct Edge
+    {
+        public Edge(string first, string then, string? binding)
+        {
+            First = first;
+            Then = then;
+            Binding = binding;
+        }
+
+        public string First { get; }
+
+        public string Then { get; }
+
+        public string? Binding { get; }
+    }
+
+    // Nodes are behavior definitions, but "A before B<X>" and "B before A<Y>" never meet in one pipeline unless X and Y
+    // are the same type arguments. So cycles are searched once per binding, over the unbound edges plus the edges of
+    // that binding, and a cycle is only reported when all its edges can apply to the same pipeline.
+    private static List<List<string>> Cycles(List<Edge> edges)
+    {
+        var bindings = new List<string?> { null };
+        bindings.AddRange(edges.Select(edge => edge.Binding).Where(binding => binding is not null).Distinct()
+            .OrderBy(binding => binding, StringComparer.Ordinal));
+
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var cycles = new List<List<string>>();
+        foreach (var binding in bindings)
+        {
+            var successors = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+            foreach (var edge in edges.Where(edge => edge.Binding is null || edge.Binding == binding))
+            {
+                if (!successors.TryGetValue(edge.First, out var list))
+                {
+                    successors[edge.First] = list = [];
+                }
+
+                if (!list.Contains(edge.Then))
+                {
+                    list.Add(edge.Then);
+                }
+            }
+
+            foreach (var component in StronglyConnectedComponents(successors).Where(component => component.Count > 1))
+            {
+                // The same cycle is found again under every binding when its edges are all unbound.
+                if (seen.Add(string.Join("|", component.OrderBy(key => key, StringComparer.Ordinal))))
+                {
+                    cycles.Add(component);
+                }
+            }
+        }
+
+        return cycles;
     }
 
     // Tarjan's algorithm. Graphs here are a handful of behaviors, so recursion depth is not a concern. Each

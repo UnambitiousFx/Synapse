@@ -122,6 +122,56 @@ public sealed class GeneratorBehaviorOrderingTests
     }
 
     [Fact]
+    public void Generate_WithOppositeConstraintsOnDifferentClosedTargets_ReportsNoCycle()
+    {
+        // Arrange (Given) — "A before B<MyQuery, int>" and "B before A<OtherQuery, string>" never meet in one
+        // pipeline, so they are not a cycle.
+        var source = Handlers.Replace("public sealed record MyQuery : IRequest<int>;",
+                         "public sealed record MyQuery : IRequest<int>;\npublic sealed record OtherQuery : IRequest<string>;",
+                         StringComparison.Ordinal) +
+                     Behavior("ABehavior", "[PipelineBehavior(Before = typeof(BBehavior<MyQuery, int>))]") +
+                     Behavior("BBehavior", "[PipelineBehavior(Before = typeof(ABehavior<OtherQuery, string>))]");
+
+        // Act (When)
+        var (diagnostics, generated, errors) = Run(source);
+
+        // Assert (Then)
+        Assert.DoesNotContain(diagnostics, d => d.Id == "MDG018");
+        Assert.Contains("typeof(global::TestNs.BBehavior<global::TestNs.MyQuery, int>)", generated);
+        Assert.Empty(errors);
+    }
+
+    [Fact]
+    public void Generate_WithOppositeConstraintsOnTheSameClosedTargets_ReportsMdg018()
+    {
+        // Arrange (Given) — both closed targets are over MyQuery/int, so that pipeline has both edges.
+        var source = Handlers +
+                     Behavior("ABehavior", "[PipelineBehavior(Before = typeof(BBehavior<MyQuery, int>))]") +
+                     Behavior("BBehavior", "[PipelineBehavior(Before = typeof(ABehavior<MyQuery, int>))]");
+
+        // Act (When)
+        var (diagnostics, _, _) = Run(source);
+
+        // Assert (Then)
+        Assert.Equal(2, diagnostics.Count(d => d.Id == "MDG018"));
+    }
+
+    [Fact]
+    public void Generate_WithAClosedAndAnOpenConstraintClosingACycle_ReportsMdg018()
+    {
+        // Arrange (Given) — the open edge applies to every pipeline, including MyQuery/int.
+        var source = Handlers +
+                     Behavior("ABehavior", "[PipelineBehavior(Before = typeof(BBehavior<MyQuery, int>))]") +
+                     Behavior("BBehavior", "[PipelineBehavior(Before = typeof(ABehavior<,>))]");
+
+        // Act (When)
+        var (diagnostics, _, _) = Run(source);
+
+        // Assert (Then)
+        Assert.Equal(2, diagnostics.Count(d => d.Id == "MDG018"));
+    }
+
+    [Fact]
     public void Generate_WithALongerCycle_ReportsMdg018()
     {
         // Arrange (Given) — A after C, B after A, C after B.

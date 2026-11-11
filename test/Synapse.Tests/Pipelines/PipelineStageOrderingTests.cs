@@ -231,6 +231,61 @@ public sealed class PipelineStageOrderingTests
     }
 
     [Fact]
+    public async Task Invoke_WithAClosedRuleAndAnOpenGenericRule_AppliesBoth()
+    {
+        // Arrange (Given) — the open rule (as the generator emits it) gives the stage; the closed rule (as an
+        // application adds it) gives a constraint. Audit has Order First, so only the merged rule puts it after Actor.
+        var log = new Log();
+        await using var provider = Build(log, cfg =>
+        {
+            cfg.RegisterRequestHandler<QueryHandler, Query, int>();
+            cfg.RegisterRequestPipelineBehavior<AuditBehavior<Query, int>, Query, int>();
+            cfg.RegisterRequestPipelineBehavior<ActorBehavior<Query, int>, Query, int>();
+            cfg.RegisterRequestPipelineBehavior<Order10QueryBehavior, Query, int>();
+            cfg.ConfigureBehaviorOrdering(typeof(AuditBehavior<,>), PipelineStage.Authorization);
+            cfg.ConfigureBehaviorOrdering(typeof(ActorBehavior<,>), PipelineStage.Authorization);
+            cfg.ConfigureBehaviorOrdering(typeof(AuditBehavior<Query, int>), after: typeof(ActorBehavior<Query, int>));
+        });
+
+        // Act (When)
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<IInvoker>()
+                .InvokeAsync(new Query(), TestContext.Current.CancellationToken);
+        }
+
+        var description = provider.GetRequiredService<IPipelineDescriber>().Describe<Query, int>();
+
+        // Assert (Then) — Order10 is Observability, so it still wraps both Authorization behaviors.
+        Assert.Equal(["Order10", "Actor", "Audit"], log.Steps);
+        Assert.NotNull(description);
+        Assert.Equal(PipelineStage.Authorization,
+            description.Behaviors.Single(behavior => behavior.Type == typeof(AuditBehavior<Query, int>)).Stage);
+    }
+
+    [Fact]
+    public void ValidateSynapse_WithAClosedRuleAndAnOpenRuleInDifferentStages_ReportsSyn006()
+    {
+        // Arrange (Given)
+        using var provider = BuildSync(cfg =>
+        {
+            cfg.RegisterRequestHandler<QueryHandler, Query, int>();
+            cfg.RegisterRequestPipelineBehavior<AuditBehavior<Query, int>, Query, int>();
+            cfg.ConfigureBehaviorOrdering(typeof(AuditBehavior<,>), PipelineStage.Authorization);
+            cfg.ConfigureBehaviorOrdering(typeof(AuditBehavior<Query, int>), PipelineStage.Validation);
+        });
+
+        // Act (When)
+        var report = provider.ValidateSynapse();
+
+        // Assert (Then)
+        var issue = Assert.Single(report.Errors);
+        Assert.Equal("SYN006", issue.Code);
+        Assert.Contains("Validation stage", issue.Message, StringComparison.Ordinal);
+        Assert.Contains("Authorization", issue.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Publish_WithStagedEventBehaviors_OrdersThemByStage()
     {
         // Arrange (Given)
@@ -410,6 +465,48 @@ public sealed class PipelineStageOrderingTests
         Assert.Empty(report.Issues);
     }
 
+    [Fact]
+    public void ValidateSynapse_WithATieSettledByAChainOfConstraints_DoesNotReportSyn004()
+    {
+        // Arrange (Given) — three behaviors share Order 10; A before B and B before C also order A and C.
+        using var provider = BuildSync(cfg =>
+        {
+            cfg.RegisterRequestHandler<CommandHandler, Command>();
+            cfg.RegisterRequestPipelineBehavior<Order10C, Command>();
+            cfg.RegisterRequestPipelineBehavior<Order10B, Command>();
+            cfg.RegisterRequestPipelineBehavior<Order10A, Command>();
+            cfg.ConfigureBehaviorOrdering(typeof(Order10A), before: typeof(Order10B));
+            cfg.ConfigureBehaviorOrdering(typeof(Order10C), after: typeof(Order10B));
+        });
+
+        // Act (When)
+        var report = provider.ValidateSynapse();
+
+        // Assert (Then)
+        Assert.Empty(report.Issues);
+    }
+
+    [Fact]
+    public void ValidateSynapse_WithThreeTiedBehaviorsAndOneConstraint_StillReportsSyn004()
+    {
+        // Arrange (Given) — A before B says nothing about C, so C's place is registration order.
+        using var provider = BuildSync(cfg =>
+        {
+            cfg.RegisterRequestHandler<CommandHandler, Command>();
+            cfg.RegisterRequestPipelineBehavior<Order10C, Command>();
+            cfg.RegisterRequestPipelineBehavior<Order10B, Command>();
+            cfg.RegisterRequestPipelineBehavior<Order10A, Command>();
+            cfg.ConfigureBehaviorOrdering(typeof(Order10A), before: typeof(Order10B));
+        });
+
+        // Act (When)
+        var report = provider.ValidateSynapse();
+
+        // Assert (Then)
+        var issue = Assert.Single(report.Warnings);
+        Assert.Equal("SYN004", issue.Code);
+    }
+
     // ── Registration API ─────────────────────────────────────────────────────
 
     [Theory]
@@ -469,6 +566,19 @@ public sealed class PipelineStageOrderingTests
             ],
             description.Behaviors);
         Assert.Contains("Authorization 0 StagedAuthorization", description.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BehaviorDescription_WithNamedArguments_KeepsThePositionalRecordNames()
+    {
+        // Arrange (Given) / Act (When) — named arguments as callers wrote them against the positional record.
+        var description = new BehaviorDescription(Type: typeof(Order10A), Order: 10);
+        var (type, order) = description;
+
+        // Assert (Then)
+        Assert.Equal(typeof(Order10A), type);
+        Assert.Equal(10u, order);
+        Assert.Equal(PipelineStage.Observability, description.Stage);
     }
 
     // ── PipelineStages ───────────────────────────────────────────────────────
@@ -599,6 +709,23 @@ public sealed class PipelineStageOrderingTests
     public sealed class Order10B(Log log) : LoggingBehavior(log, nameof(Order10B)), IOrderedPipelineBehavior
     {
         public uint Order => 10;
+    }
+
+    public sealed class Order10C(Log log) : LoggingBehavior(log, nameof(Order10C)), IOrderedPipelineBehavior
+    {
+        public uint Order => 10;
+    }
+
+    public sealed class Order10QueryBehavior(Log log) : IRequestPipelineBehavior<Query, int>, IOrderedPipelineBehavior
+    {
+        public uint Order => 10;
+
+        public ValueTask<Result<int>> HandleAsync(Query request, RequestHandlerDelegate<Query, int> next,
+            CancellationToken cancellationToken = default)
+        {
+            log.Steps.Add("Order10");
+            return next(request, cancellationToken);
+        }
     }
 
     public sealed class OrderMiddle(Log log) : LoggingBehavior(log, nameof(OrderMiddle)), IOrderedPipelineBehavior

@@ -307,8 +307,17 @@ public interface IDependencyInjectionBuilder
     ///     Nothing is declared, <paramref name="stage" /> is not a defined stage, or <paramref name="before" /> or
     ///     <paramref name="after" /> names the behavior itself.
     /// </exception>
+    /// <exception cref="NotSupportedException">
+    ///     This implementation does not override the default. Synapse's own builder always does; the default only
+    ///     exists so implementations written before this member keep compiling.
+    /// </exception>
     IDependencyInjectionBuilder ConfigureBehaviorOrdering(Type behaviorType,
         PipelineStage? stage = null,
         Type? before = null,
-        Type? after = null);
+        Type? after = null)
+    {
+        // Ignoring the declaration would silently reorder the pipeline, so a builder that cannot store it refuses it.
+        throw new NotSupportedException(
+            $"{GetType()} does not support behavior ordering declarations. Override ConfigureBehaviorOrdering.");
+    }
 }

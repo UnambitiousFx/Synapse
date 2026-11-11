@@ -7,14 +7,20 @@ public sealed record BehaviorDescription
 {
     /// <summary>
     ///     Describes a behavior that declares no stage: its <see cref="Stage" /> is the one whose band contains
-    ///     <paramref name="order" /> (see <see cref="PipelineStages.Of" />).
+    ///     <paramref name="Order" /> (see <see cref="PipelineStages.Of" />).
     /// </summary>
-    /// <param name="type">The concrete behavior type that runs.</param>
-    /// <param name="order">The behavior's <see cref="IOrderedPipelineBehavior.Order" />, or <see cref="IOrderedPipelineBehavior.Last" />.</param>
-    public BehaviorDescription(Type type, uint order)
-        : this(type, order, PipelineStages.Of(order))
+    /// <param name="Type">The concrete behavior type that runs.</param>
+    /// <param name="Order">The behavior's <see cref="IOrderedPipelineBehavior.Order" />, or <see cref="IOrderedPipelineBehavior.Last" />.</param>
+    /// <remarks>
+    ///     The parameters keep the PascalCase names of the positional record this type used to be, so callers that
+    ///     pass them by name keep compiling.
+    /// </remarks>
+    // ReSharper disable InconsistentNaming
+    public BehaviorDescription(Type Type, uint Order)
+        : this(Type, Order, PipelineStages.Of(Order))
     {
     }
+    // ReSharper restore InconsistentNaming
 
     /// <summary>
     ///     Describes a behavior with the stage it runs in.
@@ -44,11 +50,13 @@ public sealed record BehaviorDescription
     public PipelineStage Stage { get; init; }
 
     /// <summary>Deconstructs the type and order, like the positional record this type used to be.</summary>
-    /// <param name="type">The behavior type.</param>
-    /// <param name="order">The behavior's order.</param>
-    public void Deconstruct(out Type type, out uint order)
+    /// <param name="Type">The behavior type.</param>
+    /// <param name="Order">The behavior's order.</param>
+    // ReSharper disable InconsistentNaming
+    public void Deconstruct(out Type Type, out uint Order)
     {
-        type = Type;
-        order = Order;
+        Type = this.Type;
+        Order = this.Order;
     }
+    // ReSharper restore InconsistentNaming
 }

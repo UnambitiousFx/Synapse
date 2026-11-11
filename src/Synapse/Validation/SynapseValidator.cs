@@ -68,10 +68,11 @@ internal static class SynapseValidator
                 continue;
             }
 
+            var pipelineTypes = description.Behaviors.Select(behavior => behavior.Type).ToArray();
             foreach (var tie in description.Behaviors.GroupBy(behavior => (behavior.Stage, behavior.Order)))
             {
                 var members = tie.ToList();
-                if (!IsUserDeclaredTie(members, ordering))
+                if (!IsUserDeclaredTie(members, pipelineTypes, ordering))
                 {
                     continue;
                 }
@@ -121,8 +122,10 @@ internal static class SynapseValidator
 
     // Behaviors that declare no Order all report Last, and Synapse's own behaviors are not the user's to reorder,
     // so only a tie between two user behaviors that opted into IOrderedPipelineBehavior is actionable. A tie that a
-    // Before/After constraint settles is not decided by registration order, so it is not reported either.
-    private static bool IsUserDeclaredTie(List<BehaviorDescription> members, PipelineOrdering ordering)
+    // chain of Before/After constraints settles is not decided by registration order, so it is not reported either.
+    private static bool IsUserDeclaredTie(List<BehaviorDescription> members,
+        IReadOnlyList<Type> pipelineTypes,
+        PipelineOrdering ordering)
     {
         var ordered = members.Where(behavior => typeof(IOrderedPipelineBehavior).IsAssignableFrom(behavior.Type))
             .ToList();
@@ -135,7 +138,7 @@ internal static class SynapseValidator
         {
             for (var j = i + 1; j < ordered.Count; j++)
             {
-                if (!ordering.AreConstrained(ordered[i].Type, ordered[j].Type))
+                if (!ordering.AreOrdered(pipelineTypes, ordered[i].Type, ordered[j].Type))
                 {
                     return true;
                 }

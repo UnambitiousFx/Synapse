@@ -105,21 +105,56 @@ internal sealed class PipelineOrdering
     }
 
     /// <summary>
-    ///     Whether a <c>Before</c>/<c>After</c> constraint relates the two behavior types directly, so their relative
-    ///     order is not decided by registration order.
+    ///     Whether a chain of <c>Before</c>/<c>After</c> constraints between the behaviors of
+    ///     <paramref name="pipeline" /> orders <paramref name="first" /> and <paramref name="second" /> (in either
+    ///     direction), so their relative order is not decided by registration order.
     /// </summary>
-    public bool AreConstrained(Type first, Type second)
+    /// <param name="pipeline">The behavior types of one pipeline.</param>
+    /// <param name="first">One behavior of the pipeline.</param>
+    /// <param name="second">Another behavior of the pipeline.</param>
+    public bool AreOrdered(IReadOnlyList<Type> pipeline, Type first, Type second)
     {
-        return Constrains(first, second) || Constrains(second, first);
+        return Reaches(pipeline, first, second) || Reaches(pipeline, second, first);
     }
 
-    private bool Constrains(Type source, Type target)
+    // Breadth-first over "runs before" edges between the pipeline's own behaviors.
+    private bool Reaches(IReadOnlyList<Type> pipeline, Type from, Type to)
     {
-        var rule = Find(source);
-        return rule is not null &&
-               (rule.Before.Any(before => Matches(target, before)) || rule.After.Any(after => Matches(target, after)));
+        var visited = new HashSet<Type> { from };
+        var pending = new Queue<Type>();
+        pending.Enqueue(from);
+        while (pending.Count > 0)
+        {
+            var current = pending.Dequeue();
+            foreach (var next in pipeline)
+            {
+                if (next == current || !RunsBefore(current, next) || !visited.Add(next))
+                {
+                    continue;
+                }
+
+                if (next == to)
+                {
+                    return true;
+                }
+
+                pending.Enqueue(next);
+            }
+        }
+
+        return false;
     }
 
+    // A direct constraint, declared by either side: first.Before matches second, or second.After matches first.
+    private bool RunsBefore(Type first, Type second)
+    {
+        return (Find(first)?.Before.Any(before => Matches(second, before)) ?? false) ||
+               (Find(second)?.After.Any(after => Matches(first, after)) ?? false);
+    }
+
+    // A closed behavior can match two rules: one for itself and one for its open-generic definition (for example the
+    // generator declares AuditBehavior<,> in a stage and the application adds a Before for AuditBehavior<X, Y>).
+    // Both apply, so they are merged; two different stages are a conflict, not a silent pick.
     private MergedRule? Find(Type type)
     {
         if (_rules.Count == 0)
@@ -127,15 +162,39 @@ internal sealed class PipelineOrdering
             return null;
         }
 
-        if (_rules.TryGetValue(type, out var rule))
+        _rules.TryGetValue(type, out var closed);
+        MergedRule? open = null;
+        if (type.IsGenericType && !type.IsGenericTypeDefinition)
         {
-            return rule;
+            _rules.TryGetValue(type.GetGenericTypeDefinition(), out open);
         }
 
-        return type.IsGenericType && !type.IsGenericTypeDefinition &&
-               _rules.TryGetValue(type.GetGenericTypeDefinition(), out rule)
-            ? rule
-            : null;
+        if (closed is null || open is null)
+        {
+            return closed ?? open;
+        }
+
+        if (closed.Stage is { } closedStage && open.Stage is { } openStage && closedStage != openStage)
+        {
+            var definition = type.GetGenericTypeDefinition();
+            throw new PipelineOrderingException(
+                $"'{DisplayName(type)}' is declared in the {closedStage} stage, but its definition " +
+                $"'{DisplayName(definition)}' is declared in {openStage}. Declare a single stage.",
+                false, [type, definition]);
+        }
+
+        var merged = new MergedRule { Stage = closed.Stage ?? open.Stage };
+        foreach (var before in closed.Before.Concat(open.Before))
+        {
+            AddDistinct(merged.Before, before);
+        }
+
+        foreach (var after in closed.After.Concat(open.After))
+        {
+            AddDistinct(merged.After, after);
+        }
+
+        return merged;
     }
 
     private Plan CreatePlan<T>(T[] items, Func<T, object> behaviorOf)
