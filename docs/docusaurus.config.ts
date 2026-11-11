@@ -64,10 +64,10 @@ const config: Config = {
         customLLMFiles: [
           {
             filename: 'llms-pipelines.txt',
-            includePatterns: ['pipelines.mdx', 'validation.mdx', 'error-handling.mdx'],
+            includePatterns: ['pipelines.mdx', 'validation.mdx', 'authorization.mdx', 'error-handling.mdx'],
             fullContent: true,
             title: 'Synapse Pipelines & Behaviors',
-            description: 'Pipeline behaviors, validation, and error handling.',
+            description: 'Pipeline behaviors, validation, authorization, and error handling.',
           },
           {
             filename: 'llms-outbox.txt',

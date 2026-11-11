@@ -163,6 +163,10 @@ Without the generator: `cfg.AddValidator<CreateTaskValidator, CreateTaskCommand,
 
 FluentValidation: reference `UnambitiousFx.Synapse.FluentValidation` and call `services.AddSynapseFluentValidation()`; every registered `IValidator<TRequest>` then runs for `Result` and `Result<T>` requests and a failure returns a `ValidationFailure` with field, message and code per error. Do not hand-write a FluentValidation behavior.
 
+## Authorization
+
+Reference `UnambitiousFx.Synapse.Authorization`, register your `ICurrentPrincipal` (scoped), then `services.AddSynapseAuthorization(o => { o.QueryScope = "read"; o.CommandScope = "write"; o.Policy<MyResourceAccessPolicy>(); })`. Every request then runs, in order: actor (anonymous → `UnauthenticatedFailure`), role (`IRequiresRole`), scope (`IRequiresScope`, else query → `QueryScope`, command → `CommandScope`; `o.DisableDefaultScopes()` turns the default off), resource (`IResourceScoped { ResourceId; Access }` checked by the `IResourceAccessPolicy`; no policy → denied). Denials return `UnauthorizedFailure` and are passed to every `IAuthorizationDenialRecorder` (`o.DenialRecorder<T>()`). Do not hand-write these behaviors; put your own behavior between two checks with the `AuthorizationBehaviorOrder` constants.
+
 ## Outbox
 
 `EmitMode.Outbox` stores the event; it is dispatched by `IOutboxCommit.CommitAsync(ct)` (call it after your transaction commits) or by `cfg.AddOutboxDispatcher(...)` in the background. Each entry is dispatched in a **new DI scope**: handlers do not share the caller's `DbContext`. Durable storage: `UnambitiousFx.Synapse.Outbox.EntityFrameworkCore` or `.AdoNet`. If the app never uses the outbox, `cfg.DisableInMemoryOutboxProductionWarning()` silences the startup warning about the in-memory storage in Production.
