@@ -5,7 +5,8 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 namespace UnambitiousFx.Synapse.Authorization;
 
 /// <summary>
-///     Options for <see cref="ServiceCollectionExtensions.AddSynapseAuthorization" />.
+///     Options for <see cref="ServiceCollectionExtensions.AddSynapseAuthorization" />. One instance is shared by every
+///     call to it, so each call's settings apply.
 /// </summary>
 public sealed class SynapseAuthorizationOptions
 {
@@ -74,11 +75,31 @@ public sealed class SynapseAuthorizationOptions
         return this;
     }
 
+    internal void Validate()
+    {
+        ThrowIfBlank(QueryScope, nameof(QueryScope));
+        ThrowIfBlank(CommandScope, nameof(CommandScope));
+    }
+
+    // The instance is shared by every AddSynapseAuthorization call, so each call applies only what it added.
     internal void ApplyRegistrations(IServiceCollection services)
     {
         foreach (var registration in _registrations)
         {
             registration(services);
+        }
+
+        _registrations.Clear();
+    }
+
+    private static void ThrowIfBlank(string? scope, string name)
+    {
+        // An empty scope would be a requirement no caller can meet; null is the explicit way to turn it off.
+        if (scope is not null && string.IsNullOrWhiteSpace(scope))
+        {
+            throw new ArgumentException(
+                $"{nameof(SynapseAuthorizationOptions)}.{name} is empty or whitespace. Set it to null to turn the default scope off.",
+                name);
         }
     }
 }

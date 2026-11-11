@@ -26,6 +26,28 @@ public sealed record PurgeItems : ICommand, IRequiresRole
 
 public sealed record Ping : IRequest;
 
+public sealed record SignIn(string Email) : ICommand, IAllowAnonymous;
+
+public sealed record AnonymousReport : IQuery<string>, IAllowAnonymous, IRequiresScope
+{
+    public string Scope => "reports:public";
+}
+
+public sealed record AnonymousAdminCommand : ICommand, IAllowAnonymous, IRequiresRole
+{
+    public string Role => "admin";
+}
+
+public sealed record BlankScopeQuery(string? Value) : IQuery<string>, IRequiresScope
+{
+    public string Scope => Value!;
+}
+
+public sealed record BlankRoleCommand(string? Value) : ICommand, IRequiresRole
+{
+    public string Role => Value!;
+}
+
 internal sealed class PipelineCalls
 {
     public int Count { get; set; }

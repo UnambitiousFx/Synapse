@@ -137,6 +137,78 @@ public sealed class AuthorizationPipelineTests
     }
 
     [Fact]
+    public async Task InvokeAsync_AllowAnonymousRequestFromAnonymousCaller_RunsHandler()
+    {
+        // Arrange (Given)
+        await using var provider = BuildProvider(Principals.Anonymous());
+        await using var scope = provider.CreateAsyncScope();
+        var invoker = scope.ServiceProvider.GetRequiredService<IInvoker>();
+
+        // Act (When)
+        var result = await invoker.InvokeAsync(new SignIn("a@b.c"), TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.True(result.IsSuccess);
+        Assert.Equal(1, provider.GetRequiredService<HandlerCalls>().Count);
+        Assert.Empty(provider.GetRequiredService<DenialLog>().Denials);
+    }
+
+    [Fact]
+    public async Task AddSynapseAuthorization_WhenALaterCallSetsAStricterScope_EnforcesIt()
+    {
+        // Arrange (Given) — a shared module registers first, then the host tightens the query scope
+        var services = CreateServices(Principals.Authenticated(scopes: ["read"]));
+        services.AddSynapseAuthorization(o => o.DenialRecorder<LoggingDenialRecorder>());
+        services.AddSynapseAuthorization(o => o.QueryScope = "loans:read");
+        await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        await using var scope = provider.CreateAsyncScope();
+        var invoker = scope.ServiceProvider.GetRequiredService<IInvoker>();
+
+        // Act (When)
+        var result = await invoker.InvokeAsync(new GetItem("42"), TestContext.Current.CancellationToken);
+
+        // Assert (Then) — and the first call's recorder still applies
+        Assert.True(result.TryGetFailure(out var failure));
+        Assert.IsType<UnauthorizedFailure>(failure);
+        var denial = Assert.Single(provider.GetRequiredService<DenialLog>().Denials);
+        Assert.Equal("loans:read", denial.Requirement);
+        Assert.Equal(0, provider.GetRequiredService<HandlerCalls>().Count);
+    }
+
+    [Fact]
+    public void AddSynapseAuthorization_WhenCalledTwice_SharesOneOptionsInstance()
+    {
+        // Arrange (Given)
+        var services = new ServiceCollection();
+
+        // Act (When)
+        services.AddSynapseAuthorization(o => o.CommandScope = "loans:write");
+        services.AddSynapseAuthorization(o => o.QueryScope = "loans:read");
+
+        // Assert (Then) — both calls' settings kept
+        var descriptor = Assert.Single(services, d => d.ServiceType == typeof(SynapseAuthorizationOptions));
+        var options = Assert.IsType<SynapseAuthorizationOptions>(descriptor.ImplementationInstance);
+        Assert.Equal("loans:read", options.QueryScope);
+        Assert.Equal("loans:write", options.CommandScope);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("  ")]
+    public void AddSynapseAuthorization_WithBlankDefaultScope_Throws(string scope)
+    {
+        // Arrange (Given)
+        var services = new ServiceCollection();
+
+        // Act (When)
+        var exception = Assert.Throws<ArgumentException>(() =>
+            services.AddSynapseAuthorization(o => o.QueryScope = scope));
+
+        // Assert (Then)
+        Assert.Equal(nameof(SynapseAuthorizationOptions.QueryScope), exception.ParamName);
+    }
+
+    [Fact]
     public void AddSynapseAuthorization_WhenCalledTwice_RegistersEachBehaviorOnce()
     {
         // Arrange (Given)
@@ -171,21 +243,12 @@ public sealed class AuthorizationPipelineTests
         IResourceAccessPolicy? policy = null,
         Action<SynapseAuthorizationOptions>? configure = null)
     {
-        var services = new ServiceCollection();
-        services.AddSingleton<HandlerCalls>();
-        services.AddSingleton<DenialLog>();
-        services.AddSingleton(principal);
+        var services = CreateServices(principal);
         if (policy is not null)
         {
             services.AddSingleton(policy);
         }
 
-        services.AddSynapse(cfg =>
-        {
-            cfg.RegisterRequestHandler<GetItemHandler, GetItem, string>();
-            cfg.RegisterRequestHandler<RenameItemHandler, RenameItem>();
-            cfg.RegisterRequestHandler<PurgeItemsHandler, PurgeItems>();
-        });
         services.AddSynapseAuthorization(o =>
         {
             o.DenialRecorder<LoggingDenialRecorder>();
@@ -201,6 +264,31 @@ public sealed class AuthorizationPipelineTests
             configure?.Invoke(o);
         });
         return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+    }
+
+    private static ServiceCollection CreateServices(ICurrentPrincipal principal)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<HandlerCalls>();
+        services.AddSingleton<DenialLog>();
+        services.AddSingleton(principal);
+        services.AddSynapse(cfg =>
+        {
+            cfg.RegisterRequestHandler<GetItemHandler, GetItem, string>();
+            cfg.RegisterRequestHandler<RenameItemHandler, RenameItem>();
+            cfg.RegisterRequestHandler<PurgeItemsHandler, PurgeItems>();
+            cfg.RegisterRequestHandler<SignInHandler, SignIn>();
+        });
+        return services;
+    }
+
+    private sealed class SignInHandler(HandlerCalls calls) : IRequestHandler<SignIn>
+    {
+        public ValueTask<Result> HandleAsync(SignIn request, CancellationToken cancellationToken = default)
+        {
+            calls.Count++;
+            return new ValueTask<Result>(Result.Success());
+        }
     }
 
     private sealed class HandlerCalls

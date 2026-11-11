@@ -9,6 +9,10 @@ namespace UnambitiousFx.Synapse.Authorization;
 ///     <see cref="IRequiresRole.Role" />. Other requests pass through. Runs at
 ///     <see cref="AuthorizationBehaviorOrder.Role" />.
 /// </summary>
+/// <remarks>
+///     A null, empty or whitespace <see cref="IRequiresRole.Role" /> throws an <see cref="InvalidOperationException" />
+///     naming the request type: such a role is a bug, and denying everyone silently would hide it.
+/// </remarks>
 /// <typeparam name="TRequest">The request type.</typeparam>
 /// <typeparam name="TResult"><see cref="Result" /> or <see cref="Result{TValue}" />.</typeparam>
 public sealed class RoleAuthorizationBehavior<TRequest, TResult> : IResultPipelineBehavior<TRequest, TResult>,
@@ -16,7 +20,7 @@ public sealed class RoleAuthorizationBehavior<TRequest, TResult> : IResultPipeli
     where TResult : IResult
 {
     private readonly ICurrentPrincipal _principal;
-    private readonly IAuthorizationDenialRecorder[] _recorders;
+    private readonly IEnumerable<IAuthorizationDenialRecorder> _recorders;
 
     /// <summary>
     ///     Creates the behavior.
@@ -28,7 +32,8 @@ public sealed class RoleAuthorizationBehavior<TRequest, TResult> : IResultPipeli
     {
         ArgumentNullException.ThrowIfNull(principal);
         _principal = principal;
-        _recorders = AuthorizationDenials.ToArray(recorders);
+        ArgumentNullException.ThrowIfNull(recorders);
+        _recorders = recorders;
     }
 
     /// <inheritdoc />
@@ -39,13 +44,20 @@ public sealed class RoleAuthorizationBehavior<TRequest, TResult> : IResultPipeli
         RequestNext<TRequest, TResult> next,
         CancellationToken cancellationToken = default)
     {
-        if (request is not IRequiresRole requiresRole || _principal.IsInRole(requiresRole.Role))
+        if (request is not IRequiresRole requiresRole)
+        {
+            return next.InvokeAsync(request, cancellationToken);
+        }
+
+        var role = AuthorizationDenials.RequireValue<TRequest>(requiresRole.Role, nameof(IRequiresRole),
+            nameof(IRequiresRole.Role));
+        if (_principal.IsInRole(role))
         {
             return next.InvokeAsync(request, cancellationToken);
         }
 
         return AuthorizationDenials.DenyAsync(_recorders, next,
-            new AuthorizationDenial(requiresRole, AuthorizationDenialReason.MissingRole, _principal.Id, requiresRole.Role),
-            new UnauthorizedFailure($"Requires role '{requiresRole.Role}'."), cancellationToken);
+            new AuthorizationDenial(requiresRole, AuthorizationDenialReason.MissingRole, _principal.Id, role),
+            new UnauthorizedFailure($"Requires role '{role}'."), cancellationToken);
     }
 }

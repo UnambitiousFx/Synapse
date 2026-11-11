@@ -9,8 +9,14 @@ namespace UnambitiousFx.Synapse.Authorization;
 ///     request's own <see cref="IRequiresScope.Scope" />, otherwise <see cref="SynapseAuthorizationOptions.QueryScope" />
 ///     for an <see cref="IQuery{TResponse}" /> and <see cref="SynapseAuthorizationOptions.CommandScope" /> for an
 ///     <see cref="ICommand" /> or <see cref="ICommand{TResponse}" />. A request that is neither, and does not declare a
-///     scope, passes through. Runs at <see cref="AuthorizationBehaviorOrder.Scope" />.
+///     scope, passes through, and so does an <see cref="IAllowAnonymous" /> request that does not declare one. Runs at
+///     <see cref="AuthorizationBehaviorOrder.Scope" />.
 /// </summary>
+/// <remarks>
+///     A null, empty or whitespace <see cref="IRequiresScope.Scope" /> throws an
+///     <see cref="InvalidOperationException" /> naming the request type: such a scope is a bug, and denying everyone
+///     silently would hide it.
+/// </remarks>
 /// <typeparam name="TRequest">The request type.</typeparam>
 /// <typeparam name="TResult"><see cref="Result" /> or <see cref="Result{TValue}" />.</typeparam>
 public sealed class ScopeAuthorizationBehavior<TRequest, TResult> : IResultPipelineBehavior<TRequest, TResult>,
@@ -19,7 +25,7 @@ public sealed class ScopeAuthorizationBehavior<TRequest, TResult> : IResultPipel
 {
     private readonly string? _defaultScope;
     private readonly ICurrentPrincipal _principal;
-    private readonly IAuthorizationDenialRecorder[] _recorders;
+    private readonly IEnumerable<IAuthorizationDenialRecorder> _recorders;
 
     /// <summary>
     ///     Creates the behavior.
@@ -34,13 +40,17 @@ public sealed class ScopeAuthorizationBehavior<TRequest, TResult> : IResultPipel
         ArgumentNullException.ThrowIfNull(principal);
         ArgumentNullException.ThrowIfNull(options);
         _principal = principal;
-        _recorders = AuthorizationDenials.ToArray(recorders);
-        _defaultScope = RequestIntentOf<TRequest>.Value switch
-        {
-            RequestIntent.Command => options.CommandScope,
-            RequestIntent.Query => options.QueryScope,
-            _ => null
-        };
+        ArgumentNullException.ThrowIfNull(recorders);
+        _recorders = recorders;
+        // A public request (sign-in, sign-up) has no scope to give an anonymous caller, so the default does not apply.
+        _defaultScope = typeof(IAllowAnonymous).IsAssignableFrom(typeof(TRequest))
+            ? null
+            : RequestIntentOf<TRequest>.Value switch
+            {
+                RequestIntent.Command => options.CommandScope,
+                RequestIntent.Query => options.QueryScope,
+                _ => null
+            };
     }
 
     /// <inheritdoc />
@@ -51,7 +61,10 @@ public sealed class ScopeAuthorizationBehavior<TRequest, TResult> : IResultPipel
         RequestNext<TRequest, TResult> next,
         CancellationToken cancellationToken = default)
     {
-        var scope = request is IRequiresScope requiresScope ? requiresScope.Scope : _defaultScope;
+        var scope = request is IRequiresScope requiresScope
+            ? AuthorizationDenials.RequireValue<TRequest>(requiresScope.Scope, nameof(IRequiresScope),
+                nameof(IRequiresScope.Scope))
+            : _defaultScope;
         if (scope is null || _principal.HasScope(scope))
         {
             return next.InvokeAsync(request, cancellationToken);

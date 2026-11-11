@@ -5,9 +5,10 @@ using UnambitiousFx.Synapse.Abstractions;
 namespace UnambitiousFx.Synapse.Authorization;
 
 /// <summary>
-///     Rejects every request from an unauthenticated caller with an <see cref="UnauthenticatedFailure" />. Runs first
-///     of the authorization behaviors (<see cref="AuthorizationBehaviorOrder.Actor" />), so the role, scope and
-///     resource checks only ever see authenticated callers.
+///     Rejects every request from an unauthenticated caller with an <see cref="UnauthenticatedFailure" />, except
+///     <see cref="IAllowAnonymous" /> requests. Runs first of the authorization behaviors
+///     (<see cref="AuthorizationBehaviorOrder.Actor" />), so the role, scope and resource checks only see anonymous
+///     callers for <see cref="IAllowAnonymous" /> requests.
 /// </summary>
 /// <typeparam name="TRequest">The request type.</typeparam>
 /// <typeparam name="TResult"><see cref="Result" /> or <see cref="Result{TValue}" />.</typeparam>
@@ -16,7 +17,7 @@ public sealed class ActorAuthorizationBehavior<TRequest, TResult> : IResultPipel
     where TResult : IResult
 {
     private readonly ICurrentPrincipal _principal;
-    private readonly IAuthorizationDenialRecorder[] _recorders;
+    private readonly IEnumerable<IAuthorizationDenialRecorder> _recorders;
 
     /// <summary>
     ///     Creates the behavior.
@@ -28,7 +29,8 @@ public sealed class ActorAuthorizationBehavior<TRequest, TResult> : IResultPipel
     {
         ArgumentNullException.ThrowIfNull(principal);
         _principal = principal;
-        _recorders = AuthorizationDenials.ToArray(recorders);
+        ArgumentNullException.ThrowIfNull(recorders);
+        _recorders = recorders;
     }
 
     /// <inheritdoc />
@@ -39,7 +41,7 @@ public sealed class ActorAuthorizationBehavior<TRequest, TResult> : IResultPipel
         RequestNext<TRequest, TResult> next,
         CancellationToken cancellationToken = default)
     {
-        if (_principal.IsAuthenticated)
+        if (_principal.IsAuthenticated || request is IAllowAnonymous)
         {
             return next.InvokeAsync(request, cancellationToken);
         }

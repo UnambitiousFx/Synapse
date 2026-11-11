@@ -18,7 +18,7 @@ public sealed class ResourceAuthorizationBehavior<TRequest, TResult> : IResultPi
 {
     private readonly IResourceAccessPolicy? _policy;
     private readonly ICurrentPrincipal _principal;
-    private readonly IAuthorizationDenialRecorder[] _recorders;
+    private readonly IEnumerable<IAuthorizationDenialRecorder> _recorders;
 
     /// <summary>
     ///     Creates the behavior.
@@ -32,7 +32,8 @@ public sealed class ResourceAuthorizationBehavior<TRequest, TResult> : IResultPi
     {
         ArgumentNullException.ThrowIfNull(principal);
         _principal = principal;
-        _recorders = AuthorizationDenials.ToArray(recorders);
+        ArgumentNullException.ThrowIfNull(recorders);
+        _recorders = recorders;
         _policy = policy;
     }
 
