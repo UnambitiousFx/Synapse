@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  DOTNET_VERSION: '10.0.x'
+  DOTNET_VERSION: '11.0.x'
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
   SEMANTIC_RELEASE_VERSION: '25'
@@ -62,6 +62,7 @@ jobs:
           dotnet-version: |
             8.0.x
             9.0.x
+            10.0.x
             ${{ env.DOTNET_VERSION }}
 
       - name: Restore dependencies

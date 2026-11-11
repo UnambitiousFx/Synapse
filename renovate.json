@@ -50,6 +50,13 @@
     {
       "matchManagers": ["nuget"],
       "matchPackageNames": ["Microsoft.Extensions.**", "Microsoft.AspNetCore.**", "Microsoft.EntityFrameworkCore**", "System.Security.Cryptography.Pkcs"],
+      "matchCurrentVersion": "/^11\\./",
+      "allowedVersions": "/^11\\./",
+      "groupName": "microsoft net11"
+    },
+    {
+      "matchManagers": ["nuget"],
+      "matchPackageNames": ["Microsoft.Extensions.**", "Microsoft.AspNetCore.**", "Microsoft.EntityFrameworkCore**", "System.Security.Cryptography.Pkcs"],
       "matchCurrentVersion": "/^10\\./",
       "allowedVersions": "/^10\\./",
       "groupName": "microsoft net10"
