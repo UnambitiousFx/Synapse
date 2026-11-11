@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFrameworks>$(LibraryTargetFrameworks)</TargetFrameworks>
+        <Description>Model Context Protocol integration for UnambitiousFx.Synapse: exposes Synapse requests as MCP tools through IMcpInvoker, turning a Result into a CallToolResult with a configurable failure policy.</Description>
+        <PackageTags>$(PackageTags);mcp;model-context-protocol;ai;agents</PackageTags>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\Synapse.Abstractions\Synapse.Abstractions.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <!-- Core only: CallToolResult, tool attributes and RequestParams live there. The hosting and DI builder
+             (AddMcpServer, WithTools) come from the ModelContextProtocol package the application picks. -->
+        <PackageReference Include="ModelContextProtocol.Core" />
+        <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
+    </ItemGroup>
+
+</Project>
