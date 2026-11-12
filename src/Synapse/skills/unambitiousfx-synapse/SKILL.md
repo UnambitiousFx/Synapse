@@ -140,6 +140,7 @@ public sealed class TransactionBehavior<TRequest, TResponse>
 
 - Void requests: `IRequestPipelineBehavior<TRequest>` with `RequestHandlerDelegate<TRequest>`; events: `IEventPipelineBehavior<TEvent>` with `EventHandlerDelegate<TEvent>`; streams: `IStreamRequestPipelineBehavior<TRequest, TItem>` whose `next()` takes no argument.
 - Order comes from `IOrderedPipelineBehavior.Order` (`First`/`Middle`/`Last`), **not** registration order.
+- Prefer relative ordering over magic numbers across modules/packages: `[PipelineBehavior(Stage = PipelineStage.Authorization, After = typeof(ActorBehavior<,>))]` (stages: `Observability`, `Authentication`, `Authorization`, `Validation`, `Transaction`, `Handler`). Without the generator: `cfg.ConfigureBehaviorOrdering(typeof(AuditBehavior<,>), PipelineStage.Authorization, after: typeof(ActorBehavior<,>))`. Resolution: stage, then Before/After, then `Order`, then registration. A behavior without a stage falls in the stage whose `Order` band holds its `Order`, so Order-only pipelines are unchanged. Cycles: MDG018 at build, SYN005 at `ValidateSynapse`.
 - Behavior from another package: `[assembly: SynapseGlobalBehavior(typeof(Shared.LoggingBehavior<,>))]` in the host, and register the host's own `RegisterGroup`.
 - CQRS enforcement for the whole graph (host only):
   `[assembly: SynapseGlobalBehavior(typeof(CqrsBoundaryEnforcementBehavior<>))]` and `[assembly: SynapseGlobalBehavior(typeof(CqrsBoundaryEnforcementBehavior<,>))]`.

@@ -159,15 +159,20 @@ public readonly record struct BehaviorDetail
 /// </summary>
 public readonly record struct BehaviorScan
 {
-    public BehaviorScan(LocationInfo? location, EquatableArray<BehaviorDetail> behaviors)
+    public BehaviorScan(LocationInfo? location, EquatableArray<BehaviorDetail> behaviors,
+        BehaviorOrderingDetail? ordering = null)
     {
         Location = location;
         Behaviors = behaviors;
+        Ordering = ordering;
     }
 
     public LocationInfo? Location { get; }
 
     public EquatableArray<BehaviorDetail> Behaviors { get; }
+
+    /// <summary>The <c>Stage</c>/<c>Before</c>/<c>After</c> the attribute declares, or null when it declares none.</summary>
+    public BehaviorOrderingDetail? Ordering { get; }
 }
 
 /// <summary>
@@ -208,15 +213,20 @@ public readonly record struct GlobalBehaviorDiagnostic
 public readonly record struct GlobalBehaviorInfo
 {
     public GlobalBehaviorInfo(EquatableArray<BehaviorDetail> behaviors,
-        EquatableArray<GlobalBehaviorDiagnostic> diagnostics)
+        EquatableArray<GlobalBehaviorDiagnostic> diagnostics,
+        EquatableArray<BehaviorOrderingDetail> orderings = default)
     {
         Behaviors = behaviors;
         Diagnostics = diagnostics;
+        Orderings = orderings;
     }
 
     public EquatableArray<BehaviorDetail> Behaviors { get; }
 
     public EquatableArray<GlobalBehaviorDiagnostic> Diagnostics { get; }
+
+    /// <summary>Ordering declared through <c>[PipelineBehavior]</c> on the global behaviors themselves.</summary>
+    public EquatableArray<BehaviorOrderingDetail> Orderings { get; }
 }
 
 /// <summary>The pipeline interface kind a behavior implements.</summary>

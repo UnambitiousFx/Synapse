@@ -51,7 +51,8 @@ internal sealed class PipelineDescriber : IPipelineDescriber
 
         return new PipelineDescription(
             handlers.Select(handler => handler.GetType()).ToArray(),
-            PipelineBehaviorOrdering.Describe(behaviors));
+            PipelineBehaviorOrdering.Describe(behaviors,
+                scope.ServiceProvider.GetService<PipelineOrdering>() ?? PipelineOrdering.Empty));
     }
 
     private static PipelineDescription? DescribeHandler(object? handler)

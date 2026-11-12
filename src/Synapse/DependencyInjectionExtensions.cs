@@ -38,6 +38,8 @@ public static class DependencyInjectionExtensions
         services.TryAddScoped<IOutboxCommit, OutboxCommit>();
         services.TryAddScoped<IOutboxDiscard, OutboxDiscard>();
         services.TryAddSingleton<IPipelineDescriber, PipelineDescriber>();
+        // One resolver per container, over every ordering rule any AddSynapse call or register group declared.
+        services.TryAddSingleton(sp => new PipelineOrdering(sp.GetServices<BehaviorOrderingRule>()));
         services.TryAddScoped<IEventDispatcher, EventDispatcher>();
         services.TryAddScoped<IInvoker, Invoker>();
         services.TryAddScoped<IEmitter, Emitter>();

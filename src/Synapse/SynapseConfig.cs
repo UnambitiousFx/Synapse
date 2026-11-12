@@ -48,6 +48,16 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
 
     // ── Pipeline behaviors ───────────────────────────────────────────────────
 
+    public ISynapseConfig ConfigureBehaviorOrdering(Type behaviorType,
+        PipelineStage? stage = null,
+        Type? before = null,
+        Type? after = null)
+    {
+        var rule = BehaviorOrderingRule.Create(behaviorType, stage, before, after);
+        _actions.Add(svc => svc.AddSingleton(rule));
+        return this;
+    }
+
     public ISynapseConfig RegisterRequestPipelineBehavior<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
     TBehavior, TRequest>()

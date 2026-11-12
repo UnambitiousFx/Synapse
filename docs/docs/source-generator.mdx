@@ -180,6 +180,15 @@ The same `UnambitiousFx.Synapse.Generator` package also ships Roslyn analyzers. 
 | `SYN104` | A class implements a handler interface but has no handler attribute, in an assembly that uses the attributes elsewhere. | Add the attribute, or register the handler manually and silence the rule for that class with `#pragma warning disable SYN104`. |
 | `SYN105` | `[assembly: SynapseGlobalBehavior(...)]` is declared and this assembly calls `AddSynapse(...)` (so it is a composition root), but no `AddRegisterGroup(...)` call registers this assembly's own generated group — the attribute is accepted and the behavior never runs, with no error anywhere else. An assembly that declares the attribute with no `AddSynapse(...)` call of its own (a shared library, not a host) is not reported: the attribute is inert there regardless, since assembly attributes are not inherited by referencing assemblies. | Register this assembly's own generated group: `cfg.AddRegisterGroup(new <ThisAssembly>.RegisterGroup())` (or your `[RegisterGroup]` partial's name), alongside the other groups. |
 
+The generator itself also reports two errors about [behavior ordering](./pipelines#stages-and-relative-ordering) declared with `[PipelineBehavior(Stage = ..., Before = ..., After = ...)]`:
+
+| ID | When it fires | Fix |
+|---|---|---|
+| `MDG018` | The `Before`/`After` constraints of several behaviors form a cycle, so no pipeline containing them can be ordered. Reported on each behavior of the cycle. | Remove one of the constraints. |
+| `MDG019` | A constraint contradicts two declared stages (a `Validation` behavior declared `Before` an `Observability` one), or a behavior names itself in `Before`/`After`. | Change a stage or drop the constraint. |
+
+What depends on a runtime `Order` (the stage a behavior without a declared stage falls in) is checked at startup by `ValidateSynapse()` instead (`SYN005`, `SYN006`).
+
 Disable a rule per project or per folder with an `.editorconfig` entry:
 
 ```ini

@@ -288,4 +288,36 @@ public interface IDependencyInjectionBuilder
         where TValidator : class, IRequestValidator<TRequest>
         where TRequest : IRequest<TResponse>
         where TResponse : notnull;
+
+    /// <summary>
+    ///     Declares where a behavior runs relative to the others, like
+    ///     <c>[PipelineBehavior(Stage = ..., Before = ..., After = ...)]</c>. The source generator emits this call for
+    ///     every attributed behavior that sets one of them; calling it again for the same behavior adds constraints.
+    /// </summary>
+    /// <param name="behaviorType">
+    ///     The behavior: an open-generic definition such as <c>typeof(AuditBehavior&lt;,&gt;)</c> to cover every closed
+    ///     form, or a concrete type.
+    /// </param>
+    /// <param name="stage">The stage the behavior runs in, or <c>null</c> to keep the one implied by its <c>Order</c>.</param>
+    /// <param name="before">A behavior this one runs before (outside of), or <c>null</c>.</param>
+    /// <param name="after">A behavior this one runs after (inside of), or <c>null</c>.</param>
+    /// <returns>The same builder, for chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="behaviorType" /> is <c>null</c>.</exception>
+    /// <exception cref="ArgumentException">
+    ///     Nothing is declared, <paramref name="stage" /> is not a defined stage, or <paramref name="before" /> or
+    ///     <paramref name="after" /> names the behavior itself.
+    /// </exception>
+    /// <exception cref="NotSupportedException">
+    ///     This implementation does not override the default. Synapse's own builder always does; the default only
+    ///     exists so implementations written before this member keep compiling.
+    /// </exception>
+    IDependencyInjectionBuilder ConfigureBehaviorOrdering(Type behaviorType,
+        PipelineStage? stage = null,
+        Type? before = null,
+        Type? after = null)
+    {
+        // Ignoring the declaration would silently reorder the pipeline, so a builder that cannot store it refuses it.
+        throw new NotSupportedException(
+            $"{GetType()} does not support behavior ordering declarations. Override ConfigureBehaviorOrdering.");
+    }
 }

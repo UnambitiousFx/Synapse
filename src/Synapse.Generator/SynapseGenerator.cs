@@ -310,6 +310,7 @@ public class SynapseGenerator : IIncrementalGenerator
             // and flatten the per-class scans into the list of behaviors to emit. A single class can
             // implement several pipeline interfaces, so each scan may contribute multiple behaviors.
             var behaviorList = ImmutableArray.CreateBuilder<BehaviorDetail>();
+            var orderingList = new List<BehaviorOrderingDetail>();
             foreach (var scan in behaviors)
             {
                 if (scan is null)
@@ -329,6 +330,11 @@ public class SynapseGenerator : IIncrementalGenerator
                             true),
                         scan.Value.Location?.ToLocation() ?? Location.None));
                     continue;
+                }
+
+                if (scan.Value.Ordering is { } ordering)
+                {
+                    orderingList.Add(ordering);
                 }
 
                 foreach (var behavior in scan.Value.Behaviors)
@@ -396,6 +402,13 @@ public class SynapseGenerator : IIncrementalGenerator
 
                 behaviorList.Add(behavior);
             }
+
+            // Stage/Before/After: report what the generator can prove wrong (cycles, constraints that contradict
+            // declared stages), then emit one ordering registration per behavior. Constraints that depend on a
+            // runtime Order are left to ValidateSynapse.
+            orderingList.AddRange(globalBehaviors.Orderings);
+            var orderings = BehaviorOrderingAnalysis.Deduplicate(orderingList);
+            BehaviorOrderingAnalysis.Report(ctx, orderings);
 
             // Validate validators — warn if a [Validator] class implements no IRequestValidator<> interface,
             // and collect the rest for emission.
@@ -482,7 +495,7 @@ public class SynapseGenerator : IIncrementalGenerator
             ctx.AddSource("RegisterGroup.g.cs",
                 RegisterGroupFactory.Create(emitNamespace, emitClassName, emitAsPartial, AbstractionsNamespace,
                     details, behaviorList.ToImmutable(), behaviorTargets, crossAssemblyDisabled,
-                    validatorList.ToImmutable(), eventInfo));
+                    validatorList.ToImmutable(), eventInfo, orderings));
         });
     }
 
@@ -685,8 +698,13 @@ public class SynapseGenerator : IIncrementalGenerator
 
         var location = LocationInfo.CreateFrom(classDeclaration.GetLocation());
 
+        var ordering = ctx.Attributes.Length > 0
+            ? BehaviorOrderingDetail.From(ctx.Attributes[0], classSymbol, ctx.SemanticModel.Compilation, location)
+            : null;
+
         // An empty Behaviors collection signals MDG008 (no known pipeline interface implemented).
-        return new BehaviorScan(location, EquatableArray<BehaviorDetail>.From(AnalyzeBehaviorSymbol(classSymbol)));
+        return new BehaviorScan(location, EquatableArray<BehaviorDetail>.From(AnalyzeBehaviorSymbol(classSymbol)),
+            ordering);
     }
 
     /// <summary>
@@ -1268,6 +1286,7 @@ public class SynapseGenerator : IIncrementalGenerator
     {
         var behaviors = new List<BehaviorDetail>();
         var diagnostics = new List<GlobalBehaviorDiagnostic>();
+        var orderings = new List<BehaviorOrderingDetail>();
 
         foreach (var attr in compilation.Assembly.GetAttributes())
         {
@@ -1304,10 +1323,27 @@ public class SynapseGenerator : IIncrementalGenerator
             }
 
             behaviors.AddRange(analyzed);
+
+            // A packaged behavior can declare its stage on its own [PipelineBehavior]; read it from metadata so the
+            // composition root registers that ordering too.
+            var behaviorAttribute = definition.GetAttributes().FirstOrDefault(candidate =>
+                candidate.AttributeClass?.ToDisplayString() == FullPipelineBehaviorAttributeName);
+            if (behaviorAttribute is not null &&
+                BehaviorOrderingDetail.From(behaviorAttribute, definition, compilation,
+                    LocationInfo.CreateFrom(GetSourceLocation(definition))) is { } ordering)
+            {
+                orderings.Add(ordering);
+            }
         }
 
         return new GlobalBehaviorInfo(EquatableArray<BehaviorDetail>.From(behaviors),
-            EquatableArray<GlobalBehaviorDiagnostic>.From(diagnostics));
+            EquatableArray<GlobalBehaviorDiagnostic>.From(diagnostics),
+            EquatableArray<BehaviorOrderingDetail>.From(orderings));
+    }
+
+    private static Location? GetSourceLocation(ISymbol symbol)
+    {
+        return symbol.Locations.FirstOrDefault(location => location.IsInSource);
     }
 
     /// <summary>
