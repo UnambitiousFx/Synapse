@@ -28,6 +28,7 @@ const sidebars: SidebarsConfig = {
         'outbox-entityframeworkcore',
         'outbox-adonet',
         'aspnetcore',
+        'model-context-protocol',
         'source-generator',
         'modular-monolith',
         'observability',
