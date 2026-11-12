@@ -27,6 +27,7 @@
         <Project Path="src\Synapse.Outbox.AdoNet\Synapse.Outbox.AdoNet.csproj" />
         <Project Path="src\Synapse.FluentValidation\Synapse.FluentValidation.csproj" />
         <Project Path="src\Synapse.Authorization\Synapse.Authorization.csproj" />
+        <Project Path="src\Synapse.ModelContextProtocol\Synapse.ModelContextProtocol.csproj" />
     </Folder>
     <Folder Name="/test/">
         <Project Path="test/Synapse.AspNetCore.Tests/Synapse.AspNetCore.Tests.csproj" />
@@ -36,6 +37,7 @@
         <Project Path="test\Synapse.Outbox.AdoNet.Tests\Synapse.Outbox.AdoNet.Tests.csproj" />
         <Project Path="test\Synapse.FluentValidation.Tests\Synapse.FluentValidation.Tests.csproj" />
         <Project Path="test\Synapse.Authorization.Tests\Synapse.Authorization.Tests.csproj" />
+        <Project Path="test\Synapse.ModelContextProtocol.Tests\Synapse.ModelContextProtocol.Tests.csproj" />
     </Folder>
     <Folder Name="/_/">
         <File Path="build.props" />

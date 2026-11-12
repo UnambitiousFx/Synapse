@@ -1,0 +1,182 @@
+---
+sidebar_position: 11.5
+title: Model Context Protocol
+description: IMcpInvoker exposes Synapse requests as MCP tools, turning a Result into a CallToolResult with existence hiding, answer capping and NativeAOT-ready JSON.
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Model Context Protocol
+
+`UnambitiousFx.Synapse.ModelContextProtocol` exposes Synapse requests as [Model Context Protocol](https://modelcontextprotocol.io) tools. An MCP tool is one more transport, like HTTP: the tool builds the request from its arguments, `IMcpInvoker` sends it through the pipeline (so authorization, validation and every other behavior apply), and the `Result` becomes a `CallToolResult`.
+
+It is the MCP counterpart of [`IHttpInvoker`](./aspnetcore).
+
+## Install
+
+<Tabs>
+  <TabItem value="cli" label=".NET CLI" default>
+    ```bash
+    dotnet add package UnambitiousFx.Synapse.ModelContextProtocol
+    dotnet add package ModelContextProtocol   # the MCP server: AddMcpServer, WithTools, transports
+    ```
+  </TabItem>
+  <TabItem value="packageref" label="PackageReference">
+    ```xml
+    <PackageReference Include="UnambitiousFx.Synapse.ModelContextProtocol" Version="*" />
+    <PackageReference Include="ModelContextProtocol" Version="*" />
+    ```
+  </TabItem>
+</Tabs>
+
+The package only depends on `ModelContextProtocol.Core`, so you pick the hosting package yourself: `ModelContextProtocol` for stdio, `ModelContextProtocol.AspNetCore` for HTTP.
+
+## Setup
+
+```csharp
+builder.Services.AddSynapse(cfg => { /* ... */ });
+
+builder.Services.AddSynapseMcp(o =>
+{
+    o.HideExistence = true;                 // the default: NotFound and Unauthorized give the same answer
+    o.MaxAnswerLength = 50_000;             // cut longer answers and say so
+    o.JsonContext = AppJsonContext.Default; // NativeAOT
+});
+
+builder.Services.AddMcpServer()
+    .WithStdioServerTransport()
+    .WithTools<LoanTools>();
+```
+
+## Tools
+
+```csharp
+[McpServerToolType]
+public sealed class LoanTools(IMcpInvoker invoker)
+{
+    [McpServerTool(Name = "get_loan"), Description("Get one loan.")]
+    public ValueTask<CallToolResult> GetLoan(Guid id, CancellationToken ct)
+        => invoker.InvokeAsync(new GetLoan(id), ct);        // IQuery<Loan> → JSON answer
+
+    [McpServerTool(Name = "rename_loan"), Description("Rename a loan.")]
+    public ValueTask<CallToolResult> RenameLoan(Guid id, string label, CancellationToken ct)
+        => invoker.InvokeAsync(new RenameLoan(id, label), ct); // ICommand<Loan> → JSON answer
+
+    [McpServerTool(Name = "delete_loan"), Description("Delete a loan.")]
+    public ValueTask<CallToolResult> DeleteLoan(Guid id, CancellationToken ct)
+        => invoker.InvokeAsync(new DeleteLoan(id), ct);     // ICommand → "Done."
+}
+```
+
+`IMcpInvoker` is scoped. The MCP SDK creates a scope per request, so the tool class gets the invoker of that request.
+
+| Request                  | Success                                   | Failure                         |
+| ------------------------ | ----------------------------------------- | ------------------------------- |
+| `IQuery<T>` / `ICommand<T>` | One text block holding the JSON answer | Tool error from `IMcpFailurePolicy` |
+| `ICommand`               | One text block: `Done.`                   | Tool error from `IMcpFailurePolicy` |
+
+A tool error is a `CallToolResult` with `IsError = true`. The model reads it and can react (fix an argument, try another item), unlike a protocol error.
+
+## Options
+
+| Option            | Default | Effect |
+| ----------------- | ------- | ------ |
+| `HideExistence`   | `true`  | `NotFoundFailure` and `UnauthorizedFailure` give the same `NOT_FOUND` answer. |
+| `MaxAnswerLength` | `null`  | Longer answers are cut to this many UTF-16 code units and flagged. `null` means no limit. |
+| `JsonContext`     | `null`  | Source-generated context used to serialize answers. Without it, `McpJsonUtilities.DefaultOptions` is used. |
+
+### Existence hiding
+
+An assistant calls tools with identifiers it guessed, read somewhere, or was given by someone else. If "you may not see this" and "this does not exist" answer differently, the difference tells it which items exist. With `HideExistence` on, both give exactly the same tool error:
+
+```text
+NOT_FOUND: The requested item was not found.
+```
+
+The original message is dropped too, because a not-found message often names the item it looked for. An `AggregateFailure` holding either failure is hidden the same way. Turn it off only when every caller may know which items exist.
+
+### Answer capping
+
+With `MaxAnswerLength` set, a longer answer is cut and followed by a second text block:
+
+```text
+[Answer truncated: showing the first 50000 of 182344 UTF-16 code units. The JSON above is incomplete; narrow the request to get the rest.]
+```
+
+Lengths are counted in UTF-16 code units (`string.Length`), not Unicode scalar values or UTF-8 bytes: most emoji count as two, and the encoded payload can be larger than the limit. The result's `_meta` also carries `unambitiousfx.synapse/truncated: true` and `unambitiousfx.synapse/originalLength`, in the same unit. The cut never splits a surrogate pair. Failures are never cut.
+
+### NativeAOT
+
+Every response type returned through `IMcpInvoker` must be in `JsonContext`:
+
+```csharp
+[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
+[JsonSerializable(typeof(Loan))]
+internal sealed partial class AppJsonContext : JsonSerializerContext;
+```
+
+A type missing from the context throws `InvalidOperationException` naming the type, which the MCP SDK turns into a generic tool error.
+
+## Failure policy — `IMcpFailurePolicy`
+
+`DefaultMcpFailurePolicy` builds every tool error:
+
+| Failure | Tool error text |
+| ------- | --------------- |
+| `NotFoundFailure`, `UnauthorizedFailure` (with `HideExistence`) | `NOT_FOUND: The requested item was not found.` |
+| `ExceptionalFailure`, alone or at any depth inside an `AggregateFailure` | `<code>: An unexpected error occurred.` — exception messages can hold internals |
+| Anything else | `<code>: <message>` |
+
+The code is also in `_meta` under `unambitiousfx.synapse/failureCode`, so a client can branch on it without parsing the text.
+
+To change it, register your own policy. `AddSynapseMcp` uses `TryAdd`, so a policy registered before it wins; one registered after it with `AddSingleton` replaces it too.
+
+```csharp
+public sealed class LoanFailurePolicy(IOptions<SynapseMcpOptions> options) : IMcpFailurePolicy
+{
+    private readonly DefaultMcpFailurePolicy _default = new(options);
+
+    public CallToolResult ToToolError(Failure failure) => failure switch
+    {
+        ConflictFailure => new CallToolResult
+        {
+            IsError = true,
+            Content = [new TextContentBlock { Text = "CONFLICT: someone changed this loan; read it again first." }]
+        },
+        _ => _default.ToToolError(failure)
+    };
+}
+
+builder.Services.AddSingleton<IMcpFailurePolicy, LoanFailurePolicy>();
+builder.Services.AddSynapseMcp();
+```
+
+## Context propagation
+
+MCP has no headers. Out-of-band request data travels in `params._meta`, which is where W3C `traceparent`, `tracestate` and `baggage` go. `McpMetaPropagationCarrier` is the [`IPropagationCarrier`](./propagation) over it, the MCP counterpart of `HttpRequestPropagationCarrier`. Use it in a call-tool filter so the tool's request continues the client's flow:
+
+```csharp
+builder.Services.AddMcpServer()
+    .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (context, ct) =>
+    {
+        var store = context.Services!.GetRequiredService<IInboundContextStore>();
+        var propagator = context.Services!.GetRequiredService<IContextPropagator>();
+        store.Inbound = propagator.Extract(new McpMetaPropagationCarrier(context.Params!));
+        return await next(context, ct);
+    }))
+    .WithTools<LoanTools>();
+```
+
+The filter runs in the same request scope as the tool, so `IContext.TraceId` in the handler is the client's trace id.
+
+:::warning
+`_meta` is chosen by the client. Adopt it only from clients you trust with your trace identity. The trace id is a correlation label, never an authorization input.
+:::
+
+## See also
+
+- [ASP.NET Core Integration](./aspnetcore) — the HTTP counterpart, `IHttpInvoker`.
+- [Error Handling](./error-handling) — the failure types the policy maps.
+- [Propagation](./propagation) — `IContextPropagator` and carriers.
+- [Using with AI](./using-with-ai) — Agent Skills for coding agents.
