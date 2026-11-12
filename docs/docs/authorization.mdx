@@ -48,11 +48,21 @@ Implement `ICurrentPrincipal` over your caller's identity, register it, then cal
 ```csharp
 public sealed class HttpCurrentPrincipal(IHttpContextAccessor accessor) : ICurrentPrincipal
 {
+    // OAuth "scope", Entra ID "scp", and the name ASP.NET Core maps "scp" to by default.
+    private static readonly string[] ScopeClaimTypes =
+        ["scope", "scp", "http://schemas.microsoft.com/identity/claims/scope"];
+
     private ClaimsPrincipal? User => accessor.HttpContext?.User;
 
     public bool IsAuthenticated => User?.Identity?.IsAuthenticated == true;
     public string? Id => User?.FindFirstValue(ClaimTypes.NameIdentifier);
-    public bool HasScope(string scope) => User?.HasClaim("scope", scope) == true;
+
+    // One claim often holds several space-separated scopes ("read write"), so split before comparing.
+    public bool HasScope(string scope) => User?.Claims
+        .Where(claim => ScopeClaimTypes.Contains(claim.Type))
+        .SelectMany(claim => claim.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        .Contains(scope, StringComparer.Ordinal) == true;
+
     public bool IsInRole(string role) => User?.IsInRole(role) == true;
 }
 
