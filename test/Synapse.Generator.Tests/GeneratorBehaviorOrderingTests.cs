@@ -187,6 +187,105 @@ public sealed class GeneratorBehaviorOrderingTests
             """;
     }
 
+    // A request behavior and a stream behavior in one class: closed over <MyQuery, MyStream>, it runs in both
+    // MyQuery's request pipeline and MyStream's stream pipeline.
+    private const string StreamRequest = """
+
+        public sealed record MyStream : IStreamRequest<int>;
+
+        public sealed record OtherQuery : IRequest<string>;
+
+        """;
+
+    private static string RequestAndStreamBehavior(string attribute)
+    {
+        return $$"""
+
+            {{attribute}}
+            public sealed class RequestAndStreamBehavior<TQuery, TStream>
+                : IRequestPipelineBehavior<TQuery, int>, IStreamRequestPipelineBehavior<TStream, int>
+                where TQuery : IRequest<int>
+                where TStream : IStreamRequest<int>
+            {
+                public ValueTask<Result<int>> HandleAsync(TQuery request,
+                    RequestHandlerDelegate<TQuery, int> next, CancellationToken ct = default)
+                    => next(request, ct);
+
+                public System.Collections.Generic.IAsyncEnumerable<Result<int>> HandleAsync(TStream request,
+                    StreamRequestHandlerDelegate<int> next, CancellationToken ct = default)
+                    => next();
+            }
+
+            """;
+    }
+
+    private static string StreamBehavior(string name, string attribute)
+    {
+        return $$"""
+
+            {{attribute}}
+            public sealed class {{name}}<TRequest, TItem> : IStreamRequestPipelineBehavior<TRequest, TItem>
+                where TRequest : IStreamRequest<TItem>
+                where TItem : notnull
+            {
+                public System.Collections.Generic.IAsyncEnumerable<Result<TItem>> HandleAsync(TRequest request,
+                    StreamRequestHandlerDelegate<TItem> next, CancellationToken ct = default)
+                    => next();
+            }
+
+            """;
+    }
+
+    [Fact]
+    public void Generate_WithACycleBetweenARequestAndStreamBehaviorAndARequestBehavior_ReportsMdg018()
+    {
+        // Arrange (Given) — both edges exist in MyQuery's request pipeline.
+        var source = Handlers + StreamRequest +
+                     Behavior("RequestOnlyBehavior",
+                         "[PipelineBehavior(Before = typeof(RequestAndStreamBehavior<MyQuery, MyStream>))]") +
+                     RequestAndStreamBehavior("[PipelineBehavior(Before = typeof(RequestOnlyBehavior<MyQuery, int>))]");
+
+        // Act (When)
+        var (diagnostics, _, _) = Run(source);
+
+        // Assert (Then)
+        Assert.Equal(2, diagnostics.Count(d => d.Id == "MDG018"));
+    }
+
+    [Fact]
+    public void Generate_WithACycleBetweenARequestAndStreamBehaviorAndAStreamBehavior_ReportsMdg018()
+    {
+        // Arrange (Given) — both edges exist in MyStream's stream pipeline.
+        var source = Handlers + StreamRequest +
+                     StreamBehavior("StreamOnlyBehavior",
+                         "[PipelineBehavior(Before = typeof(RequestAndStreamBehavior<MyQuery, MyStream>))]") +
+                     RequestAndStreamBehavior("[PipelineBehavior(Before = typeof(StreamOnlyBehavior<MyStream, int>))]");
+
+        // Act (When)
+        var (diagnostics, _, _) = Run(source);
+
+        // Assert (Then)
+        Assert.Equal(2, diagnostics.Count(d => d.Id == "MDG018"));
+    }
+
+    [Fact]
+    public void Generate_WithAMultiPipelineTargetAndADisjointPipeline_ReportsNoCycle()
+    {
+        // Arrange (Given) — the first edge lives in MyQuery's and MyStream's pipelines, the second in OtherQuery's.
+        var source = Handlers + StreamRequest +
+                     Behavior("RequestOnlyBehavior",
+                         "[PipelineBehavior(Before = typeof(RequestAndStreamBehavior<MyQuery, MyStream>))]") +
+                     RequestAndStreamBehavior(
+                         "[PipelineBehavior(Before = typeof(RequestOnlyBehavior<OtherQuery, string>))]");
+
+        // Act (When)
+        var (diagnostics, _, errors) = Run(source);
+
+        // Assert (Then)
+        Assert.DoesNotContain(diagnostics, d => d.Id == "MDG018");
+        Assert.Empty(errors);
+    }
+
     [Fact]
     public void Generate_WithACycleBetweenATypedAndAResultBehaviorOfOnePipeline_ReportsMdg018()
     {

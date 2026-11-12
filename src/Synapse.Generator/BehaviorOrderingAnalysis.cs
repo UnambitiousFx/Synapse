@@ -53,7 +53,7 @@ internal static class BehaviorOrderingAnalysis
         var byKey = orderings.ToDictionary(ordering => ordering.BehaviorKey, StringComparer.Ordinal);
         var edges = new List<Edge>();
 
-        void AddEdge(string first, string then, string? binding, BehaviorOrderingDetail declaredBy)
+        void AddEdge(string first, string then, EquatableArray<string> binding, BehaviorOrderingDetail declaredBy)
         {
             if (byKey.TryGetValue(first, out var firstDetail) && byKey.TryGetValue(then, out var thenDetail) &&
                 firstDetail.HasStage && thenDetail.HasStage && firstDetail.Stage > thenDetail.Stage)
@@ -124,40 +124,47 @@ internal static class BehaviorOrderingAnalysis
         return BehaviorOrderingDetail.DisplayName(key);
     }
 
-    // A constraint edge between behavior definitions. Binding is the message type of a closed target's pipeline, so the
-    // edge only exists in that pipeline; null means it applies to every pipeline that has both behaviors.
+    // A constraint edge between behavior definitions. Pipelines lists every pipeline ("kind:message type") of the closed
+    // target, the only ones the edge exists in; empty means an open or non-generic target, which applies to every
+    // pipeline that has both behaviors.
     private readonly struct Edge
     {
-        public Edge(string first, string then, string? binding)
+        public Edge(string first, string then, EquatableArray<string> pipelines)
         {
             First = first;
             Then = then;
-            Binding = binding;
+            Pipelines = pipelines;
         }
 
         public string First { get; }
 
         public string Then { get; }
 
-        public string? Binding { get; }
+        public EquatableArray<string> Pipelines { get; }
+
+        public bool AppliesTo(string? pipeline)
+        {
+            return Pipelines.Count == 0 || (pipeline is not null && Pipelines.Contains(pipeline));
+        }
     }
 
-    // Nodes are behavior definitions, but "A before B<X, ...>" and "B before A<Y, ...>" never meet in one pipeline unless
-    // X and Y are the same message type, whatever the other type arguments (a typed and a result behavior close the
-    // same pipeline differently). So cycles are searched once per pipeline binding, over the unbound edges plus the
-    // edges of that binding, and a cycle is only reported when all its edges can apply to the same pipeline.
+    // A cycle only fails a build when one pipeline holds all its edges, so cycles are searched per pipeline: for every
+    // pipeline a closed target names (plus one pass for "any pipeline", which only sees unbound edges), over the edges
+    // that apply to it. Edges whose pipeline sets are disjoint never meet, so "A before B<X, ...>" and
+    // "B before A<Y, ...>" are no cycle, while a typed and a result target of one request, or a target that runs in
+    // both a request and a stream pipeline, share the pipeline they have in common.
     private static List<List<string>> Cycles(List<Edge> edges)
     {
-        var bindings = new List<string?> { null };
-        bindings.AddRange(edges.Select(edge => edge.Binding).Where(binding => binding is not null).Distinct()
-            .OrderBy(binding => binding, StringComparer.Ordinal));
+        var pipelines = new List<string?> { null };
+        pipelines.AddRange(edges.SelectMany(edge => edge.Pipelines).Distinct()
+            .OrderBy(pipeline => pipeline, StringComparer.Ordinal));
 
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var cycles = new List<List<string>>();
-        foreach (var binding in bindings)
+        foreach (var pipeline in pipelines)
         {
             var successors = new Dictionary<string, List<string>>(StringComparer.Ordinal);
-            foreach (var edge in edges.Where(edge => edge.Binding is null || edge.Binding == binding))
+            foreach (var edge in edges.Where(edge => edge.AppliesTo(pipeline)))
             {
                 if (!successors.TryGetValue(edge.First, out var list))
                 {
@@ -172,7 +179,7 @@ internal static class BehaviorOrderingAnalysis
 
             foreach (var component in StronglyConnectedComponents(successors).Where(component => component.Count > 1))
             {
-                // The same cycle is found again under every binding when its edges are all unbound.
+                // The same cycle is found again under every pipeline when its edges are all unbound.
                 if (seen.Add(string.Join("|", component.OrderBy(key => key, StringComparer.Ordinal))))
                 {
                     cycles.Add(component);

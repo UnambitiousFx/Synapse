@@ -17,8 +17,8 @@ public readonly record struct BehaviorOrderingDetail
         string? afterKey,
         string? afterTypeOf,
         LocationInfo? location,
-        string? beforeBinding = null,
-        string? afterBinding = null)
+        EquatableArray<string> beforeBinding = default,
+        EquatableArray<string> afterBinding = default)
     {
         BeforeBinding = beforeBinding;
         AfterBinding = afterBinding;
@@ -57,15 +57,16 @@ public readonly record struct BehaviorOrderingDetail
     public string? AfterTypeOf { get; }
 
     /// <summary>
-    ///     The pipeline a closed generic <c>Before</c> target belongs to, as its message type
-    ///     (<c>typeof(Scope&lt;MyQuery, int&gt;)</c> and <c>typeof(Audit&lt;MyQuery, Result&lt;int&gt;&gt;)</c> both give
-    ///     <c>global::Ns.MyQuery</c>), or null when the target is open or not generic. A closed target only matches
-    ///     that pipeline, which cycle detection must respect.
+    ///     Every pipeline a closed generic <c>Before</c> target runs in, one entry per pipeline interface it implements,
+    ///     as <c>kind:message type</c> (<c>typeof(Scope&lt;MyQuery, int&gt;)</c> and
+    ///     <c>typeof(Audit&lt;MyQuery, Result&lt;int&gt;&gt;)</c> both give <c>request:global::Ns.MyQuery</c>). Empty when
+    ///     the target is open or not generic: it then applies to every pipeline. A closed target only matches the
+    ///     pipelines listed, which cycle detection must respect.
     /// </summary>
-    public string? BeforeBinding { get; }
+    public EquatableArray<string> BeforeBinding { get; }
 
-    /// <summary>The pipeline of a closed generic <c>After</c> target; see <see cref="BeforeBinding" />.</summary>
-    public string? AfterBinding { get; }
+    /// <summary>Every pipeline a closed generic <c>After</c> target runs in; see <see cref="BeforeBinding" />.</summary>
+    public EquatableArray<string> AfterBinding { get; }
 
     /// <summary>Where to report diagnostics: the behavior class, or null for a behavior from a referenced assembly.</summary>
     public LocationInfo? Location { get; }
@@ -125,35 +126,53 @@ public readonly record struct BehaviorOrderingDetail
             location, BindingOf(before), BindingOf(after));
     }
 
-    // The pipeline a closed target belongs to, identified by its message type. Raw type arguments would not do: a typed
-    // behavior over MyQuery is closed as <MyQuery, int>, a result behavior as <MyQuery, Result<int>>, yet both run in
-    // MyQuery's pipeline. A message type has exactly one pipeline, so it identifies it.
-    private static string? BindingOf(INamedTypeSymbol? type)
+    // Every pipeline a closed target runs in: one per pipeline interface it implements, keyed by the pipeline kind and
+    // its message type. Raw type arguments would not do: a typed behavior over MyQuery is closed as <MyQuery, int>, a
+    // result behavior as <MyQuery, Result<int>>, yet both run in MyQuery's request pipeline. And one class can run in
+    // several pipelines (a request and a stream interface, say), so a single binding would miss some of them.
+    private static EquatableArray<string> BindingOf(INamedTypeSymbol? type)
     {
         if (type is not { IsGenericType: true, IsUnboundGenericType: false })
+        {
+            return default;
+        }
+
+        var pipelines = new SortedSet<string>(StringComparer.Ordinal);
+        foreach (var candidate in type.AllInterfaces)
+        {
+            if (PipelineKindOf(candidate) is { } kind && candidate.TypeArguments.Length > 0 &&
+                candidate.TypeArguments[0] is { TypeKind: not TypeKind.TypeParameter } message)
+            {
+                pipelines.Add($"{kind}:{message.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}");
+            }
+        }
+
+        if (pipelines.Count == 0)
+        {
+            // Not a recognizable pipeline behavior: fall back to the type arguments, which at least separate closed
+            // forms from each other.
+            pipelines.Add("type:" + string.Join(", ", type.TypeArguments.Select(argument =>
+                argument.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat))));
+        }
+
+        return EquatableArray<string>.From(pipelines);
+    }
+
+    // Typed and result behaviors share the request pipeline; events and streams have their own.
+    private static string? PipelineKindOf(INamedTypeSymbol candidate)
+    {
+        if (candidate.ContainingNamespace?.ToDisplayString() != "UnambitiousFx.Synapse.Abstractions")
         {
             return null;
         }
 
-        foreach (var candidate in type.AllInterfaces)
+        return candidate.Name switch
         {
-            if (IsPipelineInterface(candidate) && candidate.TypeArguments.Length > 0 &&
-                candidate.TypeArguments[0] is { TypeKind: not TypeKind.TypeParameter } message)
-            {
-                return message.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-            }
-        }
-
-        // Not a recognizable pipeline behavior: fall back to the type arguments, which at least separate closed forms.
-        return string.Join(", ", type.TypeArguments.Select(argument =>
-            argument.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)));
-    }
-
-    private static bool IsPipelineInterface(INamedTypeSymbol candidate)
-    {
-        return candidate.ContainingNamespace?.ToDisplayString() == "UnambitiousFx.Synapse.Abstractions" &&
-               candidate.Name is "IRequestPipelineBehavior" or "IResultPipelineBehavior" or "IEventPipelineBehavior"
-                   or "IStreamRequestPipelineBehavior";
+            "IRequestPipelineBehavior" or "IResultPipelineBehavior" => "request",
+            "IEventPipelineBehavior" => "event",
+            "IStreamRequestPipelineBehavior" => "stream",
+            _ => null
+        };
     }
 
     /// <summary>The definition of <paramref name="type" /> as a <c>typeof</c> operand, generics unbound.</summary>
