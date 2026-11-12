@@ -124,8 +124,8 @@ internal static class BehaviorOrderingAnalysis
         return BehaviorOrderingDetail.DisplayName(key);
     }
 
-    // A constraint edge between behavior definitions. Binding is the type arguments of a closed target, so the edge
-    // only exists in the pipeline closed over them; null means it applies to every pipeline that has both behaviors.
+    // A constraint edge between behavior definitions. Binding is the message type of a closed target's pipeline, so the
+    // edge only exists in that pipeline; null means it applies to every pipeline that has both behaviors.
     private readonly struct Edge
     {
         public Edge(string first, string then, string? binding)
@@ -142,9 +142,10 @@ internal static class BehaviorOrderingAnalysis
         public string? Binding { get; }
     }
 
-    // Nodes are behavior definitions, but "A before B<X>" and "B before A<Y>" never meet in one pipeline unless X and Y
-    // are the same type arguments. So cycles are searched once per binding, over the unbound edges plus the edges of
-    // that binding, and a cycle is only reported when all its edges can apply to the same pipeline.
+    // Nodes are behavior definitions, but "A before B<X, ...>" and "B before A<Y, ...>" never meet in one pipeline unless
+    // X and Y are the same message type, whatever the other type arguments (a typed and a result behavior close the
+    // same pipeline differently). So cycles are searched once per pipeline binding, over the unbound edges plus the
+    // edges of that binding, and a cycle is only reported when all its edges can apply to the same pipeline.
     private static List<List<string>> Cycles(List<Edge> edges)
     {
         var bindings = new List<string?> { null };

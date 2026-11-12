@@ -57,13 +57,14 @@ public readonly record struct BehaviorOrderingDetail
     public string? AfterTypeOf { get; }
 
     /// <summary>
-    ///     The type arguments of a closed generic <c>Before</c> target (<c>typeof(Scope&lt;MyQuery, int&gt;)</c> gives
-    ///     <c>global::Ns.MyQuery, int</c>), or null when the target is open or not generic. A closed target only
-    ///     matches the pipeline of those type arguments, which cycle detection must respect.
+    ///     The pipeline a closed generic <c>Before</c> target belongs to, as its message type
+    ///     (<c>typeof(Scope&lt;MyQuery, int&gt;)</c> and <c>typeof(Audit&lt;MyQuery, Result&lt;int&gt;&gt;)</c> both give
+    ///     <c>global::Ns.MyQuery</c>), or null when the target is open or not generic. A closed target only matches
+    ///     that pipeline, which cycle detection must respect.
     /// </summary>
     public string? BeforeBinding { get; }
 
-    /// <summary>The type arguments of a closed generic <c>After</c> target; see <see cref="BeforeBinding" />.</summary>
+    /// <summary>The pipeline of a closed generic <c>After</c> target; see <see cref="BeforeBinding" />.</summary>
     public string? AfterBinding { get; }
 
     /// <summary>Where to report diagnostics: the behavior class, or null for a behavior from a referenced assembly.</summary>
@@ -124,12 +125,35 @@ public readonly record struct BehaviorOrderingDetail
             location, BindingOf(before), BindingOf(after));
     }
 
+    // The pipeline a closed target belongs to, identified by its message type. Raw type arguments would not do: a typed
+    // behavior over MyQuery is closed as <MyQuery, int>, a result behavior as <MyQuery, Result<int>>, yet both run in
+    // MyQuery's pipeline. A message type has exactly one pipeline, so it identifies it.
     private static string? BindingOf(INamedTypeSymbol? type)
     {
-        return type is { IsGenericType: true, IsUnboundGenericType: false }
-            ? string.Join(", ", type.TypeArguments.Select(argument =>
-                argument.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)))
-            : null;
+        if (type is not { IsGenericType: true, IsUnboundGenericType: false })
+        {
+            return null;
+        }
+
+        foreach (var candidate in type.AllInterfaces)
+        {
+            if (IsPipelineInterface(candidate) && candidate.TypeArguments.Length > 0 &&
+                candidate.TypeArguments[0] is { TypeKind: not TypeKind.TypeParameter } message)
+            {
+                return message.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+            }
+        }
+
+        // Not a recognizable pipeline behavior: fall back to the type arguments, which at least separate closed forms.
+        return string.Join(", ", type.TypeArguments.Select(argument =>
+            argument.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)));
+    }
+
+    private static bool IsPipelineInterface(INamedTypeSymbol candidate)
+    {
+        return candidate.ContainingNamespace?.ToDisplayString() == "UnambitiousFx.Synapse.Abstractions" &&
+               candidate.Name is "IRequestPipelineBehavior" or "IResultPipelineBehavior" or "IEventPipelineBehavior"
+                   or "IStreamRequestPipelineBehavior";
     }
 
     /// <summary>The definition of <paramref name="type" /> as a <c>typeof</c> operand, generics unbound.</summary>

@@ -171,6 +171,60 @@ public sealed class GeneratorBehaviorOrderingTests
         Assert.Equal(2, diagnostics.Count(d => d.Id == "MDG018"));
     }
 
+    private static string ResultBehavior(string name, string attribute)
+    {
+        return $$"""
+
+            {{attribute}}
+            public sealed class {{name}}<TRequest, TResult> : IResultPipelineBehavior<TRequest, TResult>
+                where TResult : IResult
+            {
+                public ValueTask<TResult> HandleAsync(TRequest request, RequestNext<TRequest, TResult> next,
+                    CancellationToken ct = default)
+                    => next.InvokeAsync(request, ct);
+            }
+
+            """;
+    }
+
+    [Fact]
+    public void Generate_WithACycleBetweenATypedAndAResultBehaviorOfOnePipeline_ReportsMdg018()
+    {
+        // Arrange (Given) — Typed<MyQuery, int> and Result<MyQuery, Result<int>> close MyQuery's pipeline with
+        // different type arguments, yet both constraints apply to it.
+        var source = Handlers +
+                     Behavior("TypedBehavior",
+                         "[PipelineBehavior(Before = typeof(ResultTraceBehavior<MyQuery, Result<int>>))]") +
+                     ResultBehavior("ResultTraceBehavior",
+                         "[PipelineBehavior(Before = typeof(TypedBehavior<MyQuery, int>))]");
+
+        // Act (When)
+        var (diagnostics, _, _) = Run(source);
+
+        // Assert (Then)
+        Assert.Equal(2, diagnostics.Count(d => d.Id == "MDG018"));
+    }
+
+    [Fact]
+    public void Generate_WithTypedAndResultConstraintsOnDifferentPipelines_ReportsNoCycle()
+    {
+        // Arrange (Given) — the Result target is closed over OtherQuery, the typed one over MyQuery.
+        var source = Handlers.Replace("public sealed record MyQuery : IRequest<int>;",
+                         "public sealed record MyQuery : IRequest<int>;\npublic sealed record OtherQuery : IRequest<string>;",
+                         StringComparison.Ordinal) +
+                     Behavior("TypedBehavior",
+                         "[PipelineBehavior(Before = typeof(ResultTraceBehavior<OtherQuery, Result<string>>))]") +
+                     ResultBehavior("ResultTraceBehavior",
+                         "[PipelineBehavior(Before = typeof(TypedBehavior<MyQuery, int>))]");
+
+        // Act (When)
+        var (diagnostics, _, errors) = Run(source);
+
+        // Assert (Then)
+        Assert.DoesNotContain(diagnostics, d => d.Id == "MDG018");
+        Assert.Empty(errors);
+    }
+
     [Fact]
     public void Generate_WithALongerCycle_ReportsMdg018()
     {
