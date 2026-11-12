@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace UnambitiousFx.Synapse.Outbox.EntityFrameworkCore;
 
@@ -29,5 +30,39 @@ public static class ServiceCollectionExtensions
         where TContext : DbContext
     {
         return services.AddScoped<EfCoreEventOutboxStorage<TContext>>();
+    }
+
+    /// <summary>
+    ///     Configures <see cref="EfCoreTransactionManager" />: the contexts every transaction spans and whether the
+    ///     outbox is flushed after the outermost commit. Then wire it as the transaction manager with
+    ///     <c>AddSynapse(cfg =&gt; cfg.AddTransactions&lt;EfCoreTransactionManager&gt;())</c>.
+    /// </summary>
+    /// <remarks>
+    ///     <code>
+    ///     services.AddEfCoreTransactions(t =&gt; t
+    ///         .Enlist&lt;EnvelopesDbContext&gt;()
+    ///         .Enlist&lt;OutboxDbContext&gt;());
+    ///     </code>
+    ///     Every enlisted context must be built on the same Scoped <see cref="System.Data.Common.DbConnection" />.
+    ///     A later call replaces the options of an earlier one.
+    /// </remarks>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configure">Enlists the contexts, in the order the first one opens the transaction.</param>
+    /// <returns>The same service collection, for chaining.</returns>
+    public static IServiceCollection AddEfCoreTransactions(this IServiceCollection services,
+        Action<EfCoreTransactionOptions> configure)
+    {
+        ArgumentNullException.ThrowIfNull(configure);
+        var options = new EfCoreTransactionOptions();
+        configure(options);
+        if (options.ContextTypes.Count == 0)
+        {
+            throw new ArgumentException(
+                $"Enlist at least one DbContext with {nameof(EfCoreTransactionOptions.Enlist)}<TContext>().",
+                nameof(configure));
+        }
+
+        services.Replace(ServiceDescriptor.Singleton(options));
+        return services;
     }
 }

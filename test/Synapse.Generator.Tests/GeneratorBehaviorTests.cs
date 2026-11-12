@@ -1741,6 +1741,68 @@ public sealed class GeneratorBehaviorTests
             "Generated code should compile, but got: " + string.Join("; ", errors.Select(e => e.ToString())));
     }
 
+    [Fact]
+    public void GlobalResultBehavior_ConstrainedToITransactional_ClosesOnlyOverTransactionalRequests()
+    {
+        // Arrange (Given) — the shape of TransactionBehavior<,>, wired the Native-AOT way
+        const string source = """
+            using System.Threading;
+            using System.Threading.Tasks;
+            using UnambitiousFx.Functional;
+            using UnambitiousFx.Synapse.Abstractions;
+
+            [assembly: SynapseGlobalBehavior(typeof(TestNs.TxBehavior<,>))]
+
+            namespace TestNs;
+
+            public sealed record CloseEnvelope : ICommand, ITransactional;
+            public sealed record CreateEnvelope : ICommand<int>, ITransactional;
+            public sealed record GetEnvelope : IQuery<int>;
+
+            [RequestHandler<CloseEnvelope>]
+            public sealed class CloseHandler : IRequestHandler<CloseEnvelope>
+            {
+                public ValueTask<Result> HandleAsync(CloseEnvelope request, CancellationToken ct = default)
+                    => ValueTask.FromResult(Result.Success());
+            }
+
+            [RequestHandler<CreateEnvelope, int>]
+            public sealed class CreateHandler : IRequestHandler<CreateEnvelope, int>
+            {
+                public ValueTask<Result<int>> HandleAsync(CreateEnvelope request, CancellationToken ct = default)
+                    => ValueTask.FromResult(Result.Success(1));
+            }
+
+            [RequestHandler<GetEnvelope, int>]
+            public sealed class GetHandler : IRequestHandler<GetEnvelope, int>
+            {
+                public ValueTask<Result<int>> HandleAsync(GetEnvelope request, CancellationToken ct = default)
+                    => ValueTask.FromResult(Result.Success(1));
+            }
+
+            public sealed class TxBehavior<TRequest, TResult> : IResultPipelineBehavior<TRequest, TResult>
+                where TRequest : ITransactional
+                where TResult : IResult
+            {
+                public ValueTask<TResult> HandleAsync(TRequest request, RequestNext<TRequest, TResult> next, CancellationToken ct = default)
+                    => next.InvokeAsync(request, ct);
+            }
+            """;
+
+        // Act (When)
+        var generated = RunGeneratorAndGetRegistrationGroup(source);
+
+        // Assert (Then)
+        Assert.Contains(
+            "builder.RegisterResultPipelineBehavior<global::TestNs.TxBehavior<global::TestNs.CloseEnvelope, global::UnambitiousFx.Functional.Result>, global::TestNs.CloseEnvelope>()",
+            generated);
+        Assert.Contains(
+            "builder.RegisterResultPipelineBehavior<global::TestNs.TxBehavior<global::TestNs.CreateEnvelope, global::UnambitiousFx.Functional.Result<int>>, global::TestNs.CreateEnvelope, int>()",
+            generated);
+        Assert.DoesNotContain("TxBehavior<global::TestNs.GetEnvelope", generated);
+        AssertGeneratedCompiles(source);
+    }
+
     // ── Result behaviors (IResultPipelineBehavior) ────────────────────────
 
     private const string ResultBehaviorHandlers = """
