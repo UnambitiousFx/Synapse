@@ -1,0 +1,204 @@
+---
+sidebar_position: 8.5
+title: Transactions
+description: Run ITransactional requests inside a transaction that commits on a successful Result and rolls back on a failure or exception, with savepoints for nested commands.
+---
+
+# Transactions
+
+A command that writes to the database usually needs one transaction around its handler: commit when it
+succeeds, roll back when it fails. With `Result`, failure is not an exception, so a `try`/`catch` wrapper or a
+`TransactionScope` commits a handler that returned `Result.Failure`. The transaction behavior reads the `Result`
+instead.
+
+## Opt a request in
+
+Mark the request with `ITransactional`:
+
+```csharp
+public sealed record CloseEnvelope(Guid Id) : ICommand, ITransactional;
+```
+
+Then register a transaction manager:
+
+```csharp
+services.AddSynapse(cfg => cfg.AddTransactions<EfCoreTransactionManager>());
+```
+
+For every `ITransactional` request, `TransactionBehavior<TRequest, TResult>` then:
+
+1. opens a scope with `ITransactionManager.BeginAsync`,
+2. runs the rest of the pipeline and the handler,
+3. commits the scope when the result is a success,
+4. disposes it without a commit, which rolls it back, when the result is a failure or the handler throws. The
+   exception still propagates.
+
+It works for `Result` and `Result<T>` requests alike. Requests without `ITransactional` never reach it: its
+generic constraint makes the container skip them, so they pay nothing.
+
+## The abstraction
+
+`ITransactionManager` and `ITransactionScope` live in `UnambitiousFx.Synapse.Abstractions`, so you can write a
+manager for any store:
+
+```csharp
+public interface ITransactionManager
+{
+    // a transaction, or a nested scope inside the current one
+    ValueTask<ITransactionScope> BeginAsync(CancellationToken cancellationToken = default);
+}
+
+public interface ITransactionScope : IAsyncDisposable
+{
+    ValueTask CommitAsync(CancellationToken cancellationToken = default); // dispose without commit = rollback
+}
+```
+
+The manager is registered Scoped. When a scope is already open, `BeginAsync` should open a nested one (a
+savepoint) rather than a second transaction, so that a transactional command invoking another one composes.
+
+## EF Core
+
+`UnambitiousFx.Synapse.Outbox.EntityFrameworkCore` ships `EfCoreTransactionManager`. Tell it which contexts
+every transaction spans, then hand it to Synapse:
+
+```csharp
+// One connection per scope, shared by every context.
+services.AddScoped(_ => new NpgsqlConnection(connectionString));
+services.AddDbContext<EnvelopesDbContext>((sp, o) => o.UseNpgsql(sp.GetRequiredService<NpgsqlConnection>()));
+services.AddDbContext<OutboxDbContext>((sp, o) => o.UseNpgsql(sp.GetRequiredService<NpgsqlConnection>()));
+
+services.AddEfCoreEventOutbox<OutboxDbContext>();
+services.AddEfCoreTransactions(t => t
+    .Enlist<EnvelopesDbContext>()
+    .Enlist<OutboxDbContext>());
+
+services.AddSynapse(cfg =>
+{
+    cfg.SetEventOutboxStorage<EfCoreEventOutboxStorage<OutboxDbContext>>();
+    cfg.AddTransactions<EfCoreTransactionManager>();
+});
+```
+
+### Several `DbContext`s on one connection
+
+A modular monolith often has one `DbContext` per module. The first enlisted context opens the transaction and
+every other one joins it with `Database.UseTransactionAsync`, so all of them commit or roll back together. EF
+Core only lets a context join a `DbTransaction` opened on the very same `DbConnection` object, which is why the
+contexts above are built on one Scoped connection. A context on a different connection makes `BeginAsync` throw
+an `InvalidOperationException` that says so, before any work runs.
+
+### Nested commands and savepoints
+
+When the first enlisted context already has a transaction, `BeginAsync` creates a savepoint inside it instead of
+opening a new one. Committing the inner scope releases the savepoint; disposing it without a commit rolls back to
+the savepoint. The outer transaction stays open either way, and nothing is durable until it commits.
+
+```csharp
+public sealed class CloseEnvelopeHandler(EnvelopesDbContext db, IInvoker invoker) : IRequestHandler<CloseEnvelope>
+{
+    public async ValueTask<Result> HandleAsync(CloseEnvelope cmd, CancellationToken ct = default)
+    {
+        // ... save the envelope
+
+        // ArchiveAttachments is ITransactional too, so it gets its own savepoint:
+        // if it fails, only its writes are rolled back and this command still commits.
+        await invoker.InvokeAsync(new ArchiveAttachments(cmd.Id), ct);
+        return Result.Success();
+    }
+}
+```
+
+This also covers a transaction the application opened itself on the first context: the Synapse scope becomes a
+savepoint in it and leaves the commit to you.
+
+Savepoints only compose when the nested command is dispatched in the **same DI scope**, through the `IInvoker`
+the outer handler received. A nested command dispatched from a child scope (`IServiceScopeFactory.CreateScope()`)
+gets its own contexts and its own connection, so it opens a separate root transaction that commits on its own. On
+SQLite that second connection can also deadlock against the outer transaction's write lock.
+
+### The outbox
+
+Enlisting the context that owns the outbox table puts the stored events in the same transaction as the business
+data: they are committed or rolled back with it. Once the outermost transaction commits, the manager calls
+`IOutboxCommit.CommitAsync` to dispatch the pending events, so handlers no longer call it themselves.
+
+That dispatch runs after the commit, not inside the transaction. Each event is dispatched in a fresh scope, with
+its own connection, which can only see committed rows (see
+[Each entry is dispatched in its own scope](./outbox.mdx#flush-after-your-side-effects-commit)). A failed
+dispatch is retried or dead-lettered by the outbox and does not change the request's result: its data is already
+committed.
+
+The flush never fails the request. If it throws, for example on a database error or an event type that no longer
+loads, or if the request's token is canceled while it runs, the manager logs it and the request still returns
+its successful result. Reporting a failure for writes that are already durable would invite a retry that repeats
+them. The events stay in the outbox, and the next `CommitAsync` or the background dispatcher delivers them, once
+any claim the failed flush took has expired.
+
+If the [background dispatcher](./outbox.mdx#dispatch-in-the-background) delivers your events, turn the flush off
+to save the claim query it costs on every commit:
+
+```csharp
+services.AddEfCoreTransactions(t =>
+{
+    t.Enlist<EnvelopesDbContext>().Enlist<OutboxDbContext>();
+    t.FlushOutboxOnCommit = false;
+});
+```
+
+### Change trackers are not rolled back
+
+:::warning A rollback leaves the change tracker out of step with the database
+
+A rollback reverts the database, not EF Core's change trackers. This matters most after a **nested** rollback,
+because the outer command keeps running in the same DI scope:
+
+- Entities the inner command saved stay tracked as `Unchanged`, although their rows are gone. EF Core believes
+  they exist, so a later `SaveChangesAsync` in the outer scope writes nothing for them and the outer command can
+  carry on from stale state without any error. Changing one of them makes that `SaveChangesAsync` issue an
+  `UPDATE` for a row that does not exist.
+- Entities it added without saving stay `Added`, so the outer command's next `SaveChangesAsync` inserts them.
+
+After a nested command fails, do not reuse the entities it touched. Reload what the outer command needs, or detach
+those entries (`context.Entry(entity).State = EntityState.Detached`). The manager does not clear the trackers
+itself, because that would also drop the outer command's own pending changes.
+
+:::
+
+## Pipeline position
+
+The behavior runs at `TransactionBehaviorOptions.DefaultOrder` (`0x8000_0000`, just past
+`IOrderedPipelineBehavior.Middle`) by default: inside the behaviors at `First` (CQRS enforcement, outbox discard)
+and `Middle`, and outside the ones at `Last` (request validation), so validation runs inside the transaction.
+Change it with the options:
+
+```csharp
+cfg.AddTransactions<EfCoreTransactionManager>(o => o.Order = 100);
+```
+
+See [Ordering](./pipelines.mdx#ordering).
+
+## Native AOT
+
+`AddTransactions<TManager>()` registers `TransactionBehavior<,>` as an open generic, which needs runtime code
+generation. Under Native AOT, let the source generator emit closed registrations instead: it closes the behavior
+only over the `ITransactional` requests it finds.
+
+```csharp
+[assembly: SynapseGlobalBehavior(typeof(TransactionBehavior<,>))]
+
+services.AddSynapse(cfg =>
+{
+    cfg.AddRegisterGroup(new RegisterGroup());
+    cfg.AddTransactionManager<EfCoreTransactionManager>(); // the manager and the options, not the behavior
+});
+```
+
+Use one path or the other. With both, the behavior runs twice and the inner run opens a needless savepoint.
+
+## See also
+
+- [Pipeline Behaviors](./pipelines.mdx) — how behaviors compose and are ordered.
+- [Outbox Pattern](./outbox.mdx) — storing events and dispatching them after the commit.
+- [EF Core Outbox Storage](./outbox-entityframeworkcore.mdx) — the outbox table and its migrations.
+- [Modular Monolith](./modular-monolith.mdx) — one `DbContext` per module.

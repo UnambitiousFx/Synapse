@@ -117,6 +117,46 @@ public interface ISynapseConfig
         where TResponse : notnull;
 
     /// <summary>
+    ///     Runs every <see cref="ITransactional" /> request inside a transaction opened by
+    ///     <typeparamref name="TManager" />: it commits when the handler returns a successful <c>Result</c> and rolls
+    ///     back when the handler returns a failure or throws. Other requests are not affected.
+    /// </summary>
+    /// <remarks>
+    ///     Registers <typeparamref name="TManager" /> as the Scoped <see cref="ITransactionManager" /> and
+    ///     <see cref="TransactionBehavior{TRequest,TResult}" /> as an open-generic result behavior, which is not
+    ///     Native-AOT safe. Under Native AOT, call <see cref="AddTransactionManager{TManager}" /> instead and apply
+    ///     <c>[assembly: SynapseGlobalBehavior(typeof(TransactionBehavior&lt;,&gt;))]</c>, so the source generator
+    ///     emits closed registrations for the <see cref="ITransactional" /> handlers it discovers. Use one path or the
+    ///     other, not both: with both, the behavior runs twice and the inner run opens a needless nested scope.
+    /// </remarks>
+    /// <param name="configure">Optionally sets the behavior's pipeline order.</param>
+    /// <typeparam name="TManager">The transaction manager, e.g. <c>EfCoreTransactionManager</c>.</typeparam>
+    /// <returns>The same config, for chaining.</returns>
+    [RequiresDynamicCode(OpenGenericBehaviorAotMessage)]
+    ISynapseConfig AddTransactions<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+        TManager>(Action<TransactionBehaviorOptions>? configure = null)
+        where TManager : class, ITransactionManager;
+
+    /// <summary>
+    ///     Registers <typeparamref name="TManager" /> as the Scoped <see cref="ITransactionManager" /> and the
+    ///     options of <see cref="TransactionBehavior{TRequest,TResult}" />, without registering the behavior itself.
+    /// </summary>
+    /// <remarks>
+    ///     The Native-AOT-safe counterpart of <see cref="AddTransactions{TManager}" />: wire the behavior with
+    ///     <c>[assembly: SynapseGlobalBehavior(typeof(TransactionBehavior&lt;,&gt;))]</c>, or per request with
+    ///     <see cref="RegisterResultPipelineBehavior{TBehavior,TRequest}" />. A later call replaces the manager and
+    ///     options of an earlier one.
+    /// </remarks>
+    /// <param name="configure">Optionally sets the behavior's pipeline order.</param>
+    /// <typeparam name="TManager">The transaction manager, e.g. <c>EfCoreTransactionManager</c>.</typeparam>
+    /// <returns>The same config, for chaining.</returns>
+    ISynapseConfig AddTransactionManager<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+        TManager>(Action<TransactionBehaviorOptions>? configure = null)
+        where TManager : class, ITransactionManager;
+
+    /// <summary>
     ///     Registers a result pipeline behavior closed over <see cref="Result" /> for a request type without
     ///     response. Prefer <c>[PipelineBehavior]</c> on an open-generic behavior: the source generator then
     ///     registers it for every request, in both shapes.

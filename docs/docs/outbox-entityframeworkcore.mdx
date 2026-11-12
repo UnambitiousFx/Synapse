@@ -178,6 +178,9 @@ await emitter.EmitAsync(new TaskCreatedEvent(task.Id), EmitMode.Outbox, ct);    
 await tx.CommitAsync(ct);   // both commit together; either rolls back together
 ```
 
+`EfCoreTransactionManager` does this for you around every `ITransactional` command, with savepoints for nested
+commands and the outbox flushed after the commit: see [Transactions](./transactions.mdx#ef-core).
+
 See also [Modular Monolith](./modular-monolith) for the broader module-boundary picture this fits
 into.
 
