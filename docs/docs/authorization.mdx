@@ -1,0 +1,177 @@
+---
+sidebar_position: 8.5
+title: Authorization
+description: Authorize every request in the pipeline with UnambitiousFx.Synapse.Authorization — actor, role, scope and resource checks driven by marker interfaces.
+---
+
+# Authorization
+
+`UnambitiousFx.Synapse.Authorization` authorizes requests inside the pipeline, so the same rules apply whether a request comes from an HTTP endpoint, an MCP tool, a background job or a CLI. Endpoint-level ASP.NET Core policies do not cover those other transports.
+
+```bash
+dotnet add package UnambitiousFx.Synapse.Authorization
+```
+
+:::warning HTTP status codes: register this mapper for the conventional 401 / 403
+
+Denials are the typed `UnauthenticatedFailure` and `UnauthorizedFailure` from `UnambitiousFx.Functional`, so [`IHttpInvoker` / `IMvcInvoker`](./aspnetcore) return a denial status, never a 500. The inherited `DefaultFailureHttpMapper` maps them the other way round from the usual convention, though: `UnauthorizedFailure` (wrong role, scope or resource) becomes **401** and `UnauthenticatedFailure` (anonymous caller) becomes **403**. For **401 for anonymous callers and 403 for authenticated callers who lack access**, register this mapper **before** `AddSynapseAspNetCore`:
+
+```csharp
+public sealed class AuthorizationStatusMapper : IFailureHttpMapper
+{
+    private readonly DefaultFailureHttpMapper _default = new();
+
+    public FailureHttpResponse? GetFailureResponse(IFailure failure) => failure switch
+    {
+        UnauthenticatedFailure => Problem(StatusCodes.Status401Unauthorized, failure),
+        UnauthorizedFailure => Problem(StatusCodes.Status403Forbidden, failure),
+        _ => _default.GetFailureResponse(failure)
+    };
+
+    private static FailureHttpResponse Problem(int status, IFailure failure) => new()
+    {
+        StatusCode = status,
+        Body = new ProblemDetails { Status = status, Detail = failure.Message }
+    };
+}
+
+builder.Services.AddSingleton<IFailureHttpMapper, AuthorizationStatusMapper>();
+builder.Services.AddSynapseAspNetCore(); // TryAddSingleton: keeps the mapper above
+```
+
+:::
+
+## Setup
+
+Implement `ICurrentPrincipal` over your caller's identity, register it, then call `AddSynapseAuthorization`:
+
+```csharp
+public sealed class HttpCurrentPrincipal(IHttpContextAccessor accessor) : ICurrentPrincipal
+{
+    // OAuth "scope", Entra ID "scp", and the name ASP.NET Core maps "scp" to by default.
+    private static readonly string[] ScopeClaimTypes =
+        ["scope", "scp", "http://schemas.microsoft.com/identity/claims/scope"];
+
+    private ClaimsPrincipal? User => accessor.HttpContext?.User;
+
+    public bool IsAuthenticated => User?.Identity?.IsAuthenticated == true;
+    public string? Id => User?.FindFirstValue(ClaimTypes.NameIdentifier);
+
+    // One claim often holds several space-separated scopes ("read write"), so split before comparing.
+    public bool HasScope(string scope) => User?.Claims
+        .Where(claim => ScopeClaimTypes.Contains(claim.Type))
+        .SelectMany(claim => claim.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        .Contains(scope, StringComparer.Ordinal) == true;
+
+    public bool IsInRole(string role) => User?.IsInRole(role) == true;
+}
+
+services.AddHttpContextAccessor();
+services.AddScoped<ICurrentPrincipal, HttpCurrentPrincipal>();
+services.AddSynapse(cfg => cfg.AddRegisterGroup(new RegisterGroup()));
+services.AddSynapseAuthorization(o =>
+{
+    o.QueryScope = "read";              // default
+    o.CommandScope = "write";           // default
+    o.Policy<LoanAccessPolicy>();       // IResourceAccessPolicy, scoped
+    o.DenialRecorder<AuditDenials>();   // IAuthorizationDenialRecorder, scoped, optional
+});
+```
+
+You can call `AddSynapseAuthorization` more than once, for example from a shared module and then from the host. Every call configures the same options, so a later call's `QueryScope` / `CommandScope` replace the earlier ones, and each call's policy and recorders are registered. An empty or whitespace default scope throws `ArgumentException`; use `null` to turn it off.
+
+## Anonymous requests
+
+Once authorization is registered, **every request needs an authenticated caller**. Mark the requests that must work without one, such as sign-in, sign-up or password reset, with `IAllowAnonymous`:
+
+```csharp
+public sealed record SignIn(string Email, string Password) : ICommand<SessionToken>, IAllowAnonymous;
+```
+
+An `IAllowAnonymous` request:
+
+- **passes the actor check**, whoever the caller is;
+- **is exempt from the default scope rule**, because an anonymous caller has no `write` scope to give;
+- **still gets the checks it declares itself.** `IRequiresRole`, `IRequiresScope` and `IResourceScoped` apply as usual. A request that combines them with `IAllowAnonymous` therefore needs a caller who has them, which in practice means an authenticated one. Keep public requests free of those markers.
+
+## The checks
+
+Four behaviors run on every `Result` and `Result<T>` request, in a fixed order. The first one that denies the request short-circuits the pipeline: the handler and the later checks do not run.
+
+| Order | Behavior | Applies to | Denial |
+|---|---|---|---|
+| `AuthorizationBehaviorOrder.Actor` (1000) | `ActorAuthorizationBehavior` | every request except `IAllowAnonymous` | `UnauthenticatedFailure` when `ICurrentPrincipal.IsAuthenticated` is false |
+| `AuthorizationBehaviorOrder.Role` (2000) | `RoleAuthorizationBehavior` | `IRequiresRole` | `UnauthorizedFailure` when the caller is not in `Role` |
+| `AuthorizationBehaviorOrder.Scope` (3000) | `ScopeAuthorizationBehavior` | queries, commands, `IRequiresScope` | `UnauthorizedFailure` when the caller lacks the scope |
+| `AuthorizationBehaviorOrder.Resource` (4000) | `ResourceAuthorizationBehavior` | `IResourceScoped` | `UnauthorizedFailure` when the policy says no |
+
+The positions are the numeric `IOrderedPipelineBehavior.Order`: after the built-in `First` behaviors (CQRS enforcement, outbox discard) and before validation (`Last`). The gaps let you put your own behavior between two checks, for example `Order => AuthorizationBehaviorOrder.Resource - 1` to load a tenant before the resource check.
+
+## Markers
+
+```csharp
+// Default scope: a query needs QueryScope ("read").
+public sealed record GetLoan(Guid Id) : IQuery<LoanView>, IResourceScoped
+{
+    public string ResourceId => Id.ToString();
+    public string Access => "read";
+}
+
+// Default scope: a command needs CommandScope ("write"), plus the admin role.
+public sealed record PurgeLoans : ICommand, IRequiresRole
+{
+    public string Role => "admin";
+}
+
+// Its own scope instead of "read".
+public sealed record ExportLoans : IQuery<byte[]>, IRequiresScope
+{
+    public string Scope => "loans:export";
+}
+```
+
+- **Scopes.** A request that implements `IRequiresScope` needs its `Scope`. Otherwise an `IQuery<T>` needs `QueryScope` and an `ICommand` / `ICommand<T>` needs `CommandScope`. A plain `IRequest` that declares no scope needs none.
+- **Turning the default off.** `o.DisableDefaultScopes()` (or setting `QueryScope` / `CommandScope` to `null`) stops the query / command rule. Requests that implement `IRequiresScope` are still checked.
+- **Roles.** `IRequiresRole.Role` is checked with `ICurrentPrincipal.IsInRole`.
+- **Blank values are bugs.** An `IRequiresScope.Scope` or `IRequiresRole.Role` that is null, empty or whitespace throws `InvalidOperationException` naming the request type when the request is dispatched. It is not treated as "no requirement" (that would fail open), and it is not a silent denial of every caller (that would hide the bug behind ordinary 401/403s). Recorders are not called for it, because no caller was denied.
+
+## Resource policy
+
+Only the policy is application-specific: who may access which resource.
+
+```csharp
+public sealed class LoanAccessPolicy(LoansDbContext db) : IResourceAccessPolicy
+{
+    public async ValueTask<bool> IsAllowedAsync(ICurrentPrincipal principal, IResourceScoped request,
+        CancellationToken cancellationToken = default)
+    {
+        var loanId = Guid.Parse(request.ResourceId);
+        return await db.Loans.AnyAsync(l => l.Id == loanId && l.OwnerId == principal.Id, cancellationToken);
+    }
+}
+```
+
+`request` is the request itself, so you can pattern-match it to read more than `ResourceId` and `Access`. Without a registered policy, every `IResourceScoped` request is denied: the behavior fails closed.
+
+## Recording denials
+
+Every denial is passed to each registered `IAuthorizationDenialRecorder` before the failure is returned:
+
+```csharp
+public sealed class AuditDenials(ILogger<AuditDenials> logger) : IAuthorizationDenialRecorder
+{
+    public ValueTask RecordAsync(AuthorizationDenial denial, CancellationToken cancellationToken = default)
+    {
+        logger.LogWarning("{Request} denied for {Principal}: {Reason} {Requirement} {Resource}",
+            denial.Request.GetType().Name, denial.PrincipalId, denial.Reason, denial.Requirement, denial.ResourceId);
+        return ValueTask.CompletedTask;
+    }
+}
+```
+
+`AuthorizationDenial` carries the request, the `Reason` (`Unauthenticated`, `MissingRole`, `MissingScope`, `ResourceAccessDenied`), the caller's `Id`, the missing role, scope or access in `Requirement`, and the `ResourceId` for resource denials.
+
+## Limits
+
+- Stream requests (`IStreamRequest<T>`) and events are not authorized.
+- The behaviors are registered as open generics, so this package is not Native-AOT compatible.

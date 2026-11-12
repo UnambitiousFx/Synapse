@@ -18,7 +18,7 @@ const sidebars: SidebarsConfig = {
     {
       type: 'category',
       label: 'Pipeline & Behaviors',
-      items: ['pipelines', 'validation', 'transactions', 'error-handling'],
+      items: ['pipelines', 'validation', 'authorization', 'transactions', 'error-handling'],
     },
     {
       type: 'category',
