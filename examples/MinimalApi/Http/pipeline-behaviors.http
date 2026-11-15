@@ -137,7 +137,7 @@ POST {{baseUrl}}/tasks/{{pbTaskIdA}}/complete
 
 ### [Feature: Short-circuit] Purge WITHOUT permission — pipeline halts at AuthorizationBehavior
 ###
-### Expect: 401 Unauthorized (typed UnauthorizedFailure → DefaultFailureHttpMapper)
+### Expect: 403 Forbidden (typed UnauthorizedFailure → DefaultFailureHttpMapper)
 ###
 ### Expected stdout (handler 🧹 PURGING line is ABSENT):
 ###   ▶ [metrics:10] PurgeCompletedTasksCommand started
@@ -151,7 +151,7 @@ POST {{baseUrl}}/tasks/admin/purge
 
 > {%
     client.test("Purge without permission is rejected", function () {
-        client.assert(response.status === 401, "Expected 401 — AuthorizationBehavior returned a typed UnauthorizedFailure");
+        client.assert(response.status === 403, "Expected 403 — AuthorizationBehavior returned a typed UnauthorizedFailure");
     });
 %}
 

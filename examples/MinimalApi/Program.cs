@@ -191,7 +191,7 @@ tasks.MapDelete("/{id:guid}", async (
     .WithSummary("Delete a task");
 
 // Feature: Admin command protected by AuthorizationBehavior (short-circuit demo)
-// Without X-User-Permissions: tasks:admin header → 401 (typed UnauthorizedFailure), handler never runs
+// Without X-User-Permissions: tasks:admin header → 403 (typed UnauthorizedFailure), handler never runs
 // With    X-User-Permissions: tasks:admin header → 200, returns count of purged tasks
 tasks.MapPost("/admin/purge", async (
         [FromServices] IHttpInvoker invoker,
