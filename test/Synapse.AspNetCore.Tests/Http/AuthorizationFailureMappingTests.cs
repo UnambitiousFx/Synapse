@@ -54,7 +54,7 @@ public sealed class AuthorizationFailureMappingTests
         Assert.Equal(StatusCodes.Status404NotFound, notFound?.StatusCode);
     }
 
-    // Kept identical to the mapper shown in docs/docs/authorization.mdx.
+    // Kept identical to the mapper shown in docs/docs/authorization.mdx and docs/known-issues/003-*.md.
     private sealed class AuthorizationStatusMapper : IFailureHttpMapper
     {
         private readonly DefaultFailureHttpMapper _default = new();

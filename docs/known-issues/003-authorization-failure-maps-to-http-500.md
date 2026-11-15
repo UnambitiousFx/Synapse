@@ -213,10 +213,29 @@ authenticated-but-unpermitted callers) register a custom `IFailureHttpMapper` **
 `AddSynapseAspNetCore()` — the registration uses `TryAddSingleton`, so the custom mapper wins:
 
 ```csharp
-builder.Services.AddSingleton<IFailureHttpMapper>(
-    new CompositeFailureHttpMapper(
-        new TypedFailureHttpMapper<UnauthorizedFailure>(
-            f => new FailureHttpResponse { StatusCode = StatusCodes.Status403Forbidden, Body = f.Message }),
-        DefaultFailureHttpMapper.Instance));
+public sealed class AuthorizationStatusMapper : IFailureHttpMapper
+{
+    private readonly DefaultFailureHttpMapper _default = new();
+
+    public FailureHttpResponse? GetFailureResponse(IFailure failure) => failure switch
+    {
+        UnauthenticatedFailure => Problem(StatusCodes.Status401Unauthorized, failure),
+        UnauthorizedFailure => Problem(StatusCodes.Status403Forbidden, failure),
+        _ => _default.GetFailureResponse(failure)
+    };
+
+    private static FailureHttpResponse Problem(int status, IFailure failure) => new()
+    {
+        StatusCode = status,
+        Body = new ProblemDetails { Status = status, Detail = failure.Message }
+    };
+}
+
+builder.Services.AddSingleton<IFailureHttpMapper, AuthorizationStatusMapper>();
 builder.Services.AddSynapseAspNetCore(); // TryAddSingleton → no-op, custom mapper already registered
 ```
+
+This is the mapper shown in [`authorization.mdx`](../docs/authorization.mdx), compiled and checked by
+`CustomMapper_FromTheAuthorizationDocs_GivesTheConventionalSplit` in
+`test/Synapse.AspNetCore.Tests/Http/AuthorizationFailureMappingTests.cs` against the referenced
+`UnambitiousFx.Functional.AspNetCore` version.
