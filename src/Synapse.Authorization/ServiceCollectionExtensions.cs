@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using UnambitiousFx.Synapse.Abstractions;
@@ -46,6 +47,30 @@ public static class ServiceCollectionExtensions
             typeof(ScopeAuthorizationBehavior<,>)));
         services.TryAddEnumerable(ServiceDescriptor.Scoped(typeof(IResultPipelineBehavior<,>),
             typeof(ResourceAuthorizationBehavior<,>)));
+        return services;
+    }
+
+    /// <summary>
+    ///     Registers a scoped <see cref="ClaimsCurrentPrincipal" /> as the <see cref="ICurrentPrincipal" />, over the
+    ///     <see cref="ClaimsPrincipal" /> that <paramref name="user" /> returns in each scope. In ASP.NET Core:
+    ///     <code>
+    ///     services.AddHttpContextAccessor();
+    ///     services.AddSynapseClaimsPrincipal(sp =&gt; sp.GetRequiredService&lt;IHttpContextAccessor&gt;().HttpContext?.User);
+    ///     </code>
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="user">Returns the current caller, or <see langword="null" /> when there is none.</param>
+    /// <param name="configure">Optionally changes the claim types read for scopes, roles and the id.</param>
+    /// <returns>The same service collection, for chaining.</returns>
+    public static IServiceCollection AddSynapseClaimsPrincipal(this IServiceCollection services,
+        Func<IServiceProvider, ClaimsPrincipal?> user,
+        Action<ClaimsCurrentPrincipalOptions>? configure = null)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(user);
+        var options = new ClaimsCurrentPrincipalOptions();
+        configure?.Invoke(options);
+        services.AddScoped<ICurrentPrincipal>(provider => new ClaimsCurrentPrincipal(user(provider), options));
         return services;
     }
 
