@@ -1,26 +1,30 @@
 using UnambitiousFx.Functional;
-using UnambitiousFx.Functional.Failures;
 using UnambitiousFx.Synapse.Abstractions;
 
 namespace UnambitiousFx.Synapse.Authorization;
 
 internal static class AuthorizationDenials
 {
-    // The recorders are only enumerated on the denial path, so the allowed path costs nothing extra.
     public static async ValueTask<TResult> DenyAsync<TRequest, TResult>(
         IEnumerable<IAuthorizationDenialRecorder> recorders,
         RequestNext<TRequest, TResult> next,
-        AuthorizationDenial denial,
-        Failure failure,
+        Denied denied,
         CancellationToken cancellationToken)
         where TResult : IResult
+    {
+        await RecordAsync(recorders, denied.Denial, cancellationToken);
+        return next.Fail(denied.Failure);
+    }
+
+    // The recorders are only enumerated on the denial path, so the allowed path costs nothing extra.
+    public static async ValueTask RecordAsync(IEnumerable<IAuthorizationDenialRecorder> recorders,
+        AuthorizationDenial denial,
+        CancellationToken cancellationToken)
     {
         foreach (var recorder in recorders)
         {
             await recorder.RecordAsync(denial, cancellationToken);
         }
-
-        return next.Fail(failure);
     }
 
     /// <summary>

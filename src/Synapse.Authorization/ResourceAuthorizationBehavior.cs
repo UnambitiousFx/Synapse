@@ -55,18 +55,8 @@ public sealed class ResourceAuthorizationBehavior<TRequest, TResult> : IResultPi
         RequestNext<TRequest, TResult> next,
         CancellationToken cancellationToken)
     {
-        if (_policy is not null && await _policy.IsAllowedAsync(_principal, scoped, cancellationToken))
-        {
-            return await next.InvokeAsync(request, cancellationToken);
-        }
-
-        // Fail closed: a resource-scoped request without a policy is a misconfiguration, not an open door.
-        var reason = _policy is null
-            ? $"Access '{scoped.Access}' denied: no {nameof(IResourceAccessPolicy)} is registered."
-            : $"Access '{scoped.Access}' to the resource denied.";
-        return await AuthorizationDenials.DenyAsync(_recorders, next,
-            new AuthorizationDenial(scoped, AuthorizationDenialReason.ResourceAccessDenied, _principal.Id,
-                scoped.Access, scoped.ResourceId),
-            new UnauthorizedFailure(reason), cancellationToken);
+        return await AuthorizationChecks.ResourceAsync(scoped, _principal, _policy, cancellationToken) is { } denied
+            ? await AuthorizationDenials.DenyAsync(_recorders, next, denied, cancellationToken)
+            : await next.InvokeAsync(request, cancellationToken);
     }
 }

@@ -1,0 +1,266 @@
+using System.Runtime.CompilerServices;
+using JetBrains.Annotations;
+using Microsoft.Extensions.DependencyInjection;
+using UnambitiousFx.Functional;
+using UnambitiousFx.Functional.Failures;
+using UnambitiousFx.Synapse.Abstractions;
+
+namespace UnambitiousFx.Synapse.Authorization.Tests;
+
+public sealed record StreamItems(int Count) : IStreamRequest<int>;
+
+public sealed record StreamAdminItems : IStreamRequest<int>, IRequiresRole
+{
+    public string Role => "admin";
+}
+
+public sealed record StreamExport : IStreamRequest<int>, IRequiresScope
+{
+    public string Scope => "reports:export";
+}
+
+public sealed record StreamHousehold(string HouseholdId) : IStreamRequest<int>, IResourceScoped
+{
+    public string ResourceId => HouseholdId;
+    public string Access => "read";
+}
+
+public sealed record StreamPublicFeed : IStreamRequest<int>, IAllowAnonymous;
+
+[TestSubject(typeof(StreamAuthorizationBehavior<,>))]
+public sealed class StreamAuthorizationTests
+{
+    [Fact]
+    public async Task InvokeStreamAsync_WithAuthorizedCaller_YieldsEveryItem()
+    {
+        // Arrange (Given)
+        await using var provider = BuildProvider(Principals.Authenticated(scopes: ["read"]));
+
+        // Act (When)
+        var items = await CollectAsync(provider, new StreamItems(3));
+
+        // Assert (Then)
+        Assert.Equal([0, 1, 2], items.Select(r => r.Match(v => v, _ => -1)));
+        Assert.Empty(provider.GetRequiredService<StreamDenialLog>().Denials);
+    }
+
+    [Fact]
+    public async Task InvokeStreamAsync_WithAnonymousCaller_YieldsOneUnauthenticatedFailureWithoutRunningHandler()
+    {
+        // Arrange (Given)
+        await using var provider = BuildProvider(Principals.Anonymous());
+
+        // Act (When)
+        var items = await CollectAsync(provider, new StreamItems(3));
+
+        // Assert (Then)
+        var item = Assert.Single(items);
+        Assert.True(item.TryGetFailure(out var failure));
+        Assert.IsType<UnauthenticatedFailure>(failure);
+        var denial = Assert.Single(provider.GetRequiredService<StreamDenialLog>().Denials);
+        Assert.Equal(AuthorizationDenialReason.Unauthenticated, denial.Reason);
+        Assert.Equal(0, provider.GetRequiredService<StreamHandlerCalls>().Count);
+    }
+
+    [Fact]
+    public async Task InvokeStreamAsync_WithoutQueryScope_TreatsStreamAsQuery()
+    {
+        // Arrange (Given) — the caller only has the command scope
+        await using var provider = BuildProvider(Principals.Authenticated(scopes: ["write"]));
+
+        // Act (When)
+        var items = await CollectAsync(provider, new StreamItems(3));
+
+        // Assert (Then)
+        var item = Assert.Single(items);
+        Assert.True(item.TryGetFailure(out var failure));
+        Assert.IsType<UnauthorizedFailure>(failure);
+        var denial = Assert.Single(provider.GetRequiredService<StreamDenialLog>().Denials);
+        Assert.Equal(AuthorizationDenialReason.MissingScope, denial.Reason);
+        Assert.Equal(SynapseAuthorizationOptions.DefaultQueryScope, denial.Requirement);
+        Assert.Equal(0, provider.GetRequiredService<StreamHandlerCalls>().Count);
+    }
+
+    [Theory]
+    [InlineData(new[] { "read" }, false)]
+    [InlineData(new[] { "reports:export" }, true)]
+    public async Task InvokeStreamAsync_WithDeclaredScope_ChecksItInsteadOfDefault(string[] scopes, bool allowed)
+    {
+        // Arrange (Given)
+        await using var provider = BuildProvider(Principals.Authenticated(scopes: scopes));
+
+        // Act (When)
+        var items = await CollectAsync(provider, new StreamExport());
+
+        // Assert (Then)
+        Assert.Equal(allowed, items.All(r => r.IsSuccess));
+        Assert.Equal(allowed ? 1 : 0, provider.GetRequiredService<StreamHandlerCalls>().Count);
+    }
+
+    [Fact]
+    public async Task InvokeStreamAsync_WithoutRequiredRole_ReportsMissingRole()
+    {
+        // Arrange (Given)
+        await using var provider = BuildProvider(Principals.Authenticated(scopes: ["read"]));
+
+        // Act (When)
+        var items = await CollectAsync(provider, new StreamAdminItems());
+
+        // Assert (Then)
+        Assert.Single(items);
+        var denial = Assert.Single(provider.GetRequiredService<StreamDenialLog>().Denials);
+        Assert.Equal(AuthorizationDenialReason.MissingRole, denial.Reason);
+        Assert.Equal(0, provider.GetRequiredService<StreamHandlerCalls>().Count);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(false)]
+    public async Task InvokeStreamAsync_ResourceScopedWithoutAllowingPolicy_IsDenied(bool? policyAllows)
+    {
+        // Arrange (Given)
+        await using var provider = BuildProvider(Principals.Authenticated(scopes: ["read"]), policyAllows);
+
+        // Act (When)
+        var items = await CollectAsync(provider, new StreamHousehold("h-1"));
+
+        // Assert (Then)
+        var item = Assert.Single(items);
+        Assert.True(item.TryGetFailure(out var failure));
+        Assert.IsType<UnauthorizedFailure>(failure);
+        var denial = Assert.Single(provider.GetRequiredService<StreamDenialLog>().Denials);
+        Assert.Equal(AuthorizationDenialReason.ResourceAccessDenied, denial.Reason);
+        Assert.Equal("h-1", denial.ResourceId);
+        Assert.Equal(0, provider.GetRequiredService<StreamHandlerCalls>().Count);
+    }
+
+    [Fact]
+    public async Task InvokeStreamAsync_ResourceScopedWithAllowingPolicy_YieldsItems()
+    {
+        // Arrange (Given)
+        await using var provider = BuildProvider(Principals.Authenticated(scopes: ["read"]), policyAllows: true);
+
+        // Act (When)
+        var items = await CollectAsync(provider, new StreamHousehold("h-1"));
+
+        // Assert (Then)
+        Assert.True(Assert.Single(items).IsSuccess);
+    }
+
+    [Fact]
+    public async Task InvokeStreamAsync_AllowAnonymousFromAnonymousCaller_YieldsItems()
+    {
+        // Arrange (Given)
+        await using var provider = BuildProvider(Principals.Anonymous());
+
+        // Act (When)
+        var items = await CollectAsync(provider, new StreamPublicFeed());
+
+        // Assert (Then)
+        Assert.True(Assert.Single(items).IsSuccess);
+        Assert.Empty(provider.GetRequiredService<StreamDenialLog>().Denials);
+    }
+
+    private static async Task<List<Result<int>>> CollectAsync(ServiceProvider provider, IStreamRequest<int> request)
+    {
+        await using var scope = provider.CreateAsyncScope();
+        var invoker = scope.ServiceProvider.GetRequiredService<IInvoker>();
+        var items = new List<Result<int>>();
+        await foreach (var item in invoker.InvokeStreamAsync(request, TestContext.Current.CancellationToken))
+        {
+            items.Add(item);
+        }
+
+        return items;
+    }
+
+    private static ServiceProvider BuildProvider(ICurrentPrincipal principal, bool? policyAllows = null)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<StreamHandlerCalls>();
+        services.AddSingleton<StreamDenialLog>();
+        services.AddSingleton(principal);
+        services.AddSynapse(cfg =>
+        {
+            cfg.RegisterStreamRequestHandler<CountingHandler<StreamItems>, StreamItems, int>();
+            cfg.RegisterStreamRequestHandler<CountingHandler<StreamAdminItems>, StreamAdminItems, int>();
+            cfg.RegisterStreamRequestHandler<CountingHandler<StreamExport>, StreamExport, int>();
+            cfg.RegisterStreamRequestHandler<CountingHandler<StreamHousehold>, StreamHousehold, int>();
+            cfg.RegisterStreamRequestHandler<CountingHandler<StreamPublicFeed>, StreamPublicFeed, int>();
+        });
+        services.AddSynapseAuthorization(o =>
+        {
+            o.DenialRecorder<LoggingRecorder>();
+            if (policyAllows is { } allows)
+            {
+                if (allows)
+                {
+                    o.Policy<FixedPolicy.Allow>();
+                }
+                else
+                {
+                    o.Policy<FixedPolicy.Deny>();
+                }
+            }
+        });
+        return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+    }
+
+    private sealed class CountingHandler<TRequest>(StreamHandlerCalls calls) : IStreamRequestHandler<TRequest, int>
+        where TRequest : IStreamRequest<int>
+    {
+        public async IAsyncEnumerable<Result<int>> HandleAsync(TRequest request,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            calls.Count++;
+            var count = request is StreamItems items ? items.Count : 1;
+            for (var i = 0; i < count; i++)
+            {
+                await Task.Yield();
+                yield return Result.Success(i);
+            }
+        }
+    }
+
+    private sealed class StreamHandlerCalls
+    {
+        public int Count { get; set; }
+    }
+
+    private sealed class StreamDenialLog
+    {
+        public List<AuthorizationDenial> Denials { get; } = [];
+    }
+
+    private sealed class LoggingRecorder(StreamDenialLog log) : IAuthorizationDenialRecorder
+    {
+        public ValueTask RecordAsync(AuthorizationDenial denial, CancellationToken cancellationToken = default)
+        {
+            log.Denials.Add(denial);
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private static class FixedPolicy
+    {
+        public sealed class Allow : IResourceAccessPolicy
+        {
+            public ValueTask<bool> IsAllowedAsync(ICurrentPrincipal principal,
+                IResourceScoped request,
+                CancellationToken cancellationToken = default)
+            {
+                return new ValueTask<bool>(true);
+            }
+        }
+
+        public sealed class Deny : IResourceAccessPolicy
+        {
+            public ValueTask<bool> IsAllowedAsync(ICurrentPrincipal principal,
+                IResourceScoped request,
+                CancellationToken cancellationToken = default)
+            {
+                return new ValueTask<bool>(false);
+            }
+        }
+    }
+}

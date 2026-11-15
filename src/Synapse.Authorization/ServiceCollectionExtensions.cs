@@ -15,7 +15,8 @@ public static class ServiceCollectionExtensions
     ///     check <see cref="IRequiresRole" />, then the scope (the request's <see cref="IRequiresScope" />, or the default
     ///     query / command scope), then <see cref="IResourceScoped" /> against the <see cref="IResourceAccessPolicy" />.
     ///     A denial returns an <c>UnauthorizedFailure</c>, is reported to every
-    ///     <see cref="IAuthorizationDenialRecorder" />, and the handler is not called.
+    ///     <see cref="IAuthorizationDenialRecorder" />, and the handler is not called. Stream requests get the same checks
+    ///     through <see cref="StreamAuthorizationBehavior{TRequest,TItem}" />, a stream counting as a query.
     /// </summary>
     /// <remarks>
     ///     The application registers its <see cref="ICurrentPrincipal" /> itself, usually as a scoped service. Calling
@@ -46,6 +47,8 @@ public static class ServiceCollectionExtensions
             typeof(ScopeAuthorizationBehavior<,>)));
         services.TryAddEnumerable(ServiceDescriptor.Scoped(typeof(IResultPipelineBehavior<,>),
             typeof(ResourceAuthorizationBehavior<,>)));
+        services.TryAddEnumerable(ServiceDescriptor.Scoped(typeof(IStreamRequestPipelineBehavior<,>),
+            typeof(StreamAuthorizationBehavior<,>)));
         return services;
     }
 
