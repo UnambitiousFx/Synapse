@@ -134,26 +134,6 @@ await foreach (var item in invoker.InvokeStreamAsync(new ExportLoans(householdId
 
 The four checks share one behavior on streams, so a behavior of your own cannot sit between two of them.
 
-### Stream requests
-
-`AddSynapseAuthorization()` also authorizes stream requests (`IStreamRequest<T>`), with no extra registration. `StreamAuthorizationBehavior` runs the same four checks in the same order, at `AuthorizationBehaviorOrder.Actor`. The markers, the resource policy and the denial recorders all apply. A stream counts as a query, so it needs `QueryScope` unless it implements `IRequiresScope`.
-
-The checks run once, before the handler starts. A denied stream yields a single failed item (`UnauthenticatedFailure` or `UnauthorizedFailure`), and the handler never runs:
-
-```csharp
-await foreach (var item in invoker.InvokeStreamAsync(new ExportLoans(householdId), ct))
-{
-    if (item.TryGetFailure(out var failure))
-    {
-        // denied: this is the only item
-        break;
-    }
-    // ...
-}
-```
-
-The four checks share one behavior on streams, so a behavior of your own cannot sit between two of them.
-
 ## Markers
 
 ```csharp
