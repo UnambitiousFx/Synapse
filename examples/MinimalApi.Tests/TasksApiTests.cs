@@ -164,9 +164,8 @@ public sealed class TasksApiTests
         // Act
         var response = await client.PostAsync("/tasks/admin/purge", content: null, cancellationToken: TestContext.Current.CancellationToken);
 
-        // Assert — handler never runs; the typed UnauthorizedFailure maps to 401 Unauthorized
-        // (DefaultFailureHttpMapper — see known-issue 003). Either 401 or 403 is
-        // a correct denial code; the package default for UnauthorizedFailure is 401.
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        // Assert — handler never runs; the typed UnauthorizedFailure maps to 403 Forbidden
+        // (DefaultFailureHttpMapper — see known-issue 003).
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 }

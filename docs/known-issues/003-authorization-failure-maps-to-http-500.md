@@ -200,23 +200,18 @@ return Result.FailUnauthorized<TResponse>($"Requires permission '{required}'");
 
 ### Resulting status code
 
-`UnauthorizedFailure` maps to **`401 Unauthorized`** under the current `DefaultFailureHttpMapper`
-(verified by `Purge_WithoutPermission_IsDenied` in `examples/MinimalApi.Tests/TasksApiTests.cs`).
-This satisfies the expected behavior above ("403 Forbidden **or** 401 Unauthorized") — the request is
-understood and deliberately denied, and is no longer a misleading 500. The package does not currently
-expose a distinct `Forbidden` (403) failure category.
+Since `UnambitiousFx.Functional.AspNetCore` 3.0.0, `DefaultFailureHttpMapper` follows the HTTP convention:
+`UnauthenticatedFailure` maps to **`401 Unauthorized`** and `UnauthorizedFailure` to **`403 Forbidden`**
+(verified by `Purge_WithoutPermission_IsDenied` in `examples/MinimalApi.Tests/TasksApiTests.cs` and by
+`AuthorizationFailureMappingTests`). Before 3.0.0 the two were swapped. Either way the request is
+understood and deliberately denied, and is no longer a misleading 500.
 
-### Getting a specific status code (e.g. 403)
+### Getting a specific status code
 
-Callers who need a status the default mapper does not emit (such as a strict 403 for
-authenticated-but-unpermitted callers) register a custom `IFailureHttpMapper` **before**
-`AddSynapseAspNetCore()` — the registration uses `TryAddSingleton`, so the custom mapper wins:
+Configure Functional's mapper with `AddResultHttp` **before** `AddSynapseAspNetCore()`. Synapse
+registers its mapper with `TryAddSingleton`, so the configured one wins:
 
 ```csharp
-builder.Services.AddSingleton<IFailureHttpMapper>(
-    new CompositeFailureHttpMapper(
-        new TypedFailureHttpMapper<UnauthorizedFailure>(
-            f => new FailureHttpResponse { StatusCode = StatusCodes.Status403Forbidden, Body = f.Message }),
-        DefaultFailureHttpMapper.Instance));
-builder.Services.AddSynapseAspNetCore(); // TryAddSingleton → no-op, custom mapper already registered
+builder.Services.AddResultHttp(o => o.AddMapper<UnauthorizedFailure>(StatusCodes.Status401Unauthorized));
+builder.Services.AddSynapseAspNetCore(); // TryAddSingleton → no-op, configured mapper already registered
 ```

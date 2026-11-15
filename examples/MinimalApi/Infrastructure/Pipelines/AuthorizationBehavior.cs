@@ -60,7 +60,7 @@ public sealed class AuthorizationBehavior<TRequest, TResponse> : IRequestPipelin
                 typeof(TRequest).Name, required, string.Join(", ", granted));
 
             // Short-circuit: return a typed authorization failure without calling next().
-            // DefaultFailureHttpMapper maps UnauthorizedFailure → 401 Unauthorized (see known-issue 003).
+            // DefaultFailureHttpMapper maps UnauthorizedFailure → 403 Forbidden (see known-issue 003).
             return Result.FailUnauthorized<TResponse>($"Requires permission '{required}'");
         }
 

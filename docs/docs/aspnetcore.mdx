@@ -140,7 +140,14 @@ public class TasksController : ControllerBase
 
 ## Failure mapping — `IFailureHttpMapper`
 
-By default, failures are mapped to [RFC 9457 ProblemDetails](https://www.rfc-editor.org/rfc/rfc9457) responses. Replace the mapper with a custom implementation by registering it as a singleton **before** `AddSynapseAspNetCore`:
+By default, failures are mapped to [RFC 9457 ProblemDetails](https://www.rfc-editor.org/rfc/rfc9457) responses by `DefaultFailureHttpMapper`: for example `ValidationFailure` → **422**, `UnauthenticatedFailure` → **401**, `UnauthorizedFailure` → **403**, `NotFoundFailure` → **404**. To change a status without writing a mapper, configure it with `AddResultHttp` before `AddSynapseAspNetCore`:
+
+```csharp
+builder.Services.AddResultHttp(o => o.ValidationStatus(StatusCodes.Status400BadRequest));
+builder.Services.AddSynapseAspNetCore(); // TryAddSingleton: keeps the configured mapper
+```
+
+Replace the mapper with a custom implementation by registering it as a singleton **before** `AddSynapseAspNetCore`:
 
 ```csharp
 builder.Services.AddSingleton<IFailureHttpMapper, MyFailureHttpMapper>();
