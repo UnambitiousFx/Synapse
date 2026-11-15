@@ -43,31 +43,11 @@ builder.Services.AddSynapseAspNetCore(); // TryAddSingleton: keeps the mapper ab
 
 ## Setup
 
-Implement `ICurrentPrincipal` over your caller's identity, register it, then call `AddSynapseAuthorization`:
+Register an `ICurrentPrincipal` for your caller's identity, then call `AddSynapseAuthorization`. In ASP.NET Core, `AddSynapseClaimsPrincipal` registers the ready-made `ClaimsCurrentPrincipal` over `HttpContext.User`:
 
 ```csharp
-public sealed class HttpCurrentPrincipal(IHttpContextAccessor accessor) : ICurrentPrincipal
-{
-    // OAuth "scope", Entra ID "scp", and the name ASP.NET Core maps "scp" to by default.
-    private static readonly string[] ScopeClaimTypes =
-        ["scope", "scp", "http://schemas.microsoft.com/identity/claims/scope"];
-
-    private ClaimsPrincipal? User => accessor.HttpContext?.User;
-
-    public bool IsAuthenticated => User?.Identity?.IsAuthenticated == true;
-    public string? Id => User?.FindFirstValue(ClaimTypes.NameIdentifier);
-
-    // One claim often holds several space-separated scopes ("read write"), so split before comparing.
-    public bool HasScope(string scope) => User?.Claims
-        .Where(claim => ScopeClaimTypes.Contains(claim.Type))
-        .SelectMany(claim => claim.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries))
-        .Contains(scope, StringComparer.Ordinal) == true;
-
-    public bool IsInRole(string role) => User?.IsInRole(role) == true;
-}
-
 services.AddHttpContextAccessor();
-services.AddScoped<ICurrentPrincipal, HttpCurrentPrincipal>();
+services.AddSynapseClaimsPrincipal(sp => sp.GetRequiredService<IHttpContextAccessor>().HttpContext?.User);
 services.AddSynapse(cfg => cfg.AddRegisterGroup(new RegisterGroup()));
 services.AddSynapseAuthorization(o =>
 {
@@ -77,6 +57,15 @@ services.AddSynapseAuthorization(o =>
     o.DenialRecorder<AuditDenials>();   // IAuthorizationDenialRecorder, scoped, optional
 });
 ```
+
+`ClaimsCurrentPrincipal` handles the usual claim traps:
+
+- **Scopes** come from `scope`, `scp` (Microsoft Entra ID) and the long name ASP.NET Core maps `scp` to. Each claim is split on spaces (`"read write"`), and scopes are compared case-sensitively.
+- **Roles** go through `ClaimsPrincipal.IsInRole`, so the authentication handler's `RoleClaimType` applies. Add more types (`role`, `roles`) with `RoleClaimTypes`.
+- **`Id`** is `sub`, then `ClaimTypes.NameIdentifier`.
+- **`IsAuthenticated`** comes from `User.Identity.IsAuthenticated`, not from the presence of claims.
+
+Change the claim types with the second argument: `AddSynapseClaimsPrincipal(accessor, o => o.ScopeClaimTypes = ["permissions"])`. Outside HTTP (a background job, an MCP session), create `new ClaimsCurrentPrincipal(claimsPrincipal)` yourself, or implement `ICurrentPrincipal` directly.
 
 You can call `AddSynapseAuthorization` more than once, for example from a shared module and then from the host. Every call configures the same options, so a later call's `QueryScope` / `CommandScope` replace the earlier ones, and each call's policy and recorders are registered. An empty or whitespace default scope throws `ArgumentException`; use `null` to turn it off.
 
@@ -124,6 +113,26 @@ Use `cfg.ConfigureBehaviorOrdering(...)` for a behavior the source generator doe
 :::warning Putting a behavior between two checks
 `Before` / `After` only order the two behaviors they name. A behavior declared `After = Actor, Before = Role` runs before `Role`, but `Scope` and `Resource`, which it does not name, can then run before `Role` too. To sit between two checks, use the numeric gaps instead, which keep the four in order: `Order => AuthorizationBehaviorOrder.Resource - 1` loads a tenant just before the resource check.
 :::
+
+### Stream requests
+
+`AddSynapseAuthorization()` also authorizes stream requests (`IStreamRequest<T>`), with no extra registration. `StreamAuthorizationBehavior` runs the same four checks in the same order, at `AuthorizationBehaviorOrder.Actor`. The markers, the resource policy and the denial recorders all apply. A stream counts as a query, so it needs `QueryScope` unless it implements `IRequiresScope`.
+
+The checks run once, before the handler starts. A denied stream yields a single failed item (`UnauthenticatedFailure` or `UnauthorizedFailure`), and the handler never runs:
+
+```csharp
+await foreach (var item in invoker.InvokeStreamAsync(new ExportLoans(householdId), ct))
+{
+    if (item.TryGetFailure(out var failure))
+    {
+        // denied: this is the only item
+        break;
+    }
+    // ...
+}
+```
+
+The four checks share one behavior on streams, so a behavior of your own cannot sit between two of them.
 
 ### Stream requests
 
