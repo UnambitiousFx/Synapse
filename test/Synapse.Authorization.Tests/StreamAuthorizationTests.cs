@@ -27,6 +27,22 @@ public sealed record StreamHousehold(string HouseholdId) : IStreamRequest<int>, 
 
 public sealed record StreamPublicFeed : IStreamRequest<int>, IAllowAnonymous;
 
+public sealed record StreamPublicAdmin : IStreamRequest<int>, IAllowAnonymous, IRequiresRole
+{
+    public string Role => "admin";
+}
+
+public sealed record StreamPublicScoped : IStreamRequest<int>, IAllowAnonymous, IRequiresScope
+{
+    public string Scope => "feed:read";
+}
+
+public sealed record StreamPublicHousehold(string HouseholdId) : IStreamRequest<int>, IAllowAnonymous, IResourceScoped
+{
+    public string ResourceId => HouseholdId;
+    public string Access => "read";
+}
+
 [TestSubject(typeof(StreamAuthorizationBehavior<,>))]
 public sealed class StreamAuthorizationTests
 {
@@ -161,6 +177,50 @@ public sealed class StreamAuthorizationTests
         Assert.Empty(provider.GetRequiredService<StreamDenialLog>().Denials);
     }
 
+    public static TheoryData<IStreamRequest<int>, AuthorizationDenialReason> PublicStreamsWithRequirements => new()
+    {
+        { new StreamPublicAdmin(), AuthorizationDenialReason.MissingRole },
+        { new StreamPublicScoped(), AuthorizationDenialReason.MissingScope },
+        { new StreamPublicHousehold("h-1"), AuthorizationDenialReason.ResourceAccessDenied }
+    };
+
+    [Theory]
+    [MemberData(nameof(PublicStreamsWithRequirements))]
+    public async Task InvokeStreamAsync_AllowAnonymousWithDeclaredRequirement_StillChecksIt(
+        IStreamRequest<int> request,
+        AuthorizationDenialReason reason)
+    {
+        // Arrange (Given) — IAllowAnonymous only skips the actor check, not the requirements the stream declares
+        await using var provider = BuildProvider(Principals.Anonymous(), policyAllows: false);
+
+        // Act (When)
+        var items = await CollectAsync(provider, request);
+
+        // Assert (Then)
+        var item = Assert.Single(items);
+        Assert.True(item.TryGetFailure(out var failure));
+        Assert.IsType<UnauthorizedFailure>(failure);
+        var denial = Assert.Single(provider.GetRequiredService<StreamDenialLog>().Denials);
+        Assert.Equal(reason, denial.Reason);
+        Assert.Equal(0, provider.GetRequiredService<StreamHandlerCalls>().Count);
+    }
+
+    [Fact]
+    public async Task InvokeStreamAsync_FailingActorAndRole_ReportsTheActorFirst()
+    {
+        // Arrange (Given) — anonymous and without the role: the checks run actor first, like the request pipeline
+        await using var provider = BuildProvider(Principals.Anonymous());
+
+        // Act (When)
+        var items = await CollectAsync(provider, new StreamAdminItems());
+
+        // Assert (Then)
+        Assert.True(Assert.Single(items).TryGetFailure(out var failure));
+        Assert.IsType<UnauthenticatedFailure>(failure);
+        var denial = Assert.Single(provider.GetRequiredService<StreamDenialLog>().Denials);
+        Assert.Equal(AuthorizationDenialReason.Unauthenticated, denial.Reason);
+    }
+
     private static async Task<List<Result<int>>> CollectAsync(ServiceProvider provider, IStreamRequest<int> request)
     {
         await using var scope = provider.CreateAsyncScope();
@@ -187,6 +247,9 @@ public sealed class StreamAuthorizationTests
             cfg.RegisterStreamRequestHandler<CountingHandler<StreamExport>, StreamExport, int>();
             cfg.RegisterStreamRequestHandler<CountingHandler<StreamHousehold>, StreamHousehold, int>();
             cfg.RegisterStreamRequestHandler<CountingHandler<StreamPublicFeed>, StreamPublicFeed, int>();
+            cfg.RegisterStreamRequestHandler<CountingHandler<StreamPublicAdmin>, StreamPublicAdmin, int>();
+            cfg.RegisterStreamRequestHandler<CountingHandler<StreamPublicScoped>, StreamPublicScoped, int>();
+            cfg.RegisterStreamRequestHandler<CountingHandler<StreamPublicHousehold>, StreamPublicHousehold, int>();
         });
         services.AddSynapseAuthorization(o =>
         {
