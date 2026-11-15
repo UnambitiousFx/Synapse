@@ -108,6 +108,24 @@ public sealed class FluentValidationBehaviorTests
     }
 
     [Fact]
+    public void AddSynapseFluentValidation_ByDefault_RunsInValidationStage()
+    {
+        // Arrange (Given)
+        var services = new ServiceCollection();
+        services.AddSynapseFluentValidation();
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+
+        // Act (When)
+        var behavior = scope.ServiceProvider.GetServices<IRequestPipelineBehavior<CreateUser>>().Single();
+
+        // Assert (Then)
+        var order = Assert.IsType<FluentValidationBehavior<CreateUser>>(behavior).Order;
+        Assert.Equal(PipelineStages.StartOf(PipelineStage.Validation), order);
+        Assert.Equal(PipelineStage.Validation, PipelineStages.Of(order));
+    }
+
+    [Fact]
     public void AddSynapseFluentValidation_WithOrder_AppliesItToTheBehavior()
     {
         // Arrange (Given)

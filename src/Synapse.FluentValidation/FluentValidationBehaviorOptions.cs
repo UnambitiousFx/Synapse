@@ -10,8 +10,8 @@ public sealed class FluentValidationBehaviorOptions
 {
     /// <summary>
     ///     Position of the validation behavior in the request pipeline (see <see cref="IOrderedPipelineBehavior" />).
-    ///     Defaults to <see cref="IOrderedPipelineBehavior.Last" />, closest to the handler, like the built-in
-    ///     <c>RequestValidationBehavior</c>.
+    ///     Defaults to the start of <see cref="PipelineStage.Validation" />: after authorization, before transactions,
+    ///     so an invalid request is rejected before a transaction opens.
     /// </summary>
-    public uint Order { get; set; } = IOrderedPipelineBehavior.Last;
+    public uint Order { get; set; } = PipelineStages.StartOf(PipelineStage.Validation);
 }
