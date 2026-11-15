@@ -44,20 +44,8 @@ public sealed class RoleAuthorizationBehavior<TRequest, TResult> : IResultPipeli
         RequestNext<TRequest, TResult> next,
         CancellationToken cancellationToken = default)
     {
-        if (request is not IRequiresRole requiresRole)
-        {
-            return next.InvokeAsync(request, cancellationToken);
-        }
-
-        var role = AuthorizationDenials.RequireValue<TRequest>(requiresRole.Role, nameof(IRequiresRole),
-            nameof(IRequiresRole.Role));
-        if (_principal.IsInRole(role))
-        {
-            return next.InvokeAsync(request, cancellationToken);
-        }
-
-        return AuthorizationDenials.DenyAsync(_recorders, next,
-            new AuthorizationDenial(requiresRole, AuthorizationDenialReason.MissingRole, _principal.Id, role),
-            new UnauthorizedFailure($"Requires role '{role}'."), cancellationToken);
+        return AuthorizationChecks.Role(request, _principal) is { } denied
+            ? AuthorizationDenials.DenyAsync(_recorders, next, denied, cancellationToken)
+            : next.InvokeAsync(request, cancellationToken);
     }
 }

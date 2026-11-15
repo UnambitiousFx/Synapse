@@ -42,15 +42,7 @@ public sealed class ScopeAuthorizationBehavior<TRequest, TResult> : IResultPipel
         _principal = principal;
         ArgumentNullException.ThrowIfNull(recorders);
         _recorders = recorders;
-        // A public request (sign-in, sign-up) has no scope to give an anonymous caller, so the default does not apply.
-        _defaultScope = typeof(IAllowAnonymous).IsAssignableFrom(typeof(TRequest))
-            ? null
-            : RequestIntentOf<TRequest>.Value switch
-            {
-                RequestIntent.Command => options.CommandScope,
-                RequestIntent.Query => options.QueryScope,
-                _ => null
-            };
+        _defaultScope = AuthorizationChecks.DefaultScope<TRequest>(options);
     }
 
     /// <inheritdoc />
@@ -61,17 +53,8 @@ public sealed class ScopeAuthorizationBehavior<TRequest, TResult> : IResultPipel
         RequestNext<TRequest, TResult> next,
         CancellationToken cancellationToken = default)
     {
-        var scope = request is IRequiresScope requiresScope
-            ? AuthorizationDenials.RequireValue<TRequest>(requiresScope.Scope, nameof(IRequiresScope),
-                nameof(IRequiresScope.Scope))
-            : _defaultScope;
-        if (scope is null || _principal.HasScope(scope))
-        {
-            return next.InvokeAsync(request, cancellationToken);
-        }
-
-        return AuthorizationDenials.DenyAsync(_recorders, next,
-            new AuthorizationDenial(request!, AuthorizationDenialReason.MissingScope, _principal.Id, scope),
-            new UnauthorizedFailure($"Requires scope '{scope}'."), cancellationToken);
+        return AuthorizationChecks.Scope(request, _principal, _defaultScope) is { } denied
+            ? AuthorizationDenials.DenyAsync(_recorders, next, denied, cancellationToken)
+            : next.InvokeAsync(request, cancellationToken);
     }
 }

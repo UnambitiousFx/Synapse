@@ -38,7 +38,8 @@ internal static class RequestIntentOf<TRequest>
                 return RequestIntent.Command;
             }
 
-            isQuery |= definition == typeof(IQuery<>);
+            // A stream only reads, so it needs the query scope.
+            isQuery |= definition == typeof(IQuery<>) || definition == typeof(IStreamRequest<>);
         }
 
         return isQuery ? RequestIntent.Query : RequestIntent.Other;

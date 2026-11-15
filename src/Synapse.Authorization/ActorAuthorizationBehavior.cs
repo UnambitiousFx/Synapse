@@ -41,13 +41,8 @@ public sealed class ActorAuthorizationBehavior<TRequest, TResult> : IResultPipel
         RequestNext<TRequest, TResult> next,
         CancellationToken cancellationToken = default)
     {
-        if (_principal.IsAuthenticated || request is IAllowAnonymous)
-        {
-            return next.InvokeAsync(request, cancellationToken);
-        }
-
-        return AuthorizationDenials.DenyAsync(_recorders, next,
-            new AuthorizationDenial(request!, AuthorizationDenialReason.Unauthenticated, _principal.Id),
-            new UnauthenticatedFailure("Authentication is required."), cancellationToken);
+        return AuthorizationChecks.Actor(request, _principal) is { } denied
+            ? AuthorizationDenials.DenyAsync(_recorders, next, denied, cancellationToken)
+            : next.InvokeAsync(request, cancellationToken);
     }
 }
