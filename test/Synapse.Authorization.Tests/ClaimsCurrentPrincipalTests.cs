@@ -106,6 +106,34 @@ public sealed class ClaimsCurrentPrincipalTests
     }
 
     [Fact]
+    public void IsInRole_WithCustomIdentityRoleClaimType_FollowsIt()
+    {
+        // Arrange (Given) — the authentication handler set RoleClaimType to "role"
+        var identity = new ClaimsIdentity([new Claim("role", "admin"), new Claim(ClaimTypes.Role, "auditor")],
+            "Test", ClaimTypes.Name, "role");
+        var principal = new ClaimsCurrentPrincipal(new ClaimsPrincipal(identity));
+
+        // Act / Assert (When / Then)
+        Assert.True(principal.IsInRole("admin"));
+        Assert.False(principal.IsInRole("auditor"));
+    }
+
+    [Fact]
+    public void Id_WithConfiguredClaimTypes_IgnoresTheDefaults()
+    {
+        // Arrange (Given)
+        var options = new ClaimsCurrentPrincipalOptions { IdClaimTypes = ["oid"] };
+        var principal = new ClaimsCurrentPrincipal(
+            User(new Claim("sub", "sub-id"), new Claim(ClaimTypes.NameIdentifier, "name-id"), new Claim("oid", "o-1")),
+            options);
+        var withoutOid = new ClaimsCurrentPrincipal(User(new Claim("sub", "sub-id")), options);
+
+        // Act / Assert (When / Then)
+        Assert.Equal("o-1", principal.Id);
+        Assert.Null(withoutOid.Id);
+    }
+
+    [Fact]
     public void AddSynapseClaimsPrincipal_ResolvesPrincipalFromAccessorPerScope()
     {
         // Arrange (Given)
