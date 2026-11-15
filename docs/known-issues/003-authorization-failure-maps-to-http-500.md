@@ -213,6 +213,7 @@ authenticated-but-unpermitted callers) register a custom `IFailureHttpMapper` **
 `AddSynapseAspNetCore()` — the registration uses `TryAddSingleton`, so the custom mapper wins:
 
 ```csharp
+// AuthorizationStatusMapper.cs
 public sealed class AuthorizationStatusMapper : IFailureHttpMapper
 {
     private readonly DefaultFailureHttpMapper _default = new();
@@ -230,7 +231,10 @@ public sealed class AuthorizationStatusMapper : IFailureHttpMapper
         Body = new ProblemDetails { Status = status, Detail = failure.Message }
     };
 }
+```
 
+```csharp
+// Program.cs (type declarations cannot precede top-level statements, so the mapper lives in its own file)
 builder.Services.AddSingleton<IFailureHttpMapper, AuthorizationStatusMapper>();
 builder.Services.AddSynapseAspNetCore(); // TryAddSingleton → no-op, custom mapper already registered
 ```
