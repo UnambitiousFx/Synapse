@@ -170,6 +170,8 @@ public class MyFailureHttpMapper : IFailureHttpMapper
 To override only a few failure types, subclass `DefaultFailureHttpMapper` (its `GetFailureResponse` is `virtual`) and call `base.GetFailureResponse(failure)` for the cases you don't handle.
 :::
 
+`ConventionalAuthFailureHttpMapper` is such a subclass, ready to use: `UnauthenticatedFailure` → **401** and `UnauthorizedFailure` → **403**, the usual HTTP convention. `DefaultFailureHttpMapper` maps them the other way round. Register it before `AddSynapseAspNetCore()`, as shown above. See [Authorization](./authorization).
+
 ## Propagation middleware
 
 `UseSynapsePropagation()` recovers the flow identity of an incoming request from W3C trace context, and writes the resulting trace id back onto the response so callers can correlate across service boundaries:

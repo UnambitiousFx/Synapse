@@ -14,28 +14,10 @@ dotnet add package UnambitiousFx.Synapse.Authorization
 
 :::warning HTTP status codes: register this mapper for the conventional 401 / 403
 
-Denials are the typed `UnauthenticatedFailure` and `UnauthorizedFailure` from `UnambitiousFx.Functional`, so [`IHttpInvoker` / `IMvcInvoker`](./aspnetcore) return a denial status, never a 500. The inherited `DefaultFailureHttpMapper` maps them the other way round from the usual convention, though: `UnauthorizedFailure` (wrong role, scope or resource) becomes **401** and `UnauthenticatedFailure` (anonymous caller) becomes **403**. For **401 for anonymous callers and 403 for authenticated callers who lack access**, register this mapper **before** `AddSynapseAspNetCore`:
+Denials are the typed `UnauthenticatedFailure` and `UnauthorizedFailure` from `UnambitiousFx.Functional`, so [`IHttpInvoker` / `IMvcInvoker`](./aspnetcore) return a denial status, never a 500. The inherited `DefaultFailureHttpMapper` maps them the other way round from the usual convention, though: `UnauthorizedFailure` (wrong role, scope or resource) becomes **401** and `UnauthenticatedFailure` (anonymous caller) becomes **403**. For **401 for anonymous callers and 403 for authenticated callers who lack access**, register `ConventionalAuthFailureHttpMapper` (from `Synapse.AspNetCore`) **before** `AddSynapseAspNetCore`. It maps both failures to `ProblemDetails` with the conventional status and leaves every other failure to `DefaultFailureHttpMapper`:
 
 ```csharp
-public sealed class AuthorizationStatusMapper : IFailureHttpMapper
-{
-    private readonly DefaultFailureHttpMapper _default = new();
-
-    public FailureHttpResponse? GetFailureResponse(IFailure failure) => failure switch
-    {
-        UnauthenticatedFailure => Problem(StatusCodes.Status401Unauthorized, failure),
-        UnauthorizedFailure => Problem(StatusCodes.Status403Forbidden, failure),
-        _ => _default.GetFailureResponse(failure)
-    };
-
-    private static FailureHttpResponse Problem(int status, IFailure failure) => new()
-    {
-        StatusCode = status,
-        Body = new ProblemDetails { Status = status, Detail = failure.Message }
-    };
-}
-
-builder.Services.AddSingleton<IFailureHttpMapper, AuthorizationStatusMapper>();
+builder.Services.AddSingleton<IFailureHttpMapper, ConventionalAuthFailureHttpMapper>();
 builder.Services.AddSynapseAspNetCore(); // TryAddSingleton: keeps the mapper above
 ```
 
