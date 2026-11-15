@@ -89,12 +89,30 @@ Four behaviors run on every `Result` and `Result<T>` request, in a fixed order. 
 
 | Order | Behavior | Applies to | Denial |
 |---|---|---|---|
-| `AuthorizationBehaviorOrder.Actor` (1000) | `ActorAuthorizationBehavior` | every request except `IAllowAnonymous` | `UnauthenticatedFailure` when `ICurrentPrincipal.IsAuthenticated` is false |
-| `AuthorizationBehaviorOrder.Role` (2000) | `RoleAuthorizationBehavior` | `IRequiresRole` | `UnauthorizedFailure` when the caller is not in `Role` |
-| `AuthorizationBehaviorOrder.Scope` (3000) | `ScopeAuthorizationBehavior` | queries, commands, `IRequiresScope` | `UnauthorizedFailure` when the caller lacks the scope |
-| `AuthorizationBehaviorOrder.Resource` (4000) | `ResourceAuthorizationBehavior` | `IResourceScoped` | `UnauthorizedFailure` when the policy says no |
+| `AuthorizationBehaviorOrder.Actor` | `ActorAuthorizationBehavior` | every request except `IAllowAnonymous` | `UnauthenticatedFailure` when `ICurrentPrincipal.IsAuthenticated` is false |
+| `AuthorizationBehaviorOrder.Role` | `RoleAuthorizationBehavior` | `IRequiresRole` | `UnauthorizedFailure` when the caller is not in `Role` |
+| `AuthorizationBehaviorOrder.Scope` | `ScopeAuthorizationBehavior` | queries, commands, `IRequiresScope` | `UnauthorizedFailure` when the caller lacks the scope |
+| `AuthorizationBehaviorOrder.Resource` | `ResourceAuthorizationBehavior` | `IResourceScoped` | `UnauthorizedFailure` when the policy says no |
 
-The positions are the numeric `IOrderedPipelineBehavior.Order`: after the built-in `First` behaviors (CQRS enforcement, outbox discard) and before validation (`Last`). The gaps let you put your own behavior between two checks, for example `Order => AuthorizationBehaviorOrder.Resource - 1` to load a tenant before the resource check.
+All four run in `PipelineStage.Authorization`: their `Order` values sit in that stage's band (`PipelineStages.StartOf(PipelineStage.Authorization) + 1000`, `+ 2000`, ...). Observability behaviors (tracing, logging) therefore wrap them, and validation and transactions run inside them. See [pipeline stages](./pipelines).
+
+Place your own behaviors by stage rather than by number:
+
+```csharp
+// tracing wraps authorization
+[PipelineBehavior(Stage = PipelineStage.Observability)]
+public sealed class TracingBehavior<TRequest, TResult> : IResultPipelineBehavior<TRequest, TResult> { ... }
+
+// auditing runs once every check has passed
+[PipelineBehavior(Stage = PipelineStage.Authorization, After = typeof(ResourceAuthorizationBehavior<,>))]
+public sealed class AuditBehavior<TRequest, TResult> : IResultPipelineBehavior<TRequest, TResult> { ... }
+```
+
+Use `cfg.ConfigureBehaviorOrdering(...)` for a behavior the source generator does not see.
+
+:::warning Putting a behavior between two checks
+`Before` / `After` only order the two behaviors they name. A behavior declared `After = Actor, Before = Role` runs before `Role`, but `Scope` and `Resource`, which it does not name, can then run before `Role` too. To sit between two checks, use the numeric gaps instead, which keep the four in order: `Order => AuthorizationBehaviorOrder.Resource - 1` loads a tenant just before the resource check.
+:::
 
 ### Stream requests
 

@@ -108,6 +108,24 @@ public sealed class FluentValidationBehaviorTests
     }
 
     [Fact]
+    public void AddSynapseFluentValidation_ByDefault_RunsInValidationStage()
+    {
+        // Arrange (Given)
+        var services = new ServiceCollection();
+        services.AddSynapseFluentValidation();
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+
+        // Act (When)
+        var behavior = scope.ServiceProvider.GetServices<IRequestPipelineBehavior<CreateUser>>().Single();
+
+        // Assert (Then)
+        var order = Assert.IsType<FluentValidationBehavior<CreateUser>>(behavior).Order;
+        Assert.Equal(PipelineStages.StartOf(PipelineStage.Validation), order);
+        Assert.Equal(PipelineStage.Validation, PipelineStages.Of(order));
+    }
+
+    [Fact]
     public void AddSynapseFluentValidation_WithOrder_AppliesItToTheBehavior()
     {
         // Arrange (Given)
@@ -121,6 +139,66 @@ public sealed class FluentValidationBehaviorTests
 
         // Assert (Then)
         Assert.Equal(IOrderedPipelineBehavior.First, Assert.IsType<FluentValidationBehavior<CreateUser>>(behavior).Order);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_InvalidTransactionalRequest_FailsBeforeOpeningTransaction()
+    {
+        // Arrange (Given) — default order: validation (Validation stage) runs before transactions (Transaction stage)
+        await using var provider = BuildTransactionalProvider();
+        await using var scope = provider.CreateAsyncScope();
+        var invoker = scope.ServiceProvider.GetRequiredService<IInvoker>();
+
+        // Act (When) — both request shapes, since each has its own validation behavior
+        var withoutResponse = await invoker.InvokeAsync(new SaveUser(""), TestContext.Current.CancellationToken);
+        var withResponse = await invoker.InvokeAsync(new RenameUser(""), TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.IsType<ValidationFailure>(Assert.Single(Failures(withoutResponse)));
+        Assert.IsType<ValidationFailure>(Assert.Single(Failures(withResponse)));
+        Assert.Equal(0, provider.GetRequiredService<CountingTransactionManager.Calls>().Begins);
+        Assert.Equal(0, provider.GetRequiredService<HandlerCalls>().Count);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_ValidTransactionalRequest_RunsHandlerInsideTransaction()
+    {
+        // Arrange (Given)
+        await using var provider = BuildTransactionalProvider();
+        await using var scope = provider.CreateAsyncScope();
+        var invoker = scope.ServiceProvider.GetRequiredService<IInvoker>();
+
+        // Act (When)
+        var withoutResponse = await invoker.InvokeAsync(new SaveUser("ada"), TestContext.Current.CancellationToken);
+        var withResponse = await invoker.InvokeAsync(new RenameUser("ada"), TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.True(withoutResponse.IsSuccess);
+        Assert.True(withResponse.IsSuccess);
+        Assert.Equal(2, provider.GetRequiredService<CountingTransactionManager.Calls>().Begins);
+        Assert.Equal(2, provider.GetRequiredService<HandlerCalls>().Count);
+    }
+
+    private static IEnumerable<IFailure> Failures(IResult result)
+    {
+        return result.TryGetFailure(out var failure) ? [failure] : [];
+    }
+
+    private static ServiceProvider BuildTransactionalProvider()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<HandlerCalls>();
+        services.AddSingleton<CountingTransactionManager.Calls>();
+        services.AddScoped<IValidator<SaveUser>, SaveUserValidator>();
+        services.AddScoped<IValidator<RenameUser>, RenameUserValidator>();
+        services.AddSynapse(cfg =>
+        {
+            cfg.RegisterRequestHandler<SaveUserHandler, SaveUser>();
+            cfg.RegisterRequestHandler<RenameUserHandler, RenameUser, string>();
+            cfg.AddTransactions<CountingTransactionManager>();
+        });
+        services.AddSynapseFluentValidation();
+        return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
     }
 
     private static ServiceProvider BuildProvider(Action<IServiceCollection> registerValidators)
@@ -140,6 +218,71 @@ public sealed class FluentValidationBehaviorTests
     public sealed record CreateUser(string Name) : IRequest;
 
     public sealed record GetUser(int Id) : IRequest<string>;
+
+    public sealed record SaveUser(string Name) : IRequest, ITransactional;
+
+    public sealed record RenameUser(string Name) : IRequest<string>, ITransactional;
+
+    private sealed class SaveUserHandler(HandlerCalls calls) : IRequestHandler<SaveUser>
+    {
+        public ValueTask<Result> HandleAsync(SaveUser request, CancellationToken cancellationToken = default)
+        {
+            calls.Count++;
+            return new ValueTask<Result>(Result.Success());
+        }
+    }
+
+    private sealed class RenameUserHandler(HandlerCalls calls) : IRequestHandler<RenameUser, string>
+    {
+        public ValueTask<Result<string>> HandleAsync(RenameUser request, CancellationToken cancellationToken = default)
+        {
+            calls.Count++;
+            return new ValueTask<Result<string>>(Result.Success(request.Name));
+        }
+    }
+
+    private sealed class SaveUserValidator : AbstractValidator<SaveUser>
+    {
+        public SaveUserValidator()
+        {
+            RuleFor(x => x.Name).NotEmpty();
+        }
+    }
+
+    private sealed class RenameUserValidator : AbstractValidator<RenameUser>
+    {
+        public RenameUserValidator()
+        {
+            RuleFor(x => x.Name).NotEmpty();
+        }
+    }
+
+    private sealed class CountingTransactionManager(CountingTransactionManager.Calls calls) : ITransactionManager
+    {
+        public ValueTask<ITransactionScope> BeginAsync(CancellationToken cancellationToken = default)
+        {
+            calls.Begins++;
+            return new ValueTask<ITransactionScope>(new Scope());
+        }
+
+        public sealed class Calls
+        {
+            public int Begins { get; set; }
+        }
+
+        private sealed class Scope : ITransactionScope
+        {
+            public ValueTask CommitAsync(CancellationToken cancellationToken = default)
+            {
+                return ValueTask.CompletedTask;
+            }
+
+            public ValueTask DisposeAsync()
+            {
+                return ValueTask.CompletedTask;
+            }
+        }
+    }
 
     private sealed class HandlerCalls
     {

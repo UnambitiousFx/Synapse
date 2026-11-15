@@ -108,7 +108,7 @@ public sealed class AuthorizationPipelineTests
     }
 
     [Fact]
-    public void Describe_ListsTheBehaviorsInActorRoleScopeResourceOrder()
+    public void Describe_ListsTheBehaviorsInActorRoleScopeResourceOrderInAuthorizationStage()
     {
         // Arrange (Given)
         using var provider = BuildProvider(Principals.Authenticated());
@@ -125,15 +125,43 @@ public sealed class AuthorizationPipelineTests
             .ToArray();
         Assert.Equal(
         [
-            new BehaviorDescription(typeof(ActorAuthorizationBehavior<RenameItem, Result>),
-                AuthorizationBehaviorOrder.Actor),
-            new BehaviorDescription(typeof(RoleAuthorizationBehavior<RenameItem, Result>),
-                AuthorizationBehaviorOrder.Role),
-            new BehaviorDescription(typeof(ScopeAuthorizationBehavior<RenameItem, Result>),
-                AuthorizationBehaviorOrder.Scope),
-            new BehaviorDescription(typeof(ResourceAuthorizationBehavior<RenameItem, Result>),
-                AuthorizationBehaviorOrder.Resource)
-        ], authorization);
+            typeof(ActorAuthorizationBehavior<RenameItem, Result>),
+            typeof(RoleAuthorizationBehavior<RenameItem, Result>),
+            typeof(ScopeAuthorizationBehavior<RenameItem, Result>),
+            typeof(ResourceAuthorizationBehavior<RenameItem, Result>)
+        ], authorization.Select(b => b.Type));
+        Assert.All(authorization, b => Assert.Equal(PipelineStage.Authorization, b.Stage));
+    }
+
+    [Fact]
+    public void Describe_AppBehaviorsPlacedByStage_WrapOrFollowAuthorization()
+    {
+        // Arrange (Given) — no numbers: one behavior by stage only, one placed after the last check
+        var services = CreateServices(Principals.Authenticated(), cfg =>
+        {
+            cfg.AddOpenGenericResultPipelineBehavior(typeof(TracingBehavior<,>));
+            cfg.ConfigureBehaviorOrdering(typeof(TracingBehavior<,>), PipelineStage.Observability);
+            cfg.AddOpenGenericResultPipelineBehavior(typeof(AuditBehavior<,>));
+            cfg.ConfigureBehaviorOrdering(typeof(AuditBehavior<,>), PipelineStage.Authorization,
+                after: typeof(ResourceAuthorizationBehavior<,>));
+        });
+        services.AddSynapseAuthorization();
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        using var scope = provider.CreateScope();
+        var describer = scope.ServiceProvider.GetRequiredService<IPipelineDescriber>();
+
+        // Act (When)
+        var description = describer.Describe<RenameItem>();
+
+        // Assert (Then)
+        Assert.NotNull(description);
+        var types = description.Behaviors.Select(b => b.Type.GetGenericTypeDefinition()).ToList();
+        Assert.True(types.IndexOf(typeof(TracingBehavior<,>)) < types.IndexOf(typeof(ActorAuthorizationBehavior<,>)));
+        Assert.Equal(
+        [
+            typeof(ActorAuthorizationBehavior<,>), typeof(RoleAuthorizationBehavior<,>),
+            typeof(ScopeAuthorizationBehavior<,>), typeof(ResourceAuthorizationBehavior<,>), typeof(AuditBehavior<,>)
+        ], types.Skip(types.IndexOf(typeof(ActorAuthorizationBehavior<,>))).Take(5));
     }
 
     [Fact]
@@ -266,7 +294,8 @@ public sealed class AuthorizationPipelineTests
         return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
     }
 
-    private static ServiceCollection CreateServices(ICurrentPrincipal principal)
+    private static ServiceCollection CreateServices(ICurrentPrincipal principal,
+        Action<ISynapseConfig>? configure = null)
     {
         var services = new ServiceCollection();
         services.AddSingleton<HandlerCalls>();
@@ -278,6 +307,7 @@ public sealed class AuthorizationPipelineTests
             cfg.RegisterRequestHandler<RenameItemHandler, RenameItem>();
             cfg.RegisterRequestHandler<PurgeItemsHandler, PurgeItems>();
             cfg.RegisterRequestHandler<SignInHandler, SignIn>();
+            configure?.Invoke(cfg);
         });
         return services;
     }
@@ -354,6 +384,28 @@ public sealed class AuthorizationPipelineTests
         {
             calls.Count++;
             return new ValueTask<Result>(Result.Success());
+        }
+    }
+
+    private sealed class TracingBehavior<TRequest, TResult> : IResultPipelineBehavior<TRequest, TResult>
+        where TResult : IResult
+    {
+        public ValueTask<TResult> HandleAsync(TRequest request,
+            RequestNext<TRequest, TResult> next,
+            CancellationToken cancellationToken = default)
+        {
+            return next.InvokeAsync(request, cancellationToken);
+        }
+    }
+
+    private sealed class AuditBehavior<TRequest, TResult> : IResultPipelineBehavior<TRequest, TResult>
+        where TResult : IResult
+    {
+        public ValueTask<TResult> HandleAsync(TRequest request,
+            RequestNext<TRequest, TResult> next,
+            CancellationToken cancellationToken = default)
+        {
+            return next.InvokeAsync(request, cancellationToken);
         }
     }
 }

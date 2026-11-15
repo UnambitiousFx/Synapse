@@ -97,7 +97,7 @@ services.AddSynapse(cfg => cfg.AddRegisterGroup(new RegisterGroup()));
 services.AddSynapseFluentValidation(o => o.Order = IOrderedPipelineBehavior.Middle); // order is optional
 ```
 
-When a validator fails, the handler is not called and the result holds one `ValidationFailure` with every error of every validator. Each `ValidationError` keeps the property name (`Field`, `null` for object-level rules), the message and the FluentValidation error code. The behavior runs at `IOrderedPipelineBehavior.Last` by default, like the built-in validation behavior.
+When a validator fails, the handler is not called and the result holds one `ValidationFailure` with every error of every validator. Each `ValidationError` keeps the property name (`Field`, `null` for object-level rules), the message and the FluentValidation error code. By default the behavior runs at the start of `PipelineStage.Validation` (`PipelineStages.StartOf(PipelineStage.Validation)`): after authorization and before transactions, so an invalid request never opens a transaction. Set `Order` to move it, for example to `IOrderedPipelineBehavior.Last` to run closest to the handler, like the built-in validation behavior.
 
 The behaviors are registered as open generics, so this package is not Native-AOT compatible.
 
