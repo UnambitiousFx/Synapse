@@ -18,6 +18,7 @@ public sealed class ResourceAuthorizationBehavior<TRequest, TResult> : IResultPi
     IOrderedPipelineBehavior
     where TResult : IResult
 {
+    private readonly Func<AuthorizationDenial, Failure?>? _denialFailure;
     private readonly IResourceAccessPolicy? _policy;
     private readonly ICurrentPrincipal _principal;
     private readonly IEnumerable<IAuthorizationDenialRecorder> _recorders;
@@ -28,15 +29,18 @@ public sealed class ResourceAuthorizationBehavior<TRequest, TResult> : IResultPi
     /// <param name="principal">The caller.</param>
     /// <param name="recorders">The recorders told about a denial.</param>
     /// <param name="policy">The application's policy, <see langword="null" /> when none is registered.</param>
+    /// <param name="options">The <see cref="SynapseAuthorizationOptions.DenialFailure" /> to apply, if any.</param>
     public ResourceAuthorizationBehavior(ICurrentPrincipal principal,
         IEnumerable<IAuthorizationDenialRecorder> recorders,
-        IResourceAccessPolicy? policy = null)
+        IResourceAccessPolicy? policy = null,
+        SynapseAuthorizationOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(principal);
         _principal = principal;
         ArgumentNullException.ThrowIfNull(recorders);
         _recorders = recorders;
         _policy = policy;
+        _denialFailure = options?.DenialFailure;
     }
 
     /// <inheritdoc />
@@ -58,7 +62,7 @@ public sealed class ResourceAuthorizationBehavior<TRequest, TResult> : IResultPi
         CancellationToken cancellationToken)
     {
         return await AuthorizationChecks.ResourceAsync<TRequest>(scoped, _principal, _policy, cancellationToken) is { } denied
-            ? await AuthorizationDenials.DenyAsync(_recorders, next, denied, cancellationToken)
+            ? await AuthorizationDenials.DenyAsync(_recorders, next, denied, _denialFailure, cancellationToken)
             : await next.InvokeAsync(request, cancellationToken);
     }
 }

@@ -16,6 +16,7 @@ public sealed class ActorAuthorizationBehavior<TRequest, TResult> : IResultPipel
     IOrderedPipelineBehavior
     where TResult : IResult
 {
+    private readonly Func<AuthorizationDenial, Failure?>? _denialFailure;
     private readonly ICurrentPrincipal _principal;
     private readonly IEnumerable<IAuthorizationDenialRecorder> _recorders;
 
@@ -24,13 +25,16 @@ public sealed class ActorAuthorizationBehavior<TRequest, TResult> : IResultPipel
     /// </summary>
     /// <param name="principal">The caller.</param>
     /// <param name="recorders">The recorders told about a denial.</param>
+    /// <param name="options">The <see cref="SynapseAuthorizationOptions.DenialFailure" /> to apply, if any.</param>
     public ActorAuthorizationBehavior(ICurrentPrincipal principal,
-        IEnumerable<IAuthorizationDenialRecorder> recorders)
+        IEnumerable<IAuthorizationDenialRecorder> recorders,
+        SynapseAuthorizationOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(principal);
         _principal = principal;
         ArgumentNullException.ThrowIfNull(recorders);
         _recorders = recorders;
+        _denialFailure = options?.DenialFailure;
     }
 
     /// <inheritdoc />
@@ -42,7 +46,7 @@ public sealed class ActorAuthorizationBehavior<TRequest, TResult> : IResultPipel
         CancellationToken cancellationToken = default)
     {
         return AuthorizationChecks.Actor(request, _principal) is { } denied
-            ? AuthorizationDenials.DenyAsync(_recorders, next, denied, cancellationToken)
+            ? AuthorizationDenials.DenyAsync(_recorders, next, denied, _denialFailure, cancellationToken)
             : next.InvokeAsync(request, cancellationToken);
     }
 }
