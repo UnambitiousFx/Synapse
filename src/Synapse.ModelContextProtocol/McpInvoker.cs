@@ -17,6 +17,7 @@ internal sealed class McpInvoker : IMcpInvoker
     private readonly IInvoker _invoker;
     private readonly int? _maxAnswerLength;
     private readonly JsonSerializerOptions _serializerOptions;
+    private readonly string _serializerSource;
 
     public McpInvoker(IInvoker invoker,
         IMcpFailurePolicy failurePolicy,
@@ -25,7 +26,12 @@ internal sealed class McpInvoker : IMcpInvoker
         _invoker = invoker;
         _failurePolicy = failurePolicy;
         _maxAnswerLength = options.Value.MaxAnswerLength;
-        _serializerOptions = options.Value.JsonContext?.Options ?? McpJsonUtilities.DefaultOptions;
+        _serializerOptions = options.Value.SerializerOptions
+                             ?? options.Value.JsonContext?.Options
+                             ?? McpJsonUtilities.DefaultOptions;
+        _serializerSource = options.Value.SerializerOptions is not null
+            ? nameof(SynapseMcpOptions.SerializerOptions)
+            : nameof(SynapseMcpOptions.JsonContext);
     }
 
     public async ValueTask<CallToolResult> InvokeAsync<TResponse>(IRequest<TResponse> request,
@@ -64,7 +70,7 @@ internal sealed class McpInvoker : IMcpInvoker
 
         throw new InvalidOperationException(
             $"No JSON contract for '{typeof(TResponse)}'. Add [JsonSerializable(typeof({typeof(TResponse).Name}))] " +
-            $"to the context set in {nameof(SynapseMcpOptions)}.{nameof(SynapseMcpOptions.JsonContext)}.");
+            $"to a context resolved by {nameof(SynapseMcpOptions)}.{_serializerSource}.");
     }
 
     private CallToolResult Answer(string json)

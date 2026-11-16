@@ -23,4 +23,10 @@ public static class SynapseMcpMeta
     ///     The failure code of a tool error, so a client can branch on it without parsing the text.
     /// </summary>
     public const string FailureCode = "unambitiousfx.synapse/failureCode";
+
+    /// <summary>
+    ///     The errors of a validation failure, as an array of <c>{ "field", "code", "message" }</c> objects (a
+    ///     <c>null</c> field or code is left out), so a client can read them without parsing the text.
+    /// </summary>
+    public const string Errors = "unambitiousfx.synapse/errors";
 }
