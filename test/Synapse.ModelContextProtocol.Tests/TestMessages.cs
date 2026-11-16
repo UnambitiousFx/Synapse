@@ -18,6 +18,8 @@ public sealed record GetUnregistered : IQuery<Unregistered>;
 
 public sealed record GetText : IQuery<string>;
 
+public sealed record SetText : ICommand<string>;
+
 [JsonConverter(typeof(RawTextConverter))]
 public sealed record RawText(string Value);
 

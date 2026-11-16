@@ -360,6 +360,128 @@ public sealed class McpInvokerTests
         Assert.Equal("\"a", body.Text);
     }
 
+    [Fact]
+    public async Task InvokeAsync_WhenCommandAnswerExceedsMaxLengthAndCommandsAreNotMeasured_ReturnsWholeAnswer()
+    {
+        // Arrange (Given)
+        var invoker = Substitute.For<IInvoker>();
+        var request = new SetText();
+        var answer = new string('a', 100);
+        invoker.InvokeAsync(request, Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(Result.Success(answer)));
+        var sut = CreateSut(invoker, RefuseQueriesNotCommands());
+
+        // Act (When)
+        var result = await sut.InvokeAsync(request, TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.NotEqual(true, result.IsError);
+        Assert.Null(result.Meta);
+        var text = Assert.IsType<TextContentBlock>(Assert.Single(result.Content));
+        Assert.Equal($"\"{answer}\"", text.Text);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_WhenQueryAnswerExceedsMaxLengthAndCommandsAreNotMeasured_StillRefuses()
+    {
+        // Arrange (Given)
+        var invoker = Substitute.For<IInvoker>();
+        var request = new GetText();
+        invoker.InvokeAsync(request, Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(Result.Success(new string('a', 100))));
+        var sut = CreateSut(invoker, RefuseQueriesNotCommands());
+
+        // Act (When)
+        var result = await sut.InvokeAsync(request, TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.True(result.IsError);
+        Assert.Equal(SynapseMcpOptions.AnswerTooLargeCode,
+            result.Meta![SynapseMcpMeta.FailureCode]!.GetValue<string>());
+    }
+
+    [Theory]
+    [InlineData(OversizedAnswer.Truncate, null, true)]
+    [InlineData(OversizedAnswer.Truncate, OversizedAnswer.Refuse, false)]
+    [InlineData(OversizedAnswer.Refuse, OversizedAnswer.Truncate, true)]
+    public async Task InvokeAsync_WhenCommandAnswerExceedsMaxLength_AppliesCommandSettingOrFallsBack(
+        OversizedAnswer oversizedAnswer,
+        OversizedAnswer? oversizedCommandAnswer,
+        bool expectTruncated)
+    {
+        // Arrange (Given)
+        var invoker = Substitute.For<IInvoker>();
+        var request = new SetText();
+        invoker.InvokeAsync(request, Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(Result.Success(new string('a', 100))));
+        var sut = CreateSut(invoker,
+            new SynapseMcpOptions
+            {
+                JsonContext = TestJsonContext.Default,
+                MaxAnswerLength = 10,
+                OversizedAnswer = oversizedAnswer,
+                OversizedCommandAnswer = oversizedCommandAnswer
+            });
+
+        // Act (When)
+        var result = await sut.InvokeAsync(request, TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.Equal(!expectTruncated, result.IsError == true);
+        Assert.Equal(expectTruncated, result.Meta!.ContainsKey(SynapseMcpMeta.Truncated));
+    }
+
+    [Fact]
+    public async Task InvokeAsync_WhenQueryAnswerExceedsMaxLengthAndNone_ReturnsWholeAnswer()
+    {
+        // Arrange (Given)
+        var invoker = Substitute.For<IInvoker>();
+        var request = new GetText();
+        invoker.InvokeAsync(request, Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(Result.Success(new string('a', 100))));
+        var sut = CreateSut(invoker,
+            new SynapseMcpOptions
+            {
+                JsonContext = TestJsonContext.Default,
+                MaxAnswerLength = 10,
+                OversizedAnswer = OversizedAnswer.None
+            });
+
+        // Act (When)
+        var result = await sut.InvokeAsync(request, TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.NotEqual(true, result.IsError);
+        Assert.Null(result.Meta);
+        var text = Assert.IsType<TextContentBlock>(Assert.Single(result.Content));
+        Assert.Equal(102, text.Text.Length);
+    }
+
+    [Fact]
+    public void OversizedCommandAnswer_WithUndefinedValue_Throws()
+    {
+        // Arrange (Given)
+        var options = new SynapseMcpOptions();
+
+        // Act (When)
+        var exception = Record.Exception(() => options.OversizedCommandAnswer = (OversizedAnswer)42);
+
+        // Assert (Then)
+        Assert.IsType<ArgumentOutOfRangeException>(exception);
+        Assert.Null(options.OversizedCommandAnswer);
+    }
+
+    private static SynapseMcpOptions RefuseQueriesNotCommands()
+    {
+        return new SynapseMcpOptions
+        {
+            JsonContext = TestJsonContext.Default,
+            MaxAnswerLength = 10,
+            OversizedAnswer = OversizedAnswer.Refuse,
+            OversizedCommandAnswer = OversizedAnswer.None
+        };
+    }
+
     private static McpInvoker CreateSut(IInvoker invoker,
         SynapseMcpOptions options,
         IMcpFailurePolicy? policy = null)

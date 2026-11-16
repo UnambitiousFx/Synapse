@@ -17,6 +17,7 @@ internal sealed class McpInvoker : IMcpInvoker
     private readonly IInvoker _invoker;
     private readonly int? _maxAnswerLength;
     private readonly OversizedAnswer _oversizedAnswer;
+    private readonly OversizedAnswer _oversizedCommandAnswer;
     private readonly JsonSerializerOptions _serializerOptions;
     private readonly string _serializerSource;
 
@@ -28,6 +29,7 @@ internal sealed class McpInvoker : IMcpInvoker
         _failurePolicy = failurePolicy;
         _maxAnswerLength = options.Value.MaxAnswerLength;
         _oversizedAnswer = options.Value.OversizedAnswer;
+        _oversizedCommandAnswer = options.Value.OversizedCommandAnswer ?? options.Value.OversizedAnswer;
         _serializerOptions = options.Value.SerializerOptions
                              ?? options.Value.JsonContext?.Options
                              ?? McpJsonUtilities.DefaultOptions;
@@ -45,7 +47,8 @@ internal sealed class McpInvoker : IMcpInvoker
             return _failurePolicy.ToToolError(failure!);
         }
 
-        return Answer(JsonSerializer.Serialize(value, GetTypeInfo<TResponse>()));
+        return Answer(JsonSerializer.Serialize(value, GetTypeInfo<TResponse>()),
+            request is ICommand<TResponse> ? _oversizedCommandAnswer : _oversizedAnswer);
     }
 
     public async ValueTask<CallToolResult> InvokeAsync<TRequest>(TRequest request,
@@ -75,15 +78,17 @@ internal sealed class McpInvoker : IMcpInvoker
             $"to a context resolved by {nameof(SynapseMcpOptions)}.{_serializerSource}.");
     }
 
-    private CallToolResult Answer(string json)
+    private CallToolResult Answer(string json,
+        OversizedAnswer oversizedAnswer)
     {
         if (_maxAnswerLength is not { } max ||
-            json.Length <= max)
+            json.Length <= max ||
+            oversizedAnswer == OversizedAnswer.None)
         {
             return new CallToolResult { Content = [new TextContentBlock { Text = json }] };
         }
 
-        if (_oversizedAnswer == OversizedAnswer.Refuse)
+        if (oversizedAnswer == OversizedAnswer.Refuse)
         {
             return Refusal(json.Length, max);
         }

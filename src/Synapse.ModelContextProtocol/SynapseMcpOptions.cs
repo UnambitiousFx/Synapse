@@ -16,6 +16,7 @@ public sealed class SynapseMcpOptions
     public const string AnswerTooLargeCode = "ANSWER_TOO_LARGE";
 
     private int? _maxAnswerLength;
+    private OversizedAnswer? _oversizedCommandAnswer;
     private OversizedAnswer _oversizedAnswer = OversizedAnswer.Truncate;
 
     /// <summary>
@@ -97,8 +98,9 @@ public sealed class SynapseMcpOptions
     ///     A refusal's text is <c>ANSWER_TOO_LARGE: The answer is N characters, above the M limit: narrow the request
     ///     (...)</c>, and its <c>_meta</c> carries <see cref="SynapseMcpMeta.FailureCode" />,
     ///     <see cref="SynapseMcpMeta.OriginalLength" /> and <see cref="SynapseMcpMeta.MaxAnswerLength" />. The request
-    ///     has already run when its answer is measured, so a refused command's change is kept: prefer short command
-    ///     answers when refusing.
+    ///     has already run when its answer is measured, so a refused command's change is kept: set
+    ///     <see cref="OversizedCommandAnswer" /> to <see cref="ModelContextProtocol.OversizedAnswer.None" /> to refuse
+    ///     query answers only.
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">
     ///     The value is not a defined <see cref="ModelContextProtocol.OversizedAnswer" />.
@@ -114,6 +116,33 @@ public sealed class SynapseMcpOptions
             }
 
             _oversizedAnswer = value;
+        }
+    }
+
+    /// <summary>
+    ///     What happens to the answer of a command (<c>ICommand&lt;T&gt;</c>) longer than
+    ///     <see cref="MaxAnswerLength" />. <c>null</c>, the default, means the same as <see cref="OversizedAnswer" />.
+    /// </summary>
+    /// <remarks>
+    ///     A command has already run when its answer is measured: refusing it keeps the change while the assistant
+    ///     only learns its answer was too large, so it is likely to send the command again. Set this to
+    ///     <see cref="ModelContextProtocol.OversizedAnswer.None" /> to send command answers whole while
+    ///     <see cref="OversizedAnswer" /> still refuses or cuts query answers.
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException">
+    ///     The value is not <c>null</c> nor a defined <see cref="ModelContextProtocol.OversizedAnswer" />.
+    /// </exception>
+    public OversizedAnswer? OversizedCommandAnswer
+    {
+        get => _oversizedCommandAnswer;
+        set
+        {
+            if (value is { } answer && !Enum.IsDefined(answer))
+            {
+                throw new ArgumentOutOfRangeException(nameof(value), value, "Unknown OversizedAnswer value.");
+            }
+
+            _oversizedCommandAnswer = value;
         }
     }
 
