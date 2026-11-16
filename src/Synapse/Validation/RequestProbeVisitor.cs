@@ -19,11 +19,24 @@ internal sealed class RequestProbeVisitor : IRequestRegistrationVisitor
         IReadOnlyDictionary<Type, Action<IRequestRegistrationVisitor>> visits,
         IReadOnlyDictionary<Type, Func<IPipelineDescriber, PipelineDescription?>> eventProbes)
     {
-        var probes = new Dictionary<Type, Func<IPipelineDescriber, PipelineDescription?>>(eventProbes);
+        var probes = new Dictionary<Type, Func<IPipelineDescriber, PipelineDescription?>>();
         var visitor = new RequestProbeVisitor(probes);
         foreach (var visit in visits.Values)
         {
             visit(visitor);
+        }
+
+        foreach (var (type, eventProbe) in eventProbes)
+        {
+            // A type that is both a request and an event needs both pipelines checked: one probe runs the two.
+            probes[type] = probes.TryGetValue(type, out var requestProbe)
+                ? describer =>
+                {
+                    var request = requestProbe(describer);
+                    var @event = eventProbe(describer);
+                    return request ?? @event;
+                }
+                : eventProbe;
         }
 
         return probes;
