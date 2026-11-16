@@ -85,7 +85,8 @@ A tool error is a `CallToolResult` with `IsError = true`. The model reads it and
 | `HideExistence`   | `true`  | `NotFoundFailure` and `UnauthorizedFailure` give the same `NOT_FOUND` answer. |
 | `ListValidationErrors` | `true` | A `ValidationFailure` lists each error with its field and code, in the text and in `_meta`. |
 | `MaxAnswerLength` | `null`  | Longer answers are cut to this many UTF-16 code units and flagged (or refused, see `OversizedAnswer`). `null` means no limit. |
-| `OversizedAnswer` | `Truncate` | `Refuse` answers a tool error instead of a cut answer. |
+| `OversizedAnswer` | `Truncate` | `Refuse` answers a tool error instead of a cut answer; `None` sends it whole. |
+| `OversizedCommandAnswer` | `null` | Same as `OversizedAnswer`, for commands (`ICommand<T>`) only. `null` follows `OversizedAnswer`. |
 | `SerializerOptions` | `null` | `JsonSerializerOptions` used to serialize answers, as is. Wins over `JsonContext`. |
 | `JsonContext`     | `null`  | Source-generated context used to serialize answers. Without it (and without `SerializerOptions`), `McpJsonUtilities.DefaultOptions` is used. |
 
@@ -129,9 +130,20 @@ ANSWER_TOO_LARGE: The answer is 182344 characters, above the 50000 limit: narrow
 
 Its `_meta` carries `unambitiousfx.synapse/failureCode: "ANSWER_TOO_LARGE"`, `unambitiousfx.synapse/originalLength` and `unambitiousfx.synapse/maxAnswerLength`, in UTF-16 code units like the limit.
 
-:::warning
-The answer is measured after the request has run. A refused command's change is kept, and the assistant only learns that its answer was too large. Keep command answers short, or leave `Truncate` when a server's tools include such commands.
-:::
+#### Never refusing a command that already ran
+
+The answer is measured after the request has run. A refused command's change is kept, and the assistant only learns that its answer was too large, so it is likely to send the command again. A command's answer is usually short and bounded by its input, so the cap is a guard for queries: set `OversizedCommandAnswer` to `None` to send command answers whole while query answers are still refused.
+
+```csharp
+builder.Services.AddSynapseMcp(o =>
+{
+    o.MaxAnswerLength = 50_000;
+    o.OversizedAnswer = OversizedAnswer.Refuse;      // queries
+    o.OversizedCommandAnswer = OversizedAnswer.None; // commands: sent whole
+});
+```
+
+A request is a command when it implements `ICommand<T>`, the rule the authorization package uses for its default scope. `OversizedCommandAnswer` left to `null` follows `OversizedAnswer`, so a command answer is refused or cut like any other.
 
 ### Same JSON as the HTTP API
 
