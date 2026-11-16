@@ -58,6 +58,7 @@ filed as a GitHub issue with minimal editing.
 | [074](074-denied-http-stream-returns-empty-200.md) | `IHttpInvoker.InvokeStreamAsync` skipped failed items, so a denied stream answered `200 []`; it now returns `IResult`, maps a failed first item to its 401/403/404 and aborts the response on a later failure (breaking) | ✅ Resolved | **High** | AspNetCore mapping |
 | [075](075-generator-built-against-newer-roslyn.md) | The 3.4.0 generator was built against Roslyn 5.12 (.NET 11 SDK), so every build on an older SDK failed with CS9057; the package now ships one generator per target framework, each built against the Roslyn of that .NET's first SDK (`analyzers/dotnet/roslynX.Y/cs`) | ✅ Resolved | **High** | Source Generator |
 | [076](076-native-aot-skips-authorization-behaviors-for-value-type-requests.md) | Under Native AOT the open-generic authorization registration was silently dropped for value-type requests, so they ran with no authorization and no error; the behaviors are now registered closed per handler shape through a request-registration visitor | ✅ Resolved | **High** | Authorization |
+| [077](077-validateonstart-can-deadlock-host-start-under-native-aot.md) | `ValidateOnStart()` validated on the thread that starts the host, where a short stack under Native AOT made the DI container hand the resolution to another thread while holding its lock, so start-up could deadlock; the validation now runs on a dedicated large-stack thread | ✅ Resolved | **High** | Core DI |
 
 > **Discovery context:** 001–003 were found while building the pipeline-behavior showcase in
 > `examples/MinimalApi` on branch `feature/typed-pipeline-behaviors` against .NET 10 with
@@ -76,7 +77,8 @@ filed as a GitHub issue with minimal editing.
 > (issue #92) and resolved on `worktree-ef-core-outbox`. 071 was filed as issue #113, found in a
 > follow-up review of #110, and resolved on `fix/outbox-storage-forwarding`. 072 was found while
 > implementing the SYN105 analyzer (issue #91) and resolved on `worktree-syn105-global-behavior`. 076 was found while making authorization Native AOT
-> compatible and resolved on `feat/209-authorization-native-aot` (PR #212).
+> compatible and resolved on `feat/209-authorization-native-aot` (PR #212). 077 was filed as issue #221
+> from a Native AOT deployment on linux-musl-arm64 and resolved on `fix/221-validate-on-start-deadlock`.
 >
 > Each file is the report as written at discovery. Where a later change replaced the mechanism a report
 > describes — most often the v2 context-propagation refactor, which removed `CorrelationContext`,
