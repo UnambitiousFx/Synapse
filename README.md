@@ -47,7 +47,7 @@ dotnet add package UnambitiousFx.Synapse
 </PropertyGroup>
 ```
 
-Nothing is copied unless the property is set. See [Using these docs with AI](https://synapse.unambitiousfx.com/docs/using-with-ai#3-agent-skills-shipped-in-the-packages) for details.
+Nothing is copied unless the property is set. See [Using these docs with AI](https://unambitiousfx.com/synapse/using-with-ai#3-agent-skills-shipped-in-the-packages) for details.
 
 ## 🚀 Quick Start
 
