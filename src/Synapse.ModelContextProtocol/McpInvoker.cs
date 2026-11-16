@@ -16,7 +16,9 @@ internal sealed class McpInvoker : IMcpInvoker
     private readonly IMcpFailurePolicy _failurePolicy;
     private readonly IInvoker _invoker;
     private readonly int? _maxAnswerLength;
+    private readonly OversizedAnswer _oversizedAnswer;
     private readonly JsonSerializerOptions _serializerOptions;
+    private readonly string _serializerSource;
 
     public McpInvoker(IInvoker invoker,
         IMcpFailurePolicy failurePolicy,
@@ -25,7 +27,13 @@ internal sealed class McpInvoker : IMcpInvoker
         _invoker = invoker;
         _failurePolicy = failurePolicy;
         _maxAnswerLength = options.Value.MaxAnswerLength;
-        _serializerOptions = options.Value.JsonContext?.Options ?? McpJsonUtilities.DefaultOptions;
+        _oversizedAnswer = options.Value.OversizedAnswer;
+        _serializerOptions = options.Value.SerializerOptions
+                             ?? options.Value.JsonContext?.Options
+                             ?? McpJsonUtilities.DefaultOptions;
+        _serializerSource = options.Value.SerializerOptions is not null
+            ? nameof(SynapseMcpOptions.SerializerOptions)
+            : nameof(SynapseMcpOptions.JsonContext);
     }
 
     public async ValueTask<CallToolResult> InvokeAsync<TResponse>(IRequest<TResponse> request,
@@ -64,7 +72,7 @@ internal sealed class McpInvoker : IMcpInvoker
 
         throw new InvalidOperationException(
             $"No JSON contract for '{typeof(TResponse)}'. Add [JsonSerializable(typeof({typeof(TResponse).Name}))] " +
-            $"to the context set in {nameof(SynapseMcpOptions)}.{nameof(SynapseMcpOptions.JsonContext)}.");
+            $"to a context resolved by {nameof(SynapseMcpOptions)}.{_serializerSource}.");
     }
 
     private CallToolResult Answer(string json)
@@ -73,6 +81,11 @@ internal sealed class McpInvoker : IMcpInvoker
             json.Length <= max)
         {
             return new CallToolResult { Content = [new TextContentBlock { Text = json }] };
+        }
+
+        if (_oversizedAnswer == OversizedAnswer.Refuse)
+        {
+            return Refusal(json.Length, max);
         }
 
         var cut = max;
@@ -96,6 +109,25 @@ internal sealed class McpInvoker : IMcpInvoker
             {
                 [SynapseMcpMeta.Truncated] = true,
                 [SynapseMcpMeta.OriginalLength] = json.Length
+            }
+        };
+    }
+
+    private static CallToolResult Refusal(int length,
+        int max)
+    {
+        var text = string.Create(CultureInfo.InvariantCulture,
+            $"{SynapseMcpOptions.AnswerTooLargeCode}: The answer is {length} characters, above the {max} limit: narrow the request (a shorter period, a filter, a page).");
+
+        return new CallToolResult
+        {
+            Content = [new TextContentBlock { Text = text }],
+            IsError = true,
+            Meta = new JsonObject
+            {
+                [SynapseMcpMeta.FailureCode] = SynapseMcpOptions.AnswerTooLargeCode,
+                [SynapseMcpMeta.OriginalLength] = length,
+                [SynapseMcpMeta.MaxAnswerLength] = max
             }
         };
     }

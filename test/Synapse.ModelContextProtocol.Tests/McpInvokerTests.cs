@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using JetBrains.Annotations;
 using Microsoft.Extensions.Options;
 using ModelContextProtocol.Protocol;
@@ -68,6 +70,73 @@ public sealed class McpInvokerTests
         // Assert (Then)
         var text = Assert.IsType<TextContentBlock>(Assert.Single(result.Content));
         Assert.Equal($$"""{"id":"{{LoanId}}","label":"Home","amount":1}""", text.Text);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_WithSerializerOptions_SerializesWithTheirResolverAndConverters()
+    {
+        // Arrange (Given)
+        var invoker = Substitute.For<IInvoker>();
+        var request = new GetLoan(LoanId);
+        invoker.InvokeAsync(request, Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(Result.Success(new Loan(LoanId, "Home", 1200.5m))));
+        var serializerOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web)
+        {
+            TypeInfoResolver = JsonTypeInfoResolver.Combine(OtherJsonContext.Default, TestJsonContext.Default),
+            Converters = { new UpperCaseGuidConverter() }
+        };
+        var sut = CreateSut(invoker, new SynapseMcpOptions { SerializerOptions = serializerOptions });
+
+        // Act (When)
+        var result = await sut.InvokeAsync(request, TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        var text = Assert.IsType<TextContentBlock>(Assert.Single(result.Content));
+        Assert.Equal($$"""{"id":"{{LoanId.ToString().ToUpperInvariant()}}","label":"Home","amount":1200.5}""",
+            text.Text);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_WithSerializerOptionsAndJsonContext_PrefersSerializerOptions()
+    {
+        // Arrange (Given)
+        var invoker = Substitute.For<IInvoker>();
+        var request = new GetLoan(LoanId);
+        invoker.InvokeAsync(request, Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(Result.Success(new Loan(LoanId, "Home", 1m))));
+        var serializerOptions = new JsonSerializerOptions
+        {
+            TypeInfoResolver = new DefaultJsonTypeInfoResolver()
+        };
+        var sut = CreateSut(invoker,
+            new SynapseMcpOptions { SerializerOptions = serializerOptions, JsonContext = TestJsonContext.Default });
+
+        // Act (When)
+        var result = await sut.InvokeAsync(request, TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        var text = Assert.IsType<TextContentBlock>(Assert.Single(result.Content));
+        Assert.Equal($$"""{"Id":"{{LoanId}}","Label":"Home","Amount":1}""", text.Text);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_WhenResponseTypeIsMissingFromSerializerOptions_ThrowsNamingThem()
+    {
+        // Arrange (Given)
+        var invoker = Substitute.For<IInvoker>();
+        var request = new GetUnregistered();
+        invoker.InvokeAsync(request, Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(Result.Success(new Unregistered("x"))));
+        var serializerOptions = new JsonSerializerOptions { TypeInfoResolver = TestJsonContext.Default };
+        var sut = CreateSut(invoker, new SynapseMcpOptions { SerializerOptions = serializerOptions });
+
+        // Act (When)
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await sut.InvokeAsync(request, TestContext.Current.CancellationToken));
+
+        // Assert (Then)
+        Assert.Contains(nameof(Unregistered), exception.Message);
+        Assert.Contains(nameof(SynapseMcpOptions.SerializerOptions), exception.Message);
     }
 
     [Fact]
@@ -176,6 +245,78 @@ public sealed class McpInvokerTests
         Assert.NotNull(result.Meta);
         Assert.True(result.Meta[SynapseMcpMeta.Truncated]!.GetValue<bool>());
         Assert.Equal(102, result.Meta[SynapseMcpMeta.OriginalLength]!.GetValue<int>());
+    }
+
+    [Fact]
+    public async Task InvokeAsync_WhenAnswerExceedsMaxLengthAndRefused_ReturnsAnswerTooLargeToolError()
+    {
+        // Arrange (Given)
+        var invoker = Substitute.For<IInvoker>();
+        var request = new GetText();
+        invoker.InvokeAsync(request, Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(Result.Success(new string('a', 100))));
+        var sut = CreateSut(invoker,
+            new SynapseMcpOptions
+            {
+                JsonContext = TestJsonContext.Default,
+                MaxAnswerLength = 10,
+                OversizedAnswer = OversizedAnswer.Refuse
+            });
+
+        // Act (When)
+        var result = await sut.InvokeAsync(request, TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.True(result.IsError);
+        var text = Assert.IsType<TextContentBlock>(Assert.Single(result.Content));
+        Assert.Equal(
+            "ANSWER_TOO_LARGE: The answer is 102 characters, above the 10 limit: narrow the request (a shorter period, a filter, a page).",
+            text.Text);
+        Assert.NotNull(result.Meta);
+        Assert.Equal(SynapseMcpOptions.AnswerTooLargeCode,
+            result.Meta[SynapseMcpMeta.FailureCode]!.GetValue<string>());
+        Assert.Equal(102, result.Meta[SynapseMcpMeta.OriginalLength]!.GetValue<int>());
+        Assert.Equal(10, result.Meta[SynapseMcpMeta.MaxAnswerLength]!.GetValue<int>());
+        Assert.False(result.Meta.ContainsKey(SynapseMcpMeta.Truncated));
+    }
+
+    [Fact]
+    public async Task InvokeAsync_WhenAnswerFitsMaxLengthAndRefusalIsOn_ReturnsTheAnswer()
+    {
+        // Arrange (Given)
+        var invoker = Substitute.For<IInvoker>();
+        var request = new GetText();
+        invoker.InvokeAsync(request, Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(Result.Success("abc")));
+        var sut = CreateSut(invoker,
+            new SynapseMcpOptions
+            {
+                JsonContext = TestJsonContext.Default,
+                MaxAnswerLength = 5,
+                OversizedAnswer = OversizedAnswer.Refuse
+            });
+
+        // Act (When)
+        var result = await sut.InvokeAsync(request, TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.NotEqual(true, result.IsError);
+        var text = Assert.IsType<TextContentBlock>(Assert.Single(result.Content));
+        Assert.Equal("\"abc\"", text.Text);
+    }
+
+    [Fact]
+    public void OversizedAnswer_WithUndefinedValue_Throws()
+    {
+        // Arrange (Given)
+        var options = new SynapseMcpOptions();
+
+        // Act (When)
+        var exception = Record.Exception(() => options.OversizedAnswer = (OversizedAnswer)42);
+
+        // Assert (Then)
+        Assert.IsType<ArgumentOutOfRangeException>(exception);
+        Assert.Equal(OversizedAnswer.Truncate, options.OversizedAnswer);
     }
 
     [Fact]

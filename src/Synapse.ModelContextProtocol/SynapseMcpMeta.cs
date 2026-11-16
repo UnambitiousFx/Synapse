@@ -15,12 +15,23 @@ public static class SynapseMcpMeta
     public const string Truncated = "unambitiousfx.synapse/truncated";
 
     /// <summary>
-    ///     The length of the answer before it was truncated, in UTF-16 code units (<see cref="string.Length" />).
+    ///     The length of the answer before it was truncated or refused, in UTF-16 code units (<see cref="string.Length" />).
     /// </summary>
     public const string OriginalLength = "unambitiousfx.synapse/originalLength";
+
+    /// <summary>
+    ///     The <see cref="SynapseMcpOptions.MaxAnswerLength" /> a refused answer exceeded, in UTF-16 code units.
+    /// </summary>
+    public const string MaxAnswerLength = "unambitiousfx.synapse/maxAnswerLength";
 
     /// <summary>
     ///     The failure code of a tool error, so a client can branch on it without parsing the text.
     /// </summary>
     public const string FailureCode = "unambitiousfx.synapse/failureCode";
+
+    /// <summary>
+    ///     The errors of a validation failure, as an array of <c>{ "field", "code", "message" }</c> objects (a
+    ///     <c>null</c> field or code is left out), so a client can read them without parsing the text.
+    /// </summary>
+    public const string Errors = "unambitiousfx.synapse/errors";
 }

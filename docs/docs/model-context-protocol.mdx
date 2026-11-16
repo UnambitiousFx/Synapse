@@ -83,8 +83,11 @@ A tool error is a `CallToolResult` with `IsError = true`. The model reads it and
 | Option            | Default | Effect |
 | ----------------- | ------- | ------ |
 | `HideExistence`   | `true`  | `NotFoundFailure` and `UnauthorizedFailure` give the same `NOT_FOUND` answer. |
-| `MaxAnswerLength` | `null`  | Longer answers are cut to this many UTF-16 code units and flagged. `null` means no limit. |
-| `JsonContext`     | `null`  | Source-generated context used to serialize answers. Without it, `McpJsonUtilities.DefaultOptions` is used. |
+| `ListValidationErrors` | `true` | A `ValidationFailure` lists each error with its field and code, in the text and in `_meta`. |
+| `MaxAnswerLength` | `null`  | Longer answers are cut to this many UTF-16 code units and flagged (or refused, see `OversizedAnswer`). `null` means no limit. |
+| `OversizedAnswer` | `Truncate` | `Refuse` answers a tool error instead of a cut answer. |
+| `SerializerOptions` | `null` | `JsonSerializerOptions` used to serialize answers, as is. Wins over `JsonContext`. |
+| `JsonContext`     | `null`  | Source-generated context used to serialize answers. Without it (and without `SerializerOptions`), `McpJsonUtilities.DefaultOptions` is used. |
 
 ### Existence hiding
 
@@ -106,9 +109,56 @@ With `MaxAnswerLength` set, a longer answer is cut and followed by a second text
 
 Lengths are counted in UTF-16 code units (`string.Length`), not Unicode scalar values or UTF-8 bytes: most emoji count as two, and the encoded payload can be larger than the limit. The result's `_meta` also carries `unambitiousfx.synapse/truncated: true` and `unambitiousfx.synapse/originalLength`, in the same unit. The cut never splits a surrogate pair. Failures are never cut.
 
+#### Refusing instead of truncating
+
+A cut answer is not valid JSON, and models do not reliably honour "the JSON above is incomplete": they read the first items as the whole answer and report wrong totals. For data an assistant computes with (amounts, statements, positions), refuse instead:
+
+```csharp
+builder.Services.AddSynapseMcp(o =>
+{
+    o.MaxAnswerLength = 50_000;
+    o.OversizedAnswer = OversizedAnswer.Refuse; // default: Truncate
+});
+```
+
+A longer answer then becomes a tool error the model can act on:
+
+```text
+ANSWER_TOO_LARGE: The answer is 182344 characters, above the 50000 limit: narrow the request (a shorter period, a filter, a page).
+```
+
+Its `_meta` carries `unambitiousfx.synapse/failureCode: "ANSWER_TOO_LARGE"`, `unambitiousfx.synapse/originalLength` and `unambitiousfx.synapse/maxAnswerLength`, in UTF-16 code units like the limit.
+
+:::warning
+The answer is measured after the request has run. A refused command's change is kept, and the assistant only learns that its answer was too large. Keep command answers short, or leave `Truncate` when a server's tools include such commands.
+:::
+
+### Same JSON as the HTTP API
+
+An application that serves the same requests over HTTP already has its JSON set up: converters (ids, dates, money), naming, and often one source-generated context per module. Set `SerializerOptions` to use those options as is, so the MCP answers match the REST ones:
+
+```csharp
+builder.Services.AddSynapseMcp(o => o.SerializerOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web)
+{
+    TypeInfoResolver = JsonTypeInfoResolver.Combine(CoreJson.Default, BillingJson.Default),
+    Converters = { new AccountIdConverter() }
+});
+```
+
+To reuse the options ASP.NET Core already built, read them from the container with the options API (the package itself has no ASP.NET Core dependency):
+
+```csharp
+builder.Services.AddSynapseMcp();
+builder.Services.AddOptions<SynapseMcpOptions>()
+    .Configure<IOptions<Microsoft.AspNetCore.Http.Json.JsonOptions>>((o, json) =>
+        o.SerializerOptions = json.Value.SerializerOptions);
+```
+
+With several set, the most specific wins: `SerializerOptions`, then `JsonContext`, then `McpJsonUtilities.DefaultOptions`. Every response type must be resolvable from the options, or the call throws `InvalidOperationException` naming the type. Under NativeAOT, the options' `TypeInfoResolver` must be source-generated.
+
 ### NativeAOT
 
-Every response type returned through `IMcpInvoker` must be in `JsonContext`:
+Every response type returned through `IMcpInvoker` must be in `JsonContext` (or in the source-generated resolver of `SerializerOptions`):
 
 ```csharp
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
@@ -126,9 +176,34 @@ A type missing from the context throws `InvalidOperationException` naming the ty
 | ------- | --------------- |
 | `NotFoundFailure`, `UnauthorizedFailure` (with `HideExistence`) | `NOT_FOUND: The requested item was not found.` |
 | `ExceptionalFailure`, alone or at any depth inside an `AggregateFailure` | `<code>: An unexpected error occurred.` — exception messages can hold internals |
+| `ValidationFailure`, alone or inside an `AggregateFailure` (with `ListValidationErrors`) | `<code>: Some fields are not valid.` then one line per error (see below) |
 | Anything else | `<code>: <message>` |
 
-The code is also in `_meta` under `unambitiousfx.synapse/failureCode`, so a client can branch on it without parsing the text.
+The rows apply in this order, so existence hiding and exception hiding win over the validation list. The code is also in `_meta` under `unambitiousfx.synapse/failureCode`, so a client can branch on it without parsing the text.
+
+### Validation errors
+
+A `ValidationFailure`'s own message joins the error messages without their fields, so an assistant cannot tell which argument to fix. With `ListValidationErrors` on (the default), each error gets its own line with its field and code:
+
+```text
+orders.invalid_order: Some fields are not valid.
+- lines[3].amount (request.amount): Must be positive.
+- label (request.required): Required.
+- At least one line is required.
+```
+
+An error without a field or a code is listed without them. For an `AggregateFailure`, the first line keeps the aggregate's code and message, and the errors of every `ValidationFailure` inside it are listed. The errors are also in `_meta`, so a client can read them without parsing the text:
+
+```json
+{
+  "unambitiousfx.synapse/failureCode": "orders.invalid_order",
+  "unambitiousfx.synapse/errors": [
+    { "field": "lines[3].amount", "code": "request.amount", "message": "Must be positive." }
+  ]
+}
+```
+
+A `null` field or code is left out of the object. Set `ListValidationErrors = false` to get the one-line `<code>: <message>` form back.
 
 To change it, register your own policy. `AddSynapseMcp` uses `TryAdd`, so a policy registered before it wins; one registered after it with `AddSingleton` replaces it too.
 
