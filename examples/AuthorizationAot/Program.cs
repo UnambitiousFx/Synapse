@@ -16,6 +16,7 @@ var services = new ServiceCollection()
         o.QueryScope = "read";
         o.CommandScope = "write";
         o.Policy<DenyAllPolicy>();
+        o.RequestPolicy<Transfer, TransferPolicy>();
     })
     .BuildServiceProvider();
 var invoker = services.GetRequiredService<IInvoker>();
@@ -42,6 +43,10 @@ Check("command with only the query scope", await invoker.InvokeAsync(new Rename(
 
 principal.Set(scopes: "export");
 Check("query with own scope", await invoker.InvokeAsync(new Export()), null);
+
+principal.Set(scopes: "write");
+Check("request policy denies", await invoker.InvokeAsync(new Transfer(500)), typeof(UnauthorizedFailure));
+Check("request policy allows", await invoker.InvokeAsync(new Transfer(50)), null);
 
 principal.Set(scopes: "read");
 Check("denied resource", await invoker.InvokeAsync(new Document()), typeof(UnauthorizedFailure));
@@ -93,6 +98,13 @@ namespace UnambitiousFx.Examples.AuthorizationAot
             CancellationToken cancellationToken = default) => ValueTask.FromResult(false);
     }
 
+    public sealed class TransferPolicy : IRequestAccessPolicy<Transfer>
+    {
+        public ValueTask<bool> IsAllowedAsync(ICurrentPrincipal principal,
+            Transfer request,
+            CancellationToken cancellationToken = default) => ValueTask.FromResult(request.Amount <= 100);
+    }
+
     public sealed record Anonymous : ICommand;
 
     public sealed record Open : ICommand, IAllowAnonymous;
@@ -113,6 +125,8 @@ namespace UnambitiousFx.Examples.AuthorizationAot
 
         public string Access => "read";
     }
+
+    public sealed record Transfer(int Amount) : ICommand<string>;
 
     public sealed record Rename(string Name) : ICommand<string>;
 
@@ -153,6 +167,13 @@ namespace UnambitiousFx.Examples.AuthorizationAot
     {
         public ValueTask<Result<string>> HandleAsync(Document request, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(Result.Success("doc"));
+    }
+
+    [RequestHandler<Transfer, string>]
+    public sealed class TransferHandler : IRequestHandler<Transfer, string>
+    {
+        public ValueTask<Result<string>> HandleAsync(Transfer request, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(Result.Success("done"));
     }
 
     [RequestHandler<Rename, string>]
