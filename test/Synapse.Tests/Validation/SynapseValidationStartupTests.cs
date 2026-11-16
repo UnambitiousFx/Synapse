@@ -5,6 +5,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using UnambitiousFx.Functional;
 using UnambitiousFx.Synapse.Abstractions;
+using UnambitiousFx.Synapse.Tests.Definitions;
 
 namespace UnambitiousFx.Synapse.Tests.Validation;
 
@@ -161,6 +162,40 @@ public sealed class SynapseValidationStartupTests
 
         // Assert (Then)
         Assert.Equal(1, count);
+    }
+
+    [Fact]
+    public async Task StartAsync_WithAnAsyncOnlyDisposableScopedDependency_Starts()
+    {
+        // Arrange (Given)
+        var counter = new AsyncDisposeCounter();
+        await using var provider = Build(new LogSink(), cfg =>
+        {
+            cfg.RegisterRequestHandler<AsyncOnlyHandler, AsyncOnlyRequest>();
+            cfg.ValidateOnStart();
+        }, services =>
+        {
+            services.AddSingleton(counter);
+            services.AddScoped<AsyncOnlyDisposable>();
+        });
+
+        // Act (When)
+        var exception = await Record.ExceptionAsync(() => StartHostedServices(provider));
+
+        // Assert (Then)
+        Assert.Null(exception);
+        Assert.True(counter.Count >= 1);
+    }
+
+    private sealed record AsyncOnlyRequest : IRequest;
+
+    private sealed class AsyncOnlyHandler(AsyncOnlyDisposable dependency) : IRequestHandler<AsyncOnlyRequest>
+    {
+        public ValueTask<Result> HandleAsync(AsyncOnlyRequest request, CancellationToken cancellationToken = default)
+        {
+            _ = dependency;
+            return new ValueTask<Result>(Result.Success());
+        }
     }
 
     private static async Task StartHostedServices(IServiceProvider provider)

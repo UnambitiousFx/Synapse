@@ -186,6 +186,110 @@ public sealed class PipelineDescriberTests
         Assert.Null(description);
     }
 
+    [Fact]
+    public void Describe_WithAnAsyncOnlyDisposableDependency_DescribesAndDisposesTheScopeAsynchronously()
+    {
+        // Arrange (Given)
+        var counter = new AsyncDisposeCounter();
+        var services = new ServiceCollection().AddLogging();
+        services.AddSingleton(counter);
+        services.AddScoped<AsyncOnlyDisposable>();
+        services.AddSynapse(cfg =>
+        {
+            cfg.RegisterRequestHandler<AsyncOnlyCommandHandler, AsyncOnlyCommand>();
+            cfg.RegisterRequestHandler<AsyncOnlyQueryHandler, AsyncOnlyQuery, int>();
+            cfg.RegisterEventHandler<AsyncOnlyEventHandler, AsyncOnlyEvent>();
+        });
+        using var provider = services.BuildServiceProvider();
+        var describer = provider.GetRequiredService<IPipelineDescriber>();
+
+        // Act (When)
+        var command = describer.Describe<AsyncOnlyCommand>();
+        var query = describer.Describe<AsyncOnlyQuery, int>();
+        var @event = describer.DescribeEvent<AsyncOnlyEvent>();
+        var report = provider.ValidateSynapse();
+
+        // Assert (Then)
+        Assert.NotNull(command);
+        Assert.NotNull(query);
+        Assert.NotNull(@event);
+        Assert.DoesNotContain(report.Errors, error => error.Code == "SYN003");
+        Assert.True(report.IsValid);
+        Assert.True(counter.Count >= 3, $"every scope must dispose its service, saw {counter.Count}");
+    }
+
+    [Fact]
+    public async Task Describe_WithAnAsyncDisposalThatCompletesLater_ReturnsOnlyAfterTheScopeIsDisposed()
+    {
+        // Arrange (Given)
+        var gate = new DisposeGate();
+        var services = new ServiceCollection().AddLogging();
+        services.AddSingleton(gate);
+        services.AddScoped<GatedAsyncDisposable>();
+        services.AddSynapse(cfg => cfg.RegisterRequestHandler<GatedCommandHandler, GatedCommand>());
+        await using var provider = services.BuildServiceProvider();
+        var describer = provider.GetRequiredService<IPipelineDescriber>();
+
+        // Act (When)
+        var describe = Task.Factory.StartNew(() => describer.Describe<GatedCommand>(),
+            TestContext.Current.CancellationToken, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+        var disposalStarted = gate.Started.Wait(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+        var returnedBeforeRelease = await Task.WhenAny(describe,
+            Task.Delay(TimeSpan.FromMilliseconds(200), TestContext.Current.CancellationToken)) == describe;
+        gate.Release.SetResult();
+        var description = await describe.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.True(disposalStarted);
+        Assert.False(returnedBeforeRelease);
+        Assert.True(gate.Completed);
+        Assert.NotNull(description);
+    }
+
+    private sealed record GatedCommand : IRequest;
+
+    private sealed class GatedCommandHandler(GatedAsyncDisposable dependency) : IRequestHandler<GatedCommand>
+    {
+        public ValueTask<Result> HandleAsync(GatedCommand request, CancellationToken cancellationToken = default)
+        {
+            _ = dependency;
+            return new ValueTask<Result>(Result.Success());
+        }
+    }
+
+    private sealed record AsyncOnlyCommand : IRequest;
+
+    private sealed class AsyncOnlyCommandHandler(AsyncOnlyDisposable dependency) : IRequestHandler<AsyncOnlyCommand>
+    {
+        public ValueTask<Result> HandleAsync(AsyncOnlyCommand request, CancellationToken cancellationToken = default)
+        {
+            _ = dependency;
+            return new ValueTask<Result>(Result.Success());
+        }
+    }
+
+    private sealed record AsyncOnlyQuery : IRequest<int>;
+
+    private sealed class AsyncOnlyQueryHandler(AsyncOnlyDisposable dependency) : IRequestHandler<AsyncOnlyQuery, int>
+    {
+        public ValueTask<Result<int>> HandleAsync(AsyncOnlyQuery request, CancellationToken cancellationToken = default)
+        {
+            _ = dependency;
+            return new ValueTask<Result<int>>(Result.Success(1));
+        }
+    }
+
+    private sealed record AsyncOnlyEvent : IEvent;
+
+    private sealed class AsyncOnlyEventHandler(AsyncOnlyDisposable dependency) : IEventHandler<AsyncOnlyEvent>
+    {
+        public ValueTask<Result> HandleAsync(AsyncOnlyEvent @event, CancellationToken cancellationToken = default)
+        {
+            _ = dependency;
+            return new ValueTask<Result>(Result.Success());
+        }
+    }
+
     private static ServiceProvider BuildEvents(Trace trace, Action<ISynapseConfig> configure)
     {
         var services = new ServiceCollection().AddLogging();

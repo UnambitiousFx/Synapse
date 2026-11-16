@@ -25,34 +25,57 @@ internal sealed class PipelineDescriber : IPipelineDescriber
     public PipelineDescription? Describe<TRequest>()
         where TRequest : IRequest
     {
-        using var scope = _scopeFactory.CreateScope();
-        return DescribeHandler(scope.ServiceProvider.GetService<IRequestHandler<TRequest>>());
+        // The API is synchronous and validation runs on a dedicated thread without a synchronization context, so
+        // the async scope (which tolerates async-only disposables) is disposed by blocking on DisposeAsync.
+        var scope = _scopeFactory.CreateAsyncScope();
+        try
+        {
+            return DescribeHandler(scope.ServiceProvider.GetService<IRequestHandler<TRequest>>());
+        }
+        finally
+        {
+            scope.DisposeSynchronously();
+        }
     }
 
     public PipelineDescription? Describe<TRequest, TResponse>()
         where TRequest : IRequest<TResponse>
         where TResponse : notnull
     {
-        using var scope = _scopeFactory.CreateScope();
-        return DescribeHandler(scope.ServiceProvider.GetService<IRequestHandler<TRequest, TResponse>>());
+        var scope = _scopeFactory.CreateAsyncScope();
+        try
+        {
+            return DescribeHandler(scope.ServiceProvider.GetService<IRequestHandler<TRequest, TResponse>>());
+        }
+        finally
+        {
+            scope.DisposeSynchronously();
+        }
     }
 
     public PipelineDescription? DescribeEvent<TEvent>()
         where TEvent : class, IEvent
     {
-        using var scope = _scopeFactory.CreateScope();
-        var (handlers, behaviors) =
-            EventPipelineParts.Resolve<TEvent>(scope.ServiceProvider.GetRequiredService<IDependencyResolver>());
-
-        if (handlers.Length == 0)
+        var scope = _scopeFactory.CreateAsyncScope();
+        try
         {
-            return null;
-        }
+            var (handlers, behaviors) =
+                EventPipelineParts.Resolve<TEvent>(scope.ServiceProvider.GetRequiredService<IDependencyResolver>());
 
-        return new PipelineDescription(
-            handlers.Select(handler => handler.GetType()).ToArray(),
-            PipelineBehaviorOrdering.Describe(behaviors,
-                scope.ServiceProvider.GetService<PipelineOrdering>() ?? PipelineOrdering.Empty));
+            if (handlers.Length == 0)
+            {
+                return null;
+            }
+
+            return new PipelineDescription(
+                handlers.Select(handler => handler.GetType()).ToArray(),
+                PipelineBehaviorOrdering.Describe(behaviors,
+                    scope.ServiceProvider.GetService<PipelineOrdering>() ?? PipelineOrdering.Empty));
+        }
+        finally
+        {
+            scope.DisposeSynchronously();
+        }
     }
 
     private static PipelineDescription? DescribeHandler(object? handler)

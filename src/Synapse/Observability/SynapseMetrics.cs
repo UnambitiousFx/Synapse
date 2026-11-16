@@ -155,16 +155,18 @@ public sealed class SynapseMetrics : ISynapseMetrics
     /// <summary>
     ///     Opens a short-lived scope and resolves <see cref="IEventOutboxStorage" /> from it, or <c>null</c> when
     ///     no scope factory was supplied or no storage is registered. Called once per gauge observation so this
-    ///     Singleton never holds a Scoped storage past the observation that needed it.
+    ///     Singleton never holds a Scoped storage past the observation that needed it. The scope is async so an
+    ///     async-only disposable it created is disposed with <c>DisposeAsync</c>, completed synchronously by the
+    ///     caller as the gauge callback is synchronous.
     /// </summary>
-    private (IEventOutboxStorage? Storage, IServiceScope? Scope) ResolveStorage()
+    private (IEventOutboxStorage? Storage, IAsyncDisposable? Scope) ResolveStorage()
     {
         if (_scopeFactory == null)
         {
             return (null, null);
         }
 
-        var scope = _scopeFactory.CreateScope();
+        var scope = _scopeFactory.CreateAsyncScope();
         return (scope.ServiceProvider.GetService<IEventOutboxStorage>(), scope);
     }
 
@@ -199,7 +201,7 @@ public sealed class SynapseMetrics : ISynapseMetrics
         var (storage, scope) = ResolveStorage();
         if (storage == null)
         {
-            scope?.Dispose();
+            scope.DisposeSynchronously();
             return _lastKnownQueueDepth;
         }
 
@@ -216,7 +218,7 @@ public sealed class SynapseMetrics : ISynapseMetrics
         }
         finally
         {
-            scope?.Dispose();
+            scope.DisposeSynchronously();
         }
     }
 
@@ -225,7 +227,7 @@ public sealed class SynapseMetrics : ISynapseMetrics
         var (storage, scope) = ResolveStorage();
         if (storage == null)
         {
-            scope?.Dispose();
+            scope.DisposeSynchronously();
             return _lastKnownProcessingLagSeconds;
         }
 
@@ -243,7 +245,7 @@ public sealed class SynapseMetrics : ISynapseMetrics
         }
         finally
         {
-            scope?.Dispose();
+            scope.DisposeSynchronously();
         }
     }
 
@@ -252,7 +254,7 @@ public sealed class SynapseMetrics : ISynapseMetrics
         var (storage, scope) = ResolveStorage();
         if (storage == null)
         {
-            scope?.Dispose();
+            scope.DisposeSynchronously();
             return _lastKnownRetryingCount;
         }
 
@@ -269,7 +271,7 @@ public sealed class SynapseMetrics : ISynapseMetrics
         }
         finally
         {
-            scope?.Dispose();
+            scope.DisposeSynchronously();
         }
     }
 
@@ -278,7 +280,7 @@ public sealed class SynapseMetrics : ISynapseMetrics
         var (storage, scope) = ResolveStorage();
         if (storage == null)
         {
-            scope?.Dispose();
+            scope.DisposeSynchronously();
             return _lastKnownDeadLetterCount;
         }
 
@@ -295,7 +297,7 @@ public sealed class SynapseMetrics : ISynapseMetrics
         }
         finally
         {
-            scope?.Dispose();
+            scope.DisposeSynchronously();
         }
     }
 }

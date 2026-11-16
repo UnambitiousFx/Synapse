@@ -99,6 +99,33 @@ public sealed class OutboxDispatcherServiceTests
     }
 
     [Fact]
+    public async Task AddOutboxDispatcher_WithAStorageDependingOnAnAsyncOnlyDisposable_KeepsRunning()
+    {
+        // Arrange (Given) — the storage scope is opened once for the claim warning, then once per poll
+        var counter = new AsyncDisposeCounter();
+        var services = new ServiceCollection().AddLogging();
+        services.AddSingleton(counter);
+        services.AddScoped<AsyncOnlyDisposable>();
+        services.AddSynapse(cfg => cfg.AddOutboxDispatcher(o => o.PollingInterval = FastPolling));
+        services.AddScoped<IEventOutboxStorage>(sp =>
+        {
+            sp.GetRequiredService<AsyncOnlyDisposable>();
+            return Substitute.For<IEventOutboxStorage>();
+        });
+        await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+
+        // Act (When)
+        var dispatcher = await StartDispatcherAsync(provider);
+        var polled = await WaitUntilAsync(() => counter.Count >= 2);
+        var faulted = dispatcher.ExecuteTask?.IsFaulted;
+        await dispatcher.StopAsync(TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.True(polled);
+        Assert.False(faulted);
+    }
+
+    [Fact]
     public async Task AddOutboxDispatcher_WithANonPositivePollingInterval_FailsToStart()
     {
         // Arrange (Given)
