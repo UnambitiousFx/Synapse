@@ -1,0 +1,81 @@
+name: Mutation Testing
+
+# Non-blocking: not a PR check. Reports are uploaded as artifacts.
+on:
+  workflow_dispatch:
+    inputs:
+      project:
+        description: "Project to mutate"
+        type: choice
+        default: all
+        options:
+          - all
+          - authorization
+          - core
+          - fluentvalidation
+  schedule:
+    - cron: "0 3 * * 1"
+
+env:
+  DOTNET_VERSION: "11.0.x"
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  mutation:
+    name: Mutation (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: authorization
+            test-project: test/Synapse.Authorization.Tests
+          - name: core
+            test-project: test/Synapse.Tests
+          - name: fluentvalidation
+            test-project: test/Synapse.FluentValidation.Tests
+    steps:
+      - name: Skip unselected project
+        id: select
+        run: |
+          selected="${{ github.event_name == 'workflow_dispatch' && inputs.project || 'all' }}"
+          if [ "$selected" = "all" ] || [ "$selected" = "${{ matrix.name }}" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout code
+        if: steps.select.outputs.run == 'true'
+        uses: actions/checkout@v7
+
+      - name: Setup .NET
+        if: steps.select.outputs.run == 'true'
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            10.0.x
+            ${{ env.DOTNET_VERSION }}
+
+      - name: Restore tools
+        if: steps.select.outputs.run == 'true'
+        run: dotnet tool restore
+
+      - name: Run Stryker
+        if: steps.select.outputs.run == 'true'
+        working-directory: ${{ matrix.test-project }}
+        run: dotnet stryker --config-file stryker-config.json
+
+      - name: Upload mutation report
+        if: always() && steps.select.outputs.run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-report-${{ matrix.name }}
+          path: |
+            ${{ matrix.test-project }}/StrykerOutput/**/reports/*.html
+            ${{ matrix.test-project }}/StrykerOutput/**/reports/*.json
+          if-no-files-found: warn
