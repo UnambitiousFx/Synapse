@@ -43,7 +43,7 @@ internal static class SynapseValidator
             return Report(issues);
         }
 
-        foreach (var (type, probe) in registry.Probes)
+        foreach (var (type, probe) in registry.Probes.Concat(registry.EventProbesOfRequests))
         {
             PipelineDescription? description;
             try

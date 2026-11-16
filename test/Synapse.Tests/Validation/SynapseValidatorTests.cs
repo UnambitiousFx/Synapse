@@ -372,6 +372,44 @@ public sealed class SynapseValidatorTests
         Assert.Equal("SYN003", Assert.Single(report.Errors).Code);
     }
 
+    [Fact]
+    public void ValidateSynapse_WithADualTypeWhoseEventBehaviorsTie_ReportsSyn004()
+    {
+        // Arrange (Given)
+        using var provider = Build(cfg =>
+        {
+            cfg.RegisterRequestHandler<DualRequestHandler, DualMessage>();
+            cfg.RegisterEventHandler<DualEventHandler, DualMessage>();
+            cfg.RegisterEventPipelineBehavior<TiedDualEventBehaviorA, DualMessage>();
+            cfg.RegisterEventPipelineBehavior<TiedDualEventBehaviorB, DualMessage>();
+        });
+
+        // Act (When)
+        var report = provider.ValidateSynapse();
+
+        // Assert (Then)
+        Assert.Equal("SYN004", Assert.Single(report.Warnings).Code);
+    }
+
+    [Fact]
+    public void ValidateSynapse_WithAnEventRegisteredBeforeTheRequestOfADualTypeWhoseEventBehaviorsTie_ReportsSyn004()
+    {
+        // Arrange (Given)
+        using var provider = Build(cfg =>
+        {
+            cfg.RegisterEventHandler<DualEventHandler, DualMessage>();
+            cfg.RegisterEventPipelineBehavior<TiedDualEventBehaviorA, DualMessage>();
+            cfg.RegisterEventPipelineBehavior<TiedDualEventBehaviorB, DualMessage>();
+            cfg.RegisterRequestHandler<DualRequestHandler, DualMessage>();
+        });
+
+        // Act (When)
+        var report = provider.ValidateSynapse();
+
+        // Assert (Then)
+        Assert.Equal("SYN004", Assert.Single(report.Warnings).Code);
+    }
+
     private static ServiceProvider Build(Action<ISynapseConfig> configure)
     {
         var services = new ServiceCollection().AddLogging();
@@ -421,6 +459,22 @@ public sealed class SynapseValidatorTests
         {
             return new ValueTask<Result>(Result.Success());
         }
+    }
+
+    private sealed class TiedDualEventBehaviorA : IEventPipelineBehavior<DualMessage>, IOrderedPipelineBehavior
+    {
+        public uint Order => 5;
+
+        public ValueTask<Result> HandleAsync(DualMessage @event, EventHandlerDelegate<DualMessage> next,
+            CancellationToken cancellationToken = default) => next(@event, cancellationToken);
+    }
+
+    private sealed class TiedDualEventBehaviorB : IEventPipelineBehavior<DualMessage>, IOrderedPipelineBehavior
+    {
+        public uint Order => 5;
+
+        public ValueTask<Result> HandleAsync(DualMessage @event, EventHandlerDelegate<DualMessage> next,
+            CancellationToken cancellationToken = default) => next(@event, cancellationToken);
     }
 
     private sealed record PingEvent : IEvent;

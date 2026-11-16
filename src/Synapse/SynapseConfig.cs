@@ -538,7 +538,8 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
         // After the loop: conditional registrations add their visits inside their action.
         services.RecordRequestRegistrations(_visits);
 
-        services.AddSingleton(SynapseRegistry.Create(services, RequestProbeVisitor.Collect(_visits, _eventProbes)));
+        services.AddSingleton(SynapseRegistry.Create(services,
+            RequestProbeVisitor.Collect(_visits, _eventProbes, out var eventProbesOfRequests), eventProbesOfRequests));
 
         // If the storage type is already registered as itself (e.g. AddEfCoreEventOutbox<TContext>()),
         // forward IEventOutboxStorage to that registration instead of adding an independent descriptor

@@ -17,7 +17,8 @@ internal sealed class RequestProbeVisitor : IRequestRegistrationVisitor
 
     public static IReadOnlyDictionary<Type, Func<IPipelineDescriber, PipelineDescription?>> Collect(
         IReadOnlyDictionary<Type, Action<IRequestRegistrationVisitor>> visits,
-        IReadOnlyDictionary<Type, Func<IPipelineDescriber, PipelineDescription?>> eventProbes)
+        IReadOnlyDictionary<Type, Func<IPipelineDescriber, PipelineDescription?>> eventProbes,
+        out IReadOnlyDictionary<Type, Func<IPipelineDescriber, PipelineDescription?>> eventProbesOfRequests)
     {
         var probes = new Dictionary<Type, Func<IPipelineDescriber, PipelineDescription?>>();
         var visitor = new RequestProbeVisitor(probes);
@@ -26,19 +27,18 @@ internal sealed class RequestProbeVisitor : IRequestRegistrationVisitor
             visit(visitor);
         }
 
+        // A type that is both a request and an event has two pipelines; the table holds one probe per type, so the
+        // event probe goes in a second table that validation also walks.
+        var shared = new Dictionary<Type, Func<IPipelineDescriber, PipelineDescription?>>();
         foreach (var (type, eventProbe) in eventProbes)
         {
-            // A type that is both a request and an event needs both pipelines checked: one probe runs the two.
-            probes[type] = probes.TryGetValue(type, out var requestProbe)
-                ? describer =>
-                {
-                    var request = requestProbe(describer);
-                    var @event = eventProbe(describer);
-                    return request ?? @event;
-                }
-                : eventProbe;
+            if (!probes.TryAdd(type, eventProbe))
+            {
+                shared.Add(type, eventProbe);
+            }
         }
 
+        eventProbesOfRequests = shared;
         return probes;
     }
 
