@@ -7,7 +7,9 @@ namespace UnambitiousFx.Synapse.Authorization;
 /// <summary>
 ///     Asks the <see cref="IResourceAccessPolicy" /> whether the caller may access the resource an
 ///     <see cref="IResourceScoped" /> request targets, and denies it with an <see cref="UnauthorizedFailure" /> when not.
-///     Without a registered policy, every <see cref="IResourceScoped" /> request is denied. Other requests pass through.
+///     Without a registered policy, every <see cref="IResourceScoped" /> request is denied. Other requests pass through,
+///     and so does an <see cref="IOptionallyResourceScoped" /> request whose
+///     <see cref="IOptionallyResourceScoped.OptionalResourceId" /> is <see langword="null" />.
 ///     Runs last of the authorization behaviors (<see cref="AuthorizationBehaviorOrder.Resource" />).
 /// </summary>
 /// <typeparam name="TRequest">The request type.</typeparam>
@@ -55,7 +57,7 @@ public sealed class ResourceAuthorizationBehavior<TRequest, TResult> : IResultPi
         RequestNext<TRequest, TResult> next,
         CancellationToken cancellationToken)
     {
-        return await AuthorizationChecks.ResourceAsync(scoped, _principal, _policy, cancellationToken) is { } denied
+        return await AuthorizationChecks.ResourceAsync<TRequest>(scoped, _principal, _policy, cancellationToken) is { } denied
             ? await AuthorizationDenials.DenyAsync(_recorders, next, denied, cancellationToken)
             : await next.InvokeAsync(request, cancellationToken);
     }

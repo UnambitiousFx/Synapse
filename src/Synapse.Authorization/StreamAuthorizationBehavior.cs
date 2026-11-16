@@ -61,7 +61,7 @@ public sealed class StreamAuthorizationBehavior<TRequest, TItem> : IStreamReques
                      ?? AuthorizationChecks.Scope(request, _principal, _defaultScope);
         if (denied is null && request is IResourceScoped scoped)
         {
-            denied = await AuthorizationChecks.ResourceAsync(scoped, _principal, _policy, cancellationToken);
+            denied = await AuthorizationChecks.ResourceAsync<TRequest>(scoped, _principal, _policy, cancellationToken);
         }
 
         if (denied is { } d)

@@ -25,6 +25,12 @@ public sealed record StreamHousehold(string HouseholdId) : IStreamRequest<int>, 
     public string Access => "read";
 }
 
+public sealed record StreamAccounts(string? AccountId) : IStreamRequest<int>, IOptionallyResourceScoped
+{
+    public string? OptionalResourceId => AccountId;
+    public string Access => "read";
+}
+
 public sealed record StreamPublicFeed : IStreamRequest<int>, IAllowAnonymous;
 
 public sealed record StreamPublicAdmin : IStreamRequest<int>, IAllowAnonymous, IRequiresRole
@@ -164,6 +170,34 @@ public sealed class StreamAuthorizationTests
     }
 
     [Fact]
+    public async Task InvokeStreamAsync_OptionallyScopedWithoutResource_YieldsItemsWithoutPolicy()
+    {
+        // Arrange (Given) — no policy registered
+        await using var provider = BuildProvider(Principals.Authenticated(scopes: ["read"]));
+
+        // Act (When)
+        var items = await CollectAsync(provider, new StreamAccounts(null));
+
+        // Assert (Then)
+        Assert.True(Assert.Single(items).IsSuccess);
+        Assert.Empty(provider.GetRequiredService<StreamDenialLog>().Denials);
+    }
+
+    [Fact]
+    public async Task InvokeStreamAsync_OptionallyScopedWithResource_AsksPolicy()
+    {
+        // Arrange (Given)
+        await using var provider = BuildProvider(Principals.Authenticated(scopes: ["read"]), policyAllows: false);
+
+        // Act (When)
+        var items = await CollectAsync(provider, new StreamAccounts("acc-1"));
+
+        // Assert (Then)
+        Assert.True(Assert.Single(items).TryGetFailure(out _));
+        Assert.Equal("acc-1", Assert.Single(provider.GetRequiredService<StreamDenialLog>().Denials).ResourceId);
+    }
+
+    [Fact]
     public async Task InvokeStreamAsync_AllowAnonymousFromAnonymousCaller_YieldsItems()
     {
         // Arrange (Given)
@@ -246,6 +280,7 @@ public sealed class StreamAuthorizationTests
             cfg.RegisterStreamRequestHandler<CountingHandler<StreamAdminItems>, StreamAdminItems, int>();
             cfg.RegisterStreamRequestHandler<CountingHandler<StreamExport>, StreamExport, int>();
             cfg.RegisterStreamRequestHandler<CountingHandler<StreamHousehold>, StreamHousehold, int>();
+            cfg.RegisterStreamRequestHandler<CountingHandler<StreamAccounts>, StreamAccounts, int>();
             cfg.RegisterStreamRequestHandler<CountingHandler<StreamPublicFeed>, StreamPublicFeed, int>();
             cfg.RegisterStreamRequestHandler<CountingHandler<StreamPublicAdmin>, StreamPublicAdmin, int>();
             cfg.RegisterStreamRequestHandler<CountingHandler<StreamPublicScoped>, StreamPublicScoped, int>();

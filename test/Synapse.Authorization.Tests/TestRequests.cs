@@ -19,6 +19,12 @@ public sealed record RenameItem(string Id, string Name) : ICommand, IResourceSco
     public string Access => "write";
 }
 
+public sealed record ListAccounts(string? AccountId) : IQuery<string>, IOptionallyResourceScoped
+{
+    public string? OptionalResourceId => AccountId;
+    public string Access => "read";
+}
+
 public sealed record PurgeItems : ICommand, IRequiresRole
 {
     public string Role => "admin";
