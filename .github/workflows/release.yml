@@ -97,19 +97,20 @@ jobs:
 
       # unambitiousfx.com builds these docs from main and the release tags, so it is redeployed after
       # every run, released or not, to pick up `docs:` fixes too. GITHUB_TOKEN cannot start workflows
-      # in another repo, hence the org app; skipped until DOCS_APP_ID is set.
+      # in another repo, hence the org app; skipped until DOCS_APP_CLIENT_ID is set.
       - name: Get docs site token
         id: site
-        if: vars.DOCS_APP_ID != ''
+        if: vars.DOCS_APP_CLIENT_ID != ''
         uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ vars.DOCS_APP_ID }}
+          client-id: ${{ vars.DOCS_APP_CLIENT_ID }}
           private-key: ${{ secrets.DOCS_APP_KEY }}
           owner: UnambitiousFx
           repositories: UnambitiousFx.github.io
+          permission-actions: write
 
       - name: Redeploy docs site
-        if: vars.DOCS_APP_ID != ''
+        if: vars.DOCS_APP_CLIENT_ID != ''
         run: gh workflow run deploy.yml -R UnambitiousFx/UnambitiousFx.github.io
         env:
           GH_TOKEN: ${{ steps.site.outputs.token }}
