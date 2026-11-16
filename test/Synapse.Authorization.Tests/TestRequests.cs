@@ -141,11 +141,4 @@ internal static class Intents
     {
         new AuthorizationRegistrationVisitor(new ServiceCollection()).VisitRequest<TRequest>();
     }
-
-    public static void RegisterStream<TRequest, TItem>()
-        where TRequest : IStreamRequest<TItem>
-        where TItem : notnull
-    {
-        new AuthorizationRegistrationVisitor(new ServiceCollection()).VisitStreamRequest<TRequest, TItem>();
-    }
 }

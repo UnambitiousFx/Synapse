@@ -16,6 +16,8 @@ public sealed class MultiShapeTests
 
     private sealed record PreRegisteredOptionsQuery : IQuery<string>;
 
+    private sealed record CommandAndQuery : ICommand<string>, IQuery<string>;
+
     [Fact]
     public async Task Invoke_RequestWithTypedAndStreamHandlers_RejectsAnonymousCallerOnBothPaths()
     {
@@ -77,6 +79,27 @@ public sealed class MultiShapeTests
         Assert.IsType<UnauthorizedFailure>(typedFailure);
         Assert.True(Assert.Single(stream).TryGetFailure(out var streamFailure));
         Assert.IsType<UnauthorizedFailure>(streamFailure);
+    }
+
+    [Theory]
+    [InlineData("read", false)]
+    [InlineData("write", true)]
+    public async Task Invoke_RequestImplementingCommandAndQuery_NeedsTheCommandScope(string scope, bool allowed)
+    {
+        // Arrange (Given)
+        await using var provider = Build(Principals.Authenticated(scopes: [scope]), services => services.AddSynapse(cfg =>
+            cfg.RegisterRequestHandler<TypedHandler<CommandAndQuery>, CommandAndQuery, string>()));
+
+        // Act (When)
+        var result = await InvokeAsync(provider, new CommandAndQuery());
+
+        // Assert (Then)
+        Assert.Equal(allowed, result.IsSuccess);
+        if (!allowed)
+        {
+            Assert.True(result.TryGetFailure(out var failure));
+            Assert.IsType<UnauthorizedFailure>(failure);
+        }
     }
 
     [Fact]

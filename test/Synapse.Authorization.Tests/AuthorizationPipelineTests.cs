@@ -347,6 +347,7 @@ public sealed class AuthorizationPipelineTests
 
         // Assert (Then)
         Assert.IsType<InvalidOperationException>(exception);
+        Assert.Contains(nameof(NeverRegisteredQuery), exception.Message);
     }
 
     [Fact]
