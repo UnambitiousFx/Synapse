@@ -110,10 +110,20 @@ app.MapGet("/tasks/stream", (
     [FromServices] IHttpInvoker invoker,
     CancellationToken ct) =>
     invoker.InvokeStreamAsync(new StreamTasksQuery(), ct));
-// Returns IAsyncEnumerable<TaskDto> — ASP.NET Core streams the JSON array
+// 200 streaming a JSON array, or the mapped failure of the first item
 ```
 
-`IHttpInvoker.InvokeStreamAsync` unwraps `Result<TItem>` automatically: successful items are yielded, failures are silently skipped.
+`IHttpInvoker.InvokeStreamAsync` returns an `IResult`. A stream whose first item is a failure (such as an authorization denial) is answered with that failure's status and Problem Details; otherwise the items are streamed as a `200` JSON array. A failure after the first item aborts the response. See [Streaming](./streaming).
+
+### `401` challenge
+
+Every failure that resolves to `401 Unauthorized` carries the `WWW-Authenticate` header RFC 9110 requires, `Bearer` by default. Set the authentication method your clients use, or `null` to write none (a cookie-based app that never answers 401):
+
+```csharp
+builder.Services.AddSynapseAspNetCore(o => o.AuthenticationChallenge = "Basic realm=\"api\"");
+```
+
+The value is the HTTP authentication method, not the name a handler is registered under. A header already written by a custom `IFailureHttpMapper` is kept. This applies to `IHttpInvoker` and `IMvcInvoker` alike.
 
 ## `IMvcInvoker` — Controller-based API
 

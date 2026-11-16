@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using UnambitiousFx.Functional.AspNetCore.Mappers;
 using UnambitiousFx.Synapse.AspNetCore;
 using UnambitiousFx.Synapse.AspNetCore.Http;
@@ -48,5 +49,19 @@ public sealed class ServiceCollectionExtensionsTests
         Assert.Equal(1, services.Count(x => x.ServiceType == typeof(IFailureHttpMapper)));
         Assert.Equal(1, services.Count(x => x.ServiceType == typeof(IHttpInvoker)));
         Assert.Equal(1, services.Count(x => x.ServiceType == typeof(IMvcInvoker)));
+    }
+
+    [Fact]
+    public void AddSynapseAspNetCore_WithConfigure_SetsAuthenticationChallenge()
+    {
+        // Arrange (Given)
+        var services = new ServiceCollection();
+
+        // Act (When)
+        services.AddSynapseAspNetCore(o => o.AuthenticationChallenge = "Negotiate");
+        var options = services.BuildServiceProvider().GetRequiredService<IOptions<SynapseAspNetCoreOptions>>();
+
+        // Assert (Then)
+        Assert.Equal("Negotiate", options.Value.AuthenticationChallenge);
     }
 }

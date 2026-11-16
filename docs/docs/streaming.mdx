@@ -86,14 +86,18 @@ await foreach (var result in invoker.InvokeStreamAsync(new StreamTasksQuery(), c
 
 ## ASP.NET Core — streaming HTTP responses
 
-When using `IHttpInvoker` (from `UnambitiousFx.Synapse.AspNetCore`), call `InvokeStreamAsync` to get back an `IAsyncEnumerable<TItem>` with successful items already unwrapped and failures silently skipped:
+When using `IHttpInvoker` (from `UnambitiousFx.Synapse.AspNetCore`), call `InvokeStreamAsync` to get back an `IResult`:
 
 ```csharp
 app.MapGet("/tasks/stream", ([FromServices] IHttpInvoker invoker, CancellationToken ct) =>
     invoker.InvokeStreamAsync(new StreamTasksQuery(), ct));
 ```
 
-Returning `IAsyncEnumerable<T>` directly from a Minimal API endpoint causes ASP.NET Core to stream the JSON array to the client rather than buffering the entire response.
+The status is decided by the first item, because it cannot change once the body has started:
+
+- **First item failed** (for instance an authorization denial): the failure goes through the failure mapper like any other request, so the client gets a `401`, `403` or `404` Problem Details response.
+- **Otherwise**: `200` with the items written as a JSON array as they arrive, without buffering the whole response. An empty stream gives `[]`.
+- **A failure after the first item** throws, which aborts the response: the client sees a truncated body rather than a complete-looking array with items missing.
 
 ## See also
 
