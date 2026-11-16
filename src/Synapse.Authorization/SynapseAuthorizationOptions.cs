@@ -22,6 +22,9 @@ public sealed class SynapseAuthorizationOptions
     /// <summary>
     ///     The scope every query (<c>IQuery&lt;T&gt;</c>) requires unless it implements <see cref="IRequiresScope" />.
     ///     <see langword="null" /> turns the default off for queries. Defaults to <see cref="DefaultQueryScope" />.
+    ///     The marker is read through the handler shapes registered for the request: the <c>IQuery&lt;T&gt;</c> whose <c>T</c> is
+    ///     the handler's response type. When a type has several handler shapes, the strictest intent applies
+    ///     (command over query).
     /// </summary>
     public string? QueryScope { get; set; } = DefaultQueryScope;
 
@@ -29,6 +32,9 @@ public sealed class SynapseAuthorizationOptions
     ///     The scope every command (<c>ICommand</c>, <c>ICommand&lt;T&gt;</c>) requires unless it implements
     ///     <see cref="IRequiresScope" />. <see langword="null" /> turns the default off for commands. Defaults to
     ///     <see cref="DefaultCommandScope" />.
+    ///     The marker is read through the handler shapes registered for the request: the <c>ICommand&lt;T&gt;</c> whose <c>T</c> is
+    ///     the handler's response type, or the non-generic <c>ICommand</c>. When a type has several handler shapes, the strictest intent applies
+    ///     (command over query).
     /// </summary>
     public string? CommandScope { get; set; } = DefaultCommandScope;
 

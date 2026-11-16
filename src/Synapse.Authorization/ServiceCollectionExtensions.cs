@@ -20,6 +20,10 @@ public static class ServiceCollectionExtensions
     ///     A denial returns an <c>UnauthorizedFailure</c>, is reported to every
     ///     <see cref="IAuthorizationDenialRecorder" />, and the handler is not called. Stream requests get the same checks
     ///     through <see cref="StreamAuthorizationBehavior{TRequest,TItem}" />, a stream counting as a query.
+    ///     Command and query markers are read through the handler shapes registered for the request (the
+    ///     <c>ICommand&lt;T&gt;</c> / <c>IQuery&lt;T&gt;</c> whose <c>T</c> is the handler's response type, or the
+    ///     non-generic <c>ICommand</c>); when a type has several handler shapes, the strictest intent applies (command
+    ///     over query).
     /// </summary>
     /// <remarks>
     ///     The application registers its <see cref="ICurrentPrincipal" /> itself, usually as a scoped service. Calling
