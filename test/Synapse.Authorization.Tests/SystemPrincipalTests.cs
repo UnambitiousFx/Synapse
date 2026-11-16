@@ -39,6 +39,58 @@ public sealed class SystemPrincipalTests
     }
 
     [Fact]
+    public async Task InvokeAsync_BareSystemPrincipalByDefault_SkipsActorRoleAndScopeChecks()
+    {
+        // Arrange (Given) — unlike SystemPrincipal.Instance, this one would fail every identity check
+        await using var provider = BuildProvider(BareSystemPrincipal(), out _, out _);
+        await using var scope = provider.CreateAsyncScope();
+        var invoker = scope.ServiceProvider.GetRequiredService<IInvoker>();
+        var ct = TestContext.Current.CancellationToken;
+
+        // Act (When)
+        var results = new IResult[]
+        {
+            await invoker.InvokeAsync(new GetItem("42"), ct),
+            await invoker.InvokeAsync(new PurgeItems(), ct),
+            await invoker.InvokeAsync(new ExportReport(), ct)
+        };
+
+        // Assert (Then)
+        Assert.All(results, r => Assert.True(r.IsSuccess));
+        Assert.Empty(provider.GetRequiredService<Denials>().List);
+    }
+
+    [Fact]
+    public async Task InvokeStreamAsync_BareSystemPrincipalByDefault_SkipsEveryCheck()
+    {
+        // Arrange (Given)
+        await using var provider = BuildProvider(BareSystemPrincipal(), out var resourcePolicy, out _);
+
+        // Act (When)
+        var items = await StreamAsync(provider);
+
+        // Assert (Then)
+        Assert.True(Assert.Single(items).IsSuccess);
+        Assert.Empty(provider.GetRequiredService<Denials>().List);
+        await resourcePolicy.DidNotReceiveWithAnyArgs().IsAllowedAsync(null!, null!, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task InvokeStreamAsync_BareSystemPrincipalWithResourceChecksBypass_StillChecksTheActor()
+    {
+        // Arrange (Given)
+        await using var provider = BuildProvider(BareSystemPrincipal(), out _, out _,
+            o => o.SystemBypass = SystemBypass.ResourceChecks);
+
+        // Act (When)
+        var items = await StreamAsync(provider);
+
+        // Assert (Then)
+        Assert.True(Assert.Single(items).TryGetFailure(out var failure));
+        Assert.IsType<UnauthenticatedFailure>(failure);
+    }
+
+    [Fact]
     public async Task InvokeAsync_WithResourceChecksBypass_ChecksRoleButSkipsPolicies()
     {
         // Arrange (Given) — a system identity with only the write scope
@@ -147,6 +199,29 @@ public sealed class SystemPrincipalTests
         // Assert (Then)
         var exception = Assert.Throws<ArgumentException>(act);
         Assert.Equal(nameof(SynapseAuthorizationOptions.SystemBypass), exception.ParamName);
+    }
+
+    private static ICurrentPrincipal BareSystemPrincipal()
+    {
+        var principal = Substitute.For<ICurrentPrincipal>();
+        principal.IsAuthenticated.Returns(false);
+        principal.Id.Returns((string?)null);
+        principal.IsSystem.Returns(true);
+        return principal;
+    }
+
+    private static async Task<List<Result<int>>> StreamAsync(ServiceProvider provider)
+    {
+        await using var scope = provider.CreateAsyncScope();
+        var invoker = scope.ServiceProvider.GetRequiredService<IInvoker>();
+        var items = new List<Result<int>>();
+        await foreach (var item in invoker.InvokeStreamAsync(new StreamHousehold("h-1"),
+                           TestContext.Current.CancellationToken))
+        {
+            items.Add(item);
+        }
+
+        return items;
     }
 
     private static ServiceProvider BuildProvider(ICurrentPrincipal principal,
