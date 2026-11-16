@@ -51,6 +51,7 @@ This page records issues discovered and resolved while hardening the library. Al
 | [016](https://github.com/UnambitiousFx/Synapse/blob/main/docs/known-issues/016-cqrs-boundary-marker-leaks-on-handler-exception.md) | CQRS boundary marker leaked when a handler threw — spurious violation on later send in the same scope | Medium |
 | [018](https://github.com/UnambitiousFx/Synapse/blob/main/docs/known-issues/018-cqrs-enforcement-skips-generator-invisible-handlers.md) | CQRS enforcement was emitted per-discovered-handler only — manually registered handlers were not covered | Medium |
 | [021](https://github.com/UnambitiousFx/Synapse/blob/main/docs/known-issues/021-eventdispatcher-resorts-behaviors-every-publish.md) | `EventDispatcher` re-sorted behaviors via `OrderBy` on every publish (per-publish allocation) | Low |
+| [078](https://github.com/UnambitiousFx/Synapse/blob/main/docs/known-issues/078-validateonstart-reports-syn003-for-async-only-disposable-scoped-services.md) | `ValidateOnStart()` reported SYN003 and failed host start when a scoped service was only `IAsyncDisposable`, because the describer, the outbox start-up check, the dispatcher claim warning and the outbox gauges disposed their scopes synchronously; they now dispose with `DisposeAsync` | Medium |
 
 ## Outbox
 
