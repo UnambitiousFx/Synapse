@@ -75,6 +75,23 @@ public sealed class SynapseAuthorizationOptions
     }
 
     /// <summary>
+    ///     Registers the <see cref="IRequestAccessPolicy{TRequest}" /> of <typeparamref name="TRequest" /> as a scoped
+    ///     service, replacing any policy already registered for that request type.
+    /// </summary>
+    /// <typeparam name="TRequest">The request type the policy authorizes.</typeparam>
+    /// <typeparam name="TPolicy">The policy type.</typeparam>
+    /// <returns>The same options, for chaining.</returns>
+    public SynapseAuthorizationOptions RequestPolicy<TRequest,
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+        TPolicy>()
+        where TPolicy : class, IRequestAccessPolicy<TRequest>
+    {
+        _registrations.Add(services =>
+            services.Replace(ServiceDescriptor.Scoped<IRequestAccessPolicy<TRequest>, TPolicy>()));
+        return this;
+    }
+
+    /// <summary>
     ///     Adds an <see cref="IAuthorizationDenialRecorder" />, registered as a scoped service. Every registered
     ///     recorder is called for each denial.
     /// </summary>

@@ -14,7 +14,8 @@ public static class ServiceCollectionExtensions
     ///     Authorizes every request, for both <c>Result</c> and <c>Result&lt;T&gt;</c> requests, in this order: reject
     ///     anonymous callers (<c>UnauthenticatedFailure</c>) unless the request is <see cref="IAllowAnonymous" />, then
     ///     check <see cref="IRequiresRole" />, then the scope (the request's <see cref="IRequiresScope" />, or the default
-    ///     query / command scope), then <see cref="IResourceScoped" /> against the <see cref="IResourceAccessPolicy" />.
+    ///     query / command scope), then the request type's <see cref="IRequestAccessPolicy{TRequest}" /> if one is
+    ///     registered, then <see cref="IResourceScoped" /> against the <see cref="IResourceAccessPolicy" />.
     ///     A denial returns an <c>UnauthorizedFailure</c>, is reported to every
     ///     <see cref="IAuthorizationDenialRecorder" />, and the handler is not called. Stream requests get the same checks
     ///     through <see cref="StreamAuthorizationBehavior{TRequest,TItem}" />, a stream counting as a query.
@@ -25,7 +26,10 @@ public static class ServiceCollectionExtensions
     ///     <see cref="SynapseAuthorizationOptions" />: every call's settings apply, the last one winning per setting.
     /// </remarks>
     /// <param name="services">The service collection.</param>
-    /// <param name="configure">Optionally sets the default scopes, the resource policy and the denial recorders.</param>
+    /// <param name="configure">
+    ///     Optionally sets the default scopes, the resource and request policies, the denial recorders and the denial
+    ///     failure.
+    /// </param>
     /// <returns>The same service collection, for chaining.</returns>
     /// <exception cref="ArgumentException">
     ///     <see cref="SynapseAuthorizationOptions.QueryScope" /> or <see cref="SynapseAuthorizationOptions.CommandScope" />
@@ -46,6 +50,8 @@ public static class ServiceCollectionExtensions
             typeof(RoleAuthorizationBehavior<,>)));
         services.TryAddEnumerable(ServiceDescriptor.Scoped(typeof(IResultPipelineBehavior<,>),
             typeof(ScopeAuthorizationBehavior<,>)));
+        services.TryAddEnumerable(ServiceDescriptor.Scoped(typeof(IResultPipelineBehavior<,>),
+            typeof(RequestPolicyAuthorizationBehavior<,>)));
         services.TryAddEnumerable(ServiceDescriptor.Scoped(typeof(IResultPipelineBehavior<,>),
             typeof(ResourceAuthorizationBehavior<,>)));
         services.TryAddEnumerable(ServiceDescriptor.Scoped(typeof(IStreamRequestPipelineBehavior<,>),

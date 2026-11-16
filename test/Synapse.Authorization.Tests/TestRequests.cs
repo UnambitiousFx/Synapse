@@ -25,6 +25,18 @@ public sealed record ListAccounts(string? AccountId) : IQuery<string>, IOptional
     public string Access => "read";
 }
 
+public sealed record CreateInvoice(string CustomerId) : ICommand;
+
+public sealed class BillableCustomersPolicy : IRequestAccessPolicy<CreateInvoice>
+{
+    public ValueTask<bool> IsAllowedAsync(ICurrentPrincipal principal,
+        CreateInvoice request,
+        CancellationToken cancellationToken = default)
+    {
+        return new ValueTask<bool>(request.CustomerId == "billable");
+    }
+}
+
 public sealed record PurgeItems : ICommand, IRequiresRole
 {
     public string Role => "admin";

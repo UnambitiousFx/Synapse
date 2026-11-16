@@ -7,7 +7,7 @@ namespace UnambitiousFx.Synapse.Authorization;
 /// <summary>
 ///     Rejects every request from an unauthenticated caller with an <see cref="UnauthenticatedFailure" />, except
 ///     <see cref="IAllowAnonymous" /> requests. Runs first of the authorization behaviors
-///     (<see cref="AuthorizationBehaviorOrder.Actor" />), so the role, scope and resource checks only see anonymous
+///     (<see cref="AuthorizationBehaviorOrder.Actor" />), so the later checks only see anonymous
 ///     callers for <see cref="IAllowAnonymous" /> requests.
 /// </summary>
 /// <typeparam name="TRequest">The request type.</typeparam>

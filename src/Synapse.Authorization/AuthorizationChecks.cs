@@ -6,7 +6,7 @@ namespace UnambitiousFx.Synapse.Authorization;
 internal readonly record struct Denied(AuthorizationDenial Denial, Failure Failure);
 
 /// <summary>
-///     The four authorization checks, shared by the request behaviors and the stream behavior so both pipelines apply
+///     The authorization checks, shared by the request behaviors and the stream behavior so both pipelines apply
 ///     exactly the same rules. Each returns <see langword="null" /> when the request may go on.
 /// </summary>
 internal static class AuthorizationChecks
@@ -72,6 +72,20 @@ internal static class AuthorizationChecks
         return new Denied(
             new AuthorizationDenial(request!, AuthorizationDenialReason.MissingScope, principal.Id, scope),
             new UnauthorizedFailure($"Requires scope '{scope}'."));
+    }
+
+    public static async ValueTask<Denied?> RequestAsync<TRequest>(TRequest request,
+        ICurrentPrincipal principal,
+        IRequestAccessPolicy<TRequest> policy,
+        CancellationToken cancellationToken)
+    {
+        if (await policy.IsAllowedAsync(principal, request, cancellationToken))
+        {
+            return null;
+        }
+
+        return new Denied(new AuthorizationDenial(request!, AuthorizationDenialReason.RequestDenied, principal.Id),
+            new UnauthorizedFailure("The request was denied by its access policy."));
     }
 
     public static async ValueTask<Denied?> ResourceAsync<TRequest>(IResourceScoped scoped,

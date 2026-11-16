@@ -7,13 +7,13 @@ namespace UnambitiousFx.Synapse.Authorization;
 
 /// <summary>
 ///     Authorizes an <see cref="IStreamRequest{TResponse}" /> with the same rules as the request behaviors, in the same
-///     order: actor, role, scope (a stream counts as a query for the default scope), then resource. The checks run
-///     once, before the handler starts. A denial is reported to every <see cref="IAuthorizationDenialRecorder" /> and
+///     order: actor, role, scope (a stream counts as a query for the default scope), request policy, then resource.
+///     The checks run once, before the handler starts. A denial is reported to every <see cref="IAuthorizationDenialRecorder" /> and
 ///     the stream yields a single failed item (<c>UnauthenticatedFailure</c> or <c>UnauthorizedFailure</c>) without
 ///     running the handler. Runs at <see cref="AuthorizationBehaviorOrder.Actor" />.
 /// </summary>
 /// <remarks>
-///     The four checks run in one behavior: unlike the request pipeline, an application behavior cannot sit between two
+///     The checks run in one behavior: unlike the request pipeline, an application behavior cannot sit between two
 ///     of them.
 /// </remarks>
 /// <typeparam name="TRequest">The stream request type.</typeparam>
@@ -27,6 +27,7 @@ public sealed class StreamAuthorizationBehavior<TRequest, TItem> : IStreamReques
     private readonly Func<AuthorizationDenial, Failure?>? _denialFailure;
     private readonly IResourceAccessPolicy? _policy;
     private readonly ICurrentPrincipal _principal;
+    private readonly IRequestAccessPolicy<TRequest>? _requestPolicy;
     private readonly IEnumerable<IAuthorizationDenialRecorder> _recorders;
 
     /// <summary>
@@ -35,11 +36,13 @@ public sealed class StreamAuthorizationBehavior<TRequest, TItem> : IStreamReques
     /// <param name="principal">The caller.</param>
     /// <param name="options">The default query scope, and the denial failure.</param>
     /// <param name="recorders">The recorders told about a denial.</param>
-    /// <param name="policy">The application's policy, <see langword="null" /> when none is registered.</param>
+    /// <param name="policy">The application's resource policy, <see langword="null" /> when none is registered.</param>
+    /// <param name="requestPolicy">The request type's policy, <see langword="null" /> when none is registered.</param>
     public StreamAuthorizationBehavior(ICurrentPrincipal principal,
         SynapseAuthorizationOptions options,
         IEnumerable<IAuthorizationDenialRecorder> recorders,
-        IResourceAccessPolicy? policy = null)
+        IResourceAccessPolicy? policy = null,
+        IRequestAccessPolicy<TRequest>? requestPolicy = null)
     {
         ArgumentNullException.ThrowIfNull(principal);
         ArgumentNullException.ThrowIfNull(options);
@@ -47,6 +50,7 @@ public sealed class StreamAuthorizationBehavior<TRequest, TItem> : IStreamReques
         _principal = principal;
         _recorders = recorders;
         _policy = policy;
+        _requestPolicy = requestPolicy;
         _defaultScope = AuthorizationChecks.DefaultScope<TRequest>(options);
         _denialFailure = options.DenialFailure;
     }
@@ -62,6 +66,11 @@ public sealed class StreamAuthorizationBehavior<TRequest, TItem> : IStreamReques
         var denied = AuthorizationChecks.Actor(request, _principal)
                      ?? AuthorizationChecks.Role(request, _principal)
                      ?? AuthorizationChecks.Scope(request, _principal, _defaultScope);
+        if (denied is null && _requestPolicy is not null)
+        {
+            denied = await AuthorizationChecks.RequestAsync(request, _principal, _requestPolicy, cancellationToken);
+        }
+
         if (denied is null && request is IResourceScoped scoped)
         {
             denied = await AuthorizationChecks.ResourceAsync<TRequest>(scoped, _principal, _policy, cancellationToken);

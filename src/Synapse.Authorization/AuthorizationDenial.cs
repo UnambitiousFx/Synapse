@@ -24,7 +24,7 @@ public interface IAuthorizationDenialRecorder
 /// <param name="PrincipalId">The caller's <see cref="ICurrentPrincipal.Id" />, <see langword="null" /> when anonymous.</param>
 /// <param name="Requirement">
 ///     What the caller lacked: the role, the scope or the resource access. <see langword="null" /> for
-///     <see cref="AuthorizationDenialReason.Unauthenticated" />.
+///     <see cref="AuthorizationDenialReason.Unauthenticated" /> and <see cref="AuthorizationDenialReason.RequestDenied" />.
 /// </param>
 /// <param name="ResourceId">
 ///     The targeted resource for <see cref="AuthorizationDenialReason.ResourceAccessDenied" />, otherwise
@@ -55,5 +55,8 @@ public enum AuthorizationDenialReason
     ///     The <see cref="IResourceAccessPolicy" /> denied access to an <see cref="IResourceScoped" /> request's resource,
     ///     or no policy is registered.
     /// </summary>
-    ResourceAccessDenied
+    ResourceAccessDenied,
+
+    /// <summary>The request type's <see cref="IRequestAccessPolicy{TRequest}" /> denied the request.</summary>
+    RequestDenied
 }

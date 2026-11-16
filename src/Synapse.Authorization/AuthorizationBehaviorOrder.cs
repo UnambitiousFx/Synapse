@@ -4,7 +4,7 @@ namespace UnambitiousFx.Synapse.Authorization;
 
 /// <summary>
 ///     Pipeline positions (<see cref="IOrderedPipelineBehavior.Order" />) of the authorization behaviors: actor, then
-///     role, then scope, then resource, all in <see cref="PipelineStage.Authorization" /> (the band starting at
+///     role, then scope, then request policy, then resource, all in <see cref="PipelineStage.Authorization" /> (the band starting at
 ///     <c>PipelineStages.StartOf(PipelineStage.Authorization)</c>). Observability behaviors therefore wrap them, and
 ///     validation and transactions run inside them.
 /// </summary>
@@ -26,6 +26,9 @@ public static class AuthorizationBehaviorOrder
 
     /// <summary>Position of <see cref="ScopeAuthorizationBehavior{TRequest,TResult}" />.</summary>
     public const uint Scope = Stage + 3_000;
+
+    /// <summary>Position of <see cref="RequestPolicyAuthorizationBehavior{TRequest,TResult}" />.</summary>
+    public const uint RequestPolicy = Stage + 3_500;
 
     /// <summary>Position of <see cref="ResourceAuthorizationBehavior{TRequest,TResult}" />.</summary>
     public const uint Resource = Stage + 4_000;
