@@ -57,6 +57,26 @@ public sealed class RequestRegistrationVisitorTests
     }
 
     [Fact]
+    public void AddSynapse_RequestWithTwoHandlerShapes_VisitsEachShape()
+    {
+        // Arrange (Given)
+        var visitor = new RecordingVisitor();
+        var services = new ServiceCollection().AddRequestRegistrationVisitor(visitor);
+
+        // Act (When)
+        services.AddSynapse(cfg =>
+        {
+            cfg.RegisterRequestHandler<DualTypedHandler, DualRequest, string>();
+            cfg.RegisterStreamRequestHandler<DualStreamHandler, DualRequest, int>();
+        });
+
+        // Assert (Then)
+        Assert.Equal(
+            [("stream", typeof(DualRequest), (Type?)typeof(int)), ("typed", typeof(DualRequest), typeof(string))],
+            visitor.Visits.OrderBy(v => v.Kind));
+    }
+
+    [Fact]
     public void AddRegisterGroup_RequestRegisteredThroughBuilder_IsVisited()
     {
         // Arrange (Given)
@@ -175,6 +195,26 @@ public sealed class RequestRegistrationVisitorTests
     private sealed record TypedRequest : IRequest<string>;
 
     private sealed record StreamRequest : IStreamRequest<int>;
+
+    private sealed record DualRequest : IRequest<string>, IStreamRequest<int>;
+
+    private sealed class DualTypedHandler : IRequestHandler<DualRequest, string>
+    {
+        public ValueTask<Result<string>> HandleAsync(DualRequest request, CancellationToken cancellationToken = default)
+        {
+            return ValueTask.FromResult(Result.Success("x"));
+        }
+    }
+
+    private sealed class DualStreamHandler : IStreamRequestHandler<DualRequest, int>
+    {
+        public async IAsyncEnumerable<Result<int>> HandleAsync(DualRequest request,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            await Task.Yield();
+            yield return Result.Success(1);
+        }
+    }
 
     private sealed record TestEvent : IEvent;
 

@@ -22,10 +22,12 @@ public static class RequestRegistrationServiceCollectionExtensions
         return services;
     }
 
-    internal static void RecordRequestRegistration(this IServiceCollection services, Type requestType,
+    // The key identifies one handler shape (the closed handler service type), not the request type: a request type
+    // can have handlers on several dispatch paths, and each path must be visited.
+    internal static void RecordRequestRegistration(this IServiceCollection services, Type registrationKey,
         Action<IRequestRegistrationVisitor> visit)
     {
-        GetOrAdd(services).Record(requestType, visit);
+        GetOrAdd(services).Record(registrationKey, visit);
     }
 
     private static RequestRegistrations GetOrAdd(IServiceCollection services)
@@ -50,9 +52,9 @@ internal sealed class RequestRegistrations
     private readonly Dictionary<Type, Action<IRequestRegistrationVisitor>> _visits = new();
     private readonly List<IRequestRegistrationVisitor> _visitors = new();
 
-    public void Record(Type requestType, Action<IRequestRegistrationVisitor> visit)
+    public void Record(Type registrationKey, Action<IRequestRegistrationVisitor> visit)
     {
-        if (!_visits.TryAdd(requestType, visit))
+        if (!_visits.TryAdd(registrationKey, visit))
         {
             return;
         }

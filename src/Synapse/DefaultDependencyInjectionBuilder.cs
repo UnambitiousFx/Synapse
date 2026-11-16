@@ -41,7 +41,7 @@ internal sealed class DefaultDependencyInjectionBuilder : IDependencyInjectionBu
                     return handler.HandleAsync((TRequest)request, ct);
                 }));
         _probes.TryAdd(typeof(TRequest), describer => describer.Describe<TRequest, TResponse>());
-        _visits.TryAdd(typeof(TRequest), visitor => visitor.VisitRequest<TRequest, TResponse>());
+        _visits.TryAdd(typeof(IRequestHandler<TRequest, TResponse>), visitor => visitor.VisitRequest<TRequest, TResponse>());
         return this;
     }
 
@@ -60,7 +60,7 @@ internal sealed class DefaultDependencyInjectionBuilder : IDependencyInjectionBu
                     return handler.HandleAsync((TRequest)request, ct);
                 }));
         _probes.TryAdd(typeof(TRequest), describer => describer.Describe<TRequest>());
-        _visits.TryAdd(typeof(TRequest), visitor => visitor.VisitRequest<TRequest>());
+        _visits.TryAdd(typeof(IRequestHandler<TRequest>), visitor => visitor.VisitRequest<TRequest>());
         return this;
     }
 
@@ -101,7 +101,7 @@ internal sealed class DefaultDependencyInjectionBuilder : IDependencyInjectionBu
                     var handler = resolver.GetRequiredService<IStreamRequestHandler<TRequest, TItem>>();
                     return handler.HandleAsync((TRequest)request, ct);
                 }));
-        _visits.TryAdd(typeof(TRequest), visitor => visitor.VisitStreamRequest<TRequest, TItem>());
+        _visits.TryAdd(typeof(IStreamRequestHandler<TRequest, TItem>), visitor => visitor.VisitStreamRequest<TRequest, TItem>());
         return this;
     }
 
@@ -126,7 +126,7 @@ internal sealed class DefaultDependencyInjectionBuilder : IDependencyInjectionBu
                             return handler.HandleAsync((TRequest)request, ct);
                         }));
                 _probes.TryAdd(typeof(TRequest), describer => describer.Describe<TRequest, TResponse>());
-                _visits.TryAdd(typeof(TRequest), visitor => visitor.VisitRequest<TRequest, TResponse>());
+                _visits.TryAdd(typeof(IRequestHandler<TRequest, TResponse>), visitor => visitor.VisitRequest<TRequest, TResponse>());
             }
         });
         return this;
@@ -151,7 +151,7 @@ internal sealed class DefaultDependencyInjectionBuilder : IDependencyInjectionBu
                             return handler.HandleAsync((TRequest)request, ct);
                         }));
                 _probes.TryAdd(typeof(TRequest), describer => describer.Describe<TRequest>());
-                _visits.TryAdd(typeof(TRequest), visitor => visitor.VisitRequest<TRequest>());
+                _visits.TryAdd(typeof(IRequestHandler<TRequest>), visitor => visitor.VisitRequest<TRequest>());
             }
         });
         return this;
@@ -204,7 +204,7 @@ internal sealed class DefaultDependencyInjectionBuilder : IDependencyInjectionBu
                             var handler = resolver.GetRequiredService<IStreamRequestHandler<TRequest, TItem>>();
                             return handler.HandleAsync((TRequest)request, ct);
                         }));
-                _visits.TryAdd(typeof(TRequest), visitor => visitor.VisitStreamRequest<TRequest, TItem>());
+                _visits.TryAdd(typeof(IStreamRequestHandler<TRequest, TItem>), visitor => visitor.VisitStreamRequest<TRequest, TItem>());
             }
         });
         return this;
