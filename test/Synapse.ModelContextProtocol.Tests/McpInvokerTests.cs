@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using JetBrains.Annotations;
 using Microsoft.Extensions.Options;
 using ModelContextProtocol.Protocol;
@@ -68,6 +70,73 @@ public sealed class McpInvokerTests
         // Assert (Then)
         var text = Assert.IsType<TextContentBlock>(Assert.Single(result.Content));
         Assert.Equal($$"""{"id":"{{LoanId}}","label":"Home","amount":1}""", text.Text);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_WithSerializerOptions_SerializesWithTheirResolverAndConverters()
+    {
+        // Arrange (Given)
+        var invoker = Substitute.For<IInvoker>();
+        var request = new GetLoan(LoanId);
+        invoker.InvokeAsync(request, Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(Result.Success(new Loan(LoanId, "Home", 1200.5m))));
+        var serializerOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web)
+        {
+            TypeInfoResolver = JsonTypeInfoResolver.Combine(OtherJsonContext.Default, TestJsonContext.Default),
+            Converters = { new UpperCaseGuidConverter() }
+        };
+        var sut = CreateSut(invoker, new SynapseMcpOptions { SerializerOptions = serializerOptions });
+
+        // Act (When)
+        var result = await sut.InvokeAsync(request, TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        var text = Assert.IsType<TextContentBlock>(Assert.Single(result.Content));
+        Assert.Equal($$"""{"id":"{{LoanId.ToString().ToUpperInvariant()}}","label":"Home","amount":1200.5}""",
+            text.Text);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_WithSerializerOptionsAndJsonContext_PrefersSerializerOptions()
+    {
+        // Arrange (Given)
+        var invoker = Substitute.For<IInvoker>();
+        var request = new GetLoan(LoanId);
+        invoker.InvokeAsync(request, Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(Result.Success(new Loan(LoanId, "Home", 1m))));
+        var serializerOptions = new JsonSerializerOptions
+        {
+            TypeInfoResolver = new DefaultJsonTypeInfoResolver()
+        };
+        var sut = CreateSut(invoker,
+            new SynapseMcpOptions { SerializerOptions = serializerOptions, JsonContext = TestJsonContext.Default });
+
+        // Act (When)
+        var result = await sut.InvokeAsync(request, TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        var text = Assert.IsType<TextContentBlock>(Assert.Single(result.Content));
+        Assert.Equal($$"""{"Id":"{{LoanId}}","Label":"Home","Amount":1}""", text.Text);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_WhenResponseTypeIsMissingFromSerializerOptions_ThrowsNamingThem()
+    {
+        // Arrange (Given)
+        var invoker = Substitute.For<IInvoker>();
+        var request = new GetUnregistered();
+        invoker.InvokeAsync(request, Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(Result.Success(new Unregistered("x"))));
+        var serializerOptions = new JsonSerializerOptions { TypeInfoResolver = TestJsonContext.Default };
+        var sut = CreateSut(invoker, new SynapseMcpOptions { SerializerOptions = serializerOptions });
+
+        // Act (When)
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await sut.InvokeAsync(request, TestContext.Current.CancellationToken));
+
+        // Assert (Then)
+        Assert.Contains(nameof(Unregistered), exception.Message);
+        Assert.Contains(nameof(SynapseMcpOptions.SerializerOptions), exception.Message);
     }
 
     [Fact]
