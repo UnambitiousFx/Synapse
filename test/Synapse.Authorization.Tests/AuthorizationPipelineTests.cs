@@ -108,7 +108,7 @@ public sealed class AuthorizationPipelineTests
     }
 
     [Fact]
-    public void Describe_ListsTheBehaviorsInActorRoleScopeResourceOrderInAuthorizationStage()
+    public void Describe_ListsTheBehaviorsInActorRoleScopeRequestResourceOrderInAuthorizationStage()
     {
         // Arrange (Given)
         using var provider = BuildProvider(Principals.Authenticated());
@@ -128,6 +128,7 @@ public sealed class AuthorizationPipelineTests
             typeof(ActorAuthorizationBehavior<RenameItem, Result>),
             typeof(RoleAuthorizationBehavior<RenameItem, Result>),
             typeof(ScopeAuthorizationBehavior<RenameItem, Result>),
+            typeof(RequestPolicyAuthorizationBehavior<RenameItem, Result>),
             typeof(ResourceAuthorizationBehavior<RenameItem, Result>)
         ], authorization.Select(b => b.Type));
         Assert.All(authorization, b => Assert.Equal(PipelineStage.Authorization, b.Stage));
@@ -160,8 +161,9 @@ public sealed class AuthorizationPipelineTests
         Assert.Equal(
         [
             typeof(ActorAuthorizationBehavior<,>), typeof(RoleAuthorizationBehavior<,>),
-            typeof(ScopeAuthorizationBehavior<,>), typeof(ResourceAuthorizationBehavior<,>), typeof(AuditBehavior<,>)
-        ], types.Skip(types.IndexOf(typeof(ActorAuthorizationBehavior<,>))).Take(5));
+            typeof(ScopeAuthorizationBehavior<,>), typeof(RequestPolicyAuthorizationBehavior<,>),
+            typeof(ResourceAuthorizationBehavior<,>), typeof(AuditBehavior<,>)
+        ], types.Skip(types.IndexOf(typeof(ActorAuthorizationBehavior<,>))).Take(6));
     }
 
     [Fact]
@@ -247,7 +249,7 @@ public sealed class AuthorizationPipelineTests
         services.AddSynapseAuthorization();
 
         // Assert (Then)
-        Assert.Equal(4, services.Count(d => d.ServiceType == typeof(IResultPipelineBehavior<,>)));
+        Assert.Equal(5, services.Count(d => d.ServiceType == typeof(IResultPipelineBehavior<,>)));
     }
 
     [Fact]
@@ -264,6 +266,82 @@ public sealed class AuthorizationPipelineTests
         var policy = Assert.Single(services, d => d.ServiceType == typeof(IResourceAccessPolicy));
         Assert.Equal(typeof(DenyAllPolicy), policy.ImplementationType);
         Assert.Equal(ServiceLifetime.Scoped, policy.Lifetime);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_WithRequestPolicy_DeniesAfterTheScopeCheck()
+    {
+        // Arrange (Given)
+        var services = CreateServices(Principals.Authenticated(scopes: ["write"]),
+            cfg => cfg.RegisterRequestHandler<CreateInvoiceHandler, CreateInvoice>());
+        services.AddSynapseAuthorization(o =>
+        {
+            o.DenialRecorder<LoggingDenialRecorder>();
+            o.RequestPolicy<CreateInvoice, BillableCustomersPolicy>();
+        });
+        await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        await using var scope = provider.CreateAsyncScope();
+        var invoker = scope.ServiceProvider.GetRequiredService<IInvoker>();
+
+        // Act (When)
+        var allowed = await invoker.InvokeAsync(new CreateInvoice("billable"), TestContext.Current.CancellationToken);
+        var denied = await invoker.InvokeAsync(new CreateInvoice("other"), TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.True(allowed.IsSuccess);
+        Assert.True(denied.TryGetFailure(out var failure));
+        Assert.IsType<UnauthorizedFailure>(failure);
+        var denial = Assert.Single(provider.GetRequiredService<DenialLog>().Denials);
+        Assert.Equal(AuthorizationDenialReason.RequestDenied, denial.Reason);
+        Assert.Equal(1, provider.GetRequiredService<HandlerCalls>().Count);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_WithRequestPolicyButWithoutScope_ReportsTheScope()
+    {
+        // Arrange (Given)
+        var services = CreateServices(Principals.Authenticated(),
+            cfg => cfg.RegisterRequestHandler<CreateInvoiceHandler, CreateInvoice>());
+        services.AddSynapseAuthorization(o =>
+        {
+            o.DenialRecorder<LoggingDenialRecorder>();
+            o.RequestPolicy<CreateInvoice, BillableCustomersPolicy>();
+        });
+        await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        await using var scope = provider.CreateAsyncScope();
+        var invoker = scope.ServiceProvider.GetRequiredService<IInvoker>();
+
+        // Act (When)
+        await invoker.InvokeAsync(new CreateInvoice("other"), TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        var denial = Assert.Single(provider.GetRequiredService<DenialLog>().Denials);
+        Assert.Equal(AuthorizationDenialReason.MissingScope, denial.Reason);
+    }
+
+    [Fact]
+    public void AddSynapseAuthorization_WithRequestPolicy_ReplacesThePreviousOne()
+    {
+        // Arrange (Given)
+        var services = new ServiceCollection();
+        services.AddScoped<IRequestAccessPolicy<CreateInvoice>>(_ => new BillableCustomersPolicy());
+
+        // Act (When)
+        services.AddSynapseAuthorization(o => o.RequestPolicy<CreateInvoice, BillableCustomersPolicy>());
+
+        // Assert (Then)
+        var policy = Assert.Single(services, d => d.ServiceType == typeof(IRequestAccessPolicy<CreateInvoice>));
+        Assert.Equal(typeof(BillableCustomersPolicy), policy.ImplementationType);
+        Assert.Equal(ServiceLifetime.Scoped, policy.Lifetime);
+    }
+
+    private sealed class CreateInvoiceHandler(HandlerCalls calls) : IRequestHandler<CreateInvoice>
+    {
+        public ValueTask<Result> HandleAsync(CreateInvoice request, CancellationToken cancellationToken = default)
+        {
+            calls.Count++;
+            return new ValueTask<Result>(Result.Success());
+        }
     }
 
     private static ServiceProvider BuildProvider(ICurrentPrincipal principal,

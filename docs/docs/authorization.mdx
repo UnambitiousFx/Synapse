@@ -67,16 +67,17 @@ An `IAllowAnonymous` request:
 
 ## The checks
 
-Four behaviors run on every `Result` and `Result<T>` request, in a fixed order. The first one that denies the request short-circuits the pipeline: the handler and the later checks do not run.
+Five behaviors run on every `Result` and `Result<T>` request, in a fixed order. The first one that denies the request short-circuits the pipeline: the handler and the later checks do not run.
 
 | Order | Behavior | Applies to | Denial |
 |---|---|---|---|
 | `AuthorizationBehaviorOrder.Actor` | `ActorAuthorizationBehavior` | every request except `IAllowAnonymous` | `UnauthenticatedFailure` when `ICurrentPrincipal.IsAuthenticated` is false |
 | `AuthorizationBehaviorOrder.Role` | `RoleAuthorizationBehavior` | `IRequiresRole` | `UnauthorizedFailure` when the caller is not in `Role` |
 | `AuthorizationBehaviorOrder.Scope` | `ScopeAuthorizationBehavior` | queries, commands, `IRequiresScope` | `UnauthorizedFailure` when the caller lacks the scope |
+| `AuthorizationBehaviorOrder.RequestPolicy` | `RequestPolicyAuthorizationBehavior` | request types with an `IRequestAccessPolicy<TRequest>` | `UnauthorizedFailure` when the policy says no |
 | `AuthorizationBehaviorOrder.Resource` | `ResourceAuthorizationBehavior` | `IResourceScoped`, `IOptionallyResourceScoped` with a resource | `UnauthorizedFailure` when the policy says no |
 
-All four run in `PipelineStage.Authorization`: their `Order` values sit in that stage's band (`PipelineStages.StartOf(PipelineStage.Authorization) + 1000`, `+ 2000`, ...). Observability behaviors (tracing, logging) therefore wrap them, and validation and transactions run inside them. See [pipeline stages](./pipelines).
+All five run in `PipelineStage.Authorization`: their `Order` values sit in that stage's band (`PipelineStages.StartOf(PipelineStage.Authorization) + 1000`, `+ 2000`, ...). Observability behaviors (tracing, logging) therefore wrap them, and validation and transactions run inside them. See [pipeline stages](./pipelines).
 
 Place your own behaviors by stage rather than by number:
 
@@ -93,12 +94,12 @@ public sealed class AuditBehavior<TRequest, TResult> : IResultPipelineBehavior<T
 Use `cfg.ConfigureBehaviorOrdering(...)` for a behavior the source generator does not see.
 
 :::warning Putting a behavior between two checks
-`Before` / `After` only order the two behaviors they name. A behavior declared `After = Actor, Before = Role` runs before `Role`, but `Scope` and `Resource`, which it does not name, can then run before `Role` too. To sit between two checks, use the numeric gaps instead, which keep the four in order: `Order => AuthorizationBehaviorOrder.Resource - 1` loads a tenant just before the resource check.
+`Before` / `After` only order the two behaviors they name. A behavior declared `After = Actor, Before = Role` runs before `Role`, but `Scope` and `Resource`, which it does not name, can then run before `Role` too. To sit between two checks, use the numeric gaps instead, which keep the checks in order: `Order => AuthorizationBehaviorOrder.Resource - 1` loads a tenant just before the resource check.
 :::
 
 ### Stream requests
 
-`AddSynapseAuthorization()` also authorizes stream requests (`IStreamRequest<T>`), with no extra registration. `StreamAuthorizationBehavior` runs the same four checks in the same order, at `AuthorizationBehaviorOrder.Actor`. The markers, the resource policy and the denial recorders all apply. A stream counts as a query, so it needs `QueryScope` unless it implements `IRequiresScope`.
+`AddSynapseAuthorization()` also authorizes stream requests (`IStreamRequest<T>`), with no extra registration. `StreamAuthorizationBehavior` runs the same checks in the same order, at `AuthorizationBehaviorOrder.Actor`. The markers, the resource and request policies, the denial recorders and the denial failure all apply. A stream counts as a query, so it needs `QueryScope` unless it implements `IRequiresScope`.
 
 The checks run once, before the handler starts. A denied stream yields a single failed item (`UnauthenticatedFailure` or `UnauthorizedFailure`), and the handler never runs:
 
@@ -116,7 +117,7 @@ await foreach (var item in invoker.InvokeStreamAsync(new ExportLoans(householdId
 
 Over HTTP, `IHttpInvoker.InvokeStreamAsync` turns that denied first item into the matching `401` or `403` Problem Details response instead of streaming an empty `200`.
 
-The four checks share one behavior on streams, so a behavior of your own cannot sit between two of them.
+The checks share one behavior on streams, so a behavior of your own cannot sit between two of them.
 
 ## Markers
 
@@ -177,6 +178,26 @@ public sealed class LoanAccessPolicy(LoansDbContext db) : IResourceAccessPolicy
 
 `request` is the request itself, so you can pattern-match it to read more than `ResourceId` and `Access`. Without a registered policy, every `IResourceScoped` request is denied: the behavior fails closed.
 
+## Request policies
+
+A request that creates a resource has no resource to check yet, but often still needs a check on what it asks for: an invoice for a customer the caller may bill, an account in a branch the caller belongs to, a booking in an open period. Write a policy for that request type:
+
+```csharp
+public sealed class InvoiceCreationPolicy(IBillingRights rights) : IRequestAccessPolicy<CreateInvoice>
+{
+    public ValueTask<bool> IsAllowedAsync(ICurrentPrincipal principal, CreateInvoice request,
+        CancellationToken cancellationToken = default)
+        => rights.MayBillAsync(principal.Id!, request.CustomerId, cancellationToken);
+}
+
+services.AddSynapseAuthorization(o => o.RequestPolicy<CreateInvoice, InvoiceCreationPolicy>());
+```
+
+`RequestPolicy<TRequest, TPolicy>()` registers it as a scoped service, replacing any policy already registered for that request type. Registering `IRequestAccessPolicy<CreateInvoice>` in the container yourself works too.
+
+- **It runs after the scope check and before the resource check**, for requests and streams. A request type without a policy is not checked: no marker is needed.
+- **A denial** is an `UnauthorizedFailure`, reported to the recorders with the reason `RequestDenied`.
+
 ## Recording denials
 
 Every denial is passed to each registered `IAuthorizationDenialRecorder` before the failure is returned:
@@ -193,7 +214,7 @@ public sealed class AuditDenials(ILogger<AuditDenials> logger) : IAuthorizationD
 }
 ```
 
-`AuthorizationDenial` carries the request, the `Reason` (`Unauthenticated`, `MissingRole`, `MissingScope`, `ResourceAccessDenied`), the caller's `Id`, the missing role, scope or access in `Requirement`, and the `ResourceId` for resource denials.
+`AuthorizationDenial` carries the request, the `Reason` (`Unauthenticated`, `MissingRole`, `MissingScope`, `ResourceAccessDenied`, `RequestDenied`), the caller's `Id`, the missing role, scope or access in `Requirement`, and the `ResourceId` for resource denials.
 
 ## Denial failures
 

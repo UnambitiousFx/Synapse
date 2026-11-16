@@ -31,6 +31,8 @@ public sealed record StreamAccounts(string? AccountId) : IStreamRequest<int>, IO
     public string Access => "read";
 }
 
+public sealed record StreamInvoices(string CustomerId) : IStreamRequest<int>;
+
 public sealed record StreamPublicFeed : IStreamRequest<int>, IAllowAnonymous;
 
 public sealed record StreamPublicAdmin : IStreamRequest<int>, IAllowAnonymous, IRequiresRole
@@ -197,6 +199,27 @@ public sealed class StreamAuthorizationTests
         Assert.Equal("acc-1", Assert.Single(provider.GetRequiredService<StreamDenialLog>().Denials).ResourceId);
     }
 
+    [Theory]
+    [InlineData("billable", true)]
+    [InlineData("other", false)]
+    public async Task InvokeStreamAsync_WithRequestPolicy_AsksIt(string customerId, bool allowed)
+    {
+        // Arrange (Given)
+        await using var provider = BuildProvider(Principals.Authenticated(scopes: ["read"]));
+
+        // Act (When)
+        var items = await CollectAsync(provider, new StreamInvoices(customerId));
+
+        // Assert (Then)
+        Assert.Equal(allowed, Assert.Single(items).IsSuccess);
+        Assert.Equal(allowed ? 0 : 1, provider.GetRequiredService<StreamDenialLog>().Denials.Count);
+        if (!allowed)
+        {
+            Assert.Equal(AuthorizationDenialReason.RequestDenied,
+                provider.GetRequiredService<StreamDenialLog>().Denials[0].Reason);
+        }
+    }
+
     [Fact]
     public async Task InvokeStreamAsync_AllowAnonymousFromAnonymousCaller_YieldsItems()
     {
@@ -281,6 +304,7 @@ public sealed class StreamAuthorizationTests
             cfg.RegisterStreamRequestHandler<CountingHandler<StreamExport>, StreamExport, int>();
             cfg.RegisterStreamRequestHandler<CountingHandler<StreamHousehold>, StreamHousehold, int>();
             cfg.RegisterStreamRequestHandler<CountingHandler<StreamAccounts>, StreamAccounts, int>();
+            cfg.RegisterStreamRequestHandler<CountingHandler<StreamInvoices>, StreamInvoices, int>();
             cfg.RegisterStreamRequestHandler<CountingHandler<StreamPublicFeed>, StreamPublicFeed, int>();
             cfg.RegisterStreamRequestHandler<CountingHandler<StreamPublicAdmin>, StreamPublicAdmin, int>();
             cfg.RegisterStreamRequestHandler<CountingHandler<StreamPublicScoped>, StreamPublicScoped, int>();
@@ -289,6 +313,7 @@ public sealed class StreamAuthorizationTests
         services.AddSynapseAuthorization(o =>
         {
             o.DenialRecorder<LoggingRecorder>();
+            o.RequestPolicy<StreamInvoices, BillableInvoicesPolicy>();
             if (policyAllows is { } allows)
             {
                 if (allows)
@@ -336,6 +361,16 @@ public sealed class StreamAuthorizationTests
         {
             log.Denials.Add(denial);
             return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class BillableInvoicesPolicy : IRequestAccessPolicy<StreamInvoices>
+    {
+        public ValueTask<bool> IsAllowedAsync(ICurrentPrincipal principal,
+            StreamInvoices request,
+            CancellationToken cancellationToken = default)
+        {
+            return new ValueTask<bool>(request.CustomerId == "billable");
         }
     }
 

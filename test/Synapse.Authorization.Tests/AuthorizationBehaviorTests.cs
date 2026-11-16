@@ -464,3 +464,85 @@ public sealed class ResourceAuthorizationBehaviorTests
         await second.ReceivedWithAnyArgs(1).RecordAsync(null!, CancellationToken.None);
     }
 }
+
+[TestSubject(typeof(RequestPolicyAuthorizationBehavior<,>))]
+public sealed class RequestPolicyAuthorizationBehaviorTests
+{
+    [Fact]
+    public async Task HandleAsync_WithoutPolicy_CallsNext()
+    {
+        // Arrange (Given)
+        var calls = new PipelineCalls();
+        var behavior = new RequestPolicyAuthorizationBehavior<CreateInvoice, Result>(Principals.Authenticated(), []);
+
+        // Act (When)
+        var result = await behavior.HandleAsync(new CreateInvoice("anyone"), calls.Next<CreateInvoice>(),
+            TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.True(result.IsSuccess);
+        Assert.Equal(1, calls.Count);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenPolicyAllows_CallsNext()
+    {
+        // Arrange (Given)
+        var calls = new PipelineCalls();
+        var behavior = new RequestPolicyAuthorizationBehavior<CreateInvoice, Result>(Principals.Authenticated(), [],
+            new BillableCustomersPolicy());
+
+        // Act (When)
+        var result = await behavior.HandleAsync(new CreateInvoice("billable"), calls.Next<CreateInvoice>(),
+            TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.True(result.IsSuccess);
+        Assert.Equal(1, calls.Count);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenPolicyDenies_ReturnsUnauthorizedFailureAndRecordsDenial()
+    {
+        // Arrange (Given)
+        var calls = new PipelineCalls();
+        var recorder = Substitute.For<IAuthorizationDenialRecorder>();
+        var behavior = new RequestPolicyAuthorizationBehavior<CreateInvoice, Result>(Principals.Authenticated(),
+            [recorder], new BillableCustomersPolicy());
+        var request = new CreateInvoice("someone-else");
+
+        // Act (When)
+        var result = await behavior.HandleAsync(request, calls.Next<CreateInvoice>(),
+            TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.True(result.TryGetFailure(out var failure));
+        Assert.IsType<UnauthorizedFailure>(failure);
+        Assert.Equal(0, calls.Count);
+        await recorder.Received(1).RecordAsync(
+            new AuthorizationDenial(request, AuthorizationDenialReason.RequestDenied, "user-1"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenPolicyDenies_AppliesDenialFailure()
+    {
+        // Arrange (Given)
+        var options = new SynapseAuthorizationOptions
+        {
+            DenialFailure = d => d.Reason == AuthorizationDenialReason.RequestDenied
+                ? new UnauthorizedFailure("You may not bill this customer.") { Code = "billing.customer_denied" }
+                : null
+        };
+        var behavior = new RequestPolicyAuthorizationBehavior<CreateInvoice, Result>(Principals.Authenticated(), [],
+            new BillableCustomersPolicy(), options);
+
+        // Act (When)
+        var result = await behavior.HandleAsync(new CreateInvoice("someone-else"),
+            new PipelineCalls().Next<CreateInvoice>(), TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.True(result.TryGetFailure(out var failure));
+        Assert.Equal("billing.customer_denied", failure.Code);
+    }
+}
