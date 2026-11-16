@@ -21,7 +21,7 @@ internal static class RequestIntentOf<TRequest>
 
     public static RequestIntent Value => _value ??
                                          throw new InvalidOperationException(
-                                             $"The request type '{typeof(TRequest)}' was not registered through Synapse, so its authorization intent is unknown.");
+                                             $"The request type '{typeof(TRequest)}' was not registered through Synapse, so its authorization intent is unknown (or AddSynapseAuthorization was not called on the same service collection).");
 
     public static void Set(RequestIntent intent)
     {

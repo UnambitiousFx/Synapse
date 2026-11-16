@@ -12,14 +12,13 @@ public static class ServiceCollectionExtensions
 {
     /// <summary>
     ///     Authorizes every request Synapse registers, for both <c>Result</c> and <c>Result&lt;T&gt;</c> requests, in this
-    ///     order: reject
-    ///     anonymous callers (<c>UnauthenticatedFailure</c>) unless the request is <see cref="IAllowAnonymous" />, then
+    ///     order: reject anonymous callers (<c>UnauthenticatedFailure</c>) unless the request is <see cref="IAllowAnonymous" />, then
     ///     check <see cref="IRequiresRole" />, then the scope (the request's <see cref="IRequiresScope" />, or the default
     ///     query / command scope), then the request type's <see cref="IRequestAccessPolicy{TRequest}" /> if one is
     ///     registered, then <see cref="IResourceScoped" /> against the <see cref="IResourceAccessPolicy" />.
     ///     A denial returns an <c>UnauthorizedFailure</c>, is reported to every
     ///     <see cref="IAuthorizationDenialRecorder" />, and the handler is not called. Stream requests get the same checks
-    ///     through <see cref="StreamAuthorizationBehavior{TRequest,TItem}" />, a stream counting as a query.
+    ///     through <see cref="StreamAuthorizationBehavior{TRequest,TItem}" />, a stream counting as a query unless it is a command.
     ///     Command and query markers are read through the handler shapes registered for the request (the
     ///     <c>ICommand&lt;T&gt;</c> / <c>IQuery&lt;T&gt;</c> whose <c>T</c> is the handler's response type, or the
     ///     non-generic <c>ICommand</c>); when a type has several handler shapes, the strictest intent applies (command

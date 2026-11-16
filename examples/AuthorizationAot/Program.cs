@@ -37,6 +37,9 @@ Check("anonymous command allowed", await invoker.InvokeAsync(new Open()), null);
 principal.Set(scopes: "write");
 Check("command without role", await invoker.InvokeAsync(new AdminOnly()), typeof(UnauthorizedFailure));
 
+principal.Set(scopes: "read");
+Check("command with only the query scope", await invoker.InvokeAsync(new Rename("n")), typeof(UnauthorizedFailure));
+
 principal.Set(scopes: "export");
 Check("query with own scope", await invoker.InvokeAsync(new Export()), null);
 
@@ -111,6 +114,8 @@ namespace UnambitiousFx.Examples.AuthorizationAot
         public string Access => "read";
     }
 
+    public sealed record Rename(string Name) : ICommand<string>;
+
     public readonly record struct Count : IQuery<int>;
 
     public sealed record Numbers : IStreamRequest<int>;
@@ -148,6 +153,13 @@ namespace UnambitiousFx.Examples.AuthorizationAot
     {
         public ValueTask<Result<string>> HandleAsync(Document request, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(Result.Success("doc"));
+    }
+
+    [RequestHandler<Rename, string>]
+    public sealed class RenameHandler : IRequestHandler<Rename, string>
+    {
+        public ValueTask<Result<string>> HandleAsync(Rename request, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(Result.Success(request.Name));
     }
 
     [RequestHandler<Count, int>]
