@@ -23,6 +23,13 @@
       "groupName": "microsoft"
     },
     {
+      "description": "The generator stays on the Roslyn of the oldest supported SDK (8.0.100): a newer one breaks consumers on an older SDK (CS9057).",
+      "matchManagers": ["nuget"],
+      "matchFileNames": ["src/Synapse.Generator/**"],
+      "matchPackageNames": ["Microsoft.CodeAnalysis.**"],
+      "enabled": false
+    },
+    {
       "matchManagers": ["nuget"],
       "matchPackageNames": ["BenchmarkDotNet**"],
       "groupName": "benchmarkdotnet"

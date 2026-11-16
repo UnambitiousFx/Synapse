@@ -16,9 +16,15 @@
     </PropertyGroup>
 
 
+    <!--
+        The consumer's compiler loads the generator, whatever the project's target framework: it refuses an analyzer
+        built against a newer Roslyn than itself (CS9057). Build against the compiler of the oldest SDK we support,
+        .NET SDK 8.0.100 (Roslyn 4.8), and never bump it with the rest of the dependencies (renovate.json).
+        GeneratorRoslynFloorTests guards it.
+    -->
     <ItemGroup>
-        <PackageReference Include="Microsoft.CodeAnalysis.CSharp" PrivateAssets="all" />
-        <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" PrivateAssets="all" />
+        <PackageReference Include="Microsoft.CodeAnalysis.CSharp" VersionOverride="4.8.0" PrivateAssets="all" />
+        <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" VersionOverride="3.11.0" PrivateAssets="all" />
     </ItemGroup>
 
     <ItemGroup>
