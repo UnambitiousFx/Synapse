@@ -1,7 +1,12 @@
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Abstractions;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using UnambitiousFx.Functional;
 using UnambitiousFx.Functional.AspNetCore.Mappers;
+using UnambitiousFx.Functional.Failures;
 using UnambitiousFx.Synapse.Abstractions;
 using UnambitiousFx.Synapse.AspNetCore.Mvc;
 
@@ -65,6 +70,29 @@ public sealed class MvcInvokerTests
 
         // Assert (Then)
         Assert.NotNull(result);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_WhenUnauthenticated_Returns401WithBearerChallenge()
+    {
+        // Arrange (Given)
+        var invoker = Substitute.For<IInvoker>();
+        var sut = new MvcInvoker(invoker, new DefaultFailureHttpMapper());
+        var request = new IntRequest();
+        var http = new HttpTestContext(services => services.AddMvcCore());
+        var actionContext = new ActionContext(http.Context, new RouteData(), new ActionDescriptor());
+
+        invoker.InvokeAsync(request, Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(Result.Failure<int>(new UnauthenticatedFailure("Authentication is required."))));
+
+        // Act (When)
+        var result = await sut.InvokeAsync(request, TestContext.Current.CancellationToken);
+        await result.ExecuteResultAsync(actionContext);
+        await http.StartAsync();
+
+        // Assert (Then)
+        Assert.Equal(StatusCodes.Status401Unauthorized, http.Response.StatusCode);
+        Assert.Equal("Bearer", http.Response.Headers.WWWAuthenticate.ToString());
     }
 
     private sealed record IntRequest : IRequest<int>;

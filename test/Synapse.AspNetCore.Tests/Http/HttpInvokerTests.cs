@@ -1,7 +1,10 @@
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using UnambitiousFx.Functional;
 using UnambitiousFx.Functional.AspNetCore.Mappers;
+using UnambitiousFx.Functional.Failures;
 using UnambitiousFx.Synapse.Abstractions;
 using UnambitiousFx.Synapse.AspNetCore.Http;
 
@@ -68,34 +71,166 @@ public sealed class HttpInvokerTests
     }
 
     [Fact]
-    public async Task InvokeStreamAsync_WhenStreamContainsFailures_FiltersFailedItems()
+    public async Task InvokeAsync_WhenUnauthenticated_Returns401WithBearerChallenge()
     {
         // Arrange (Given)
         var invoker = Substitute.For<IInvoker>();
-        var failureMapper = Substitute.For<IFailureHttpMapper>();
-        var sut = new HttpInvoker(invoker, failureMapper);
-        var request = new IntStreamRequest();
+        var sut = new HttpInvoker(invoker, new DefaultFailureHttpMapper());
+        var request = new IntRequest();
+        var http = new HttpTestContext();
 
-        invoker.InvokeStreamAsync(request, Arg.Any<CancellationToken>())
-            .Returns(CreateStream());
+        invoker.InvokeAsync(request, Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(Result.Failure<int>(new UnauthenticatedFailure("Authentication is required."))));
 
         // Act (When)
-        var items = new List<int>();
-        await foreach (var item in sut.InvokeStreamAsync(request, TestContext.Current.CancellationToken))
-        {
-            items.Add(item);
-        }
+        var result = await sut.InvokeAsync(request, TestContext.Current.CancellationToken);
+        await result.ExecuteAsync(http.Context);
+        await http.StartAsync();
 
         // Assert (Then)
-        Assert.Equal([1, 3], items);
+        Assert.Equal(StatusCodes.Status401Unauthorized, http.Response.StatusCode);
+        Assert.Equal("Bearer", http.Response.Headers.WWWAuthenticate.ToString());
     }
 
-    private static async IAsyncEnumerable<Result<int>> CreateStream()
+    [Fact]
+    public async Task InvokeAsync_WhenUnauthenticated_ChallengesWithDefaultChallengeScheme()
     {
-        yield return Result.Success(1);
-        yield return Result.Failure<int>("failed");
-        yield return Result.Success(3);
-        await Task.CompletedTask;
+        // Arrange (Given)
+        var invoker = Substitute.For<IInvoker>();
+        var sut = new HttpInvoker(invoker, new DefaultFailureHttpMapper());
+        var request = new VoidRequest();
+        var http = new HttpTestContext(services => services.AddAuthentication(o =>
+        {
+            o.AddScheme<NoopAuthenticationHandler>("Negotiate", null);
+            o.DefaultChallengeScheme = "Negotiate";
+        }));
+
+        invoker.InvokeAsync(request, Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(Result.Failure(new UnauthenticatedFailure("Authentication is required."))));
+
+        // Act (When)
+        var result = await sut.InvokeAsync(request, TestContext.Current.CancellationToken);
+        await result.ExecuteAsync(http.Context);
+        await http.StartAsync();
+
+        // Assert (Then)
+        Assert.Equal(StatusCodes.Status401Unauthorized, http.Response.StatusCode);
+        Assert.Equal("Negotiate", http.Response.Headers.WWWAuthenticate.ToString());
+    }
+
+    [Fact]
+    public async Task InvokeAsync_WhenForbidden_Returns403WithoutChallenge()
+    {
+        // Arrange (Given)
+        var invoker = Substitute.For<IInvoker>();
+        var sut = new HttpInvoker(invoker, new DefaultFailureHttpMapper());
+        var request = new IntRequest();
+        var http = new HttpTestContext();
+
+        invoker.InvokeAsync(request, Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(Result.Failure<int>(new UnauthorizedFailure("Denied."))));
+
+        // Act (When)
+        var result = await sut.InvokeAsync(request, _ => new StaticResult(200), TestContext.Current.CancellationToken);
+        await result.ExecuteAsync(http.Context);
+        await http.StartAsync();
+
+        // Assert (Then)
+        Assert.Equal(StatusCodes.Status403Forbidden, http.Response.StatusCode);
+        Assert.False(http.Response.Headers.ContainsKey("WWW-Authenticate"));
+    }
+
+    [Fact]
+    public async Task InvokeStreamAsync_WhenFirstItemIsDenied_ReturnsMappedFailure()
+    {
+        // Arrange (Given)
+        var invoker = Substitute.For<IInvoker>();
+        var sut = new HttpInvoker(invoker, new DefaultFailureHttpMapper());
+        var request = new IntStreamRequest();
+        var http = new HttpTestContext();
+
+        invoker.InvokeStreamAsync(request, Arg.Any<CancellationToken>())
+            .Returns(Stream(Result.Failure<int>(new UnauthenticatedFailure("Authentication is required."))));
+
+        // Act (When)
+        var result = await sut.InvokeStreamAsync(request, TestContext.Current.CancellationToken);
+        await result.ExecuteAsync(http.Context);
+        await http.StartAsync();
+
+        // Assert (Then)
+        Assert.Equal(StatusCodes.Status401Unauthorized, http.Response.StatusCode);
+        Assert.Equal("Bearer", http.Response.Headers.WWWAuthenticate.ToString());
+        Assert.Equal("application/problem+json", http.Response.ContentType);
+    }
+
+    [Fact]
+    public async Task InvokeStreamAsync_WhenAllItemsSucceed_Streams200JsonArray()
+    {
+        // Arrange (Given)
+        var invoker = Substitute.For<IInvoker>();
+        var sut = new HttpInvoker(invoker, new DefaultFailureHttpMapper());
+        var request = new IntStreamRequest();
+        var http = new HttpTestContext();
+
+        invoker.InvokeStreamAsync(request, Arg.Any<CancellationToken>())
+            .Returns(Stream(Result.Success(1), Result.Success(2)));
+
+        // Act (When)
+        var result = await sut.InvokeStreamAsync(request, TestContext.Current.CancellationToken);
+        await result.ExecuteAsync(http.Context);
+
+        // Assert (Then)
+        Assert.Equal(StatusCodes.Status200OK, http.Response.StatusCode);
+        Assert.Equal("[1,2]", http.Body());
+    }
+
+    [Fact]
+    public async Task InvokeStreamAsync_WhenStreamIsEmpty_Returns200EmptyArray()
+    {
+        // Arrange (Given)
+        var invoker = Substitute.For<IInvoker>();
+        var sut = new HttpInvoker(invoker, new DefaultFailureHttpMapper());
+        var request = new IntStreamRequest();
+        var http = new HttpTestContext();
+
+        invoker.InvokeStreamAsync(request, Arg.Any<CancellationToken>())
+            .Returns(Stream());
+
+        // Act (When)
+        var result = await sut.InvokeStreamAsync(request, TestContext.Current.CancellationToken);
+        await result.ExecuteAsync(http.Context);
+
+        // Assert (Then)
+        Assert.Equal(StatusCodes.Status200OK, http.Response.StatusCode);
+        Assert.Equal("[]", http.Body());
+    }
+
+    [Fact]
+    public async Task InvokeStreamAsync_WhenItemFailsAfterResponseStarted_Throws()
+    {
+        // Arrange (Given)
+        var invoker = Substitute.For<IInvoker>();
+        var sut = new HttpInvoker(invoker, new DefaultFailureHttpMapper());
+        var request = new IntStreamRequest();
+        var http = new HttpTestContext();
+
+        invoker.InvokeStreamAsync(request, Arg.Any<CancellationToken>())
+            .Returns(Stream(Result.Success(1), Result.Failure<int>("failed"), Result.Success(3)));
+
+        // Act (When)
+        var result = await sut.InvokeStreamAsync(request, TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        await Assert.ThrowsAsync<InvalidOperationException>(() => result.ExecuteAsync(http.Context));
+    }
+
+    private static async IAsyncEnumerable<Result<int>> Stream(params Result<int>[] items)
+    {
+        foreach (var item in items)
+        {
+            await Task.Yield();
+            yield return item;
+        }
     }
 
     private sealed record IntRequest : IRequest<int>;
@@ -109,6 +244,29 @@ public sealed class HttpInvokerTests
         public Task ExecuteAsync(HttpContext httpContext)
         {
             httpContext.Response.StatusCode = statusCode;
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class NoopAuthenticationHandler : IAuthenticationHandler
+    {
+        public Task InitializeAsync(AuthenticationScheme scheme, HttpContext context)
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task<AuthenticateResult> AuthenticateAsync()
+        {
+            return Task.FromResult(AuthenticateResult.NoResult());
+        }
+
+        public Task ChallengeAsync(AuthenticationProperties? properties)
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task ForbidAsync(AuthenticationProperties? properties)
+        {
             return Task.CompletedTask;
         }
     }

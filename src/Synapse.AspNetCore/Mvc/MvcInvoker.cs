@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using UnambitiousFx.Functional.AspNetCore.Mappers;
 using UnambitiousFx.Functional.AspNetCore.Mvc;
 using UnambitiousFx.Synapse.Abstractions;
+using UnambitiousFx.Synapse.AspNetCore.Http;
 
 namespace UnambitiousFx.Synapse.AspNetCore.Mvc;
 
@@ -19,8 +20,9 @@ internal sealed class MvcInvoker : IMvcInvoker
     public async ValueTask<IActionResult> InvokeAsync<TResponse>(IRequest<TResponse> request,
         CancellationToken cancellationToken = default) where TResponse : notnull
     {
-        return await _invoker.InvokeAsync(request, cancellationToken)
-            .AsActionResultBuilder(_failureMapper);
+        var result = await _invoker.InvokeAsync(request, cancellationToken);
+        var actionResult = await result.AsActionResultBuilder(_failureMapper);
+        return result.IsSuccess ? actionResult : new ChallengingActionResult(actionResult);
     }
 
     public async ValueTask<IActionResult> InvokeAsync<TResponse>(IRequest<TResponse> request,
@@ -33,13 +35,14 @@ internal sealed class MvcInvoker : IMvcInvoker
             return onSuccess(value!);
         }
 
-        return await ValueTask.FromResult(result).AsActionResultBuilder(_failureMapper);
+        return new ChallengingActionResult(await result.AsActionResultBuilder(_failureMapper));
     }
 
     public async ValueTask<IActionResult> InvokeAsync<TRequest>(TRequest request,
         CancellationToken cancellationToken = default) where TRequest : IRequest
     {
-        return await _invoker.InvokeAsync(request, cancellationToken)
-            .AsActionResultBuilder(_failureMapper);
+        var result = await _invoker.InvokeAsync(request, cancellationToken);
+        var actionResult = await result.AsActionResultBuilder(_failureMapper);
+        return result.IsSuccess ? actionResult : new ChallengingActionResult(actionResult);
     }
 }

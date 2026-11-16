@@ -114,6 +114,8 @@ await foreach (var item in invoker.InvokeStreamAsync(new ExportLoans(householdId
 }
 ```
 
+Over HTTP, `IHttpInvoker.InvokeStreamAsync` turns that denied first item into the matching `401` or `403` Problem Details response instead of streaming an empty `200`.
+
 The four checks share one behavior on streams, so a behavior of your own cannot sit between two of them.
 
 ## Markers

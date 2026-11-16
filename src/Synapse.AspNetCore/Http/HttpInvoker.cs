@@ -1,8 +1,9 @@
-using System.Runtime.CompilerServices;
 using Microsoft.AspNetCore.Http;
+using UnambitiousFx.Functional;
 using UnambitiousFx.Functional.AspNetCore.Http;
 using UnambitiousFx.Functional.AspNetCore.Mappers;
 using UnambitiousFx.Synapse.Abstractions;
+using IHttpResult = Microsoft.AspNetCore.Http.IResult;
 
 namespace UnambitiousFx.Synapse.AspNetCore.Http;
 
@@ -18,15 +19,16 @@ internal sealed class HttpInvoker : IHttpInvoker
         _failureMapper = failureMapper;
     }
 
-    public async ValueTask<IResult> InvokeAsync<TResponse>(IRequest<TResponse> request,
+    public async ValueTask<IHttpResult> InvokeAsync<TResponse>(IRequest<TResponse> request,
         CancellationToken cancellationToken = default) where TResponse : notnull
     {
-        return await _invoker.InvokeAsync(request, cancellationToken)
-            .AsHttpBuilder(_failureMapper);
+        var result = await _invoker.InvokeAsync(request, cancellationToken);
+        var httpResult = await result.AsHttpBuilder(_failureMapper);
+        return result.IsSuccess ? httpResult : new ChallengingHttpResult(httpResult);
     }
 
-    public async ValueTask<IResult> InvokeAsync<TResponse>(IRequest<TResponse> request,
-        Func<TResponse, IResult> onSuccess, CancellationToken cancellationToken = default) where TResponse : notnull
+    public async ValueTask<IHttpResult> InvokeAsync<TResponse>(IRequest<TResponse> request,
+        Func<TResponse, IHttpResult> onSuccess, CancellationToken cancellationToken = default) where TResponse : notnull
     {
         var result = await _invoker.InvokeAsync(request, cancellationToken);
         if (result.TryGet(out var value, out _))
@@ -34,23 +36,54 @@ internal sealed class HttpInvoker : IHttpInvoker
             return onSuccess(value!);
         }
 
-        return await ValueTask.FromResult(result).AsHttpBuilder(_failureMapper);
+        return new ChallengingHttpResult(await result.AsHttpBuilder(_failureMapper));
     }
 
-    public async ValueTask<IResult> InvokeAsync<TRequest>(TRequest request,
+    public async ValueTask<IHttpResult> InvokeAsync<TRequest>(TRequest request,
         CancellationToken cancellationToken = default) where TRequest : IRequest
     {
-        return await _invoker.InvokeAsync(request, cancellationToken)
-            .AsHttpBuilder(_failureMapper);
+        var result = await _invoker.InvokeAsync(request, cancellationToken);
+        var httpResult = await result.AsHttpBuilder(_failureMapper);
+        return result.IsSuccess ? httpResult : new ChallengingHttpResult(httpResult);
     }
 
-    public async IAsyncEnumerable<TItem> InvokeStreamAsync<TItem>(IStreamRequest<TItem> request,
-        [EnumeratorCancellation] CancellationToken cancellationToken = default) where TItem : notnull
+    public async ValueTask<IHttpResult> InvokeStreamAsync<TItem>(IStreamRequest<TItem> request,
+        CancellationToken cancellationToken = default) where TItem : notnull
     {
-        await foreach (var result in _invoker.InvokeStreamAsync(request, cancellationToken))
+        // The status is chosen from the first item: once the body starts, a failure can no longer change it.
+        var items = _invoker.InvokeStreamAsync(request, cancellationToken).GetAsyncEnumerator(cancellationToken);
+        if (!await items.MoveNextAsync())
         {
-            if (result.TryGet(out var item, out _))
+            await items.DisposeAsync();
+            return TypedResults.Ok(Array.Empty<TItem>());
+        }
+
+        var first = items.Current;
+        if (!first.TryGet(out var firstItem, out _))
+        {
+            await items.DisposeAsync();
+            return new ChallengingHttpResult(await first.AsHttpBuilder(_failureMapper));
+        }
+
+        return TypedResults.Ok(Remaining(firstItem!, items));
+    }
+
+    private static async IAsyncEnumerable<TItem> Remaining<TItem>(TItem first, IAsyncEnumerator<Result<TItem>> items)
+        where TItem : notnull
+    {
+        await using (items)
+        {
+            yield return first;
+            while (await items.MoveNextAsync())
             {
+                if (!items.Current.TryGet(out var item, out var failure))
+                {
+                    // The 200 is already on the wire. Throwing aborts the response, so the client sees a truncated
+                    // body instead of a complete-looking one with items silently missing.
+                    throw new InvalidOperationException(
+                        $"The stream failed after the response started: {failure}");
+                }
+
                 yield return item!;
             }
         }

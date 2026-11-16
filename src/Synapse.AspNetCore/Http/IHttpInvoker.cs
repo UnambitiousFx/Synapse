@@ -56,19 +56,29 @@ public interface IHttpInvoker
         where TRequest : IRequest;
 
     /// <summary>
-    ///     Executes a streaming request and returns an <see cref="IAsyncEnumerable{TItem}" /> of successfully
-    ///     unwrapped items. Failed items in the stream are silently skipped.
-    ///     The item type is inferred by the compiler from the request's <see cref="IStreamRequest{TResponse}" />
-    ///     implementation.
+    ///     Executes a streaming request and maps it to an HTTP result. The item type is inferred by the compiler from
+    ///     the request's <see cref="IStreamRequest{TResponse}" /> implementation.
     /// </summary>
+    /// <remarks>
+    ///     <para>
+    ///         The status is decided by the first item. When it is a failure (for instance an authorization denial),
+    ///         the failure goes through the registered failure mapper like any other request, so the caller gets a
+    ///         401, 403 or 404 Problem Details response instead of an empty <c>200</c>.
+    ///     </para>
+    ///     <para>
+    ///         Otherwise the response is a <c>200</c> whose body is the items written as a JSON array as they arrive.
+    ///         A failure after that point cannot change the status any more: it throws, which aborts the response so
+    ///         the client sees a truncated body rather than a complete one with items missing.
+    ///     </para>
+    /// </remarks>
     /// <typeparam name="TItem">
     ///     The type of items in the stream. Inferred from the request argument. Must not be
     ///     <see langword="null" />.
     /// </typeparam>
     /// <param name="request">The streaming request.</param>
     /// <param name="cancellationToken">An optional <see cref="CancellationToken" /> to observe while iterating.</param>
-    /// <returns>An async sequence of successfully resolved items.</returns>
-    IAsyncEnumerable<TItem> InvokeStreamAsync<TItem>(IStreamRequest<TItem> request,
+    /// <returns>The HTTP result: a streamed <c>200</c>, or the mapped failure of the first item.</returns>
+    ValueTask<IHttpResult> InvokeStreamAsync<TItem>(IStreamRequest<TItem> request,
         CancellationToken cancellationToken = default)
         where TItem : notnull;
 }

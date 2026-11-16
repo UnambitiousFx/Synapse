@@ -8,7 +8,7 @@ filed as a GitHub issue with minimal editing.
 |---|---|---|---|---|
 | [001](001-open-generic-pipeline-behavior-aot-value-type.md) | Open-generic pipeline behavior registrations throw at runtime under Native AOT when `TResponse` is a value type | ✅ Resolved | **High** | Core DI |
 | [002](002-validateonbuild-does-not-suppress-aot-open-generic-check.md) | `ValidateOnBuild = false` does not suppress the issue-001 runtime error | ✅ Resolved | Medium | Core DI / Docs |
-| [003](003-authorization-failure-maps-to-http-500.md) | Pipeline short-circuit via `Result.Failure<T>()` was mapped to HTTP 500; behavior now returns a typed `UnauthorizedFailure` → 401 | ✅ Resolved | Medium | AspNetCore mapping |
+| [003](003-authorization-failure-maps-to-http-500.md) | Pipeline short-circuit via `Result.Failure<T>()` was mapped to HTTP 500; behavior now returns a typed `UnauthorizedFailure` → 403 | ✅ Resolved | Medium | AspNetCore mapping |
 | [004](004-validators-never-run-without-manual-behavior-registration.md) | `AddValidator` registers a validator that is never wired into the pipeline, so validation silently never runs | ✅ Resolved | **High** | Core DI / Validation |
 | [005](005-generator-drops-enclosing-type-chain-for-nested-handlers.md) | Generator emits an uncompilable type name for nested handler/behavior classes (drops enclosing-type chain) | ✅ Resolved | **High** | Generator |
 | [006](006-open-generic-behavior-closed-with-wrong-arity.md) | Open-generic behavior closed with the interface's arity, not the class's own → CS0305 | ✅ Resolved | **High** | Generator |
@@ -54,6 +54,8 @@ filed as a GitHub issue with minimal editing.
 | [070](070-seteventoutboxstorage-always-registers-singleton.md) | `SetEventOutboxStorage` always registered the storage as Singleton, breaking scoped dependencies | ✅ Resolved | Medium | Core DI |
 | [071](071-eventoutboxstorage-and-concrete-storage-are-independent-instances.md) | `SetEventOutboxStorage<T>()` registered `IEventOutboxStorage` as an independent descriptor for `T`, so a caller who also self-registered `T` (e.g. `AddEfCoreEventOutbox`) got two separate instances per scope | ✅ Resolved | Medium | Core DI |
 | [072](072-referencedhandlers-counts-internal-types-as-handlers.md) | SYN102's `ReferencedHandlers()` scanned every type in a referenced assembly with no accessibility filter, so `Synapse.dll`'s own internal `ProxyRequestHandler<,>` registration plumbing was picked up as a real handler — silently defeating SYN102 for any open-generic behavior constrained to bare `IRequest`; the scan is now restricted to public types | ✅ Resolved | Medium | Generator |
+| [073](073-unauthenticated-401-has-no-www-authenticate-challenge.md) | A pipeline-denied request returned 401 without the `WWW-Authenticate` challenge RFC 9110 §15.5.2 requires; the invokers now add the app's default challenge scheme (`Bearer` when none) to every failure that resolves to 401 | ✅ Resolved | Medium | AspNetCore mapping |
+| [074](074-denied-http-stream-returns-empty-200.md) | `IHttpInvoker.InvokeStreamAsync` skipped failed items, so a denied stream answered `200 []`; it now returns `IResult`, maps a failed first item to its 401/403/404 and aborts the response on a later failure (breaking) | ✅ Resolved | **High** | AspNetCore mapping |
 
 > **Discovery context:** 001–003 were found while building the pipeline-behavior showcase in
 > `examples/MinimalApi` on branch `feature/typed-pipeline-behaviors` against .NET 10 with

@@ -35,7 +35,7 @@ app.MapDelete("/tasks/{id:guid}", (Guid id, IHttpInvoker invoker, CancellationTo
     invoker.InvokeAsync(new DeleteTaskCommand(id), ct));                    // 200 no body
 
 app.MapGet("/tasks/stream", (IHttpInvoker invoker, CancellationToken ct) =>
-    invoker.InvokeStreamAsync(new StreamTasksQuery(), ct));                 // failed items are skipped
+    invoker.InvokeStreamAsync(new StreamTasksQuery(), ct));                 // 200 JSON array, or the first item's failure (401/403…)
 ```
 
 ## Controllers — `IMvcInvoker` (`UnambitiousFx.Synapse.AspNetCore.Mvc`)

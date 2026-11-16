@@ -124,7 +124,7 @@ tasks.MapGet("/", async (
     .WithName("ListTasks")
     .WithSummary("List all tasks");
 
-// Feature: Streaming request — yields tasks via IAsyncEnumerable
+// Feature: Streaming request — 200 streaming a JSON array, or the first item's failure as Problem Details
 tasks.MapGet("/stream", (
         [FromServices] IHttpInvoker invoker,
         CancellationToken ct) =>
