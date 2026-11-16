@@ -49,7 +49,7 @@ public sealed class AuthorizationPipelineTests
         Assert.IsType<UnauthenticatedFailure>(failure);
         var denial = Assert.Single(provider.GetRequiredService<DenialLog>().Denials);
         Assert.Equal(AuthorizationDenialReason.Unauthenticated, denial.Reason);
-        await policy.DidNotReceiveWithAnyArgs().IsAllowedAsync(null!, null!, CancellationToken.None);
+        await policy.DidNotReceiveWithAnyArgs().CheckAsync(null!, null!, CancellationToken.None);
         Assert.Equal(0, provider.GetRequiredService<HandlerCalls>().Count);
     }
 

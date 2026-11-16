@@ -123,12 +123,24 @@ internal static class AuthorizationChecks
             }
         }
 
-        if (policy is not null && await policy.IsAllowedAsync(principal, scoped, cancellationToken))
+        var access = policy is null
+            ? ResourceAccess.Denied
+            : await policy.CheckAsync(principal, scoped, cancellationToken);
+        if (access == ResourceAccess.Allowed)
         {
             return null;
         }
 
-        // Fail closed: a resource-scoped request without a policy is a misconfiguration, not an open door.
+        if (access == ResourceAccess.Hidden)
+        {
+            // A fixed message: the caller must not tell this apart from a resource that does not exist.
+            return new Denied(
+                new AuthorizationDenial(scoped, AuthorizationDenialReason.ResourceHidden, principal.Id,
+                    scoped.Access, scoped.ResourceId),
+                new NotFoundFailure("Resource", scoped.ResourceId, "The requested resource was not found."));
+        }
+
+        // Any other value, defined or not, is a denial. Fail closed: a resource-scoped request without a policy is a misconfiguration, not an open door.
         var reason = policy is null
             ? $"Access '{scoped.Access}' denied: no {nameof(IResourceAccessPolicy)} is registered."
             : $"Access '{scoped.Access}' to the resource denied.";

@@ -27,7 +27,8 @@ public interface IAuthorizationDenialRecorder
 ///     <see cref="AuthorizationDenialReason.Unauthenticated" /> and <see cref="AuthorizationDenialReason.RequestDenied" />.
 /// </param>
 /// <param name="ResourceId">
-///     The targeted resource for <see cref="AuthorizationDenialReason.ResourceAccessDenied" />, otherwise
+///     The targeted resource for <see cref="AuthorizationDenialReason.ResourceAccessDenied" /> and
+///     <see cref="AuthorizationDenialReason.ResourceHidden" />, otherwise
 ///     <see langword="null" />.
 /// </param>
 public sealed record AuthorizationDenial(
@@ -58,5 +59,11 @@ public enum AuthorizationDenialReason
     ResourceAccessDenied,
 
     /// <summary>The request type's <see cref="IRequestAccessPolicy{TRequest}" /> denied the request.</summary>
-    RequestDenied
+    RequestDenied,
+
+    /// <summary>
+    ///     The <see cref="IResourceAccessPolicy" /> answered <see cref="ResourceAccess.Hidden" />: the request fails with
+    ///     a <c>NotFoundFailure</c>, as if the resource did not exist.
+    /// </summary>
+    ResourceHidden
 }

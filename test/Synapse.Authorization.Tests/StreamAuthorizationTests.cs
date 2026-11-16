@@ -159,6 +159,24 @@ public sealed class StreamAuthorizationTests
     }
 
     [Fact]
+    public async Task InvokeStreamAsync_ResourceScopedWithHidingPolicy_YieldsNotFoundFailure()
+    {
+        // Arrange (Given)
+        await using var provider = BuildProvider(Principals.Authenticated(scopes: ["read"]), hidePolicy: true);
+
+        // Act (When)
+        var items = await CollectAsync(provider, new StreamHousehold("h-1"));
+
+        // Assert (Then)
+        Assert.True(Assert.Single(items).TryGetFailure(out var failure));
+        Assert.IsType<NotFoundFailure>(failure);
+        var denial = Assert.Single(provider.GetRequiredService<StreamDenialLog>().Denials);
+        Assert.Equal(AuthorizationDenialReason.ResourceHidden, denial.Reason);
+        Assert.Equal("h-1", denial.ResourceId);
+        Assert.Equal(0, provider.GetRequiredService<StreamHandlerCalls>().Count);
+    }
+
+    [Fact]
     public async Task InvokeStreamAsync_ResourceScopedWithAllowingPolicy_YieldsItems()
     {
         // Arrange (Given)
@@ -291,7 +309,9 @@ public sealed class StreamAuthorizationTests
         return items;
     }
 
-    private static ServiceProvider BuildProvider(ICurrentPrincipal principal, bool? policyAllows = null)
+    private static ServiceProvider BuildProvider(ICurrentPrincipal principal,
+        bool? policyAllows = null,
+        bool hidePolicy = false)
     {
         var services = new ServiceCollection();
         services.AddSingleton<StreamHandlerCalls>();
@@ -314,6 +334,11 @@ public sealed class StreamAuthorizationTests
         {
             o.DenialRecorder<LoggingRecorder>();
             o.RequestPolicy<StreamInvoices, BillableInvoicesPolicy>();
+            if (hidePolicy)
+            {
+                o.Policy<FixedPolicy.Hide>();
+            }
+
             if (policyAllows is { } allows)
             {
                 if (allows)
@@ -393,6 +418,23 @@ public sealed class StreamAuthorizationTests
                 CancellationToken cancellationToken = default)
             {
                 return new ValueTask<bool>(false);
+            }
+        }
+
+        public sealed class Hide : IResourceAccessPolicy
+        {
+            public ValueTask<bool> IsAllowedAsync(ICurrentPrincipal principal,
+                IResourceScoped request,
+                CancellationToken cancellationToken = default)
+            {
+                return new ValueTask<bool>(false);
+            }
+
+            public ValueTask<ResourceAccess> CheckAsync(ICurrentPrincipal principal,
+                IResourceScoped request,
+                CancellationToken cancellationToken = default)
+            {
+                return new ValueTask<ResourceAccess>(ResourceAccess.Hidden);
             }
         }
     }
