@@ -298,4 +298,4 @@ The failure keeps its type, since transports map it to `401` / `403` / `404` and
 ## Limits
 
 - Events are not authorized.
-- The behaviors are registered as open generics, so this package is not Native-AOT compatible.
+- The behaviors are registered closed for each request type, so the package works with Native AOT, value-type requests included.
