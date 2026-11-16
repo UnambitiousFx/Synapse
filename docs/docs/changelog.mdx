@@ -38,6 +38,7 @@ This page records issues discovered and resolved while hardening the library. Al
 | [034](https://github.com/UnambitiousFx/Synapse/blob/main/docs/known-issues/034-event-nested-in-generic-type-breaks-dispatcher-emission.md) | Issue 030's guard tested the event's own arity, so a non-generic event nested in a generic type still emitted `typeof(Box<T>.Opened)` and did not compile; the containing-type chain is now inspected too | Medium |
 | [069](https://github.com/UnambitiousFx/Synapse/blob/main/docs/known-issues/069-generator-ignores-constraints-on-own-type-parameters.md) | The generator ignored every generic constraint that references the behavior's own type parameters (such as `where TRequest : ICommand<TResponse>`), so a `[PipelineBehavior]` / `SynapseGlobalBehavior` behavior was closed over every handler and the generated code failed with CS0311; such constraints are now matched by their unbound generic definition against the handler request's and response's interfaces and base types | Medium |
 | [072](https://github.com/UnambitiousFx/Synapse/blob/worktree-syn105-global-behavior/docs/known-issues/072-referencedhandlers-counts-internal-types-as-handlers.md) | SYN102's `ReferencedHandlers()` scanned every type in a referenced assembly with no accessibility filter, so `Synapse.dll`'s own internal `ProxyRequestHandler<,>` registration plumbing was picked up as a real handler — silently defeating SYN102 for any open-generic behavior constrained to bare `IRequest`; the scan is now restricted to public types | Medium |
+| [075](https://github.com/UnambitiousFx/Synapse/blob/main/docs/known-issues/075-generator-built-against-newer-roslyn.md) | The 3.4.0 generator was built against Roslyn 5.12 (.NET 11 SDK), so every build on an older SDK failed with CS9057; the package now ships one generator per target framework, each built against the Roslyn of that .NET's first SDK (`analyzers/dotnet/roslynX.Y/cs`) | **High** |
 
 ## Pipeline & CQRS
 
@@ -92,7 +93,7 @@ This page records issues discovered and resolved while hardening the library. Al
 
 | ID | Summary | Severity |
 |---|---|---|
-| [075](https://github.com/UnambitiousFx/Synapse/blob/main/docs/known-issues/075-native-aot-skips-authorization-behaviors-for-value-type-requests.md) | Under Native AOT the open-generic authorization registration was silently dropped for value-type requests, so they ran with no authorization and no error; the behaviors are now registered closed per handler shape through a request-registration visitor | **High** |
+| [076](https://github.com/UnambitiousFx/Synapse/blob/main/docs/known-issues/076-native-aot-skips-authorization-behaviors-for-value-type-requests.md) | Under Native AOT the open-generic authorization registration was silently dropped for value-type requests, so they ran with no authorization and no error; the behaviors are now registered closed per handler shape through a request-registration visitor | **High** |
 
 ---
 
