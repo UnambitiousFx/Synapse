@@ -28,6 +28,7 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
     private readonly Dictionary<Type, Delegate> _voidRequestDispatchers = new();
     private readonly Dictionary<Type, Delegate> _streamRequestDispatchers = new();
     private readonly Dictionary<Type, Func<IPipelineDescriber, PipelineDescription?>> _probes = new();
+    private readonly Dictionary<Type, Action<IRequestRegistrationVisitor>> _visits = new();
 
     [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
     private Type _contextFactory = typeof(DefaultContextFactory);
@@ -244,6 +245,7 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
                     return handler.HandleAsync((TRequest)request, ct);
                 }));
         _probes.TryAdd(typeof(TRequest), describer => describer.Describe<TRequest, TResponse>());
+        _visits.TryAdd(typeof(TRequest), visitor => visitor.VisitRequest<TRequest, TResponse>());
         return this;
     }
 
@@ -262,6 +264,7 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
                     return handler.HandleAsync((TRequest)request, ct);
                 }));
         _probes.TryAdd(typeof(TRequest), describer => describer.Describe<TRequest>());
+        _visits.TryAdd(typeof(TRequest), visitor => visitor.VisitRequest<TRequest>());
         return this;
     }
 
@@ -303,6 +306,7 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
                     var handler = resolver.GetRequiredService<IStreamRequestHandler<TRequest, TItem>>();
                     return handler.HandleAsync((TRequest)request, ct);
                 }));
+        _visits.TryAdd(typeof(TRequest), visitor => visitor.VisitStreamRequest<TRequest, TItem>());
         return this;
     }
 
@@ -328,6 +332,7 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
                             return handler.HandleAsync((TRequest)request, ct);
                         }));
                 _probes.TryAdd(typeof(TRequest), describer => describer.Describe<TRequest, TResponse>());
+                _visits.TryAdd(typeof(TRequest), visitor => visitor.VisitRequest<TRequest, TResponse>());
             }
         });
         return this;
@@ -352,6 +357,7 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
                             return handler.HandleAsync((TRequest)request, ct);
                         }));
                 _probes.TryAdd(typeof(TRequest), describer => describer.Describe<TRequest>());
+                _visits.TryAdd(typeof(TRequest), visitor => visitor.VisitRequest<TRequest>());
             }
         });
         return this;
@@ -437,6 +443,11 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
             foreach (var (type, probe) in builder.Probes)
             {
                 _probes.TryAdd(type, probe);
+            }
+
+            foreach (var (type, visit) in builder.Visits)
+            {
+                _visits.TryAdd(type, visit);
             }
         });
 
@@ -528,6 +539,12 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
         foreach (var action in _actions)
         {
             action(services);
+        }
+
+        // After the loop: conditional registrations add their visits inside their action.
+        foreach (var (type, visit) in _visits)
+        {
+            services.RecordRequestRegistration(type, visit);
         }
 
         services.AddSingleton(SynapseRegistry.Create(services, _probes));
