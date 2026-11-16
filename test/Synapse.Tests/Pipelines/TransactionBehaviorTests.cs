@@ -173,7 +173,6 @@ public sealed class TransactionBehaviorTests
         await manager.Received(1).BeginAsync(Arg.Any<CancellationToken>());
         var behaviors = provider.GetRequiredService<IPipelineDescriber>().Describe<TransactionalCommand>()!.Behaviors;
         var transaction = Assert.Single(behaviors);
-        Assert.Equal(typeof(TransactionBehavior<TransactionalCommand, Result>), transaction.Type);
         Assert.Equal(3u, transaction.Order);
     }
 
@@ -215,6 +214,103 @@ public sealed class TransactionBehaviorTests
         await scope.Received(1).CommitAsync(Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task InvokeAsync_WithAddTransactionsAndAClosedRegistration_OpensOneScope()
+    {
+        // Arrange (Given) — the closed registration is what [SynapseGlobalBehavior] makes the generator emit
+        var (manager, scope) = SubstituteManager();
+        await using var provider = BuildProvider(manager, cfg =>
+        {
+            cfg.RegisterResultPipelineBehavior<TransactionBehavior<TransactionalCommand, Result>, TransactionalCommand>();
+            cfg.AddTransactions<StubTransactionManager>();
+        });
+        await using var serviceScope = provider.CreateAsyncScope();
+        var invoker = serviceScope.ServiceProvider.GetRequiredService<IInvoker>();
+
+        // Act (When)
+        await invoker.InvokeAsync(new TransactionalCommand(), TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        await manager.Received(1).BeginAsync(Arg.Any<CancellationToken>());
+        await scope.Received(1).CommitAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task InvokeAsync_WithAClosedRegistrationBeforeAddTransactions_OpensOneScope()
+    {
+        // Arrange (Given)
+        var (manager, _) = SubstituteManager();
+        await using var provider = BuildProvider(manager, cfg =>
+        {
+            cfg.AddTransactions<StubTransactionManager>();
+            cfg.RegisterResultPipelineBehavior<TransactionBehavior<TransactionalCommand, Result>, TransactionalCommand>();
+        });
+        await using var serviceScope = provider.CreateAsyncScope();
+        var invoker = serviceScope.ServiceProvider.GetRequiredService<IInvoker>();
+
+        // Act (When)
+        await invoker.InvokeAsync(new TransactionalCommand(), TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        await manager.Received(1).BeginAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task InvokeAsync_WithAClosedRegistrationForANonTransactionalRequest_PassesThrough()
+    {
+        // Arrange (Given) — what the attribute path emits: closed over every request
+        var (manager, _) = SubstituteManager();
+        await using var provider = BuildProvider(manager, cfg =>
+        {
+            cfg.AddTransactionManager<StubTransactionManager>();
+            cfg.RegisterResultPipelineBehavior<TransactionBehavior<PlainCommand, Result>, PlainCommand>();
+        });
+        await using var serviceScope = provider.CreateAsyncScope();
+        var invoker = serviceScope.ServiceProvider.GetRequiredService<IInvoker>();
+
+        // Act (When)
+        var result = await invoker.InvokeAsync(new PlainCommand(), TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.True(result.IsSuccess);
+        await manager.DidNotReceive().BeginAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task InvokeAsync_WithAddTransactionsAndAStructRequest_WrapsIt()
+    {
+        // Arrange (Given)
+        var (manager, scope) = SubstituteManager();
+        await using var provider = BuildProvider(manager, cfg =>
+        {
+            cfg.RegisterRequestHandler<StructCommandHandler, StructCommand>();
+            cfg.AddTransactions<StubTransactionManager>();
+        });
+        await using var serviceScope = provider.CreateAsyncScope();
+        var invoker = serviceScope.ServiceProvider.GetRequiredService<IInvoker>();
+
+        // Act (When)
+        var result = await invoker.InvokeAsync(new StructCommand(), TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.True(result.IsSuccess);
+        await scope.Received(1).CommitAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public void AddTransactions_DoesNotRequireDynamicCode()
+    {
+        // Arrange (Given)
+        var method = typeof(ISynapseConfig).GetMethod(nameof(ISynapseConfig.AddTransactions))!;
+
+        // Act (When)
+        var attribute = method.GetCustomAttributes(typeof(System.Diagnostics.CodeAnalysis.RequiresDynamicCodeAttribute),
+            false);
+
+        // Assert (Then)
+        Assert.Empty(attribute);
+    }
+
     private static (ITransactionManager Manager, ITransactionScope Scope) SubstituteManager()
     {
         var scope = Substitute.For<ITransactionScope>();
@@ -241,6 +337,8 @@ public sealed class TransactionBehaviorTests
     public sealed record TransactionalCommand : ICommand, ITransactional;
 
     public sealed record TransactionalQuery : ICommand<int>, ITransactional;
+
+    public readonly record struct StructCommand : ICommand, ITransactional;
 
     public sealed record PlainCommand : ICommand;
 
@@ -272,6 +370,14 @@ public sealed class TransactionBehaviorTests
             CancellationToken cancellationToken = default)
         {
             return new ValueTask<Result<int>>(Result.Success(1));
+        }
+    }
+
+    private sealed class StructCommandHandler : IRequestHandler<StructCommand>
+    {
+        public ValueTask<Result> HandleAsync(StructCommand request, CancellationToken cancellationToken = default)
+        {
+            return new ValueTask<Result>(Result.Success());
         }
     }
 

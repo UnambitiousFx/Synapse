@@ -14,10 +14,11 @@ namespace UnambitiousFx.Synapse.Pipelines;
 ///         commit it. This behavior reads <see cref="IResult.IsSuccess" /> instead.
 ///     </para>
 ///     <para>
-///         The <typeparamref name="TRequest" /> constraint is what keeps it off every other request: the dependency
-///         injection container skips the open-generic registration for a request that is not
-///         <see cref="ITransactional" />, and the source generator does not close it over one. Wire it with
-///         <see cref="ISynapseConfig.AddTransactions{TManager}" />, or for Native AOT with
+///         It has no <c>ITransactional</c> constraint, so the source generator can close it over every request
+///         (Native-AOT safe); a request that is not <see cref="ITransactional" /> passes straight through to the next
+///         stage without touching the <see cref="ITransactionManager" />. Wire it with
+///         <see cref="ISynapseConfig.AddTransactions{TManager}" />, which registers it only for
+///         <see cref="ITransactional" /> requests, or with
 ///         <c>[assembly: SynapseGlobalBehavior(typeof(TransactionBehavior&lt;,&gt;))]</c> plus
 ///         <see cref="ISynapseConfig.AddTransactionManager{TManager}" />.
 ///     </para>
@@ -26,9 +27,10 @@ namespace UnambitiousFx.Synapse.Pipelines;
 /// <typeparam name="TResult"><see cref="Result" /> or <see cref="Result{TValue}" />.</typeparam>
 public sealed class TransactionBehavior<TRequest, TResult> : IResultPipelineBehavior<TRequest, TResult>,
     IOrderedPipelineBehavior
-    where TRequest : ITransactional
     where TResult : IResult
 {
+    private static readonly bool IsTransactional = typeof(ITransactional).IsAssignableFrom(typeof(TRequest));
+
     private readonly ITransactionManager _transactionManager;
 
     /// <summary>
@@ -50,6 +52,11 @@ public sealed class TransactionBehavior<TRequest, TResult> : IResultPipelineBeha
         RequestNext<TRequest, TResult> next,
         CancellationToken cancellationToken = default)
     {
+        if (!IsTransactional)
+        {
+            return await next.InvokeAsync(request, cancellationToken);
+        }
+
         // Disposing without a commit is the rollback, so an exception thrown by the handler rolls back too.
         await using var scope = await _transactionManager.BeginAsync(cancellationToken);
         var result = await next.InvokeAsync(request, cancellationToken);
