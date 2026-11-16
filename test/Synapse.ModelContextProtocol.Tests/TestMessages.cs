@@ -46,3 +46,25 @@ public sealed class RawTextConverter : JsonConverter<RawText>
 [JsonSerializable(typeof(string))]
 [JsonSerializable(typeof(RawText))]
 internal sealed partial class TestJsonContext : JsonSerializerContext;
+
+/// <summary>Writes a <see cref="Guid" /> in upper case, standing in for an application converter.</summary>
+public sealed class UpperCaseGuidConverter : JsonConverter<Guid>
+{
+    public override Guid Read(ref Utf8JsonReader reader,
+        Type typeToConvert,
+        JsonSerializerOptions options)
+    {
+        return reader.GetGuid();
+    }
+
+    public override void Write(Utf8JsonWriter writer,
+        Guid value,
+        JsonSerializerOptions options)
+    {
+        writer.WriteStringValue(value.ToString().ToUpperInvariant());
+    }
+}
+
+/// <summary>A second context, as a modular application has one per module.</summary>
+[JsonSerializable(typeof(Unregistered))]
+internal sealed partial class OtherJsonContext : JsonSerializerContext;

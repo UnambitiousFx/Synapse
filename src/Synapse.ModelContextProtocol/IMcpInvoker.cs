@@ -13,7 +13,7 @@ namespace UnambitiousFx.Synapse.ModelContextProtocol;
 ///     </para>
 ///     <para>
 ///         A success becomes a text content block holding the JSON answer, serialized with
-///         <see cref="SynapseMcpOptions.JsonContext" /> and capped at <see cref="SynapseMcpOptions.MaxAnswerLength" />.
+///         <see cref="SynapseMcpOptions.SerializerOptions" /> or <see cref="SynapseMcpOptions.JsonContext" /> and capped at <see cref="SynapseMcpOptions.MaxAnswerLength" />.
 ///         A failure becomes a tool error (<see cref="CallToolResult.IsError" /> set) built by the registered
 ///         <see cref="IMcpFailurePolicy" />.
 ///     </para>
