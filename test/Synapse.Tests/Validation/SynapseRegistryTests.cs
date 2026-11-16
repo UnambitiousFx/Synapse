@@ -134,6 +134,25 @@ public sealed class SynapseRegistryTests
         Assert.Equal(typeof(NoopBehavior<PlainCommand>), Assert.Single(description.Behaviors).Type);
     }
 
+    [Fact]
+    public async Task Probe_WithATypeRegisteredWithBothShapes_DescribesTheFirstRegisteredShape()
+    {
+        // Arrange (Given)
+        await using var provider = Build(cfg =>
+        {
+            cfg.RegisterRequestHandler<BothCountHandler, BothRequest, int>();
+            cfg.RegisterRequestHandler<BothVoidHandler, BothRequest>();
+        });
+        var registry = provider.GetRequiredService<SynapseRegistry>();
+
+        // Act (When)
+        var description = registry.Probes[typeof(BothRequest)](provider.GetRequiredService<IPipelineDescriber>());
+
+        // Assert (Then)
+        Assert.NotNull(description);
+        Assert.Equal(typeof(BothCountHandler), Assert.Single(description.Handlers));
+    }
+
     private static ServiceProvider Build(Action<ISynapseConfig> configure)
     {
         var services = new ServiceCollection().AddLogging();
@@ -144,6 +163,24 @@ public sealed class SynapseRegistryTests
     private sealed record PlainCommand : IRequest;
 
     private sealed record CountQuery : IRequest<int>;
+
+    private sealed record BothRequest : IRequest, IRequest<int>;
+
+    private sealed class BothVoidHandler : IRequestHandler<BothRequest>
+    {
+        public ValueTask<Result> HandleAsync(BothRequest request, CancellationToken cancellationToken = default)
+        {
+            return new ValueTask<Result>(Result.Success());
+        }
+    }
+
+    private sealed class BothCountHandler : IRequestHandler<BothRequest, int>
+    {
+        public ValueTask<Result<int>> HandleAsync(BothRequest request, CancellationToken cancellationToken = default)
+        {
+            return new ValueTask<Result<int>>(Result.Success(1));
+        }
+    }
 
     private sealed record PingEvent : IEvent;
 

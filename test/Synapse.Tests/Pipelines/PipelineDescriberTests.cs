@@ -329,6 +329,26 @@ public sealed class PipelineDescriberTests
         Assert.IsType<InvalidOperationException>(exception);
     }
 
+    [Fact]
+    public async Task Describe_WithATypeRegisteredWithBothShapes_PrefersTheResponseShapeLikeTheGenericOverload()
+    {
+        // Arrange (Given)
+        await using var provider = Build(new Trace(), cfg =>
+        {
+            cfg.RegisterRequestHandler<BothVoidHandler, BothRequest>();
+            cfg.RegisterRequestHandler<BothCountHandler, BothRequest, int>();
+        });
+        var describer = provider.GetRequiredService<IPipelineDescriber>();
+
+        // Act (When)
+        var byType = describer.Describe(typeof(BothRequest));
+
+        // Assert (Then)
+        Assert.NotNull(byType);
+        Assert.Equal(describer.Describe<BothRequest, int>(), byType);
+        Assert.Equal(typeof(BothCountHandler), Assert.Single(byType.Handlers));
+    }
+
     private static void AssertSameDescription(PipelineDescription? expected, PipelineDescription? actual)
     {
         Assert.NotNull(expected);
@@ -345,6 +365,24 @@ public sealed class PipelineDescriberTests
         {
             trace.Steps.Add("handler");
             return new ValueTask<Result>(Result.Success());
+        }
+    }
+
+    private sealed record BothRequest : IRequest, IRequest<int>;
+
+    private sealed class BothVoidHandler : IRequestHandler<BothRequest>
+    {
+        public ValueTask<Result> HandleAsync(BothRequest request, CancellationToken cancellationToken = default)
+        {
+            return new ValueTask<Result>(Result.Success());
+        }
+    }
+
+    private sealed class BothCountHandler : IRequestHandler<BothRequest, int>
+    {
+        public ValueTask<Result<int>> HandleAsync(BothRequest request, CancellationToken cancellationToken = default)
+        {
+            return new ValueTask<Result<int>>(Result.Success(1));
         }
     }
 
