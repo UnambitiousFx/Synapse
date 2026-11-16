@@ -1,5 +1,6 @@
 using JetBrains.Annotations;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using UnambitiousFx.Functional;
@@ -82,6 +83,68 @@ public sealed class SynapseValidationStartupTests
     }
 
     [Fact]
+    public async Task StartAsync_ResolvingPipelines_RunsOnADedicatedNamedThread()
+    {
+        // Arrange (Given)
+        var probe = new ThreadProbe();
+        await using var provider = Build(new LogSink(), cfg =>
+        {
+            cfg.RegisterEventHandler<ThreadCapturingHandler, PingEvent>();
+            cfg.ValidateOnStart();
+        }, services => services.AddSingleton(probe));
+
+        // Act (When)
+        await StartHostedServices(provider);
+
+        // Assert (Then)
+        var thread = Assert.IsType<Thread>(probe.Thread);
+        Assert.NotSame(Thread.CurrentThread, thread);
+        Assert.Equal("Synapse start-up validation", thread.Name);
+    }
+
+    [Fact]
+    public async Task StartAsync_CancelledBeforeValidationCompletes_ThrowsOperationCanceledException()
+    {
+        // Arrange (Given)
+        var gate = new ManualResetEventSlim(); // not disposed: the validation thread may still be leaving Wait()
+        using var cancellation = new CancellationTokenSource();
+        await using var provider = Build(new LogSink(), cfg =>
+        {
+            cfg.RegisterEventHandler<GatedHandler, PingEvent>();
+            cfg.ValidateOnStart();
+        }, services => services.AddSingleton(gate));
+        var hosted = provider.GetServices<IHostedService>().Single(service =>
+            service.GetType().Name == "SynapseValidationStartup");
+
+        // Act (When)
+        var start = hosted.StartAsync(cancellation.Token);
+        await cancellation.CancelAsync();
+        var exception = await Record.ExceptionAsync(() => start);
+        gate.Set();
+
+        // Assert (Then)
+        Assert.IsAssignableFrom<OperationCanceledException>(exception);
+    }
+
+    [Fact]
+    public async Task StartAsync_ValidationThrows_RethrowsTheSameException()
+    {
+        // Arrange (Given) — without the registry, ValidateSynapse throws on the validation thread
+        var services = new ServiceCollection();
+        services.AddLogging(logging => logging.AddProvider(new LogSink()));
+        services.AddSynapse(cfg => cfg.ValidateOnStart());
+        services.RemoveAll<UnambitiousFx.Synapse.Validation.SynapseRegistry>();
+        await using var provider = services.BuildServiceProvider();
+
+        // Act (When)
+        var exception = await Record.ExceptionAsync(() => StartHostedServices(provider));
+
+        // Assert (Then)
+        var invalid = Assert.IsType<InvalidOperationException>(exception);
+        Assert.Contains("Synapse is not registered", invalid.Message);
+    }
+
+    [Fact]
     public void ValidateOnStart_CalledTwice_RegistersOneHostedService()
     {
         // Arrange (Given)
@@ -108,10 +171,12 @@ public sealed class SynapseValidationStartupTests
         }
     }
 
-    private static ServiceProvider Build(LogSink sink, Action<ISynapseConfig> configure)
+    private static ServiceProvider Build(LogSink sink, Action<ISynapseConfig> configure,
+        Action<IServiceCollection>? arrange = null)
     {
         var services = new ServiceCollection();
         services.AddLogging(logging => logging.AddProvider(sink));
+        arrange?.Invoke(services);
         services.AddSynapse(configure);
         return services.BuildServiceProvider();
     }
@@ -120,6 +185,34 @@ public sealed class SynapseValidationStartupTests
 
     private sealed class PingHandler : IEventHandler<PingEvent>
     {
+        public ValueTask<Result> HandleAsync(PingEvent @event, CancellationToken cancellationToken = default) =>
+            new(Result.Success());
+    }
+
+    private sealed class ThreadProbe
+    {
+        public Thread? Thread { get; set; }
+    }
+
+    private sealed class ThreadCapturingHandler : IEventHandler<PingEvent>
+    {
+        public ThreadCapturingHandler(ThreadProbe probe)
+        {
+            probe.Thread = Thread.CurrentThread;
+        }
+
+        public ValueTask<Result> HandleAsync(PingEvent @event, CancellationToken cancellationToken = default) =>
+            new(Result.Success());
+    }
+
+    // Holds validation until the test has cancelled the start.
+    private sealed class GatedHandler : IEventHandler<PingEvent>
+    {
+        public GatedHandler(ManualResetEventSlim gate)
+        {
+            gate.Wait();
+        }
+
         public ValueTask<Result> HandleAsync(PingEvent @event, CancellationToken cancellationToken = default) =>
             new(Result.Success());
     }

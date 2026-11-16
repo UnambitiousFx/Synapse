@@ -22,6 +22,7 @@ This page records issues discovered and resolved while hardening the library. Al
 | [036](https://github.com/UnambitiousFx/Synapse/blob/main/docs/known-issues/036-concurrent-accessor-reads-mint-diverging-trace-ids.md) | `ContextHandler` built its context lazily without synchronization, so concurrent handlers in one scope each minted their own trace id and only one won the field; creation is now locked and double-checked | **High** |
 | [070](https://github.com/UnambitiousFx/Synapse/blob/main/docs/known-issues/070-seteventoutboxstorage-always-registers-singleton.md) | `SetEventOutboxStorage` always registered the storage as Singleton, breaking scoped dependencies | Medium |
 | [071](https://github.com/UnambitiousFx/Synapse/blob/fix/outbox-storage-forwarding/docs/known-issues/071-eventoutboxstorage-and-concrete-storage-are-independent-instances.md) | `SetEventOutboxStorage<T>()` registered `IEventOutboxStorage` as an independent descriptor for `T`, so a caller who also self-registered `T` (e.g. `AddEfCoreEventOutbox`) got two separate instances per scope | Medium |
+| [077](https://github.com/UnambitiousFx/Synapse/blob/main/docs/known-issues/077-validateonstart-can-deadlock-host-start-under-native-aot.md) | `ValidateOnStart()` validated on the thread that starts the host, where a short stack under Native AOT made the DI container hand the resolution to another thread while holding its lock, so start-up could deadlock; the validation now runs on a dedicated large-stack thread | **High** |
 
 ## Source Generator
 
