@@ -22,6 +22,7 @@ public sealed class ResourceAuthorizationBehavior<TRequest, TResult> : IResultPi
     private readonly IResourceAccessPolicy? _policy;
     private readonly ICurrentPrincipal _principal;
     private readonly IEnumerable<IAuthorizationDenialRecorder> _recorders;
+    private readonly SystemBypass _systemBypass;
 
     /// <summary>
     ///     Creates the behavior.
@@ -41,6 +42,7 @@ public sealed class ResourceAuthorizationBehavior<TRequest, TResult> : IResultPi
         _recorders = recorders;
         _policy = policy;
         _denialFailure = options?.DenialFailure;
+        _systemBypass = options?.SystemBypass ?? SystemBypass.All;
     }
 
     /// <inheritdoc />
@@ -51,7 +53,7 @@ public sealed class ResourceAuthorizationBehavior<TRequest, TResult> : IResultPi
         RequestNext<TRequest, TResult> next,
         CancellationToken cancellationToken = default)
     {
-        return request is IResourceScoped scoped
+        return request is IResourceScoped scoped && !AuthorizationChecks.SkipsResourceChecks(_principal, _systemBypass)
             ? AuthorizeAsync(request, scoped, next, cancellationToken)
             : next.InvokeAsync(request, cancellationToken);
     }

@@ -27,6 +27,7 @@ public sealed class ScopeAuthorizationBehavior<TRequest, TResult> : IResultPipel
     private readonly Func<AuthorizationDenial, Failure?>? _denialFailure;
     private readonly ICurrentPrincipal _principal;
     private readonly IEnumerable<IAuthorizationDenialRecorder> _recorders;
+    private readonly SystemBypass _systemBypass;
 
     /// <summary>
     ///     Creates the behavior.
@@ -45,6 +46,7 @@ public sealed class ScopeAuthorizationBehavior<TRequest, TResult> : IResultPipel
         _recorders = recorders;
         _defaultScope = AuthorizationChecks.DefaultScope<TRequest>(options);
         _denialFailure = options.DenialFailure;
+        _systemBypass = options.SystemBypass;
     }
 
     /// <inheritdoc />
@@ -55,6 +57,11 @@ public sealed class ScopeAuthorizationBehavior<TRequest, TResult> : IResultPipel
         RequestNext<TRequest, TResult> next,
         CancellationToken cancellationToken = default)
     {
+        if (AuthorizationChecks.SkipsIdentityChecks(_principal, _systemBypass))
+        {
+            return next.InvokeAsync(request, cancellationToken);
+        }
+
         return AuthorizationChecks.Scope(request, _principal, _defaultScope) is { } denied
             ? AuthorizationDenials.DenyAsync(_recorders, next, denied, _denialFailure, cancellationToken)
             : next.InvokeAsync(request, cancellationToken);

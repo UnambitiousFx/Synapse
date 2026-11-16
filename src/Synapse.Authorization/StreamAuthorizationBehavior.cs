@@ -29,6 +29,7 @@ public sealed class StreamAuthorizationBehavior<TRequest, TItem> : IStreamReques
     private readonly ICurrentPrincipal _principal;
     private readonly IRequestAccessPolicy<TRequest>? _requestPolicy;
     private readonly IEnumerable<IAuthorizationDenialRecorder> _recorders;
+    private readonly SystemBypass _systemBypass;
 
     /// <summary>
     ///     Creates the behavior.
@@ -53,6 +54,7 @@ public sealed class StreamAuthorizationBehavior<TRequest, TItem> : IStreamReques
         _requestPolicy = requestPolicy;
         _defaultScope = AuthorizationChecks.DefaultScope<TRequest>(options);
         _denialFailure = options.DenialFailure;
+        _systemBypass = options.SystemBypass;
     }
 
     /// <inheritdoc />
@@ -63,15 +65,18 @@ public sealed class StreamAuthorizationBehavior<TRequest, TItem> : IStreamReques
         StreamRequestHandlerDelegate<TItem> next,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        var denied = AuthorizationChecks.Actor(request, _principal)
-                     ?? AuthorizationChecks.Role(request, _principal)
-                     ?? AuthorizationChecks.Scope(request, _principal, _defaultScope);
-        if (denied is null && _requestPolicy is not null)
+        var denied = AuthorizationChecks.SkipsIdentityChecks(_principal, _systemBypass)
+            ? null
+            : AuthorizationChecks.Actor(request, _principal)
+              ?? AuthorizationChecks.Role(request, _principal)
+              ?? AuthorizationChecks.Scope(request, _principal, _defaultScope);
+        var skipsResourceChecks = AuthorizationChecks.SkipsResourceChecks(_principal, _systemBypass);
+        if (denied is null && _requestPolicy is not null && !skipsResourceChecks)
         {
             denied = await AuthorizationChecks.RequestAsync(request, _principal, _requestPolicy, cancellationToken);
         }
 
-        if (denied is null && request is IResourceScoped scoped)
+        if (denied is null && !skipsResourceChecks && request is IResourceScoped scoped)
         {
             denied = await AuthorizationChecks.ResourceAsync<TRequest>(scoped, _principal, _policy, cancellationToken);
         }

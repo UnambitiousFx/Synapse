@@ -31,4 +31,12 @@ public interface ICurrentPrincipal
     /// <param name="role">The role a request requires, such as <c>admin</c>.</param>
     /// <returns><see langword="true" /> when the caller has the role.</returns>
     bool IsInRole(string role);
+
+    /// <summary>
+    ///     Whether the caller is the system itself (a job, a scheduler, a migration) rather than a user or a client.
+    ///     The authorization behaviors then skip the checks <see cref="SynapseAuthorizationOptions.SystemBypass" />
+    ///     names, without calling the policies. <see langword="false" /> unless implemented; see
+    ///     <see cref="SystemPrincipal" />.
+    /// </summary>
+    bool IsSystem => false;
 }

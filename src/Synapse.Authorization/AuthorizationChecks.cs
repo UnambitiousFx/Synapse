@@ -11,6 +11,19 @@ internal readonly record struct Denied(AuthorizationDenial Denial, Failure Failu
 /// </summary>
 internal static class AuthorizationChecks
 {
+    /// <summary>Whether the actor, role and scope checks let a system principal through unchecked.</summary>
+    public static bool SkipsIdentityChecks(ICurrentPrincipal principal, SystemBypass bypass)
+    {
+        return bypass == SystemBypass.All && principal.IsSystem;
+    }
+
+    /// <summary>Whether the request policy and resource checks let a system principal through unchecked.</summary>
+    public static bool SkipsResourceChecks(ICurrentPrincipal principal, SystemBypass bypass)
+    {
+        // Spelled out rather than `!= None`, so an out-of-range value fails closed.
+        return bypass is SystemBypass.All or SystemBypass.ResourceChecks && principal.IsSystem;
+    }
+
     public static Denied? Actor<TRequest>(TRequest request, ICurrentPrincipal principal)
     {
         if (principal.IsAuthenticated || request is IAllowAnonymous)
