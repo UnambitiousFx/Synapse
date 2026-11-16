@@ -56,7 +56,7 @@ internal sealed class OutboxDispatcherService : BackgroundService
         // not hold up the rest of the application starting.
         await Task.Yield();
 
-        WarnIfStorageCannotClaim();
+        await WarnIfStorageCannotClaimAsync();
         _logger.LogInformation("Outbox dispatcher started, polling every {PollingInterval}",
             _options.PollingInterval);
 
@@ -112,9 +112,9 @@ internal sealed class OutboxDispatcherService : BackgroundService
                batch.Count >= batchSize;
     }
 
-    private void WarnIfStorageCannotClaim()
+    private async Task WarnIfStorageCannotClaimAsync()
     {
-        using var scope = _scopeFactory.CreateScope();
+        await using var scope = _scopeFactory.CreateAsyncScope();
         var storage = scope.ServiceProvider.GetRequiredService<IEventOutboxStorage>();
         if (storage is IClaimableOutboxStorage)
         {

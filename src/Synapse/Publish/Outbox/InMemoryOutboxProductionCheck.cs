@@ -33,14 +33,14 @@ internal sealed class InMemoryOutboxProductionCheck : IHostedService
         _environment = environment;
     }
 
-    public Task StartAsync(CancellationToken cancellationToken)
+    public async Task StartAsync(CancellationToken cancellationToken)
     {
         if (_environment?.IsProduction() != true)
         {
-            return Task.CompletedTask;
+            return;
         }
 
-        using var scope = _scopeFactory.CreateScope();
+        await using var scope = _scopeFactory.CreateAsyncScope();
         var storage = scope.ServiceProvider.GetRequiredService<IEventOutboxStorage>();
 
         if (storage is InMemoryEventOutboxStorage)
@@ -51,8 +51,6 @@ internal sealed class InMemoryOutboxProductionCheck : IHostedService
                 "failed can be dispatched by a later commit unless OutboxDiscardOnFailureBehavior is wired. " +
                 "Register a transactional IEventOutboxStorage for production");
         }
-
-        return Task.CompletedTask;
     }
 
     public Task StopAsync(CancellationToken cancellationToken)

@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using NSubstitute;
 using UnambitiousFx.Synapse.Abstractions;
 using UnambitiousFx.Synapse.Publish.Outbox;
+using UnambitiousFx.Synapse.Tests.Definitions;
 
 namespace UnambitiousFx.Synapse.Tests.Publish.Outbox;
 
@@ -68,6 +69,34 @@ public sealed class InMemoryOutboxProductionCheckTests : IDisposable
 
         // Assert (Then)
         Assert.Empty(logger.Entries);
+    }
+
+    [Fact]
+    public async Task StartAsync_WithAStorageDependingOnAnAsyncOnlyDisposable_DoesNotThrow()
+    {
+        // Arrange (Given)
+        var counter = new AsyncDisposeCounter();
+        var services = new ServiceCollection();
+        services.AddSingleton(counter);
+        services.AddScoped<AsyncOnlyDisposable>();
+        services.AddScoped<IEventOutboxStorage>(sp =>
+        {
+            sp.GetRequiredService<AsyncOnlyDisposable>();
+            return new InMemoryEventOutboxStorage();
+        });
+        var provider = services.BuildServiceProvider();
+        _providers.Add(provider);
+        var logger = new CapturingLogger();
+        var check = new InMemoryOutboxProductionCheck(provider.GetRequiredService<IServiceScopeFactory>(), logger,
+            EnvironmentNamed(Environments.Production));
+
+        // Act (When)
+        var exception = await Record.ExceptionAsync(() => check.StartAsync(TestContext.Current.CancellationToken));
+
+        // Assert (Then)
+        Assert.Null(exception);
+        Assert.Single(logger.Entries);
+        Assert.Equal(1, counter.Count);
     }
 
     [Fact]

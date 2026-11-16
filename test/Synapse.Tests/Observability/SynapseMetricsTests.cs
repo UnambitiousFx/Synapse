@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using UnambitiousFx.Synapse.Abstractions;
 using UnambitiousFx.Synapse.Observability;
+using UnambitiousFx.Synapse.Tests.Definitions;
 
 namespace UnambitiousFx.Synapse.Tests.Observability;
 
@@ -92,6 +93,39 @@ public sealed class SynapseMetricsTests : IDisposable
         Assert.Equal(42, measurements["mediator.outbox.processing_lag"]);
         Assert.Equal(3, measurements["mediator.outbox.retrying_count"]);
         Assert.Equal(2, measurements["mediator.outbox.dead_letter_count"]);
+
+        listener.Dispose();
+    }
+
+    [Fact]
+    public void OutboxGauges_WithAStorageDependingOnAnAsyncOnlyDisposable_ReportCurrentValuesAndDisposeTheScope()
+    {
+        // Arrange (Given)
+        var counter = new AsyncDisposeCounter();
+        var storage = Substitute.For<IEventOutboxStorage>();
+        storage.GetPendingCountAsync(Arg.Any<CancellationToken>()).Returns(new ValueTask<int>(5));
+        var services = new ServiceCollection();
+        services.AddSingleton(counter);
+        services.AddScoped<AsyncOnlyDisposable>();
+        services.AddScoped(sp =>
+        {
+            sp.GetRequiredService<AsyncOnlyDisposable>();
+            return storage;
+        });
+        var provider = services.BuildServiceProvider();
+        _providers.Add(provider);
+
+        var meterFactory = CreateMeterFactory();
+        _ = new SynapseMetrics(meterFactory, provider.GetRequiredService<IServiceScopeFactory>());
+        var (measurements, listener) = ListenTo(ResolveMeter(meterFactory));
+        listener.Start();
+
+        // Act (When)
+        listener.RecordObservableInstruments();
+
+        // Assert (Then)
+        Assert.Equal(5, measurements["mediator.outbox.queue_depth"]);
+        Assert.Equal(4, counter.Count);
 
         listener.Dispose();
     }
