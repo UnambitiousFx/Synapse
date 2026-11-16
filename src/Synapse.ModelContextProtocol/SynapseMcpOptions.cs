@@ -10,7 +10,13 @@ namespace UnambitiousFx.Synapse.ModelContextProtocol;
 /// </summary>
 public sealed class SynapseMcpOptions
 {
+    /// <summary>
+    ///     The failure code of an answer refused with <see cref="ModelContextProtocol.OversizedAnswer.Refuse" />.
+    /// </summary>
+    public const string AnswerTooLargeCode = "ANSWER_TOO_LARGE";
+
     private int? _maxAnswerLength;
+    private OversizedAnswer _oversizedAnswer = OversizedAnswer.Truncate;
 
     /// <summary>
     ///     Whether a <see cref="NotFoundFailure" /> and an <see cref="UnauthorizedFailure" /> produce the same
@@ -59,7 +65,8 @@ public sealed class SynapseMcpOptions
     ///         be one code unit shorter than the limit.
     ///     </para>
     ///     <para>
-    ///         A longer answer is cut to this length and followed by a second text block saying it was truncated and
+    ///         With <see cref="OversizedAnswer" /> left to <see cref="ModelContextProtocol.OversizedAnswer.Truncate" />,
+    ///         a longer answer is cut to this length and followed by a second text block saying it was truncated and
     ///         how long it was, so the assistant knows it did not see everything and can ask for less (a filter, a
     ///         page). The result's <c>_meta</c> also carries <see cref="SynapseMcpMeta.Truncated" /> and
     ///         <see cref="SynapseMcpMeta.OriginalLength" />, in the same unit. A truncated answer is no longer valid
@@ -78,6 +85,35 @@ public sealed class SynapseMcpOptions
             }
 
             _maxAnswerLength = value;
+        }
+    }
+
+    /// <summary>
+    ///     What happens to an answer longer than <see cref="MaxAnswerLength" />: cut it
+    ///     (<see cref="ModelContextProtocol.OversizedAnswer.Truncate" />, the default) or answer a tool error instead
+    ///     (<see cref="ModelContextProtocol.OversizedAnswer.Refuse" />).
+    /// </summary>
+    /// <remarks>
+    ///     A refusal's text is <c>ANSWER_TOO_LARGE: The answer is N characters, above the M limit: narrow the request
+    ///     (...)</c>, and its <c>_meta</c> carries <see cref="SynapseMcpMeta.FailureCode" />,
+    ///     <see cref="SynapseMcpMeta.OriginalLength" /> and <see cref="SynapseMcpMeta.MaxAnswerLength" />. The request
+    ///     has already run when its answer is measured, so a refused command's change is kept: prefer short command
+    ///     answers when refusing.
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException">
+    ///     The value is not a defined <see cref="ModelContextProtocol.OversizedAnswer" />.
+    /// </exception>
+    public OversizedAnswer OversizedAnswer
+    {
+        get => _oversizedAnswer;
+        set
+        {
+            if (!Enum.IsDefined(value))
+            {
+                throw new ArgumentOutOfRangeException(nameof(value), value, "Unknown OversizedAnswer value.");
+            }
+
+            _oversizedAnswer = value;
         }
     }
 
