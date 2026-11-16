@@ -10,6 +10,8 @@ namespace UnambitiousFx.Synapse.Authorization.Tests;
 [TestSubject(typeof(SynapseAuthorizationOptions))]
 public sealed class DenialFailureTests
 {
+    private const string HiddenId = "hidden-1";
+
     public static TheoryData<string, AuthorizationDenialReason> Denials => new()
     {
         { "anonymous", AuthorizationDenialReason.Unauthenticated },
@@ -93,6 +95,52 @@ public sealed class DenialFailureTests
     }
 
     [Fact]
+    public async Task InvokeAsync_WhenResourceHiddenAndDenialFailureReturnsNotFound_ReturnsTheApplicationsFailure()
+    {
+        // Arrange (Given)
+        await using var provider = BuildProvider(o => o.DenialFailure = denial =>
+            new NotFoundFailure("Item", denial.ResourceId!) { Code = "core.item_not_found" });
+
+        // Act (When)
+        var failure = await DenyAsync(provider, "hidden");
+
+        // Assert (Then)
+        Assert.IsType<NotFoundFailure>(failure);
+        Assert.Equal("core.item_not_found", failure.Code);
+        Assert.Equal(AuthorizationDenialReason.ResourceHidden,
+            Assert.Single(provider.GetRequiredService<DenialLog>().Denials).Reason);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_WhenResourceHiddenAndDenialFailureReturnsNull_ReturnsTheDefaultNotFound()
+    {
+        // Arrange (Given)
+        await using var provider = BuildProvider(o => o.DenialFailure = _ => null);
+
+        // Act (When)
+        var failure = await DenyAsync(provider, "hidden");
+
+        // Assert (Then)
+        Assert.IsType<NotFoundFailure>(failure);
+        Assert.Equal(FailureCodes.NotFound, failure.Code);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_WhenResourceHiddenAndDenialFailureReturnsUnauthorized_Throws()
+    {
+        // Arrange (Given) — a hidden resource must not turn back into a 403 that discloses it
+        await using var provider = BuildProvider(o => o.DenialFailure = _ => new UnauthorizedFailure("denied"));
+
+        // Act (When)
+        var act = () => DenyAsync(provider, "hidden");
+
+        // Assert (Then)
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(act);
+        Assert.Contains(nameof(AuthorizationDenialReason.ResourceHidden), exception.Message);
+        Assert.Empty(provider.GetRequiredService<DenialLog>().Denials);
+    }
+
+    [Fact]
     public async Task InvokeStreamAsync_WithDenialFailure_YieldsTheApplicationsFailure()
     {
         // Arrange (Given)
@@ -160,6 +208,8 @@ public sealed class DenialFailureTests
         {
             "role" => await invoker.InvokeAsync(new PurgeItems(), TestContext.Current.CancellationToken),
             "resource" => await invoker.InvokeAsync(new RenameItem("42", "x"), TestContext.Current.CancellationToken),
+            "hidden" => await invoker.InvokeAsync(new RenameItem(HiddenId, "x"),
+                TestContext.Current.CancellationToken),
             _ => await invoker.InvokeAsync(new GetItem("42"), TestContext.Current.CancellationToken)
         };
         Assert.True(result.TryGetFailure(out var failure));
@@ -242,6 +292,15 @@ public sealed class DenialFailureTests
             CancellationToken cancellationToken = default)
         {
             return new ValueTask<bool>(false);
+        }
+
+        public ValueTask<ResourceAccess> CheckAsync(ICurrentPrincipal principal,
+            IResourceScoped request,
+            CancellationToken cancellationToken = default)
+        {
+            return new ValueTask<ResourceAccess>(request.ResourceId == HiddenId
+                ? ResourceAccess.Hidden
+                : ResourceAccess.Denied);
         }
     }
 }

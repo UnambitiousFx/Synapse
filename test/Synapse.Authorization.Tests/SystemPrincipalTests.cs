@@ -34,7 +34,7 @@ public sealed class SystemPrincipalTests
         // Assert (Then)
         Assert.All(results, r => Assert.True(r.IsSuccess));
         Assert.Empty(provider.GetRequiredService<Denials>().List);
-        await resourcePolicy.DidNotReceiveWithAnyArgs().IsAllowedAsync(null!, null!, CancellationToken.None);
+        await resourcePolicy.DidNotReceiveWithAnyArgs().CheckAsync(null!, null!, CancellationToken.None);
         await requestPolicy.DidNotReceiveWithAnyArgs().IsAllowedAsync(null!, null!, CancellationToken.None);
     }
 
@@ -72,7 +72,7 @@ public sealed class SystemPrincipalTests
         // Assert (Then)
         Assert.True(Assert.Single(items).IsSuccess);
         Assert.Empty(provider.GetRequiredService<Denials>().List);
-        await resourcePolicy.DidNotReceiveWithAnyArgs().IsAllowedAsync(null!, null!, CancellationToken.None);
+        await resourcePolicy.DidNotReceiveWithAnyArgs().CheckAsync(null!, null!, CancellationToken.None);
     }
 
     [Fact]
@@ -114,7 +114,7 @@ public sealed class SystemPrincipalTests
         Assert.True(invoice.IsSuccess);
         var denial = Assert.Single(provider.GetRequiredService<Denials>().List);
         Assert.Equal(AuthorizationDenialReason.MissingRole, denial.Reason);
-        await resourcePolicy.DidNotReceiveWithAnyArgs().IsAllowedAsync(null!, null!, CancellationToken.None);
+        await resourcePolicy.DidNotReceiveWithAnyArgs().CheckAsync(null!, null!, CancellationToken.None);
         await requestPolicy.DidNotReceiveWithAnyArgs().IsAllowedAsync(null!, null!, CancellationToken.None);
     }
 
@@ -135,7 +135,7 @@ public sealed class SystemPrincipalTests
         var denial = Assert.Single(provider.GetRequiredService<Denials>().List);
         Assert.Equal(AuthorizationDenialReason.ResourceAccessDenied, denial.Reason);
         Assert.Equal(SystemPrincipal.Instance.Id, denial.PrincipalId);
-        await resourcePolicy.ReceivedWithAnyArgs(1).IsAllowedAsync(null!, null!, CancellationToken.None);
+        await resourcePolicy.ReceivedWithAnyArgs(1).CheckAsync(null!, null!, CancellationToken.None);
     }
 
     [Fact]
@@ -156,7 +156,7 @@ public sealed class SystemPrincipalTests
 
         // Assert (Then)
         Assert.True(Assert.Single(items).IsSuccess);
-        await resourcePolicy.DidNotReceiveWithAnyArgs().IsAllowedAsync(null!, null!, CancellationToken.None);
+        await resourcePolicy.DidNotReceiveWithAnyArgs().CheckAsync(null!, null!, CancellationToken.None);
     }
 
     [Fact]

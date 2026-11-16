@@ -297,7 +297,7 @@ public sealed class ResourceAuthorizationBehaviorTests
         // Assert (Then)
         Assert.True(result.IsSuccess);
         Assert.Equal(1, calls.Count);
-        await policy.DidNotReceiveWithAnyArgs().IsAllowedAsync(null!, null!, CancellationToken.None);
+        await policy.DidNotReceiveWithAnyArgs().CheckAsync(null!, null!, CancellationToken.None);
     }
 
     [Fact]
@@ -308,7 +308,7 @@ public sealed class ResourceAuthorizationBehaviorTests
         var principal = Principals.Authenticated();
         var request = new RenameItem("item-7", "new name");
         var policy = Substitute.For<IResourceAccessPolicy>();
-        policy.IsAllowedAsync(principal, request, Arg.Any<CancellationToken>()).Returns(true);
+        policy.CheckAsync(principal, request, Arg.Any<CancellationToken>()).Returns(ResourceAccess.Allowed);
         var behavior = new ResourceAuthorizationBehavior<RenameItem, Result>(principal, [], policy);
 
         // Act (When)
@@ -343,6 +343,91 @@ public sealed class ResourceAuthorizationBehaviorTests
             new AuthorizationDenial(request, AuthorizationDenialReason.ResourceAccessDenied, "user-1", "write",
                 "item-7"),
             Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenPolicyHidesResource_ReturnsNotFoundFailureAndRecordsDenial()
+    {
+        // Arrange (Given)
+        var calls = new PipelineCalls();
+        var recorder = Substitute.For<IAuthorizationDenialRecorder>();
+        var policy = Substitute.For<IResourceAccessPolicy>();
+        var request = new RenameItem("item-7", "new name");
+        policy.CheckAsync(Arg.Any<ICurrentPrincipal>(), request, Arg.Any<CancellationToken>())
+            .Returns(ResourceAccess.Hidden);
+        var behavior = new ResourceAuthorizationBehavior<RenameItem, Result>(Principals.Authenticated(),
+            [recorder], policy);
+
+        // Act (When)
+        var result = await behavior.HandleAsync(request, calls.Next<RenameItem>(),
+            TestContext.Current.CancellationToken);
+
+        // Assert (Then) — same answer as a missing resource: nothing about it leaks into the message
+        Assert.True(result.TryGetFailure(out var failure));
+        Assert.IsType<NotFoundFailure>(failure);
+        Assert.Equal(FailureCodes.NotFound, failure.Code);
+        Assert.DoesNotContain("write", failure.Message);
+        Assert.Equal(0, calls.Count);
+        await recorder.Received(1).RecordAsync(
+            new AuthorizationDenial(request, AuthorizationDenialReason.ResourceHidden, "user-1", "write",
+                "item-7"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenPolicyReturnsUndefinedAccess_Denies()
+    {
+        // Arrange (Given) — fails closed
+        var calls = new PipelineCalls();
+        var policy = Substitute.For<IResourceAccessPolicy>();
+        policy.CheckAsync(Arg.Any<ICurrentPrincipal>(), Arg.Any<IResourceScoped>(), Arg.Any<CancellationToken>())
+            .Returns((ResourceAccess)42);
+        var behavior = new ResourceAuthorizationBehavior<RenameItem, Result>(Principals.Authenticated(), [], policy);
+
+        // Act (When)
+        var result = await behavior.HandleAsync(new RenameItem("item-7", "new name"), calls.Next<RenameItem>(),
+            TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.True(result.TryGetFailure(out var failure));
+        Assert.IsType<UnauthorizedFailure>(failure);
+        Assert.Equal(0, calls.Count);
+    }
+
+    [Theory]
+    [InlineData(true, ResourceAccess.Allowed)]
+    [InlineData(false, ResourceAccess.Denied)]
+    public async Task CheckAsync_WhenNotOverridden_MapsIsAllowedAsync(bool allowed, ResourceAccess expected)
+    {
+        // Arrange (Given)
+        IResourceAccessPolicy policy = new BoolPolicy(allowed);
+
+        // Act (When)
+        var access = await policy.CheckAsync(Principals.Authenticated(), new RenameItem("item-7", "x"),
+            TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.Equal(expected, access);
+    }
+
+    [Fact]
+    public void ResourceAccess_Default_IsDenied()
+    {
+        // Arrange (Given) / Act (When) — an unconfigured mock or an uninitialized field gets the default
+        var access = default(ResourceAccess);
+
+        // Assert (Then)
+        Assert.Equal(ResourceAccess.Denied, access);
+    }
+
+    private sealed class BoolPolicy(bool allowed) : IResourceAccessPolicy
+    {
+        public ValueTask<bool> IsAllowedAsync(ICurrentPrincipal principal,
+            IResourceScoped request,
+            CancellationToken cancellationToken = default)
+        {
+            return new ValueTask<bool>(allowed);
+        }
     }
 
     [Fact]
@@ -401,7 +486,7 @@ public sealed class ResourceAuthorizationBehaviorTests
         Assert.True(result.TryGetFailure(out var failure));
         Assert.IsType<UnauthorizedFailure>(failure);
         Assert.Equal(0, calls.Count);
-        await policy.Received(1).IsAllowedAsync(Arg.Any<ICurrentPrincipal>(),
+        await policy.Received(1).CheckAsync(Arg.Any<ICurrentPrincipal>(),
             Arg.Is<IResourceScoped>(r => ReferenceEquals(r, request) && r.ResourceId == "acc-1"),
             Arg.Any<CancellationToken>());
         await recorder.Received(1).RecordAsync(
@@ -429,7 +514,7 @@ public sealed class ResourceAuthorizationBehaviorTests
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(act);
         Assert.Contains(nameof(ListAccounts), exception.Message);
         Assert.Equal(0, calls.Count);
-        await policy.DidNotReceiveWithAnyArgs().IsAllowedAsync(null!, null!, CancellationToken.None);
+        await policy.DidNotReceiveWithAnyArgs().CheckAsync(null!, null!, CancellationToken.None);
     }
 
     [Fact]

@@ -40,9 +40,11 @@ public sealed class SynapseAuthorizationOptions
     /// </summary>
     /// <remarks>
     ///     The failure's type cannot change: return an <see cref="UnauthenticatedFailure" /> for
-    ///     <see cref="AuthorizationDenialReason.Unauthenticated" /> and an <see cref="UnauthorizedFailure" /> otherwise
-    ///     (or a subclass). Transports map the type to 401 / 403, so another type throws an
-    ///     <see cref="InvalidOperationException" /> rather than turn a denial into a 404 or a 422.
+    ///     <see cref="AuthorizationDenialReason.Unauthenticated" />, a <see cref="NotFoundFailure" /> for
+    ///     <see cref="AuthorizationDenialReason.ResourceHidden" /> and an <see cref="UnauthorizedFailure" /> otherwise
+    ///     (or a subclass). Transports map the type to 401 / 404 / 403, so another type throws an
+    ///     <see cref="InvalidOperationException" /> rather than turn a denial into another status. Only the resource
+    ///     policy decides whether a denial hides the resource (<see cref="ResourceAccess.Hidden" />).
     /// </remarks>
     public Func<AuthorizationDenial, Failure?>? DenialFailure { get; set; }
 

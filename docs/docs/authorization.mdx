@@ -178,6 +178,45 @@ public sealed class LoanAccessPolicy(LoansDbContext db) : IResourceAccessPolicy
 
 `request` is the request itself, so you can pattern-match it to read more than `ResourceId` and `Access`. Without a registered policy, every `IResourceScoped` request is denied: the behavior fails closed.
 
+### Hiding a resource the caller cannot see
+
+A denied resource answers `403`, which tells the caller the resource exists. To answer as if it did not exist, so that probing identifiers tells nothing, override `CheckAsync` and return `ResourceAccess.Hidden`:
+
+```csharp
+public sealed class LoanAccessPolicy(LoansDbContext db) : IResourceAccessPolicy
+{
+    public ValueTask<bool> IsAllowedAsync(ICurrentPrincipal principal, IResourceScoped request,
+        CancellationToken cancellationToken = default)
+        => throw new NotSupportedException(); // CheckAsync is overridden, so the behaviors never call it
+
+    public async ValueTask<ResourceAccess> CheckAsync(ICurrentPrincipal principal, IResourceScoped request,
+        CancellationToken cancellationToken = default)
+    {
+        var loan = await db.Loans.FindAsync([Guid.Parse(request.ResourceId)], cancellationToken);
+        if (loan is null || !loan.IsVisibleTo(principal.Id))
+        {
+            return ResourceAccess.Hidden;  // 404, same as a missing loan
+        }
+
+        return request.Access == "read" || loan.OwnerId == principal.Id
+            ? ResourceAccess.Allowed
+            : ResourceAccess.Denied;       // 403: the caller can read it, so it knows it exists
+    }
+}
+```
+
+| `CheckAsync` returns | Failure | HTTP | Denial reason |
+|---|---|---|---|
+| `Allowed` | none, the request goes on | | |
+| `Denied` | `UnauthorizedFailure` (`UNAUTHORIZED`) | 403 | `ResourceAccessDenied` |
+| `Hidden` | `NotFoundFailure` (`NOT_FOUND`), fixed message | 404 | `ResourceHidden` |
+
+By default `CheckAsync` maps `IsAllowedAsync` to `Allowed` or `Denied`, so existing policies are unchanged. Keep `Denied` for a caller who can read the resource but not do what the request asks: a `404` would look like a bug to someone who just read it. `default(ResourceAccess)` is `Denied`, so a value that was never set fails closed.
+
+:::warning
+The behaviors call `CheckAsync`, not `IsAllowedAsync`. A mocked policy (`Substitute.For<IResourceAccessPolicy>()`) set up on `IsAllowedAsync` alone now denies every request, because the mock's `CheckAsync` returns `Denied`: configure `CheckAsync` instead.
+:::
+
 ## Request policies
 
 A request that creates a resource has no resource to check yet, but often still needs a check on what it asks for: an invoice for a customer the caller may bill, an account in a branch the caller belongs to, a booking in an open period. Write a policy for that request type:
@@ -214,7 +253,7 @@ public sealed class AuditDenials(ILogger<AuditDenials> logger) : IAuthorizationD
 }
 ```
 
-`AuthorizationDenial` carries the request, the `Reason` (`Unauthenticated`, `MissingRole`, `MissingScope`, `ResourceAccessDenied`, `RequestDenied`), the caller's `Id`, the missing role, scope or access in `Requirement`, and the `ResourceId` for resource denials.
+`AuthorizationDenial` carries the request, the `Reason` (`Unauthenticated`, `MissingRole`, `MissingScope`, `ResourceAccessDenied`, `RequestDenied`, `ResourceHidden`), the caller's `Id`, the missing role, scope or access in `Requirement`, and the `ResourceId` for resource denials.
 
 ## Background work
 
@@ -254,7 +293,7 @@ services.AddSynapseAuthorization(o => o.DenialFailure = denial => denial.Reason 
 
 It receives the same `AuthorizationDenial` as the recorders, for requests and streams alike, and runs only when a request is denied. The recorders are still called.
 
-The failure keeps its type, since transports map it to `401` / `403` and the MCP invoker hides existence behind it. Return an `UnauthenticatedFailure` for `Unauthenticated` and an `UnauthorizedFailure` for every other reason. Any other type throws `InvalidOperationException`, so a denial cannot become a `404` or a `422` by mistake.
+The failure keeps its type, since transports map it to `401` / `403` / `404` and the MCP invoker hides existence behind it. Return an `UnauthenticatedFailure` for `Unauthenticated`, a `NotFoundFailure` for `ResourceHidden` and an `UnauthorizedFailure` for every other reason. Any other type throws `InvalidOperationException`, so a denial cannot become a `404` or a `422` by mistake: only the resource policy decides to hide a resource (see [Hiding a resource the caller cannot see](#hiding-a-resource-the-caller-cannot-see)).
 
 ## Limits
 
