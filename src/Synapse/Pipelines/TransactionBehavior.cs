@@ -16,7 +16,7 @@ namespace UnambitiousFx.Synapse.Pipelines;
 ///     <para>
 ///         It has no <c>ITransactional</c> constraint, so the source generator can close it over every request
 ///         (Native-AOT safe); a request that is not <see cref="ITransactional" /> passes straight through to the next
-///         stage without touching the <see cref="ITransactionManager" />. Wire it with
+///         stage without calling the <see cref="ITransactionManager" /> (the constructor still resolves it). Wire it with
 ///         <see cref="ISynapseConfig.AddTransactions{TManager}" />, which registers it only for
 ///         <see cref="ITransactional" /> requests, or with
 ///         <c>[assembly: SynapseGlobalBehavior(typeof(TransactionBehavior&lt;,&gt;))]</c> plus

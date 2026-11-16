@@ -183,7 +183,7 @@ Constrain the open-generic behavior on a marker interface and it applies only to
 
 ```csharp
 [PipelineBehavior]
-public sealed class TransactionBehavior<TRequest, TResponse>
+public sealed class CommandAuditBehavior<TRequest, TResponse>
     : IRequestPipelineBehavior<TRequest, TResponse>
     where TRequest : ICommand<TResponse>
     where TResponse : notnull
@@ -193,7 +193,7 @@ public sealed class TransactionBehavior<TRequest, TResponse>
         RequestHandlerDelegate<TRequest, TResponse> next,
         CancellationToken cancellationToken = default)
     {
-        // begin transaction, call next, commit or roll back
+        // audit the command, call next
         return await next(request, cancellationToken);
     }
 }

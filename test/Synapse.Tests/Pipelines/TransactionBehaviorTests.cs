@@ -173,6 +173,7 @@ public sealed class TransactionBehaviorTests
         await manager.Received(1).BeginAsync(Arg.Any<CancellationToken>());
         var behaviors = provider.GetRequiredService<IPipelineDescriber>().Describe<TransactionalCommand>()!.Behaviors;
         var transaction = Assert.Single(behaviors);
+        Assert.Equal(typeof(TransactionBehavior<TransactionalCommand, Result>), transaction.Type);
         Assert.Equal(3u, transaction.Order);
     }
 
@@ -215,7 +216,7 @@ public sealed class TransactionBehaviorTests
     }
 
     [Fact]
-    public async Task InvokeAsync_WithAddTransactionsAndAClosedRegistration_OpensOneScope()
+    public async Task InvokeAsync_WithAClosedRegistrationBeforeAddTransactions_OpensOneScope()
     {
         // Arrange (Given) — the closed registration is what [SynapseGlobalBehavior] makes the generator emit
         var (manager, scope) = SubstituteManager();
@@ -236,7 +237,7 @@ public sealed class TransactionBehaviorTests
     }
 
     [Fact]
-    public async Task InvokeAsync_WithAClosedRegistrationBeforeAddTransactions_OpensOneScope()
+    public async Task InvokeAsync_WithAClosedRegistrationAfterAddTransactions_OpensOneScope()
     {
         // Arrange (Given)
         var (manager, _) = SubstituteManager();
@@ -245,6 +246,34 @@ public sealed class TransactionBehaviorTests
             cfg.AddTransactions<StubTransactionManager>();
             cfg.RegisterResultPipelineBehavior<TransactionBehavior<TransactionalCommand, Result>, TransactionalCommand>();
         });
+        await using var serviceScope = provider.CreateAsyncScope();
+        var invoker = serviceScope.ServiceProvider.GetRequiredService<IInvoker>();
+
+        // Act (When)
+        await invoker.InvokeAsync(new TransactionalCommand(), TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        await manager.Received(1).BeginAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task InvokeAsync_WithAClosedRegistrationFromASecondAddSynapse_OpensOneScope()
+    {
+        // Arrange (Given) — the second AddSynapse registers the closed behavior after the first applied AddTransactions
+        var (manager, _) = SubstituteManager();
+        var services = new ServiceCollection();
+        services.AddSingleton(new ManagerHolder(manager));
+        services.AddSynapse(cfg =>
+        {
+            cfg.RegisterRequestHandler<TransactionalCommandHandler, TransactionalCommand>();
+            cfg.AddTransactions<StubTransactionManager>();
+        });
+        services.AddSynapse(cfg =>
+        {
+            cfg.RegisterRequestHandler<TransactionalCommandHandler, TransactionalCommand>();
+            cfg.RegisterResultPipelineBehavior<TransactionBehavior<TransactionalCommand, Result>, TransactionalCommand>();
+        });
+        await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         await using var serviceScope = provider.CreateAsyncScope();
         var invoker = serviceScope.ServiceProvider.GetRequiredService<IInvoker>();
 

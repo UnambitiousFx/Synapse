@@ -189,7 +189,8 @@ Calling it twice registers the behavior once per request. If you also apply
 `AddTransactions` are the same registration and run the behavior once, in either order. You do not need that
 attribute any more. It still works with `AddTransactionManager<TManager>()`, which registers only the manager and
 the options, but the generator then closes the behavior over every request (it has no constraint to filter on); a
-request that is not `ITransactional` passes straight through.
+request that is not `ITransactional` passes straight through. Do not also register `TransactionBehavior<,>` as a runtime open generic
+(`AddOpenGeneric…`): it would run twice for transactional requests.
 
 ## See also
 
