@@ -112,6 +112,8 @@ public sealed class FluentValidationBehaviorTests
     {
         // Arrange (Given)
         var services = new ServiceCollection();
+        services.AddSingleton<HandlerCalls>();
+        services.AddSynapse(cfg => cfg.RegisterRequestHandler<CreateUserHandler, CreateUser>());
         services.AddSynapseFluentValidation();
         using var provider = services.BuildServiceProvider();
         using var scope = provider.CreateScope();
@@ -130,6 +132,8 @@ public sealed class FluentValidationBehaviorTests
     {
         // Arrange (Given)
         var services = new ServiceCollection();
+        services.AddSingleton<HandlerCalls>();
+        services.AddSynapse(cfg => cfg.RegisterRequestHandler<CreateUserHandler, CreateUser>());
         services.AddSynapseFluentValidation(o => o.Order = IOrderedPipelineBehavior.First);
         using var provider = services.BuildServiceProvider();
         using var scope = provider.CreateScope();
@@ -177,6 +181,123 @@ public sealed class FluentValidationBehaviorTests
         Assert.True(withResponse.IsSuccess);
         Assert.Equal(2, provider.GetRequiredService<CountingTransactionManager.Calls>().Begins);
         Assert.Equal(2, provider.GetRequiredService<HandlerCalls>().Count);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task InvokeAsync_ValidationRegisteredBeforeOrAfterAddSynapse_ValidatesTheRequest(bool validationFirst)
+    {
+        // Arrange (Given)
+        var services = new ServiceCollection();
+        services.AddSingleton<HandlerCalls>();
+        services.AddScoped<IValidator<CreateUser>, CreateUserValidator>();
+        if (validationFirst)
+        {
+            services.AddSynapseFluentValidation();
+        }
+
+        services.AddSynapse(cfg => cfg.RegisterRequestHandler<CreateUserHandler, CreateUser>());
+        if (!validationFirst)
+        {
+            services.AddSynapseFluentValidation();
+        }
+
+        await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        await using var scope = provider.CreateAsyncScope();
+        var invoker = scope.ServiceProvider.GetRequiredService<IInvoker>();
+
+        // Act (When)
+        var result = await invoker.InvokeAsync(new CreateUser(""), TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.IsType<ValidationFailure>(Failures(result).Single());
+        Assert.Equal(0, provider.GetRequiredService<HandlerCalls>().Count);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_InvalidValueTypeRequest_ReturnsValidationFailureAndSkipsHandler()
+    {
+        // Arrange (Given)
+        var services = new ServiceCollection();
+        services.AddSingleton<HandlerCalls>();
+        services.AddScoped<IValidator<Ping>, PingValidator>();
+        services.AddSynapse(cfg => cfg.RegisterRequestHandler<PingHandler, Ping, string>());
+        services.AddSynapseFluentValidation();
+        await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        await using var scope = provider.CreateAsyncScope();
+        var invoker = scope.ServiceProvider.GetRequiredService<IInvoker>();
+
+        // Act (When)
+        var result = await invoker.InvokeAsync(new Ping(0), TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.IsType<ValidationFailure>(Failures(result).Single());
+        Assert.Equal(0, provider.GetRequiredService<HandlerCalls>().Count);
+    }
+
+    [Fact]
+    public void AddSynapseFluentValidation_CalledTwice_RegistersEachBehaviorOnce()
+    {
+        // Arrange (Given)
+        var services = new ServiceCollection();
+        services.AddSynapse(cfg =>
+        {
+            cfg.RegisterRequestHandler<CreateUserHandler, CreateUser>();
+            cfg.RegisterRequestHandler<GetUserHandler, GetUser, string>();
+        });
+
+        // Act (When)
+        services.AddSynapseFluentValidation().AddSynapseFluentValidation();
+
+        // Assert (Then)
+        Assert.Single(services, d => d.ServiceType == typeof(IRequestPipelineBehavior<CreateUser>));
+        Assert.Single(services, d => d.ServiceType == typeof(IRequestPipelineBehavior<GetUser, string>));
+        Assert.DoesNotContain(services, d => d.ServiceType.IsGenericTypeDefinition &&
+                                             d.ImplementationType?.IsGenericTypeDefinition == true &&
+                                             d.ImplementationType.Name.StartsWith("FluentValidationBehavior"));
+    }
+
+    [Fact]
+    public async Task InvokeAsync_ClosedBehaviorRegisteredAlongside_RunsOnce()
+    {
+        // Arrange (Given)
+        var services = new ServiceCollection();
+        services.AddSingleton<HandlerCalls>();
+        services.AddScoped<IValidator<CreateUser>, CreateUserValidator>();
+        services.AddSynapse(cfg => cfg.RegisterRequestHandler<CreateUserHandler, CreateUser>());
+        services.AddScoped<IRequestPipelineBehavior<CreateUser>, FluentValidationBehavior<CreateUser>>();
+        services.AddSynapseFluentValidation();
+        await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        await using var scope = provider.CreateAsyncScope();
+        var invoker = scope.ServiceProvider.GetRequiredService<IInvoker>();
+
+        // Act (When)
+        var result = await invoker.InvokeAsync(new CreateUser(""), TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        var behaviors = scope.ServiceProvider.GetServices<IRequestPipelineBehavior<CreateUser>>();
+        Assert.Single(behaviors);
+        Assert.IsType<ValidationFailure>(Failures(result).Single());
+    }
+
+    public readonly record struct Ping(int Id) : IRequest<string>;
+
+    private sealed class PingHandler(HandlerCalls calls) : IRequestHandler<Ping, string>
+    {
+        public ValueTask<Result<string>> HandleAsync(Ping request, CancellationToken cancellationToken = default)
+        {
+            calls.Count++;
+            return new ValueTask<Result<string>>(Result.Success("pong"));
+        }
+    }
+
+    private sealed class PingValidator : AbstractValidator<Ping>
+    {
+        public PingValidator()
+        {
+            RuleFor(x => x.Id).GreaterThan(0);
+        }
     }
 
     private static IEnumerable<IFailure> Failures(IResult result)
