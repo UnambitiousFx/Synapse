@@ -5,8 +5,8 @@
 **Discovered on:** `main`, .NET 10, during an RFC-compliance audit of the web integration packages
 **Status:** ✅ **Resolved** on `fix/aspnetcore-rfc-auth-responses` — see [Resolution](#resolution).
 
-> **TL;DR.** `IHttpInvoker` and `IMvcInvoker` now add a `WWW-Authenticate` challenge (the app's default
-> challenge scheme, `Bearer` when none is registered) to every failure response that resolves to 401.
+> **TL;DR.** `IHttpInvoker` and `IMvcInvoker` now add a `WWW-Authenticate` challenge
+> (`SynapseAspNetCoreOptions.AuthenticationChallenge`, `Bearer` by default) to every failure response that resolves to 401.
 
 ---
 
@@ -75,10 +75,12 @@ headers, and a custom mapper is not required to either.
 
 On every failure path the invokers wrap the result (`ChallengingHttpResult` / `ChallengingActionResult`).
 The wrapper registers a `Response.OnStarting` callback that, when the final status is 401 and no challenge
-is present, writes `WWW-Authenticate` with the name of the app's default challenge scheme
-(`IAuthenticationSchemeProvider`), or `Bearer` when no authentication is registered. Checking the final
-status keeps it correct with any registered `IFailureHttpMapper`; the success path is untouched.
+is present, writes `WWW-Authenticate` with `SynapseAspNetCoreOptions.AuthenticationChallenge` (`Bearer` by
+default, `null` to disable), set through `AddSynapseAspNetCore(o => ...)`. The value is configured rather than
+read from the default authentication scheme because a scheme's registration name (say `ApiJwt`) is not the HTTP
+authentication method a client can answer. Checking the final status keeps it correct with any registered
+`IFailureHttpMapper`; the success path is untouched.
 
 **Verification.** `HttpInvokerTests` (`InvokeAsync_WhenUnauthenticated_Returns401WithBearerChallenge`,
-`..._ChallengesWithDefaultChallengeScheme`, `InvokeAsync_WhenForbidden_Returns403WithoutChallenge`) and
+`..._WritesConfiguredChallenge`, `InvokeAsync_WhenForbidden_Returns403WithoutChallenge`) and
 `MvcInvokerTests.InvokeAsync_WhenUnauthenticated_Returns401WithBearerChallenge`.

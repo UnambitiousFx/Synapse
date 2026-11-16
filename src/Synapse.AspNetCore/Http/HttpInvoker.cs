@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Options;
 using UnambitiousFx.Functional;
 using UnambitiousFx.Functional.AspNetCore.Http;
 using UnambitiousFx.Functional.AspNetCore.Mappers;
@@ -9,14 +10,17 @@ namespace UnambitiousFx.Synapse.AspNetCore.Http;
 
 internal sealed class HttpInvoker : IHttpInvoker
 {
+    private readonly string? _challenge;
     private readonly IFailureHttpMapper _failureMapper;
     private readonly IInvoker _invoker;
 
     public HttpInvoker(IInvoker invoker,
-        IFailureHttpMapper failureMapper)
+        IFailureHttpMapper failureMapper,
+        IOptions<SynapseAspNetCoreOptions> options)
     {
         _invoker = invoker;
         _failureMapper = failureMapper;
+        _challenge = options.Value.AuthenticationChallenge;
     }
 
     public async ValueTask<IHttpResult> InvokeAsync<TResponse>(IRequest<TResponse> request,
@@ -24,7 +28,7 @@ internal sealed class HttpInvoker : IHttpInvoker
     {
         var result = await _invoker.InvokeAsync(request, cancellationToken);
         var httpResult = await result.AsHttpBuilder(_failureMapper);
-        return result.IsSuccess ? httpResult : new ChallengingHttpResult(httpResult);
+        return result.IsSuccess ? httpResult : new ChallengingHttpResult(httpResult, _challenge);
     }
 
     public async ValueTask<IHttpResult> InvokeAsync<TResponse>(IRequest<TResponse> request,
@@ -36,7 +40,7 @@ internal sealed class HttpInvoker : IHttpInvoker
             return onSuccess(value!);
         }
 
-        return new ChallengingHttpResult(await result.AsHttpBuilder(_failureMapper));
+        return new ChallengingHttpResult(await result.AsHttpBuilder(_failureMapper), _challenge);
     }
 
     public async ValueTask<IHttpResult> InvokeAsync<TRequest>(TRequest request,
@@ -44,37 +48,55 @@ internal sealed class HttpInvoker : IHttpInvoker
     {
         var result = await _invoker.InvokeAsync(request, cancellationToken);
         var httpResult = await result.AsHttpBuilder(_failureMapper);
-        return result.IsSuccess ? httpResult : new ChallengingHttpResult(httpResult);
+        return result.IsSuccess ? httpResult : new ChallengingHttpResult(httpResult, _challenge);
     }
 
-    public async ValueTask<IHttpResult> InvokeStreamAsync<TItem>(IStreamRequest<TItem> request,
+    public ValueTask<IHttpResult> InvokeStreamAsync<TItem>(IStreamRequest<TItem> request,
         CancellationToken cancellationToken = default) where TItem : notnull
     {
-        // The status is chosen from the first item: once the body starts, a failure can no longer change it.
-        var items = _invoker.InvokeStreamAsync(request, cancellationToken).GetAsyncEnumerator(cancellationToken);
-        if (!await items.MoveNextAsync())
-        {
-            await items.DisposeAsync();
-            return TypedResults.Ok(Array.Empty<TItem>());
-        }
-
-        var first = items.Current;
-        if (!first.TryGet(out var firstItem, out _))
-        {
-            await items.DisposeAsync();
-            return new ChallengingHttpResult(await first.AsHttpBuilder(_failureMapper));
-        }
-
-        return TypedResults.Ok(Remaining(firstItem!, items));
+        // The stream is opened only when the result executes, so a result an endpoint filter discards opens nothing.
+        return ValueTask.FromResult<IHttpResult>(new StreamHttpResult<TItem>(this, request, cancellationToken));
     }
 
-    private static async IAsyncEnumerable<TItem> Remaining<TItem>(TItem first, IAsyncEnumerator<Result<TItem>> items)
-        where TItem : notnull
+    private sealed class StreamHttpResult<TItem> : IHttpResult where TItem : notnull
     {
-        await using (items)
+        private readonly CancellationToken _cancellationToken;
+        private readonly HttpInvoker _owner;
+        private readonly IStreamRequest<TItem> _request;
+
+        public StreamHttpResult(HttpInvoker owner, IStreamRequest<TItem> request, CancellationToken cancellationToken)
         {
-            yield return first;
-            while (await items.MoveNextAsync())
+            _owner = owner;
+            _request = request;
+            _cancellationToken = cancellationToken;
+        }
+
+        public async Task ExecuteAsync(HttpContext httpContext)
+        {
+            await using var items = _owner._invoker.InvokeStreamAsync(_request, _cancellationToken)
+                .GetAsyncEnumerator(_cancellationToken);
+
+            // The first item decides the status: once the body starts, a failure can no longer change it.
+            var hasFirst = await items.MoveNextAsync();
+            if (hasFirst && !items.Current.TryGet(out _, out _))
+            {
+                var failure = await items.Current.AsHttpBuilder(_owner._failureMapper);
+                await new ChallengingHttpResult(failure, _owner._challenge).ExecuteAsync(httpContext);
+                return;
+            }
+
+            // Typed as IAsyncEnumerable even when empty, so one JsonTypeInfo covers every case under Native AOT.
+            await TypedResults.Ok(Remaining(items, hasFirst)).ExecuteAsync(httpContext);
+        }
+
+        private static async IAsyncEnumerable<TItem> Remaining(IAsyncEnumerator<Result<TItem>> items, bool hasFirst)
+        {
+            if (!hasFirst)
+            {
+                yield break;
+            }
+
+            do
             {
                 if (!items.Current.TryGet(out var item, out var failure))
                 {
@@ -85,7 +107,7 @@ internal sealed class HttpInvoker : IHttpInvoker
                 }
 
                 yield return item!;
-            }
+            } while (await items.MoveNextAsync());
         }
     }
 }

@@ -117,7 +117,13 @@ app.MapGet("/tasks/stream", (
 
 ### `401` challenge
 
-Every failure that resolves to `401 Unauthorized` carries the `WWW-Authenticate` header RFC 9110 requires. Its value is the name of the app's default challenge scheme (`Bearer` with JWT bearer authentication), or `Bearer` when no authentication is registered. A header already written by a custom `IFailureHttpMapper` is kept. This applies to `IHttpInvoker` and `IMvcInvoker` alike.
+Every failure that resolves to `401 Unauthorized` carries the `WWW-Authenticate` header RFC 9110 requires, `Bearer` by default. Set the authentication method your clients use, or `null` to write none (a cookie-based app that never answers 401):
+
+```csharp
+builder.Services.AddSynapseAspNetCore(o => o.AuthenticationChallenge = "Basic realm=\"api\"");
+```
+
+The value is the HTTP authentication method, not the name a handler is registered under. A header already written by a custom `IFailureHttpMapper` is kept. This applies to `IHttpInvoker` and `IMvcInvoker` alike.
 
 ## `IMvcInvoker` — Controller-based API
 

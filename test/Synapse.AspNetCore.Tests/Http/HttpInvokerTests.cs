@@ -1,6 +1,5 @@
-using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 using UnambitiousFx.Functional;
 using UnambitiousFx.Functional.AspNetCore.Mappers;
@@ -18,7 +17,7 @@ public sealed class HttpInvokerTests
         // Arrange (Given)
         var invoker = Substitute.For<IInvoker>();
         var failureMapper = Substitute.For<IFailureHttpMapper>();
-        var sut = new HttpInvoker(invoker, failureMapper);
+        var sut = new HttpInvoker(invoker, failureMapper, Options.Create(new SynapseAspNetCoreOptions()));
         var request = new IntRequest();
         var expectedResult = new StaticResult(299);
 
@@ -38,7 +37,7 @@ public sealed class HttpInvokerTests
         // Arrange (Given)
         var invoker = Substitute.For<IInvoker>();
         var failureMapper = Substitute.For<IFailureHttpMapper>();
-        var sut = new HttpInvoker(invoker, failureMapper);
+        var sut = new HttpInvoker(invoker, failureMapper, Options.Create(new SynapseAspNetCoreOptions()));
         var request = new IntRequest();
 
         invoker.InvokeAsync(request, Arg.Any<CancellationToken>())
@@ -57,7 +56,7 @@ public sealed class HttpInvokerTests
         // Arrange (Given)
         var invoker = Substitute.For<IInvoker>();
         var failureMapper = Substitute.For<IFailureHttpMapper>();
-        var sut = new HttpInvoker(invoker, failureMapper);
+        var sut = new HttpInvoker(invoker, failureMapper, Options.Create(new SynapseAspNetCoreOptions()));
         var request = new VoidRequest();
 
         invoker.InvokeAsync(request, Arg.Any<CancellationToken>())
@@ -75,7 +74,7 @@ public sealed class HttpInvokerTests
     {
         // Arrange (Given)
         var invoker = Substitute.For<IInvoker>();
-        var sut = new HttpInvoker(invoker, new DefaultFailureHttpMapper());
+        var sut = new HttpInvoker(invoker, new DefaultFailureHttpMapper(), Options.Create(new SynapseAspNetCoreOptions()));
         var request = new IntRequest();
         var http = new HttpTestContext();
 
@@ -92,18 +91,17 @@ public sealed class HttpInvokerTests
         Assert.Equal("Bearer", http.Response.Headers.WWWAuthenticate.ToString());
     }
 
-    [Fact]
-    public async Task InvokeAsync_WhenUnauthenticated_ChallengesWithDefaultChallengeScheme()
+    [Theory]
+    [InlineData("Basic realm=\"api\"", "Basic realm=\"api\"")]
+    [InlineData(null, null)]
+    public async Task InvokeAsync_WhenUnauthenticated_WritesConfiguredChallenge(string? configured, string? expected)
     {
         // Arrange (Given)
         var invoker = Substitute.For<IInvoker>();
-        var sut = new HttpInvoker(invoker, new DefaultFailureHttpMapper());
+        var options = Options.Create(new SynapseAspNetCoreOptions { AuthenticationChallenge = configured });
+        var sut = new HttpInvoker(invoker, new DefaultFailureHttpMapper(), options);
         var request = new VoidRequest();
-        var http = new HttpTestContext(services => services.AddAuthentication(o =>
-        {
-            o.AddScheme<NoopAuthenticationHandler>("Negotiate", null);
-            o.DefaultChallengeScheme = "Negotiate";
-        }));
+        var http = new HttpTestContext();
 
         invoker.InvokeAsync(request, Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult(Result.Failure(new UnauthenticatedFailure("Authentication is required."))));
@@ -115,7 +113,22 @@ public sealed class HttpInvokerTests
 
         // Assert (Then)
         Assert.Equal(StatusCodes.Status401Unauthorized, http.Response.StatusCode);
-        Assert.Equal("Negotiate", http.Response.Headers.WWWAuthenticate.ToString());
+        Assert.Equal(expected, http.Response.Headers.WWWAuthenticate.FirstOrDefault());
+    }
+
+    [Fact]
+    public async Task InvokeStreamAsync_WhenResultNeverExecutes_DoesNotOpenStream()
+    {
+        // Arrange (Given)
+        var invoker = Substitute.For<IInvoker>();
+        var sut = new HttpInvoker(invoker, new DefaultFailureHttpMapper(), Options.Create(new SynapseAspNetCoreOptions()));
+        var request = new IntStreamRequest();
+
+        // Act (When)
+        _ = await sut.InvokeStreamAsync(request, TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        invoker.DidNotReceive().InvokeStreamAsync(Arg.Any<IStreamRequest<int>>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -123,7 +136,7 @@ public sealed class HttpInvokerTests
     {
         // Arrange (Given)
         var invoker = Substitute.For<IInvoker>();
-        var sut = new HttpInvoker(invoker, new DefaultFailureHttpMapper());
+        var sut = new HttpInvoker(invoker, new DefaultFailureHttpMapper(), Options.Create(new SynapseAspNetCoreOptions()));
         var request = new IntRequest();
         var http = new HttpTestContext();
 
@@ -145,7 +158,7 @@ public sealed class HttpInvokerTests
     {
         // Arrange (Given)
         var invoker = Substitute.For<IInvoker>();
-        var sut = new HttpInvoker(invoker, new DefaultFailureHttpMapper());
+        var sut = new HttpInvoker(invoker, new DefaultFailureHttpMapper(), Options.Create(new SynapseAspNetCoreOptions()));
         var request = new IntStreamRequest();
         var http = new HttpTestContext();
 
@@ -168,7 +181,7 @@ public sealed class HttpInvokerTests
     {
         // Arrange (Given)
         var invoker = Substitute.For<IInvoker>();
-        var sut = new HttpInvoker(invoker, new DefaultFailureHttpMapper());
+        var sut = new HttpInvoker(invoker, new DefaultFailureHttpMapper(), Options.Create(new SynapseAspNetCoreOptions()));
         var request = new IntStreamRequest();
         var http = new HttpTestContext();
 
@@ -189,7 +202,7 @@ public sealed class HttpInvokerTests
     {
         // Arrange (Given)
         var invoker = Substitute.For<IInvoker>();
-        var sut = new HttpInvoker(invoker, new DefaultFailureHttpMapper());
+        var sut = new HttpInvoker(invoker, new DefaultFailureHttpMapper(), Options.Create(new SynapseAspNetCoreOptions()));
         var request = new IntStreamRequest();
         var http = new HttpTestContext();
 
@@ -210,7 +223,7 @@ public sealed class HttpInvokerTests
     {
         // Arrange (Given)
         var invoker = Substitute.For<IInvoker>();
-        var sut = new HttpInvoker(invoker, new DefaultFailureHttpMapper());
+        var sut = new HttpInvoker(invoker, new DefaultFailureHttpMapper(), Options.Create(new SynapseAspNetCoreOptions()));
         var request = new IntStreamRequest();
         var http = new HttpTestContext();
 
@@ -244,29 +257,6 @@ public sealed class HttpInvokerTests
         public Task ExecuteAsync(HttpContext httpContext)
         {
             httpContext.Response.StatusCode = statusCode;
-            return Task.CompletedTask;
-        }
-    }
-
-    private sealed class NoopAuthenticationHandler : IAuthenticationHandler
-    {
-        public Task InitializeAsync(AuthenticationScheme scheme, HttpContext context)
-        {
-            return Task.CompletedTask;
-        }
-
-        public Task<AuthenticateResult> AuthenticateAsync()
-        {
-            return Task.FromResult(AuthenticateResult.NoResult());
-        }
-
-        public Task ChallengeAsync(AuthenticationProperties? properties)
-        {
-            return Task.CompletedTask;
-        }
-
-        public Task ForbidAsync(AuthenticationProperties? properties)
-        {
             return Task.CompletedTask;
         }
     }

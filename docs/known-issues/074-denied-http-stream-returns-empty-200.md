@@ -73,10 +73,11 @@ invoker could only drop failures.
 
 ### Resolution
 
-`InvokeStreamAsync` now returns `ValueTask<IResult>` and reads the first item before choosing the response:
+`InvokeStreamAsync` now returns `ValueTask<IResult>`. The stream is opened only when that result executes (a
+result an endpoint filter discards opens nothing), and the first item is read before choosing the response:
 
 - first item failed → the failure goes through `IFailureHttpMapper` (with the 401 challenge of issue 073);
-- stream empty → `200` with `[]`;
+- stream empty → `200` with `[]`, still typed `IAsyncEnumerable<TItem>` so Native AOT needs one `JsonTypeInfo`;
 - otherwise → `200` streaming the items as a JSON array. A later failure throws, which aborts the response so
   the client sees a truncated body rather than a complete one.
 
