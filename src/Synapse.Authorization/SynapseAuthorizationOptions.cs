@@ -17,11 +17,15 @@ public sealed class SynapseAuthorizationOptions
     /// <summary>The default <see cref="CommandScope" />.</summary>
     public const string DefaultCommandScope = "write";
 
+    private readonly Dictionary<Type, RequestIntent> _intents = [];
     private readonly List<Action<IServiceCollection>> _registrations = [];
 
     /// <summary>
     ///     The scope every query (<c>IQuery&lt;T&gt;</c>) requires unless it implements <see cref="IRequiresScope" />.
     ///     <see langword="null" /> turns the default off for queries. Defaults to <see cref="DefaultQueryScope" />.
+    ///     The marker is read through the handler shapes registered for the request: the <c>IQuery&lt;T&gt;</c> whose <c>T</c> is
+    ///     the handler's response type. When a type has several handler shapes, the strictest intent applies
+    ///     (command over query).
     /// </summary>
     public string? QueryScope { get; set; } = DefaultQueryScope;
 
@@ -29,6 +33,9 @@ public sealed class SynapseAuthorizationOptions
     ///     The scope every command (<c>ICommand</c>, <c>ICommand&lt;T&gt;</c>) requires unless it implements
     ///     <see cref="IRequiresScope" />. <see langword="null" /> turns the default off for commands. Defaults to
     ///     <see cref="DefaultCommandScope" />.
+    ///     The marker is read through the handler shapes registered for the request: the <c>ICommand&lt;T&gt;</c> whose <c>T</c> is
+    ///     the handler's response type, or the non-generic <c>ICommand</c>. When a type has several handler shapes, the strictest intent applies
+    ///     (command over query).
     /// </summary>
     public string? CommandScope { get; set; } = DefaultCommandScope;
 
@@ -113,6 +120,30 @@ public sealed class SynapseAuthorizationOptions
         _registrations.Add(services =>
             services.TryAddEnumerable(ServiceDescriptor.Scoped<IAuthorizationDenialRecorder, TRecorder>()));
         return this;
+    }
+
+    // Recorded by AuthorizationRegistrationVisitor, which sees the closed types core registers: a reflection-free
+    // replacement for scanning the interfaces, which native AOT cannot do. Kept per options instance, so one container
+    // never changes another's scopes. Writes happen during service registration (single-threaded per collection) and
+    // reads after the provider is built, so no locking. A type with several handler shapes keeps the strictest intent
+    // (Command > Query > Other), independent of registration order. Limit: a marker with no registered shape is not seen.
+    internal void RecordIntent(Type request, RequestIntent intent)
+    {
+        if (!_intents.TryGetValue(request, out var current) || intent == RequestIntent.Command ||
+            (intent == RequestIntent.Query && current == RequestIntent.Other))
+        {
+            _intents[request] = intent;
+        }
+    }
+
+    internal RequestIntent IntentOf(Type request)
+    {
+        // A wiring error surfaced when the behavior is constructed, not a request outcome, so it throws instead of
+        // returning an UnauthorizedFailure. Unknown fails closed: the request would silently lose its default scope.
+        return _intents.TryGetValue(request, out var intent)
+            ? intent
+            : throw new InvalidOperationException(
+                $"The request type '{request}' was not registered through Synapse, so its authorization intent is unknown (or AddSynapseAuthorization was not called on the same service collection).");
     }
 
     internal void Validate()

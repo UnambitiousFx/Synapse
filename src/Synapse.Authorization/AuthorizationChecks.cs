@@ -63,7 +63,7 @@ internal static class AuthorizationChecks
             return null;
         }
 
-        return RequestIntentOf<TRequest>.Value switch
+        return options.IntentOf(typeof(TRequest)) switch
         {
             RequestIntent.Command => options.CommandScope,
             RequestIntent.Query => options.QueryScope,

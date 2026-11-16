@@ -3,8 +3,7 @@
     <PropertyGroup>
         <TargetFrameworks>$(LibraryTargetFrameworks)</TargetFrameworks>
         <Description>Authorization for UnambitiousFx.Synapse: actor, role, scope and resource behaviors driven by request markers, returning UnauthenticatedFailure / UnauthorizedFailure instead of calling the handler.</Description>
-        <!-- The behaviors are registered as open generics, closed by the container at runtime. -->
-        <IsAotCompatible>false</IsAotCompatible>
+        <IsAotCompatible>true</IsAotCompatible>
     </PropertyGroup>
 
     <ItemGroup>

@@ -202,6 +202,17 @@ jobs:
             exit 1
           fi
 
+      - name: Publish authorization Native AOT smoke app
+        run: >
+          dotnet publish examples/AuthorizationAot/AuthorizationAot.csproj
+          --configuration Release
+          --runtime linux-x64
+          --self-contained
+          --output artifacts/authorization-aot
+
+      - name: Run authorization Native AOT smoke app
+        run: artifacts/authorization-aot/UnambitiousFx.Examples.AuthorizationAot
+
   http-smoke:
     name: HTTP Smoke Tests
     runs-on: ubuntu-latest

@@ -31,8 +31,10 @@ public sealed class AllowAnonymousTests
     {
         // Arrange (Given) — an anonymous caller holds no "write" scope
         var calls = new PipelineCalls();
+        var options = new SynapseAuthorizationOptions();
+        Intents.Register<SignIn>(options);
         var behavior = new ScopeAuthorizationBehavior<SignIn, Result>(Principals.Anonymous(),
-            new SynapseAuthorizationOptions(), []);
+            options, []);
 
         // Act (When)
         var result = await behavior.HandleAsync(new SignIn("a@b.c"), calls.Next<SignIn>(),
@@ -48,8 +50,10 @@ public sealed class AllowAnonymousTests
     {
         // Arrange (Given)
         var calls = new PipelineCalls();
+        var options = new SynapseAuthorizationOptions();
+        Intents.Register<AnonymousReport, string>(options);
         var behavior = new ScopeAuthorizationBehavior<AnonymousReport, Result<string>>(Principals.Anonymous(),
-            new SynapseAuthorizationOptions(), []);
+            options, []);
 
         // Act (When)
         var result = await behavior.HandleAsync(new AnonymousReport(), calls.NextWithValue<AnonymousReport>("r"),
@@ -90,8 +94,10 @@ public sealed class BlankRequirementTests
         // Arrange (Given) — the caller even holds the blank scope, which must not let the request through
         var calls = new PipelineCalls();
         var principal = Principals.Authenticated(scopes: [scope ?? "", "read"]);
+        var options = new SynapseAuthorizationOptions();
+        Intents.Register<BlankScopeQuery, string>(options);
         var behavior = new ScopeAuthorizationBehavior<BlankScopeQuery, Result<string>>(principal,
-            new SynapseAuthorizationOptions(), []);
+            options, []);
 
         // Act (When)
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(async () =>

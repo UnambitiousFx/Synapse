@@ -89,6 +89,12 @@ This page records issues discovered and resolved while hardening the library. Al
 | [073](https://github.com/UnambitiousFx/Synapse/blob/main/docs/known-issues/073-unauthenticated-401-has-no-www-authenticate-challenge.md) | A pipeline-denied request returned 401 without the `WWW-Authenticate` challenge RFC 9110 §15.5.2 requires; the invokers now add a configurable challenge (`Bearer` by default) to every failure that resolves to 401 | Medium |
 | [074](https://github.com/UnambitiousFx/Synapse/blob/main/docs/known-issues/074-denied-http-stream-returns-empty-200.md) | `IHttpInvoker.InvokeStreamAsync` skipped failed items, so a denied stream answered `200 []`; it now returns `IResult`, maps a failed first item to its 401/403/404 and aborts the response on a later failure (breaking) | **High** |
 
+## Authorization
+
+| ID | Summary | Severity |
+|---|---|---|
+| [076](https://github.com/UnambitiousFx/Synapse/blob/main/docs/known-issues/076-native-aot-skips-authorization-behaviors-for-value-type-requests.md) | Under Native AOT the open-generic authorization registration was silently dropped for value-type requests, so they ran with no authorization and no error; the behaviors are now registered closed per handler shape through a request-registration visitor | **High** |
+
 ---
 
 > **Discovery context:** Issues 001–003 were found while building the pipeline-behavior showcase in

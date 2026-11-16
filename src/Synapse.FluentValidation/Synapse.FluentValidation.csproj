@@ -3,8 +3,8 @@
     <PropertyGroup>
         <TargetFrameworks>$(LibraryTargetFrameworks)</TargetFrameworks>
         <Description>FluentValidation integration for UnambitiousFx.Synapse: runs every IValidator&lt;TRequest&gt; in the request pipeline and short-circuits with a ValidationFailure.</Description>
-        <!-- The behaviors are registered as open generics, closed by the container at runtime. -->
-        <IsAotCompatible>false</IsAotCompatible>
+        <!-- The behaviors are registered closed, through the request registration visitor. -->
+        <IsAotCompatible>true</IsAotCompatible>
     </PropertyGroup>
 
     <ItemGroup>
