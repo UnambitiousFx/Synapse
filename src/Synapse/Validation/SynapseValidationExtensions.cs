@@ -26,6 +26,13 @@ public static class SynapseValidationExtensions
     ///     handler whose constructor needs something that only exists inside a real request reports SYN003.
     ///     Behaviors added to the service collection after <c>AddSynapse</c> returned are not seen, and open-generic
     ///     behaviors are not checked.
+    ///     <para>
+    ///         Under Native AOT, calling this on a thread with a small stack can deadlock: when the container runs out
+    ///         of stack it continues the resolution on another thread while holding its resolution lock, and a service
+    ///         factory that resolves another service from there waits on that lock forever (the dependency-injection
+    ///         <c>StackGuard</c> in dotnet/runtime). Prefer <c>ValidateOnStart()</c>, which runs this on a dedicated
+    ///         large-stack thread, or call it from a thread created with a large stack.
+    ///     </para>
     /// </remarks>
     public static SynapseValidationReport ValidateSynapse(this IServiceProvider services)
     {

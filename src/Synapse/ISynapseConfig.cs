@@ -447,6 +447,8 @@ public interface ISynapseConfig
     ///     of failing at the first request. Errors throw <see cref="SynapseValidationException" />; warnings are
     ///     logged. Only generic-host applications start hosted services; elsewhere call
     ///     <c>ValidateSynapse()</c> yourself. See <see cref="SynapseValidationExtensions.ValidateSynapse" />.
+    ///     The check runs on a dedicated thread with a large stack, which avoids a dependency-injection deadlock that
+    ///     small stacks can trigger under Native AOT.
     /// </summary>
     /// <returns>The same config, for chaining.</returns>
     ISynapseConfig ValidateOnStart();
