@@ -248,6 +248,78 @@ public sealed class McpInvokerTests
     }
 
     [Fact]
+    public async Task InvokeAsync_WhenAnswerExceedsMaxLengthAndRefused_ReturnsAnswerTooLargeToolError()
+    {
+        // Arrange (Given)
+        var invoker = Substitute.For<IInvoker>();
+        var request = new GetText();
+        invoker.InvokeAsync(request, Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(Result.Success(new string('a', 100))));
+        var sut = CreateSut(invoker,
+            new SynapseMcpOptions
+            {
+                JsonContext = TestJsonContext.Default,
+                MaxAnswerLength = 10,
+                OversizedAnswer = OversizedAnswer.Refuse
+            });
+
+        // Act (When)
+        var result = await sut.InvokeAsync(request, TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.True(result.IsError);
+        var text = Assert.IsType<TextContentBlock>(Assert.Single(result.Content));
+        Assert.Equal(
+            "ANSWER_TOO_LARGE: The answer is 102 characters, above the 10 limit: narrow the request (a shorter period, a filter, a page).",
+            text.Text);
+        Assert.NotNull(result.Meta);
+        Assert.Equal(SynapseMcpOptions.AnswerTooLargeCode,
+            result.Meta[SynapseMcpMeta.FailureCode]!.GetValue<string>());
+        Assert.Equal(102, result.Meta[SynapseMcpMeta.OriginalLength]!.GetValue<int>());
+        Assert.Equal(10, result.Meta[SynapseMcpMeta.MaxAnswerLength]!.GetValue<int>());
+        Assert.False(result.Meta.ContainsKey(SynapseMcpMeta.Truncated));
+    }
+
+    [Fact]
+    public async Task InvokeAsync_WhenAnswerFitsMaxLengthAndRefusalIsOn_ReturnsTheAnswer()
+    {
+        // Arrange (Given)
+        var invoker = Substitute.For<IInvoker>();
+        var request = new GetText();
+        invoker.InvokeAsync(request, Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(Result.Success("abc")));
+        var sut = CreateSut(invoker,
+            new SynapseMcpOptions
+            {
+                JsonContext = TestJsonContext.Default,
+                MaxAnswerLength = 5,
+                OversizedAnswer = OversizedAnswer.Refuse
+            });
+
+        // Act (When)
+        var result = await sut.InvokeAsync(request, TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.NotEqual(true, result.IsError);
+        var text = Assert.IsType<TextContentBlock>(Assert.Single(result.Content));
+        Assert.Equal("\"abc\"", text.Text);
+    }
+
+    [Fact]
+    public void OversizedAnswer_WithUndefinedValue_Throws()
+    {
+        // Arrange (Given)
+        var options = new SynapseMcpOptions();
+
+        // Act (When)
+        var exception = Record.Exception(() => options.OversizedAnswer = (OversizedAnswer)42);
+
+        // Assert (Then)
+        Assert.IsType<ArgumentOutOfRangeException>(exception);
+        Assert.Equal(OversizedAnswer.Truncate, options.OversizedAnswer);
+    }
+
+    [Fact]
     public async Task InvokeAsync_WhenAnswerFitsMaxLengthExactly_DoesNotTruncate()
     {
         // Arrange (Given)

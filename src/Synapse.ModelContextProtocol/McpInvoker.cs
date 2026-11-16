@@ -16,6 +16,7 @@ internal sealed class McpInvoker : IMcpInvoker
     private readonly IMcpFailurePolicy _failurePolicy;
     private readonly IInvoker _invoker;
     private readonly int? _maxAnswerLength;
+    private readonly OversizedAnswer _oversizedAnswer;
     private readonly JsonSerializerOptions _serializerOptions;
     private readonly string _serializerSource;
 
@@ -26,6 +27,7 @@ internal sealed class McpInvoker : IMcpInvoker
         _invoker = invoker;
         _failurePolicy = failurePolicy;
         _maxAnswerLength = options.Value.MaxAnswerLength;
+        _oversizedAnswer = options.Value.OversizedAnswer;
         _serializerOptions = options.Value.SerializerOptions
                              ?? options.Value.JsonContext?.Options
                              ?? McpJsonUtilities.DefaultOptions;
@@ -81,6 +83,11 @@ internal sealed class McpInvoker : IMcpInvoker
             return new CallToolResult { Content = [new TextContentBlock { Text = json }] };
         }
 
+        if (_oversizedAnswer == OversizedAnswer.Refuse)
+        {
+            return Refusal(json.Length, max);
+        }
+
         var cut = max;
         // Cutting between the two halves of a surrogate pair would leave an invalid character at the end.
         if (char.IsHighSurrogate(json[cut - 1]))
@@ -102,6 +109,25 @@ internal sealed class McpInvoker : IMcpInvoker
             {
                 [SynapseMcpMeta.Truncated] = true,
                 [SynapseMcpMeta.OriginalLength] = json.Length
+            }
+        };
+    }
+
+    private static CallToolResult Refusal(int length,
+        int max)
+    {
+        var text = string.Create(CultureInfo.InvariantCulture,
+            $"{SynapseMcpOptions.AnswerTooLargeCode}: The answer is {length} characters, above the {max} limit: narrow the request (a shorter period, a filter, a page).");
+
+        return new CallToolResult
+        {
+            Content = [new TextContentBlock { Text = text }],
+            IsError = true,
+            Meta = new JsonObject
+            {
+                [SynapseMcpMeta.FailureCode] = SynapseMcpOptions.AnswerTooLargeCode,
+                [SynapseMcpMeta.OriginalLength] = length,
+                [SynapseMcpMeta.MaxAnswerLength] = max
             }
         };
     }
