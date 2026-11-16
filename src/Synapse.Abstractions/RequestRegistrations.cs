@@ -24,10 +24,14 @@ public static class RequestRegistrationServiceCollectionExtensions
 
     // The key identifies one handler shape (the closed handler service type), not the request type: a request type
     // can have handlers on several dispatch paths, and each path must be visited.
-    internal static void RecordRequestRegistration(this IServiceCollection services, Type registrationKey,
-        Action<IRequestRegistrationVisitor> visit)
+    internal static void RecordRequestRegistrations(this IServiceCollection services,
+        IEnumerable<KeyValuePair<Type, Action<IRequestRegistrationVisitor>>> visits)
     {
-        GetOrAdd(services).Record(registrationKey, visit);
+        var hub = GetOrAdd(services);
+        foreach (var (registrationKey, visit) in visits)
+        {
+            hub.Record(registrationKey, visit);
+        }
     }
 
     private static RequestRegistrations GetOrAdd(IServiceCollection services)

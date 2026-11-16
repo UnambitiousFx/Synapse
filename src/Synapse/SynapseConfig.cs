@@ -542,10 +542,7 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
         }
 
         // After the loop: conditional registrations add their visits inside their action.
-        foreach (var (type, visit) in _visits)
-        {
-            services.RecordRequestRegistration(type, visit);
-        }
+        services.RecordRequestRegistrations(_visits);
 
         services.AddSingleton(SynapseRegistry.Create(services, _probes));
 
