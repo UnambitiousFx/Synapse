@@ -25,3 +25,34 @@ public sealed class AsyncOnlyDisposable(AsyncDisposeCounter counter) : IAsyncDis
         return ValueTask.CompletedTask;
     }
 }
+
+/// <summary>Holds a <see cref="GatedAsyncDisposable" /> disposal open until the test releases it.</summary>
+public sealed class DisposeGate
+{
+    private int _completed;
+
+    public ManualResetEventSlim Started { get; } = new();
+
+    public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public bool Completed => Volatile.Read(ref _completed) == 1;
+
+    public void MarkCompleted()
+    {
+        Volatile.Write(ref _completed, 1);
+    }
+}
+
+/// <summary>
+///     An async-only disposable whose <c>DisposeAsync</c> genuinely goes asynchronous: it completes only once
+///     <see cref="DisposeGate.Release" /> is set.
+/// </summary>
+public sealed class GatedAsyncDisposable(DisposeGate gate) : IAsyncDisposable
+{
+    public async ValueTask DisposeAsync()
+    {
+        gate.Started.Set();
+        await gate.Release.Task.ConfigureAwait(false);
+        gate.MarkCompleted();
+    }
+}

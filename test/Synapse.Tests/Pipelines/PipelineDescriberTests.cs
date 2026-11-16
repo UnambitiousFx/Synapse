@@ -218,6 +218,45 @@ public sealed class PipelineDescriberTests
         Assert.True(counter.Count >= 3, $"every scope must dispose its service, saw {counter.Count}");
     }
 
+    [Fact]
+    public async Task Describe_WithAnAsyncDisposalThatCompletesLater_ReturnsOnlyAfterTheScopeIsDisposed()
+    {
+        // Arrange (Given)
+        var gate = new DisposeGate();
+        var services = new ServiceCollection().AddLogging();
+        services.AddSingleton(gate);
+        services.AddScoped<GatedAsyncDisposable>();
+        services.AddSynapse(cfg => cfg.RegisterRequestHandler<GatedCommandHandler, GatedCommand>());
+        await using var provider = services.BuildServiceProvider();
+        var describer = provider.GetRequiredService<IPipelineDescriber>();
+
+        // Act (When)
+        var describe = Task.Factory.StartNew(() => describer.Describe<GatedCommand>(),
+            TestContext.Current.CancellationToken, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+        var disposalStarted = gate.Started.Wait(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+        var returnedBeforeRelease = await Task.WhenAny(describe,
+            Task.Delay(TimeSpan.FromMilliseconds(200), TestContext.Current.CancellationToken)) == describe;
+        gate.Release.SetResult();
+        var description = await describe.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.True(disposalStarted);
+        Assert.False(returnedBeforeRelease);
+        Assert.True(gate.Completed);
+        Assert.NotNull(description);
+    }
+
+    private sealed record GatedCommand : IRequest;
+
+    private sealed class GatedCommandHandler(GatedAsyncDisposable dependency) : IRequestHandler<GatedCommand>
+    {
+        public ValueTask<Result> HandleAsync(GatedCommand request, CancellationToken cancellationToken = default)
+        {
+            _ = dependency;
+            return new ValueTask<Result>(Result.Success());
+        }
+    }
+
     private sealed record AsyncOnlyCommand : IRequest;
 
     private sealed class AsyncOnlyCommandHandler(AsyncOnlyDisposable dependency) : IRequestHandler<AsyncOnlyCommand>
