@@ -7,12 +7,12 @@ namespace UnambitiousFx.Synapse.Authorization;
 
 // Closes the authorization behaviors over each registered request type and records its intent. Registering closed
 // descriptors keeps them visible to the trimmer and native AOT, which cannot close open generics at runtime.
-internal sealed class AuthorizationRegistrationVisitor(IServiceCollection services) : IRequestRegistrationVisitor
+internal sealed class AuthorizationRegistrationVisitor(IServiceCollection services, SynapseAuthorizationOptions options) : IRequestRegistrationVisitor
 {
     public void VisitRequest<TRequest>() where TRequest : IRequest
     {
         // A request marked both ways changes state, so it needs the command scope.
-        RequestIntentOf<TRequest>.Set(typeof(ICommand).IsAssignableFrom(typeof(TRequest))
+        options.RecordIntent(typeof(TRequest),typeof(ICommand).IsAssignableFrom(typeof(TRequest))
             ? RequestIntent.Command
             : RequestIntent.Other);
         AddResultBehaviors<TRequest, Result>();
@@ -22,7 +22,7 @@ internal sealed class AuthorizationRegistrationVisitor(IServiceCollection servic
         where TRequest : IRequest<TResponse>
         where TResponse : notnull
     {
-        RequestIntentOf<TRequest>.Set(
+        options.RecordIntent(typeof(TRequest),
             typeof(ICommand<TResponse>).IsAssignableFrom(typeof(TRequest)) ||
             typeof(ICommand).IsAssignableFrom(typeof(TRequest)) ? RequestIntent.Command
             : typeof(IQuery<TResponse>).IsAssignableFrom(typeof(TRequest)) ? RequestIntent.Query
@@ -35,7 +35,7 @@ internal sealed class AuthorizationRegistrationVisitor(IServiceCollection servic
         where TItem : notnull
     {
         // A stream only reads, so it needs the query scope unless it is also a command.
-        RequestIntentOf<TRequest>.Set(typeof(ICommand).IsAssignableFrom(typeof(TRequest))
+        options.RecordIntent(typeof(TRequest),typeof(ICommand).IsAssignableFrom(typeof(TRequest))
             ? RequestIntent.Command
             : RequestIntent.Query);
         services.TryAddEnumerable(ServiceDescriptor
