@@ -104,11 +104,8 @@ internal sealed class PipelineDescriber : IPipelineDescriber
                 $"'{requestType}' does not implement IRequest or IRequest<TResponse>.", nameof(requestType));
         }
 
-        // The table also holds event probes, so a type that is only registered as an event must not answer here.
         var registry = _provider.GetService<SynapseRegistry>();
-        return registry is not null &&
-               registry.RequestHandlerCounts.ContainsKey(requestType) &&
-               registry.Probes.TryGetValue(requestType, out var probe)
+        return registry is not null && registry.RequestProbes.TryGetValue(requestType, out var probe)
             ? probe(this)
             : null;
     }
@@ -124,14 +121,7 @@ internal sealed class PipelineDescriber : IPipelineDescriber
         }
 
         var registry = _provider.GetService<SynapseRegistry>();
-        if (registry is null || !registry.EventsWithHandlers.Contains(eventType))
-        {
-            return null;
-        }
-
-        // A type that is also a request keeps its request probe in Probes and its event probe in the second table.
-        return registry.EventProbesOfRequests.TryGetValue(eventType, out var probe) ||
-               registry.Probes.TryGetValue(eventType, out probe)
+        return registry is not null && registry.EventProbes.TryGetValue(eventType, out var probe)
             ? probe(this)
             : null;
     }

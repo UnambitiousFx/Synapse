@@ -518,6 +518,46 @@ public sealed class PipelineDescriberTests
         Assert.Null(description);
     }
 
+    [Fact]
+    public async Task DescribeEvent_WithARequestRegisteredThroughSynapseAndAnEventHandlerRegisteredDirectly_ReturnsNull()
+    {
+        // Arrange (Given)
+        var services = new ServiceCollection().AddLogging();
+        services.AddSingleton(new Trace());
+        services.AddScoped<IEventHandler<DualMessage>, DualEventHandler>();
+        services.AddSynapse(cfg => cfg.RegisterRequestHandler<DualCountHandler, DualMessage, int>());
+        await using var provider = services.BuildServiceProvider();
+        var describer = provider.GetRequiredService<IPipelineDescriber>();
+
+        // Act (When)
+        var eventDescription = describer.DescribeEvent(typeof(DualMessage));
+        var requestDescription = describer.Describe(typeof(DualMessage));
+
+        // Assert (Then)
+        Assert.Null(eventDescription);
+        Assert.Equal(typeof(DualCountHandler), Assert.Single(requestDescription!.Handlers));
+    }
+
+    [Fact]
+    public async Task Describe_WithAnEventRegisteredThroughSynapseAndARequestHandlerRegisteredDirectly_ReturnsNull()
+    {
+        // Arrange (Given)
+        var services = new ServiceCollection().AddLogging();
+        services.AddSingleton(new Trace());
+        services.AddScoped<IRequestHandler<DualMessage, int>, DualCountHandler>();
+        services.AddSynapse(cfg => cfg.RegisterEventHandler<DualEventHandler, DualMessage>());
+        await using var provider = services.BuildServiceProvider();
+        var describer = provider.GetRequiredService<IPipelineDescriber>();
+
+        // Act (When)
+        var requestDescription = describer.Describe(typeof(DualMessage));
+        var eventDescription = describer.DescribeEvent(typeof(DualMessage));
+
+        // Assert (Then)
+        Assert.Null(requestDescription);
+        Assert.Equal(typeof(DualEventHandler), Assert.Single(eventDescription!.Handlers));
+    }
+
     private sealed record DualMessage : IRequest<int>, IEvent;
 
     private sealed class DualCountHandler : IRequestHandler<DualMessage, int>
