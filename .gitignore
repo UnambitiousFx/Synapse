@@ -64,3 +64,6 @@ nunit-*.xml
 # Superpowers scratch plans/specs (working docs, not for commit)
 docs/superpowers/plans/
 docs/superpowers/specs/
+
+# Stryker.NET mutation testing output
+StrykerOutput/

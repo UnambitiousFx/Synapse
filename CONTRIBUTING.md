@@ -312,6 +312,20 @@ dotnet test --settings coverage.runsettings --collect:"XPlat Code Coverage"
 
 This ensures Rider and CLI both use the same exclusion rules.
 
+### Mutation Testing
+
+[Stryker.NET](https://stryker-mutator.io/docs/stryker-net/introduction/) flips conditions and removes statements, then reports every change no test catches. It is configured for `Synapse.Authorization`, `Synapse` (core) and `Synapse.FluentValidation`, one `stryker-config.json` per test project:
+
+```bash
+dotnet tool restore
+cd test/Synapse.Authorization.Tests   # or Synapse.Tests, Synapse.FluentValidation.Tests
+dotnet stryker
+```
+
+The report lands in `StrykerOutput/<timestamp>/reports/` (git-ignored). Runs are slow; core takes the longest. CI runs them weekly and on demand (Actions, "Mutation Testing"), and uploads the HTML and JSON reports as `mutation-report-<project>` artifacts; it is not a PR check.
+
+Survivors that no test can reasonably catch (equivalent mutants, e.g. perf-only fast paths) are marked in the source with `// Stryker disable once <Mutator> : <reason>` instead of writing a test.
+
 ### Running Benchmarks
 
 Performance is important. If your changes might affect performance, run benchmarks:
