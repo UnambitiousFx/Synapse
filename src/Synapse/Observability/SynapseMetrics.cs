@@ -201,7 +201,7 @@ public sealed class SynapseMetrics : ISynapseMetrics
         var (storage, scope) = ResolveStorage();
         if (storage == null)
         {
-            scope?.DisposeSynchronously();
+            scope.DisposeSynchronously();
             return _lastKnownQueueDepth;
         }
 
@@ -218,7 +218,7 @@ public sealed class SynapseMetrics : ISynapseMetrics
         }
         finally
         {
-            scope?.DisposeSynchronously();
+            scope.DisposeSynchronously();
         }
     }
 
@@ -227,7 +227,7 @@ public sealed class SynapseMetrics : ISynapseMetrics
         var (storage, scope) = ResolveStorage();
         if (storage == null)
         {
-            scope?.DisposeSynchronously();
+            scope.DisposeSynchronously();
             return _lastKnownProcessingLagSeconds;
         }
 
@@ -245,7 +245,7 @@ public sealed class SynapseMetrics : ISynapseMetrics
         }
         finally
         {
-            scope?.DisposeSynchronously();
+            scope.DisposeSynchronously();
         }
     }
 
@@ -254,7 +254,7 @@ public sealed class SynapseMetrics : ISynapseMetrics
         var (storage, scope) = ResolveStorage();
         if (storage == null)
         {
-            scope?.DisposeSynchronously();
+            scope.DisposeSynchronously();
             return _lastKnownRetryingCount;
         }
 
@@ -271,7 +271,7 @@ public sealed class SynapseMetrics : ISynapseMetrics
         }
         finally
         {
-            scope?.DisposeSynchronously();
+            scope.DisposeSynchronously();
         }
     }
 
@@ -280,7 +280,7 @@ public sealed class SynapseMetrics : ISynapseMetrics
         var (storage, scope) = ResolveStorage();
         if (storage == null)
         {
-            scope?.DisposeSynchronously();
+            scope.DisposeSynchronously();
             return _lastKnownDeadLetterCount;
         }
 
@@ -297,7 +297,7 @@ public sealed class SynapseMetrics : ISynapseMetrics
         }
         finally
         {
-            scope?.DisposeSynchronously();
+            scope.DisposeSynchronously();
         }
     }
 }
