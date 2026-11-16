@@ -216,6 +216,27 @@ public sealed class AuditDenials(ILogger<AuditDenials> logger) : IAuthorizationD
 
 `AuthorizationDenial` carries the request, the `Reason` (`Unauthenticated`, `MissingRole`, `MissingScope`, `ResourceAccessDenied`, `RequestDenied`), the caller's `Id`, the missing role, scope or access in `Requirement`, and the `ResourceId` for resource denials.
 
+## Background work
+
+Jobs, schedulers, migrations and outbox handlers send requests through the same pipeline as users, but run as a technical identity that belongs to no user. Run them as `SystemPrincipal.Instance` instead of faking a principal that every policy must special-case:
+
+```csharp
+// the worker host's container
+services.AddSingleton<ICurrentPrincipal>(SystemPrincipal.Instance);
+```
+
+A principal whose `ICurrentPrincipal.IsSystem` is `true` skips the checks that `SystemBypass` names. A skipped check calls no policy and records no denial:
+
+| `o.SystemBypass` | Actor, role, scope | Request policy, resource |
+|---|---|---|
+| `SystemBypass.All` (default) | skipped | skipped |
+| `SystemBypass.ResourceChecks` | checked as for any caller | skipped |
+| `SystemBypass.None` | checked as for any caller | checked as for any caller |
+
+`SystemPrincipal.Instance` is authenticated, holds every scope and role, and its `Id` is `system`. For a system identity that should keep its role and scope checks, implement `ICurrentPrincipal` with `IsSystem => true` and only the scopes and roles it needs, and set `o.SystemBypass = SystemBypass.ResourceChecks`.
+
+`IsSystem` is a default interface member that returns `false`, so existing `ICurrentPrincipal` implementations are unaffected.
+
 ## Denial failures
 
 By default a denial returns an `UnauthenticatedFailure` (code `UNAUTHENTICATED`) or an `UnauthorizedFailure` (code `UNAUTHORIZED`) with a fixed English message such as `Requires role 'admin'.`. To give clients a domain code to branch on, and a message the application shows or translates, set `DenialFailure`:

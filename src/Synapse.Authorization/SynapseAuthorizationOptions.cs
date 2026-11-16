@@ -47,6 +47,12 @@ public sealed class SynapseAuthorizationOptions
     public Func<AuthorizationDenial, Failure?>? DenialFailure { get; set; }
 
     /// <summary>
+    ///     Which checks a principal whose <see cref="ICurrentPrincipal.IsSystem" /> is <see langword="true" /> skips,
+    ///     such as <see cref="SystemPrincipal.Instance" />. Defaults to <see cref="Authorization.SystemBypass.All" />.
+    /// </summary>
+    public SystemBypass SystemBypass { get; set; } = SystemBypass.All;
+
+    /// <summary>
     ///     Turns the default scope rule off: only requests implementing <see cref="IRequiresScope" /> are checked for a
     ///     scope. Same as setting <see cref="QueryScope" /> and <see cref="CommandScope" /> to <see langword="null" />.
     /// </summary>
@@ -111,6 +117,12 @@ public sealed class SynapseAuthorizationOptions
     {
         ThrowIfBlank(QueryScope, nameof(QueryScope));
         ThrowIfBlank(CommandScope, nameof(CommandScope));
+        if (!Enum.IsDefined(SystemBypass))
+        {
+            throw new ArgumentException(
+                $"{nameof(SynapseAuthorizationOptions)}.{nameof(SystemBypass)} is not a {nameof(Authorization.SystemBypass)} value.",
+                nameof(SystemBypass));
+        }
     }
 
     // The instance is shared by every AddSynapseAuthorization call, so each call applies only what it added.

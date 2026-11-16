@@ -20,6 +20,7 @@ public sealed class RequestPolicyAuthorizationBehavior<TRequest, TResult> : IRes
     private readonly IRequestAccessPolicy<TRequest>? _policy;
     private readonly ICurrentPrincipal _principal;
     private readonly IEnumerable<IAuthorizationDenialRecorder> _recorders;
+    private readonly SystemBypass _systemBypass;
 
     /// <summary>
     ///     Creates the behavior.
@@ -39,6 +40,7 @@ public sealed class RequestPolicyAuthorizationBehavior<TRequest, TResult> : IRes
         _recorders = recorders;
         _policy = policy;
         _denialFailure = options?.DenialFailure;
+        _systemBypass = options?.SystemBypass ?? SystemBypass.All;
     }
 
     /// <inheritdoc />
@@ -49,7 +51,7 @@ public sealed class RequestPolicyAuthorizationBehavior<TRequest, TResult> : IRes
         RequestNext<TRequest, TResult> next,
         CancellationToken cancellationToken = default)
     {
-        return _policy is null
+        return _policy is null || AuthorizationChecks.SkipsResourceChecks(_principal, _systemBypass)
             ? next.InvokeAsync(request, cancellationToken)
             : AuthorizeAsync(request, _policy, next, cancellationToken);
     }

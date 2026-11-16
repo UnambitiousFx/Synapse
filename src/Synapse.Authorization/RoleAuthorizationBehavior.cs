@@ -22,6 +22,7 @@ public sealed class RoleAuthorizationBehavior<TRequest, TResult> : IResultPipeli
     private readonly Func<AuthorizationDenial, Failure?>? _denialFailure;
     private readonly ICurrentPrincipal _principal;
     private readonly IEnumerable<IAuthorizationDenialRecorder> _recorders;
+    private readonly SystemBypass _systemBypass;
 
     /// <summary>
     ///     Creates the behavior.
@@ -38,6 +39,7 @@ public sealed class RoleAuthorizationBehavior<TRequest, TResult> : IResultPipeli
         ArgumentNullException.ThrowIfNull(recorders);
         _recorders = recorders;
         _denialFailure = options?.DenialFailure;
+        _systemBypass = options?.SystemBypass ?? SystemBypass.All;
     }
 
     /// <inheritdoc />
@@ -48,6 +50,11 @@ public sealed class RoleAuthorizationBehavior<TRequest, TResult> : IResultPipeli
         RequestNext<TRequest, TResult> next,
         CancellationToken cancellationToken = default)
     {
+        if (AuthorizationChecks.SkipsIdentityChecks(_principal, _systemBypass))
+        {
+            return next.InvokeAsync(request, cancellationToken);
+        }
+
         return AuthorizationChecks.Role(request, _principal) is { } denied
             ? AuthorizationDenials.DenyAsync(_recorders, next, denied, _denialFailure, cancellationToken)
             : next.InvokeAsync(request, cancellationToken);
