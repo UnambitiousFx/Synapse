@@ -15,6 +15,10 @@ public static class ServiceCollectionExtensions
     ///     <c>Result&lt;T&gt;</c> requests. A failed validation returns a <c>ValidationFailure</c> carrying the field,
     ///     message and code of each error, and the handler is not called.
     /// </summary>
+    /// <remarks>
+    ///     The behavior is registered closed, for each request type that <c>AddSynapse</c> registers a handler for, so
+    ///     call this method and <c>AddSynapse</c> on the same <see cref="IServiceCollection" />, in either order.
+    /// </remarks>
     /// <param name="services">The service collection.</param>
     /// <param name="configure">Optionally sets the behavior's pipeline order.</param>
     /// <returns>The same service collection, for chaining.</returns>
@@ -24,11 +28,8 @@ public static class ServiceCollectionExtensions
         var options = new FluentValidationBehaviorOptions();
         configure?.Invoke(options);
         services.TryAddSingleton(options);
-        // Scoped, like the validators AddValidatorsFrom* registers by default.
-        services.TryAddEnumerable(ServiceDescriptor.Scoped(typeof(IRequestPipelineBehavior<>),
-            typeof(FluentValidationBehavior<>)));
-        services.TryAddEnumerable(ServiceDescriptor.Scoped(typeof(IRequestPipelineBehavior<,>),
-            typeof(FluentValidationBehavior<,>)));
+        // Every call: TryAddEnumerable dedupes the closed behaviors.
+        services.AddRequestRegistrationVisitor(new FluentValidationRegistrationVisitor(services));
         return services;
     }
 }
