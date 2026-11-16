@@ -28,14 +28,14 @@ public sealed class CountingTransactionManager : ITransactionManager
     }
 }
 
-public sealed record Transfer : ICommand, ITransactional;
+public sealed record Deposit : ICommand, ITransactional;
 
 public readonly record struct Tally : ICommand<int>, ITransactional;
 
-[RequestHandler<Transfer>]
-public sealed class TransferHandler : IRequestHandler<Transfer>
+[RequestHandler<Deposit>]
+public sealed class DepositHandler : IRequestHandler<Deposit>
 {
-    public ValueTask<Result> HandleAsync(Transfer request, CancellationToken cancellationToken = default) =>
+    public ValueTask<Result> HandleAsync(Deposit request, CancellationToken cancellationToken = default) =>
         ValueTask.FromResult(Result.Success());
 }
 

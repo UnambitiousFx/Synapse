@@ -46,7 +46,7 @@ public static class ServiceCollectionExtensions
         var options = GetOrAddOptions(services);
         // Every call, even over options the application registered itself: TryAddEnumerable dedupes the behaviors
         // and the intent is idempotent. Added before configure can throw, so a retry cannot lack its visitor.
-        services.AddRequestRegistrationVisitor(new AuthorizationRegistrationVisitor(services));
+        services.AddRequestRegistrationVisitor(new AuthorizationRegistrationVisitor(services, options));
         configure?.Invoke(options);
         options.Validate();
         options.ApplyRegistrations(services);
