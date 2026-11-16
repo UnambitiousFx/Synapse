@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.Options;
 using ModelContextProtocol.Protocol;
@@ -21,6 +22,12 @@ namespace UnambitiousFx.Synapse.ModelContextProtocol;
 ///             gives <see cref="UnexpectedMessage" /> with the outer failure's code: an exception message can hold
 ///             internals (SQL, paths, stack details) that an assistant must not read back to a user.
 ///         </item>
+///         <item>
+///             With <see cref="SynapseMcpOptions.ListValidationErrors" /> on, a <see cref="ValidationFailure" />, alone
+///             or inside an <see cref="AggregateFailure" />, gives its code and <see cref="InvalidFieldsMessage" /> (or
+///             the aggregate's message), then one line per error with its field and code. The errors are also in
+///             <c>_meta</c> under <see cref="SynapseMcpMeta.Errors" />.
+///         </item>
 ///         <item>Every other failure gives its own code and message.</item>
 ///     </list>
 /// </remarks>
@@ -36,7 +43,13 @@ public sealed class DefaultMcpFailurePolicy : IMcpFailurePolicy
     /// </summary>
     public const string UnexpectedMessage = "An unexpected error occurred.";
 
+    /// <summary>
+    ///     The first line of a listed <see cref="ValidationFailure" />, whose own message only repeats the errors.
+    /// </summary>
+    public const string InvalidFieldsMessage = "Some fields are not valid.";
+
     private readonly bool _hideExistence;
+    private readonly bool _listValidationErrors;
 
     /// <summary>
     ///     Creates the policy from the registered options.
@@ -46,6 +59,7 @@ public sealed class DefaultMcpFailurePolicy : IMcpFailurePolicy
     {
         ArgumentNullException.ThrowIfNull(options);
         _hideExistence = options.Value.HideExistence;
+        _listValidationErrors = options.Value.ListValidationErrors;
     }
 
     /// <inheritdoc />
@@ -66,7 +80,79 @@ public sealed class DefaultMcpFailurePolicy : IMcpFailurePolicy
             return Error(failure.Code, UnexpectedMessage);
         }
 
+        if (_listValidationErrors && ValidationErrors(failure) is { Count: > 0 } errors)
+        {
+            return ValidationError(failure, errors);
+        }
+
         return Error(failure.Code, failure.Message);
+    }
+
+    private static List<ValidationError> ValidationErrors(Failure failure)
+    {
+        var errors = new List<ValidationError>();
+        Collect(failure, errors);
+        return errors;
+
+        static void Collect(Failure failure,
+            List<ValidationError> errors)
+        {
+            if (failure is ValidationFailure validation)
+            {
+                errors.AddRange(validation.Errors);
+            }
+            else if (failure is AggregateFailure aggregate)
+            {
+                foreach (var inner in aggregate.Errors)
+                {
+                    Collect(inner, errors);
+                }
+            }
+        }
+    }
+
+    private static CallToolResult ValidationError(Failure failure,
+        List<ValidationError> errors)
+    {
+        var text = new StringBuilder(failure.Code).Append(": ")
+            .Append(failure is ValidationFailure ? InvalidFieldsMessage : failure.Message);
+        var meta = new JsonArray();
+        foreach (var error in errors)
+        {
+            text.Append("\n- ");
+            if (error.Field is not null)
+            {
+                text.Append(error.Field).Append(error.Code is null ? "" : " ");
+            }
+
+            if (error.Code is not null)
+            {
+                text.Append('(').Append(error.Code).Append(')');
+            }
+
+            text.Append(error.Field is null && error.Code is null ? "" : ": ").Append(error.Message);
+
+            var item = new JsonObject();
+            if (error.Field is not null)
+            {
+                item["field"] = error.Field;
+            }
+
+            if (error.Code is not null)
+            {
+                item["code"] = error.Code;
+            }
+
+            item["message"] = error.Message;
+            meta.Add((JsonNode)item);
+        }
+
+        return new CallToolResult
+        {
+            Content = [new TextContentBlock { Text = text.ToString() }],
+            IsError = true,
+            Meta = new JsonObject { [SynapseMcpMeta.FailureCode] = failure.Code, [SynapseMcpMeta.Errors] = meta }
+        };
     }
 
     private static bool Contains(Failure failure,

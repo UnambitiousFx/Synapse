@@ -83,6 +83,7 @@ A tool error is a `CallToolResult` with `IsError = true`. The model reads it and
 | Option            | Default | Effect |
 | ----------------- | ------- | ------ |
 | `HideExistence`   | `true`  | `NotFoundFailure` and `UnauthorizedFailure` give the same `NOT_FOUND` answer. |
+| `ListValidationErrors` | `true` | A `ValidationFailure` lists each error with its field and code, in the text and in `_meta`. |
 | `MaxAnswerLength` | `null`  | Longer answers are cut to this many UTF-16 code units and flagged. `null` means no limit. |
 | `SerializerOptions` | `null` | `JsonSerializerOptions` used to serialize answers, as is. Wins over `JsonContext`. |
 | `JsonContext`     | `null`  | Source-generated context used to serialize answers. Without it (and without `SerializerOptions`), `McpJsonUtilities.DefaultOptions` is used. |
@@ -150,9 +151,34 @@ A type missing from the context throws `InvalidOperationException` naming the ty
 | ------- | --------------- |
 | `NotFoundFailure`, `UnauthorizedFailure` (with `HideExistence`) | `NOT_FOUND: The requested item was not found.` |
 | `ExceptionalFailure`, alone or at any depth inside an `AggregateFailure` | `<code>: An unexpected error occurred.` — exception messages can hold internals |
+| `ValidationFailure`, alone or inside an `AggregateFailure` (with `ListValidationErrors`) | `<code>: Some fields are not valid.` then one line per error (see below) |
 | Anything else | `<code>: <message>` |
 
-The code is also in `_meta` under `unambitiousfx.synapse/failureCode`, so a client can branch on it without parsing the text.
+The rows apply in this order, so existence hiding and exception hiding win over the validation list. The code is also in `_meta` under `unambitiousfx.synapse/failureCode`, so a client can branch on it without parsing the text.
+
+### Validation errors
+
+A `ValidationFailure`'s own message joins the error messages without their fields, so an assistant cannot tell which argument to fix. With `ListValidationErrors` on (the default), each error gets its own line with its field and code:
+
+```text
+orders.invalid_order: Some fields are not valid.
+- lines[3].amount (request.amount): Must be positive.
+- label (request.required): Required.
+- At least one line is required.
+```
+
+An error without a field or a code is listed without them. For an `AggregateFailure`, the first line keeps the aggregate's code and message, and the errors of every `ValidationFailure` inside it are listed. The errors are also in `_meta`, so a client can read them without parsing the text:
+
+```json
+{
+  "unambitiousfx.synapse/failureCode": "orders.invalid_order",
+  "unambitiousfx.synapse/errors": [
+    { "field": "lines[3].amount", "code": "request.amount", "message": "Must be positive." }
+  ]
+}
+```
+
+A `null` field or code is left out of the object. Set `ListValidationErrors = false` to get the one-line `<code>: <message>` form back.
 
 To change it, register your own policy. `AddSynapseMcp` uses `TryAdd`, so a policy registered before it wins; one registered after it with `AddSingleton` replaces it too.
 

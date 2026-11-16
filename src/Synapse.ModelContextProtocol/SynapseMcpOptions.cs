@@ -35,6 +35,19 @@ public sealed class SynapseMcpOptions
     public bool HideExistence { get; set; } = true;
 
     /// <summary>
+    ///     Whether the tool error of a <see cref="ValidationFailure" /> lists each error with its field and code, one
+    ///     per line, and carries them in <c>_meta</c> under <see cref="SynapseMcpMeta.Errors" />. Defaults to
+    ///     <c>true</c>.
+    /// </summary>
+    /// <remarks>
+    ///     A validation failure's own message joins the error messages without their fields, so an assistant cannot
+    ///     tell which argument to fix. Errors of a <see cref="ValidationFailure" /> inside an
+    ///     <see cref="AggregateFailure" /> are listed too. Existence hiding and exception hiding still take
+    ///     precedence. Set it to <c>false</c> to keep the one-line <c>CODE: message</c> form.
+    /// </remarks>
+    public bool ListValidationErrors { get; set; } = true;
+
+    /// <summary>
     ///     The largest answer sent back to the client, in UTF-16 code units (<see cref="string.Length" />).
     ///     <c>null</c>, the default, means no limit.
     /// </summary>

@@ -77,11 +77,11 @@ public sealed class DefaultMcpFailurePolicyTests
     }
 
     [Fact]
-    public void ToToolError_WithValidationFailure_CarriesCodeAndMessage()
+    public void ToToolError_WithValidationErrorsListingOff_CarriesCodeAndMessage()
     {
         // Arrange (Given)
-        var sut = CreateSut(hideExistence: true);
-        var failure = new ValidationFailure("Label is required.");
+        var sut = CreateSut(hideExistence: true, listValidationErrors: false);
+        var failure = new ValidationFailure([new ValidationError("label", "Required.", "request.required")]);
 
         // Act (When)
         var result = sut.ToToolError(failure);
@@ -89,6 +89,100 @@ public sealed class DefaultMcpFailurePolicyTests
         // Assert (Then)
         Assert.True(result.IsError);
         Assert.Equal($"{FailureCodes.Validation}: {failure.Message}", Text(result));
+        Assert.False(result.Meta!.ContainsKey(SynapseMcpMeta.Errors));
+    }
+
+    [Fact]
+    public void ToToolError_WithValidationFailure_ListsEachErrorWithItsFieldAndCode()
+    {
+        // Arrange (Given)
+        var sut = CreateSut(hideExistence: true);
+        var failure = new ValidationFailure([
+            new ValidationError("lines[3].amount", "Must be positive.", "request.amount"),
+            new ValidationError("label", "Required."),
+            new ValidationError(null, "At least one line.", "request.lines"),
+            new ValidationError(null, "Not both.")
+        ]) { Code = "orders.invalid_order" };
+
+        // Act (When)
+        var result = sut.ToToolError(failure);
+
+        // Assert (Then)
+        Assert.True(result.IsError);
+        Assert.Equal(
+            $"""
+             orders.invalid_order: {DefaultMcpFailurePolicy.InvalidFieldsMessage}
+             - lines[3].amount (request.amount): Must be positive.
+             - label: Required.
+             - (request.lines): At least one line.
+             - Not both.
+             """.ReplaceLineEndings("\n"),
+            Text(result));
+        Assert.Equal("orders.invalid_order", result.Meta![SynapseMcpMeta.FailureCode]!.GetValue<string>());
+        Assert.Equal(
+            """[{"field":"lines[3].amount","code":"request.amount","message":"Must be positive."},{"field":"label","message":"Required."},{"code":"request.lines","message":"At least one line."},{"message":"Not both."}]""",
+            result.Meta[SynapseMcpMeta.Errors]!.ToJsonString());
+    }
+
+    [Fact]
+    public void ToToolError_WithAggregateHoldingValidationFailures_ListsTheirErrorsUnderTheAggregateCode()
+    {
+        // Arrange (Given)
+        var sut = CreateSut(hideExistence: true);
+        var failure = new AggregateFailure([
+            new ConflictFailure("stale"),
+            new ValidationFailure([new ValidationError("label", "Required.")]),
+            new AggregateFailure([new ValidationFailure([new ValidationError("amount", "Must be positive.")])])
+        ]);
+
+        // Act (When)
+        var result = sut.ToToolError(failure);
+
+        // Assert (Then)
+        Assert.Equal(
+            $"""
+             {failure.Code}: {failure.Message}
+             - label: Required.
+             - amount: Must be positive.
+             """.ReplaceLineEndings("\n"),
+            Text(result));
+        Assert.Equal(2, result.Meta![SynapseMcpMeta.Errors]!.AsArray().Count);
+    }
+
+    [Fact]
+    public void ToToolError_WithAggregateHoldingValidationAndHiddenFailures_StillHides()
+    {
+        // Arrange (Given)
+        var sut = CreateSut(hideExistence: true);
+        var failure = new AggregateFailure([
+            new ValidationFailure([new ValidationError("loanId", "Unknown loan 42.")]),
+            new NotFoundFailure("Loan", "42")
+        ]);
+
+        // Act (When)
+        var result = sut.ToToolError(failure);
+
+        // Assert (Then)
+        Assert.Equal($"{FailureCodes.NotFound}: {DefaultMcpFailurePolicy.HiddenMessage}", Text(result));
+        Assert.False(result.Meta!.ContainsKey(SynapseMcpMeta.Errors));
+    }
+
+    [Fact]
+    public void ToToolError_WithAggregateHoldingValidationAndExceptionalFailures_StillRedacts()
+    {
+        // Arrange (Given)
+        var sut = CreateSut(hideExistence: true);
+        var failure = new AggregateFailure([
+            new ValidationFailure([new ValidationError("label", Secret)]),
+            Exceptional()
+        ]);
+
+        // Act (When)
+        var result = sut.ToToolError(failure);
+
+        // Assert (Then)
+        Assert.Equal($"{failure.Code}: {DefaultMcpFailurePolicy.UnexpectedMessage}", Text(result));
+        Assert.DoesNotContain(Secret, result.Meta!.ToJsonString());
     }
 
     [Fact]
@@ -152,9 +246,14 @@ public sealed class DefaultMcpFailurePolicyTests
         return new ExceptionalFailure(new InvalidOperationException($"connection string {Secret}"));
     }
 
-    private static DefaultMcpFailurePolicy CreateSut(bool hideExistence)
+    private static DefaultMcpFailurePolicy CreateSut(bool hideExistence,
+        bool listValidationErrors = true)
     {
-        return new DefaultMcpFailurePolicy(Options.Create(new SynapseMcpOptions { HideExistence = hideExistence }));
+        return new DefaultMcpFailurePolicy(Options.Create(new SynapseMcpOptions
+        {
+            HideExistence = hideExistence,
+            ListValidationErrors = listValidationErrors
+        }));
     }
 
     private static string Text(CallToolResult result)
