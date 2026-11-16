@@ -364,6 +364,88 @@ public sealed class ResourceAuthorizationBehaviorTests
     }
 
     [Fact]
+    public async Task HandleAsync_OptionallyScopedWithoutResource_CallsNextWithoutAskingPolicy()
+    {
+        // Arrange (Given) — no policy registered either: targeting no resource is not a misconfiguration
+        var calls = new PipelineCalls();
+        var recorder = Substitute.For<IAuthorizationDenialRecorder>();
+        var behavior = new ResourceAuthorizationBehavior<ListAccounts, Result<string>>(Principals.Authenticated(),
+            [recorder]);
+
+        // Act (When)
+        var result = await behavior.HandleAsync(new ListAccounts(null), calls.NextWithValue<ListAccounts>("all"),
+            TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.True(result.IsSuccess);
+        Assert.Equal(1, calls.Count);
+        await recorder.DidNotReceiveWithAnyArgs().RecordAsync(null!, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task HandleAsync_OptionallyScopedWithResource_AsksPolicyForThatResource()
+    {
+        // Arrange (Given)
+        var calls = new PipelineCalls();
+        var recorder = Substitute.For<IAuthorizationDenialRecorder>();
+        var policy = Substitute.For<IResourceAccessPolicy>();
+        var behavior = new ResourceAuthorizationBehavior<ListAccounts, Result<string>>(Principals.Authenticated(),
+            [recorder], policy);
+        var request = new ListAccounts("acc-1");
+
+        // Act (When)
+        var result = await behavior.HandleAsync(request, calls.NextWithValue<ListAccounts>("one"),
+            TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.True(result.TryGetFailure(out var failure));
+        Assert.IsType<UnauthorizedFailure>(failure);
+        Assert.Equal(0, calls.Count);
+        await policy.Received(1).IsAllowedAsync(Arg.Any<ICurrentPrincipal>(),
+            Arg.Is<IResourceScoped>(r => ReferenceEquals(r, request) && r.ResourceId == "acc-1"),
+            Arg.Any<CancellationToken>());
+        await recorder.Received(1).RecordAsync(
+            new AuthorizationDenial(request, AuthorizationDenialReason.ResourceAccessDenied, "user-1", "read",
+                "acc-1"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task HandleAsync_OptionallyScopedWithBlankResource_Throws(string resourceId)
+    {
+        // Arrange (Given) — a blank id is a bug, not "no resource"
+        var calls = new PipelineCalls();
+        var policy = Substitute.For<IResourceAccessPolicy>();
+        var behavior = new ResourceAuthorizationBehavior<ListAccounts, Result<string>>(Principals.Authenticated(),
+            [], policy);
+
+        // Act (When)
+        var act = async () => await behavior.HandleAsync(new ListAccounts(resourceId),
+            calls.NextWithValue<ListAccounts>("one"), TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(act);
+        Assert.Contains(nameof(ListAccounts), exception.Message);
+        Assert.Equal(0, calls.Count);
+        await policy.DidNotReceiveWithAnyArgs().IsAllowedAsync(null!, null!, CancellationToken.None);
+    }
+
+    [Fact]
+    public void ResourceId_OptionallyScopedWithoutResource_Throws()
+    {
+        // Arrange (Given)
+        IResourceScoped request = new ListAccounts(null);
+
+        // Act (When)
+        var act = () => request.ResourceId;
+
+        // Assert (Then)
+        Assert.Throws<InvalidOperationException>(act);
+    }
+
+    [Fact]
     public async Task HandleAsync_WithSeveralRecorders_CallsEveryRecorder()
     {
         // Arrange (Given)

@@ -74,7 +74,7 @@ Four behaviors run on every `Result` and `Result<T>` request, in a fixed order. 
 | `AuthorizationBehaviorOrder.Actor` | `ActorAuthorizationBehavior` | every request except `IAllowAnonymous` | `UnauthenticatedFailure` when `ICurrentPrincipal.IsAuthenticated` is false |
 | `AuthorizationBehaviorOrder.Role` | `RoleAuthorizationBehavior` | `IRequiresRole` | `UnauthorizedFailure` when the caller is not in `Role` |
 | `AuthorizationBehaviorOrder.Scope` | `ScopeAuthorizationBehavior` | queries, commands, `IRequiresScope` | `UnauthorizedFailure` when the caller lacks the scope |
-| `AuthorizationBehaviorOrder.Resource` | `ResourceAuthorizationBehavior` | `IResourceScoped` | `UnauthorizedFailure` when the policy says no |
+| `AuthorizationBehaviorOrder.Resource` | `ResourceAuthorizationBehavior` | `IResourceScoped`, `IOptionallyResourceScoped` with a resource | `UnauthorizedFailure` when the policy says no |
 
 All four run in `PipelineStage.Authorization`: their `Order` values sit in that stage's band (`PipelineStages.StartOf(PipelineStage.Authorization) + 1000`, `+ 2000`, ...). Observability behaviors (tracing, logging) therefore wrap them, and validation and transactions run inside them. See [pipeline stages](./pipelines).
 
@@ -141,10 +141,23 @@ public sealed record ExportLoans : IQuery<byte[]>, IRequiresScope
 }
 ```
 
+A request that targets a resource only for some arguments implements `IOptionallyResourceScoped` instead:
+
+```csharp
+// All the caller's loans, or one account's.
+public sealed record ListLoans(Guid? AccountId) : IQuery<LoanView[]>, IOptionallyResourceScoped
+{
+    public string? OptionalResourceId => AccountId?.ToString();
+    public string Access => "read";
+}
+```
+
+When `OptionalResourceId` is `null`, the resource check is skipped and the policy is not called. Otherwise the policy receives the request as usual, with `ResourceId` equal to `OptionalResourceId`. The actor, role and scope checks run either way.
+
 - **Scopes.** A request that implements `IRequiresScope` needs its `Scope`. Otherwise an `IQuery<T>` needs `QueryScope` and an `ICommand` / `ICommand<T>` needs `CommandScope`. A plain `IRequest` that declares no scope needs none.
 - **Turning the default off.** `o.DisableDefaultScopes()` (or setting `QueryScope` / `CommandScope` to `null`) stops the query / command rule. Requests that implement `IRequiresScope` are still checked.
 - **Roles.** `IRequiresRole.Role` is checked with `ICurrentPrincipal.IsInRole`.
-- **Blank values are bugs.** An `IRequiresScope.Scope` or `IRequiresRole.Role` that is null, empty or whitespace throws `InvalidOperationException` naming the request type when the request is dispatched. It is not treated as "no requirement" (that would fail open), and it is not a silent denial of every caller (that would hide the bug behind ordinary 401/403s). Recorders are not called for it, because no caller was denied.
+- **Blank values are bugs.** An `IRequiresScope.Scope` or `IRequiresRole.Role` that is null, empty or whitespace, or an `IOptionallyResourceScoped.OptionalResourceId` that is empty or whitespace, throws `InvalidOperationException` naming the request type when the request is dispatched. It is not treated as "no requirement" (that would fail open), and it is not a silent denial of every caller (that would hide the bug behind ordinary 401/403s). Recorders are not called for it, because no caller was denied.
 
 ## Resource policy
 
@@ -181,6 +194,25 @@ public sealed class AuditDenials(ILogger<AuditDenials> logger) : IAuthorizationD
 ```
 
 `AuthorizationDenial` carries the request, the `Reason` (`Unauthenticated`, `MissingRole`, `MissingScope`, `ResourceAccessDenied`), the caller's `Id`, the missing role, scope or access in `Requirement`, and the `ResourceId` for resource denials.
+
+## Denial failures
+
+By default a denial returns an `UnauthenticatedFailure` (code `UNAUTHENTICATED`) or an `UnauthorizedFailure` (code `UNAUTHORIZED`) with a fixed English message such as `Requires role 'admin'.`. To give clients a domain code to branch on, and a message the application shows or translates, set `DenialFailure`:
+
+```csharp
+services.AddSynapseAuthorization(o => o.DenialFailure = denial => denial.Reason switch
+{
+    AuthorizationDenialReason.MissingRole => new UnauthorizedFailure("This action is reserved to administrators.")
+        { Code = "core.admin_required" },
+    AuthorizationDenialReason.MissingScope => new UnauthorizedFailure($"The '{denial.Requirement}' scope is required.")
+        { Code = "core.scope_required" },
+    _ => null // the default failure
+});
+```
+
+It receives the same `AuthorizationDenial` as the recorders, for requests and streams alike, and runs only when a request is denied. The recorders are still called.
+
+The failure keeps its type, since transports map it to `401` / `403` and the MCP invoker hides existence behind it. Return an `UnauthenticatedFailure` for `Unauthenticated` and an `UnauthorizedFailure` for every other reason. Any other type throws `InvalidOperationException`, so a denial cannot become a `404` or a `422` by mistake.
 
 ## Limits
 

@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using UnambitiousFx.Functional;
+using UnambitiousFx.Functional.Failures;
 using UnambitiousFx.Synapse.Abstractions;
 
 namespace UnambitiousFx.Synapse.Authorization;
@@ -23,6 +24,7 @@ public sealed class StreamAuthorizationBehavior<TRequest, TItem> : IStreamReques
     where TItem : notnull
 {
     private readonly string? _defaultScope;
+    private readonly Func<AuthorizationDenial, Failure?>? _denialFailure;
     private readonly IResourceAccessPolicy? _policy;
     private readonly ICurrentPrincipal _principal;
     private readonly IEnumerable<IAuthorizationDenialRecorder> _recorders;
@@ -31,7 +33,7 @@ public sealed class StreamAuthorizationBehavior<TRequest, TItem> : IStreamReques
     ///     Creates the behavior.
     /// </summary>
     /// <param name="principal">The caller.</param>
-    /// <param name="options">The default query scope.</param>
+    /// <param name="options">The default query scope, and the denial failure.</param>
     /// <param name="recorders">The recorders told about a denial.</param>
     /// <param name="policy">The application's policy, <see langword="null" /> when none is registered.</param>
     public StreamAuthorizationBehavior(ICurrentPrincipal principal,
@@ -46,6 +48,7 @@ public sealed class StreamAuthorizationBehavior<TRequest, TItem> : IStreamReques
         _recorders = recorders;
         _policy = policy;
         _defaultScope = AuthorizationChecks.DefaultScope<TRequest>(options);
+        _denialFailure = options.DenialFailure;
     }
 
     /// <inheritdoc />
@@ -61,13 +64,14 @@ public sealed class StreamAuthorizationBehavior<TRequest, TItem> : IStreamReques
                      ?? AuthorizationChecks.Scope(request, _principal, _defaultScope);
         if (denied is null && request is IResourceScoped scoped)
         {
-            denied = await AuthorizationChecks.ResourceAsync(scoped, _principal, _policy, cancellationToken);
+            denied = await AuthorizationChecks.ResourceAsync<TRequest>(scoped, _principal, _policy, cancellationToken);
         }
 
         if (denied is { } d)
         {
+            var failure = AuthorizationDenials.FailureFor(d, _denialFailure);
             await AuthorizationDenials.RecordAsync(_recorders, d.Denial, cancellationToken);
-            yield return Result.Failure<TItem>(d.Failure);
+            yield return Result.Failure<TItem>(failure);
             yield break;
         }
 

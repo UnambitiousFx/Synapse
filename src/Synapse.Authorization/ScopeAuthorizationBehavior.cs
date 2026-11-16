@@ -24,6 +24,7 @@ public sealed class ScopeAuthorizationBehavior<TRequest, TResult> : IResultPipel
     where TResult : IResult
 {
     private readonly string? _defaultScope;
+    private readonly Func<AuthorizationDenial, Failure?>? _denialFailure;
     private readonly ICurrentPrincipal _principal;
     private readonly IEnumerable<IAuthorizationDenialRecorder> _recorders;
 
@@ -31,7 +32,7 @@ public sealed class ScopeAuthorizationBehavior<TRequest, TResult> : IResultPipel
     ///     Creates the behavior.
     /// </summary>
     /// <param name="principal">The caller.</param>
-    /// <param name="options">The default query and command scopes.</param>
+    /// <param name="options">The default query and command scopes, and the denial failure.</param>
     /// <param name="recorders">The recorders told about a denial.</param>
     public ScopeAuthorizationBehavior(ICurrentPrincipal principal,
         SynapseAuthorizationOptions options,
@@ -43,6 +44,7 @@ public sealed class ScopeAuthorizationBehavior<TRequest, TResult> : IResultPipel
         ArgumentNullException.ThrowIfNull(recorders);
         _recorders = recorders;
         _defaultScope = AuthorizationChecks.DefaultScope<TRequest>(options);
+        _denialFailure = options.DenialFailure;
     }
 
     /// <inheritdoc />
@@ -54,7 +56,7 @@ public sealed class ScopeAuthorizationBehavior<TRequest, TResult> : IResultPipel
         CancellationToken cancellationToken = default)
     {
         return AuthorizationChecks.Scope(request, _principal, _defaultScope) is { } denied
-            ? AuthorizationDenials.DenyAsync(_recorders, next, denied, cancellationToken)
+            ? AuthorizationDenials.DenyAsync(_recorders, next, denied, _denialFailure, cancellationToken)
             : next.InvokeAsync(request, cancellationToken);
     }
 }
