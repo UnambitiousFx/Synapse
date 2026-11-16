@@ -1,3 +1,4 @@
+using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
 using UnambitiousFx.Examples.AuthorizationAot;
 using UnambitiousFx.Functional;
@@ -5,8 +6,9 @@ using UnambitiousFx.Functional.Failures;
 using UnambitiousFx.Synapse;
 using UnambitiousFx.Synapse.Abstractions;
 using UnambitiousFx.Synapse.Authorization;
+using UnambitiousFx.Synapse.FluentValidation;
 
-// Exercises every authorization check under NativeAOT, where open generic behaviors cannot be closed at runtime.
+// Exercises every authorization and validation check under NativeAOT, where open generic behaviors cannot be closed at runtime.
 var principal = new TestPrincipal();
 var services = new ServiceCollection()
     .AddSingleton<ICurrentPrincipal>(principal)
@@ -17,6 +19,8 @@ var services = new ServiceCollection()
         o.CommandScope = "write";
         o.Policy<DenyAllPolicy>();
     })
+    .AddScoped<IValidator<Positive>, PositiveValidator>()
+    .AddSynapseFluentValidation()
     .BuildServiceProvider();
 var invoker = services.GetRequiredService<IInvoker>();
 
@@ -52,6 +56,10 @@ Check("stream without scope", await FirstStreamResult(), typeof(UnauthorizedFail
 
 principal.Set(scopes: "read");
 Check("struct query with scope", await invoker.InvokeAsync(new Count()), null);
+
+principal.Set(scopes: "read");
+Check("invalid struct query", await invoker.InvokeAsync(new Positive(0)), typeof(ValidationFailure));
+Check("valid struct query", await invoker.InvokeAsync(new Positive(1)), null);
 
 return failed ? 1 : 0;
 
@@ -117,6 +125,23 @@ namespace UnambitiousFx.Examples.AuthorizationAot
     public sealed record Rename(string Name) : ICommand<string>;
 
     public readonly record struct Count : IQuery<int>;
+
+    public readonly record struct Positive(int Value) : IQuery<int>;
+
+    public sealed class PositiveValidator : AbstractValidator<Positive>
+    {
+        public PositiveValidator()
+        {
+            RuleFor(x => x.Value).GreaterThan(0);
+        }
+    }
+
+    [RequestHandler<Positive, int>]
+    public sealed class PositiveHandler : IRequestHandler<Positive, int>
+    {
+        public ValueTask<Result<int>> HandleAsync(Positive request, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(Result.Success(request.Value));
+    }
 
     public sealed record Numbers : IStreamRequest<int>;
 
