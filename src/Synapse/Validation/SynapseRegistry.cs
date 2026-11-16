@@ -17,26 +17,26 @@ namespace UnambitiousFx.Synapse.Validation;
 internal sealed class SynapseRegistry
 {
     private SynapseRegistry(
-        IReadOnlyDictionary<Type, Func<IPipelineDescriber, PipelineDescription?>> probes,
-        IReadOnlyDictionary<Type, Func<IPipelineDescriber, PipelineDescription?>> eventProbesOfRequests,
+        IReadOnlyDictionary<Type, Func<IPipelineDescriber, PipelineDescription?>> requestProbes,
+        IReadOnlyDictionary<Type, Func<IPipelineDescriber, PipelineDescription?>> eventProbes,
         IReadOnlyDictionary<Type, int> requestHandlerCounts,
         IReadOnlySet<Type> eventsWithHandlers,
         IReadOnlySet<Type> requestsWithBehaviors,
         IReadOnlySet<Type> eventsWithBehaviors)
     {
-        Probes = probes;
-        EventProbesOfRequests = eventProbesOfRequests;
+        RequestProbes = requestProbes;
+        EventProbes = eventProbes;
         RequestHandlerCounts = requestHandlerCounts;
         EventsWithHandlers = eventsWithHandlers;
         RequestsWithBehaviors = requestsWithBehaviors;
         EventsWithBehaviors = eventsWithBehaviors;
     }
 
-    /// <summary>Describes the pipeline of one request or event type, keyed by that type.</summary>
-    public IReadOnlyDictionary<Type, Func<IPipelineDescriber, PipelineDescription?>> Probes { get; }
+    /// <summary>Describes the pipeline of one request type, keyed by that type.</summary>
+    public IReadOnlyDictionary<Type, Func<IPipelineDescriber, PipelineDescription?>> RequestProbes { get; }
 
-    /// <summary>The event probes of types that are also requests, whose request probe is in <see cref="Probes" />.</summary>
-    public IReadOnlyDictionary<Type, Func<IPipelineDescriber, PipelineDescription?>> EventProbesOfRequests { get; }
+    /// <summary>Describes the pipeline of one event type, keyed by that type.</summary>
+    public IReadOnlyDictionary<Type, Func<IPipelineDescriber, PipelineDescription?>> EventProbes { get; }
 
     /// <summary>The number of distinct handler implementations registered for each request type.</summary>
     public IReadOnlyDictionary<Type, int> RequestHandlerCounts { get; }
@@ -52,8 +52,8 @@ internal sealed class SynapseRegistry
 
     public static SynapseRegistry Create(
         IServiceCollection services,
-        IReadOnlyDictionary<Type, Func<IPipelineDescriber, PipelineDescription?>> probes,
-        IReadOnlyDictionary<Type, Func<IPipelineDescriber, PipelineDescription?>> eventProbesOfRequests)
+        IReadOnlyDictionary<Type, Func<IPipelineDescriber, PipelineDescription?>> requestProbes,
+        IReadOnlyDictionary<Type, Func<IPipelineDescriber, PipelineDescription?>> eventProbes)
     {
         var requestHandlerImplementations = new Dictionary<Type, HashSet<Type>>();
         var undistinguishedHandlers = new Dictionary<Type, int>();
@@ -114,7 +114,7 @@ internal sealed class SynapseRegistry
             pair => pair.Key,
             pair => pair.Value.Count + undistinguishedHandlers.GetValueOrDefault(pair.Key));
 
-        return new SynapseRegistry(probes, eventProbesOfRequests, requestHandlerCounts, eventsWithHandlers, requestsWithBehaviors,
+        return new SynapseRegistry(requestProbes, eventProbes, requestHandlerCounts, eventsWithHandlers, requestsWithBehaviors,
             eventsWithBehaviors);
     }
 }

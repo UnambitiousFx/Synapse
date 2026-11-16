@@ -78,7 +78,20 @@ CheckScopes("transactional command", 1);
 Check("transactional struct command", await invoker.InvokeAsync(new Tally()), null);
 CheckScopes("transactional struct command", 2);
 
+// The Type overloads are served from the closed per-type tables, not reflection: check them against the generic ones.
+var describer = services.GetRequiredService<IPipelineDescriber>();
+CheckDescription("describe struct query by type", describer.Describe(typeof(Count)), describer.Describe<Count, int>());
+CheckDescription("describe command by type", describer.Describe(typeof(Deposit)), describer.Describe<Deposit>());
+CheckDescription("describe event by type", describer.DescribeEvent(typeof(Pinged)), describer.DescribeEvent<Pinged>());
+
 return failed ? 1 : 0;
+
+void CheckDescription(string name, PipelineDescription? byType, PipelineDescription? generic)
+{
+    var ok = byType is not null && byType.Equals(generic);
+    failed |= !ok;
+    Console.WriteLine($"{(ok ? "OK  " : "FAIL")} {name}: {(byType is null ? "no description" : $"{byType.Handlers.Count} handler(s), {byType.Behaviors.Count} behavior(s)")}");
+}
 
 void CheckScopes(string name, int expected)
 {

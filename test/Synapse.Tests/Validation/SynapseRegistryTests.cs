@@ -24,9 +24,9 @@ public sealed class SynapseRegistryTests
         var registry = provider.GetRequiredService<SynapseRegistry>();
 
         // Assert (Then)
-        Assert.Contains(typeof(PlainCommand), registry.Probes.Keys);
-        Assert.Contains(typeof(CountQuery), registry.Probes.Keys);
-        Assert.Contains(typeof(PingEvent), registry.Probes.Keys);
+        Assert.Contains(typeof(PlainCommand), registry.RequestProbes.Keys);
+        Assert.Contains(typeof(CountQuery), registry.RequestProbes.Keys);
+        Assert.Contains(typeof(PingEvent), registry.EventProbes.Keys);
         Assert.Equal(1, registry.RequestHandlerCounts[typeof(PlainCommand)]);
         Assert.Equal(1, registry.RequestHandlerCounts[typeof(CountQuery)]);
         Assert.Contains(typeof(PingEvent), registry.EventsWithHandlers);
@@ -42,8 +42,8 @@ public sealed class SynapseRegistryTests
         var registry = provider.GetRequiredService<SynapseRegistry>();
 
         // Assert (Then)
-        Assert.Contains(typeof(PlainCommand), registry.Probes.Keys);
-        Assert.Contains(typeof(PingEvent), registry.Probes.Keys);
+        Assert.Contains(typeof(PlainCommand), registry.RequestProbes.Keys);
+        Assert.Contains(typeof(PingEvent), registry.EventProbes.Keys);
     }
 
     [Fact]
@@ -56,7 +56,7 @@ public sealed class SynapseRegistryTests
         var registry = provider.GetRequiredService<SynapseRegistry>();
 
         // Assert (Then)
-        Assert.DoesNotContain(typeof(PlainCommand), registry.Probes.Keys);
+        Assert.DoesNotContain(typeof(PlainCommand), registry.RequestProbes.Keys);
         Assert.DoesNotContain(typeof(PlainCommand), registry.RequestHandlerCounts.Keys);
     }
 
@@ -126,7 +126,7 @@ public sealed class SynapseRegistryTests
         var registry = provider.GetRequiredService<SynapseRegistry>();
 
         // Act (When)
-        var description = registry.Probes[typeof(PlainCommand)](provider.GetRequiredService<IPipelineDescriber>());
+        var description = registry.RequestProbes[typeof(PlainCommand)](provider.GetRequiredService<IPipelineDescriber>());
 
         // Assert (Then)
         Assert.NotNull(description);
@@ -146,7 +146,7 @@ public sealed class SynapseRegistryTests
         var registry = provider.GetRequiredService<SynapseRegistry>();
 
         // Act (When)
-        var description = registry.Probes[typeof(BothRequest)](provider.GetRequiredService<IPipelineDescriber>());
+        var description = registry.RequestProbes[typeof(BothRequest)](provider.GetRequiredService<IPipelineDescriber>());
 
         // Assert (Then)
         Assert.NotNull(description);

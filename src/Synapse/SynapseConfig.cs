@@ -539,7 +539,7 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
         services.RecordRequestRegistrations(_visits);
 
         services.AddSingleton(SynapseRegistry.Create(services,
-            RequestProbeVisitor.Collect(_visits, _eventProbes, out var eventProbesOfRequests), eventProbesOfRequests));
+            RequestProbeVisitor.Collect(_visits), _eventProbes));
 
         // If the storage type is already registered as itself (e.g. AddEfCoreEventOutbox<TContext>()),
         // forward IEventOutboxStorage to that registration instead of adding an independent descriptor

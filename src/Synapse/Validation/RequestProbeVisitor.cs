@@ -4,11 +4,13 @@ namespace UnambitiousFx.Synapse.Validation;
 
 /// <summary>
 ///     Builds the per-request-type describer probes from the recorded request registrations, so a registration site
-///     records its handler shape once. Events have no visitor method and keep their own probes.
+///     records its handler shape once. Events have no visitor method and keep their own probes, in a separate table
+///     so a type that is both a request and an event never has one kind answer for the other.
 /// </summary>
 internal sealed class RequestProbeVisitor : IRequestRegistrationVisitor
 {
     private readonly Dictionary<Type, Func<IPipelineDescriber, PipelineDescription?>> _probes;
+    private readonly HashSet<Type> _typed = [];
 
     private RequestProbeVisitor(Dictionary<Type, Func<IPipelineDescriber, PipelineDescription?>> probes)
     {
@@ -16,9 +18,7 @@ internal sealed class RequestProbeVisitor : IRequestRegistrationVisitor
     }
 
     public static IReadOnlyDictionary<Type, Func<IPipelineDescriber, PipelineDescription?>> Collect(
-        IReadOnlyDictionary<Type, Action<IRequestRegistrationVisitor>> visits,
-        IReadOnlyDictionary<Type, Func<IPipelineDescriber, PipelineDescription?>> eventProbes,
-        out IReadOnlyDictionary<Type, Func<IPipelineDescriber, PipelineDescription?>> eventProbesOfRequests)
+        IReadOnlyDictionary<Type, Action<IRequestRegistrationVisitor>> visits)
     {
         var probes = new Dictionary<Type, Func<IPipelineDescriber, PipelineDescription?>>();
         var visitor = new RequestProbeVisitor(probes);
@@ -27,22 +27,11 @@ internal sealed class RequestProbeVisitor : IRequestRegistrationVisitor
             visit(visitor);
         }
 
-        // A type that is both a request and an event has two pipelines; the table holds one probe per type, so the
-        // event probe goes in a second table that validation also walks.
-        var shared = new Dictionary<Type, Func<IPipelineDescriber, PipelineDescription?>>();
-        foreach (var (type, eventProbe) in eventProbes)
-        {
-            if (!probes.TryAdd(type, eventProbe))
-            {
-                shared.Add(type, eventProbe);
-            }
-        }
-
-        eventProbesOfRequests = shared;
         return probes;
     }
 
-    // A request type with several handler shapes keeps the first one recorded, as the per-type probes always did.
+    // A request type with several handler shapes keeps the IRequest<TResponse> one, as Describe(Type) always did;
+    // among several IRequest<T> closures the first recorded wins.
     public void VisitRequest<TRequest>()
         where TRequest : IRequest
     {
@@ -53,7 +42,10 @@ internal sealed class RequestProbeVisitor : IRequestRegistrationVisitor
         where TRequest : IRequest<TResponse>
         where TResponse : notnull
     {
-        _probes.TryAdd(typeof(TRequest), describer => describer.Describe<TRequest, TResponse>());
+        if (_typed.Add(typeof(TRequest)))
+        {
+            _probes[typeof(TRequest)] = describer => describer.Describe<TRequest, TResponse>();
+        }
     }
 
     // Streams were never probed: the describer has no stream overload.
