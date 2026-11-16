@@ -12,7 +12,11 @@ using UnambitiousFx.Synapse.FluentValidation;
 var principal = new TestPrincipal();
 var services = new ServiceCollection()
     .AddSingleton<ICurrentPrincipal>(principal)
-    .AddSynapse(cfg => cfg.AddRegisterGroup(new RegisterGroup()))
+    .AddSynapse(cfg =>
+    {
+        cfg.AddRegisterGroup(new RegisterGroup());
+        cfg.AddTransactions<CountingTransactionManager>();
+    })
     .AddSynapseAuthorization(o =>
     {
         o.QueryScope = "read";
@@ -66,8 +70,22 @@ principal.Set(scopes: "read");
 Check("invalid struct query", await invoker.InvokeAsync(new Positive(0)), typeof(ValidationFailure));
 Check("valid struct query", await invoker.InvokeAsync(new Positive(1)), null);
 
+principal.Set(scopes: "write");
+var begun = CountingTransactionManager.Begun;
+var committed = CountingTransactionManager.Committed;
+Check("transactional command", await invoker.InvokeAsync(new Deposit()), null);
+CheckScopes("transactional command", 1);
+Check("transactional struct command", await invoker.InvokeAsync(new Tally()), null);
+CheckScopes("transactional struct command", 2);
+
 return failed ? 1 : 0;
 
+void CheckScopes(string name, int expected)
+{
+    var ok = CountingTransactionManager.Begun == begun + expected && CountingTransactionManager.Committed == committed + expected;
+    failed |= !ok;
+    Console.WriteLine($"{(ok ? "OK  " : "FAIL")} {name}: scopes begun/committed {CountingTransactionManager.Begun - begun}/{CountingTransactionManager.Committed - committed}, expected {expected} total");
+}
 async ValueTask<IResult> FirstStreamResult()
 {
     await foreach (var item in invoker.InvokeStreamAsync(new Numbers()))
