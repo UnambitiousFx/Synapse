@@ -74,11 +74,28 @@ internal static class AuthorizationChecks
             new UnauthorizedFailure($"Requires scope '{scope}'."));
     }
 
-    public static async ValueTask<Denied?> ResourceAsync(IResourceScoped scoped,
+    public static async ValueTask<Denied?> ResourceAsync<TRequest>(IResourceScoped scoped,
         ICurrentPrincipal principal,
         IResourceAccessPolicy? policy,
         CancellationToken cancellationToken)
     {
+        if (scoped is IOptionallyResourceScoped optional)
+        {
+            if (optional.OptionalResourceId is not { } resourceId)
+            {
+                return null;
+            }
+
+            // Blank is not "no resource": it is what a bug looks like, and skipping the check would fail open.
+            if (string.IsNullOrWhiteSpace(resourceId))
+            {
+                throw new InvalidOperationException(
+                    $"{typeof(TRequest).FullName} implements {nameof(IOptionallyResourceScoped)} but its " +
+                    $"{nameof(IOptionallyResourceScoped.OptionalResourceId)} is empty or whitespace. Return null when " +
+                    "the request targets no resource.");
+            }
+        }
+
         if (policy is not null && await policy.IsAllowedAsync(principal, scoped, cancellationToken))
         {
             return null;
