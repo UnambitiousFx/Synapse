@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using UnambitiousFx.Functional.Failures;
 
 namespace UnambitiousFx.Synapse.Authorization;
 
@@ -30,6 +31,20 @@ public sealed class SynapseAuthorizationOptions
     ///     <see cref="DefaultCommandScope" />.
     /// </summary>
     public string? CommandScope { get; set; } = DefaultCommandScope;
+
+    /// <summary>
+    ///     Shapes the failure returned for a denial, for example to give it a domain <c>Code</c> and a message the
+    ///     application shows or translates. Called with the <see cref="AuthorizationDenial" /> the recorders receive;
+    ///     return <see langword="null" /> to keep the default failure. <see langword="null" /> (the default) keeps every
+    ///     default failure.
+    /// </summary>
+    /// <remarks>
+    ///     The failure's type cannot change: return an <see cref="UnauthenticatedFailure" /> for
+    ///     <see cref="AuthorizationDenialReason.Unauthenticated" /> and an <see cref="UnauthorizedFailure" /> otherwise
+    ///     (or a subclass). Transports map the type to 401 / 403, so another type throws an
+    ///     <see cref="InvalidOperationException" /> rather than turn a denial into a 404 or a 422.
+    /// </remarks>
+    public Func<AuthorizationDenial, Failure?>? DenialFailure { get; set; }
 
     /// <summary>
     ///     Turns the default scope rule off: only requests implementing <see cref="IRequiresScope" /> are checked for a
