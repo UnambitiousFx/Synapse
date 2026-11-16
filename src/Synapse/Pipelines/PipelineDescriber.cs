@@ -1,9 +1,9 @@
 using System.Diagnostics.CodeAnalysis;
-using System.Reflection;
 using Microsoft.Extensions.DependencyInjection;
 using UnambitiousFx.Synapse.Abstractions;
 using UnambitiousFx.Synapse.Publish;
 using UnambitiousFx.Synapse.Resolvers;
+using UnambitiousFx.Synapse.Validation;
 
 namespace UnambitiousFx.Synapse.Pipelines;
 
@@ -15,11 +15,15 @@ namespace UnambitiousFx.Synapse.Pipelines;
 /// </summary>
 internal sealed class PipelineDescriber : IPipelineDescriber
 {
+    private readonly IServiceProvider _provider;
     private readonly IServiceScopeFactory _scopeFactory;
 
-    public PipelineDescriber(IServiceScopeFactory scopeFactory)
+    // The registry is resolved per call rather than injected: it is a singleton added by AddSynapse, and resolving
+    // it lazily keeps the describer constructible on its own.
+    public PipelineDescriber(IServiceScopeFactory scopeFactory, IServiceProvider provider)
     {
         _scopeFactory = scopeFactory;
+        _provider = provider;
     }
 
     public PipelineDescription? Describe<TRequest>()
@@ -90,34 +94,25 @@ internal sealed class PipelineDescriber : IPipelineDescriber
         };
     }
 
-    [RequiresDynamicCode("Builds a generic method over the request type at runtime. Use the generic overloads under Native AOT.")]
-    [RequiresUnreferencedCode("Looks up the generic overloads by reflection. Use the generic overloads when trimming.")]
     public PipelineDescription? Describe(Type requestType)
     {
         ArgumentNullException.ThrowIfNull(requestType);
 
-        // IRequest<TResponse> wins over IRequest; several IRequest<T> closures are ambiguous and the first is used.
-        var responseType = requestType.GetInterfaces()
-            .Where(candidate => candidate.IsGenericType && candidate.GetGenericTypeDefinition() == typeof(IRequest<>))
-            .Select(candidate => candidate.GetGenericArguments()[0])
-            .FirstOrDefault();
-
-        if (responseType is not null)
+        if (!typeof(IRequest).IsAssignableFrom(requestType) && !ImplementsTypedRequest(requestType))
         {
-            return InvokeGeneric(nameof(Describe), requestType, responseType);
+            throw new ArgumentException(
+                $"'{requestType}' does not implement IRequest or IRequest<TResponse>.", nameof(requestType));
         }
 
-        if (typeof(IRequest).IsAssignableFrom(requestType))
-        {
-            return InvokeGeneric(nameof(Describe), requestType);
-        }
-
-        throw new ArgumentException(
-            $"'{requestType}' does not implement IRequest or IRequest<TResponse>.", nameof(requestType));
+        // The table also holds event probes, so a type that is only registered as an event must not answer here.
+        var registry = _provider.GetService<SynapseRegistry>();
+        return registry is not null &&
+               registry.RequestHandlerCounts.ContainsKey(requestType) &&
+               registry.Probes.TryGetValue(requestType, out var probe)
+            ? probe(this)
+            : null;
     }
 
-    [RequiresDynamicCode("Builds a generic method over the event type at runtime. Use the generic overloads under Native AOT.")]
-    [RequiresUnreferencedCode("Looks up the generic overloads by reflection. Use the generic overloads when trimming.")]
     public PipelineDescription? DescribeEvent(Type eventType)
     {
         ArgumentNullException.ThrowIfNull(eventType);
@@ -128,22 +123,33 @@ internal sealed class PipelineDescriber : IPipelineDescriber
                 nameof(eventType));
         }
 
-        return InvokeGeneric(nameof(DescribeEvent), eventType);
+        var registry = _provider.GetService<SynapseRegistry>();
+        if (registry is null || !registry.EventsWithHandlers.Contains(eventType))
+        {
+            return null;
+        }
+
+        // A type that is also a request keeps its request probe in Probes and its event probe in the second table.
+        return registry.EventProbesOfRequests.TryGetValue(eventType, out var probe) ||
+               registry.Probes.TryGetValue(eventType, out probe)
+            ? probe(this)
+            : null;
     }
 
-    // The generic overload is picked by name and arity, since Describe(Type) shares its name with them.
-    [RequiresDynamicCode("Builds a generic method at runtime.")]
-    [RequiresUnreferencedCode("Looks up the generic overloads by reflection.")]
-    private PipelineDescription? InvokeGeneric(string name, params Type[] typeArguments)
+    // A registered request type has its interfaces rooted by the closed handler registration, so trimming can only
+    // thin out the interfaces of an unregistered type, which turns an answer of null into an ArgumentException.
+    [UnconditionalSuppressMessage("Trimming", "IL2070",
+        Justification = "Only affects unregistered types; see the comment above.")]
+    private static bool ImplementsTypedRequest(Type type)
     {
-        var method = typeof(PipelineDescriber)
-            .GetMethods(BindingFlags.Instance | BindingFlags.Public)
-            .Single(candidate => candidate.Name == name &&
-                                 candidate.IsGenericMethodDefinition &&
-                                 candidate.GetGenericArguments().Length == typeArguments.Length)
-            .MakeGenericMethod(typeArguments);
+        foreach (var candidate in type.GetInterfaces())
+        {
+            if (candidate.IsGenericType && candidate.GetGenericTypeDefinition() == typeof(IRequest<>))
+            {
+                return true;
+            }
+        }
 
-        // DoNotWrapExceptions so a throwing behavior constructor surfaces as itself, not as a TargetInvocationException.
-        return (PipelineDescription?)method.Invoke(this, BindingFlags.DoNotWrapExceptions, null, null, null);
+        return false;
     }
 }

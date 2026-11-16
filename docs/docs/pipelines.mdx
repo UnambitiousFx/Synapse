@@ -469,7 +469,7 @@ foreach (var requestType in typeof(PurgeCompletedTasksCommand).Assembly.GetTypes
 `PipelineDescription` has structural equality, so two descriptions with the same handlers and behaviors in the same order are equal, and `ToString()` prints them as `Stage Order Name`.
 
 :::note
-`Describe(Type)` and `DescribeEvent(Type)` build a generic method at runtime, so they are not Native-AOT safe: use them in tests, and the generic overloads (which are AOT safe) in an application.
+`Describe(Type)` and `DescribeEvent(Type)` are served from the registrations Synapse recorded, without reflection, so they are Native-AOT safe like the generic overloads. A type that was not registered through Synapse returns `null`, since the invoker cannot dispatch it either. A type registered with both `IRequest` and `IRequest<TResponse>` is described by its `IRequest<TResponse>` pipeline.
 :::
 
 :::caution

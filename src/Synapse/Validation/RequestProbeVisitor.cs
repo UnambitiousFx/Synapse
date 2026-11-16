@@ -9,6 +9,7 @@ namespace UnambitiousFx.Synapse.Validation;
 internal sealed class RequestProbeVisitor : IRequestRegistrationVisitor
 {
     private readonly Dictionary<Type, Func<IPipelineDescriber, PipelineDescription?>> _probes;
+    private readonly HashSet<Type> _typed = [];
 
     private RequestProbeVisitor(Dictionary<Type, Func<IPipelineDescriber, PipelineDescription?>> probes)
     {
@@ -42,7 +43,8 @@ internal sealed class RequestProbeVisitor : IRequestRegistrationVisitor
         return probes;
     }
 
-    // A request type with several handler shapes keeps the first one recorded, as the per-type probes always did.
+    // A request type with several handler shapes keeps the IRequest<TResponse> one, as Describe(Type) always did;
+    // among several IRequest<T> closures the first recorded wins.
     public void VisitRequest<TRequest>()
         where TRequest : IRequest
     {
@@ -53,7 +55,10 @@ internal sealed class RequestProbeVisitor : IRequestRegistrationVisitor
         where TRequest : IRequest<TResponse>
         where TResponse : notnull
     {
-        _probes.TryAdd(typeof(TRequest), describer => describer.Describe<TRequest, TResponse>());
+        if (_typed.Add(typeof(TRequest)))
+        {
+            _probes[typeof(TRequest)] = describer => describer.Describe<TRequest, TResponse>();
+        }
     }
 
     // Streams were never probed: the describer has no stream overload.

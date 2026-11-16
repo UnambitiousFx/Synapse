@@ -453,6 +453,89 @@ public sealed class PipelineDescriberTests
         Assert.Equal(typeof(BothCountHandler), Assert.Single(byType.Handlers));
     }
 
+    [Fact]
+    public async Task Describe_WithAValidRequestTypeThatIsNotRegistered_ReturnsNull()
+    {
+        // Arrange (Given)
+        await using var provider = Build(new Trace(), _ => { });
+        var describer = provider.GetRequiredService<IPipelineDescriber>();
+
+        // Act (When)
+        var description = describer.Describe(typeof(BothRequest));
+
+        // Assert (Then)
+        Assert.Null(description);
+    }
+
+    [Fact]
+    public async Task DescribeEvent_WithAValidEventTypeThatIsNotRegistered_ReturnsNull()
+    {
+        // Arrange (Given)
+        await using var provider = Build(new Trace(), _ => { });
+        var describer = provider.GetRequiredService<IPipelineDescriber>();
+
+        // Act (When)
+        var description = describer.DescribeEvent(typeof(EventExample));
+
+        // Assert (Then)
+        Assert.Null(description);
+    }
+
+    [Fact]
+    public async Task Describe_WithATypeThatIsBothRequestAndEvent_EachOverloadReturnsItsOwnPipeline()
+    {
+        // Arrange (Given)
+        await using var provider = Build(new Trace(), cfg =>
+        {
+            cfg.RegisterRequestHandler<DualCountHandler, DualMessage, int>();
+            cfg.RegisterEventHandler<DualEventHandler, DualMessage>();
+        });
+        var describer = provider.GetRequiredService<IPipelineDescriber>();
+
+        // Act (When)
+        var request = describer.Describe(typeof(DualMessage));
+        var @event = describer.DescribeEvent(typeof(DualMessage));
+
+        // Assert (Then)
+        Assert.Equal(describer.Describe<DualMessage, int>(), request);
+        Assert.Equal(describer.DescribeEvent<DualMessage>(), @event);
+        Assert.Equal(typeof(DualCountHandler), Assert.Single(request!.Handlers));
+        Assert.Equal(typeof(DualEventHandler), Assert.Single(@event!.Handlers));
+    }
+
+    [Fact]
+    public async Task DescribeEvent_WithATypeRegisteredOnlyAsARequest_ReturnsNull()
+    {
+        // Arrange (Given)
+        await using var provider = Build(new Trace(),
+            cfg => cfg.RegisterRequestHandler<DualCountHandler, DualMessage, int>());
+        var describer = provider.GetRequiredService<IPipelineDescriber>();
+
+        // Act (When)
+        var description = describer.DescribeEvent(typeof(DualMessage));
+
+        // Assert (Then)
+        Assert.Null(description);
+    }
+
+    private sealed record DualMessage : IRequest<int>, IEvent;
+
+    private sealed class DualCountHandler : IRequestHandler<DualMessage, int>
+    {
+        public ValueTask<Result<int>> HandleAsync(DualMessage request, CancellationToken cancellationToken = default)
+        {
+            return new ValueTask<Result<int>>(Result.Success(1));
+        }
+    }
+
+    private sealed class DualEventHandler : IEventHandler<DualMessage>
+    {
+        public ValueTask<Result> HandleAsync(DualMessage @event, CancellationToken cancellationToken = default)
+        {
+            return new ValueTask<Result>(Result.Success());
+        }
+    }
+
     private static void AssertSameDescription(PipelineDescription? expected, PipelineDescription? actual)
     {
         Assert.NotNull(expected);

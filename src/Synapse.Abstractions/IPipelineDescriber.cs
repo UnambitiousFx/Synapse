@@ -1,5 +1,3 @@
-using System.Diagnostics.CodeAnalysis;
-
 namespace UnambitiousFx.Synapse.Abstractions;
 
 /// <summary>
@@ -44,30 +42,29 @@ public interface IPipelineDescriber
 
     /// <summary>
     ///     Describes the pipeline of a request known only as a <see cref="Type" />, for tests that loop over every
-    ///     request in an assembly. Picks <see cref="IRequest" /> or <see cref="IRequest{TResponse}" /> from the type.
-    ///     When a type implements both, <see cref="IRequest{TResponse}" /> wins; a type with several
-    ///     <c>IRequest&lt;T&gt;</c> closures is ambiguous and which one is used is unspecified.
+    ///     request in an assembly. Served from the registrations Synapse recorded, without reflection, so it is
+    ///     Native-AOT safe. When a type is registered with both <see cref="IRequest" /> and
+    ///     <see cref="IRequest{TResponse}" />, <see cref="IRequest{TResponse}" /> wins; a type with several
+    ///     <c>IRequest&lt;T&gt;</c> closures is ambiguous and the first registered is used.
     /// </summary>
     /// <param name="requestType">A type implementing <see cref="IRequest" /> or <see cref="IRequest{TResponse}" />.</param>
-    /// <returns>The description, or <c>null</c> when no handler is registered for the request.</returns>
+    /// <returns>
+    ///     The description, or <c>null</c> when the type was not registered through Synapse (it cannot be dispatched
+    ///     either) or has no handler.
+    /// </returns>
     /// <exception cref="ArgumentNullException"><paramref name="requestType" /> is <c>null</c>.</exception>
     /// <exception cref="ArgumentException"><paramref name="requestType" /> is not a request type.</exception>
-    /// <remarks>
-    ///     Builds a generic method at runtime, so it is not Native-AOT safe. Use the generic overloads in an AOT
-    ///     application; this one is meant for tests.
-    /// </remarks>
-    [RequiresDynamicCode("Builds a generic method over the request type at runtime. Use the generic overloads under Native AOT.")]
-    [RequiresUnreferencedCode("Looks up the generic overloads by reflection. Use the generic overloads when trimming.")]
     PipelineDescription? Describe(Type requestType);
 
     /// <summary>
     ///     Describes the pipeline of an event known only as a <see cref="Type" />. See <see cref="Describe(Type)" />.
     /// </summary>
     /// <param name="eventType">A reference type implementing <see cref="IEvent" />.</param>
-    /// <returns>The description, or <c>null</c> when no handler is subscribed to the event.</returns>
+    /// <returns>
+    ///     The description, or <c>null</c> when the type was not registered through Synapse or no handler is
+    ///     subscribed to it.
+    /// </returns>
     /// <exception cref="ArgumentNullException"><paramref name="eventType" /> is <c>null</c>.</exception>
     /// <exception cref="ArgumentException"><paramref name="eventType" /> is not an event type.</exception>
-    [RequiresDynamicCode("Builds a generic method over the event type at runtime. Use the generic overloads under Native AOT.")]
-    [RequiresUnreferencedCode("Looks up the generic overloads by reflection. Use the generic overloads when trimming.")]
     PipelineDescription? DescribeEvent(Type eventType);
 }
