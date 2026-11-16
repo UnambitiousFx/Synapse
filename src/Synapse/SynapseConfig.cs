@@ -27,7 +27,7 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
     private readonly Dictionary<Type, Delegate> _requestDispatchers = new();
     private readonly Dictionary<Type, Delegate> _voidRequestDispatchers = new();
     private readonly Dictionary<Type, Delegate> _streamRequestDispatchers = new();
-    private readonly Dictionary<Type, Func<IPipelineDescriber, PipelineDescription?>> _probes = new();
+    private readonly Dictionary<Type, Func<IPipelineDescriber, PipelineDescription?>> _eventProbes = new();
     private readonly Dictionary<Type, Action<IRequestRegistrationVisitor>> _visits = new();
 
     [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
@@ -242,7 +242,6 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
                     var handler = resolver.GetRequiredService<IRequestHandler<TRequest, TResponse>>();
                     return handler.HandleAsync((TRequest)request, ct);
                 }));
-        _probes.TryAdd(typeof(TRequest), describer => describer.Describe<TRequest, TResponse>());
         _visits.TryAdd(typeof(IRequestHandler<TRequest, TResponse>), visitor => visitor.VisitRequest<TRequest, TResponse>());
         return this;
     }
@@ -261,7 +260,6 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
                     var handler = resolver.GetRequiredService<IRequestHandler<TRequest>>();
                     return handler.HandleAsync((TRequest)request, ct);
                 }));
-        _probes.TryAdd(typeof(TRequest), describer => describer.Describe<TRequest>());
         _visits.TryAdd(typeof(IRequestHandler<TRequest>), visitor => visitor.VisitRequest<TRequest>());
         return this;
     }
@@ -285,7 +283,7 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
 
             return dispatcher.DispatchAsync(typedEvent, cancellationToken);
         });
-        _probes.TryAdd(typeof(TEvent), describer => describer.DescribeEvent<TEvent>());
+        _eventProbes.TryAdd(typeof(TEvent), describer => describer.DescribeEvent<TEvent>());
         return this;
     }
 
@@ -329,7 +327,6 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
                             var handler = resolver.GetRequiredService<IRequestHandler<TRequest, TResponse>>();
                             return handler.HandleAsync((TRequest)request, ct);
                         }));
-                _probes.TryAdd(typeof(TRequest), describer => describer.Describe<TRequest, TResponse>());
                 _visits.TryAdd(typeof(IRequestHandler<TRequest, TResponse>), visitor => visitor.VisitRequest<TRequest, TResponse>());
             }
         });
@@ -354,7 +351,6 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
                             var handler = resolver.GetRequiredService<IRequestHandler<TRequest>>();
                             return handler.HandleAsync((TRequest)request, ct);
                         }));
-                _probes.TryAdd(typeof(TRequest), describer => describer.Describe<TRequest>());
                 _visits.TryAdd(typeof(IRequestHandler<TRequest>), visitor => visitor.VisitRequest<TRequest>());
             }
         });
@@ -384,7 +380,7 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
 
                     return dispatcher.DispatchAsync(typedEvent, cancellationToken);
                 });
-                _probes.TryAdd(typeof(TEvent), describer => describer.DescribeEvent<TEvent>());
+                _eventProbes.TryAdd(typeof(TEvent), describer => describer.DescribeEvent<TEvent>());
             }
         });
         return this;
@@ -438,9 +434,9 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
                 _streamRequestDispatchers.TryAdd(type, dispatcher);
             }
 
-            foreach (var (type, probe) in builder.Probes)
+            foreach (var (type, probe) in builder.EventProbes)
             {
-                _probes.TryAdd(type, probe);
+                _eventProbes.TryAdd(type, probe);
             }
 
             foreach (var (type, visit) in builder.Visits)
@@ -542,7 +538,8 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
         // After the loop: conditional registrations add their visits inside their action.
         services.RecordRequestRegistrations(_visits);
 
-        services.AddSingleton(SynapseRegistry.Create(services, _probes));
+        services.AddSingleton(SynapseRegistry.Create(services,
+            RequestProbeVisitor.Collect(_visits, _eventProbes, out var eventProbesOfRequests), eventProbesOfRequests));
 
         // If the storage type is already registered as itself (e.g. AddEfCoreEventOutbox<TContext>()),
         // forward IEventOutboxStorage to that registration instead of adding an independent descriptor
