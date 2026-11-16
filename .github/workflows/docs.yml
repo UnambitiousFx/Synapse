@@ -1,0 +1,20 @@
+name: Docs
+
+# Builds unambitiousfx.com with this branch's docs, so a broken link or invalid MDX fails here
+# instead of blocking the next deploy of the whole site.
+on:
+  pull_request:
+    paths:
+      - 'docs/docs/**'
+      - 'docs/sidebars.ts'
+      - '.github/workflows/docs.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Check docs
+    uses: UnambitiousFx/UnambitiousFx.github.io/.github/workflows/check-docs.yml@main
+    with:
+      project-id: synapse
