@@ -1,8 +1,9 @@
 name: PR title
 
 # Squash merges use the PR title as the commit message, and semantic-release derives the version from it.
+# `pull_request` is enough: the check only reads the title, so a read-only token (fork PRs included) suffices.
 on:
-  pull_request_target:
+  pull_request:
     types: [opened, edited, reopened, synchronize]
 
 permissions:
