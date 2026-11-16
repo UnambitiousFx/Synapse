@@ -17,26 +17,46 @@
 
 
     <!--
-        The consumer's compiler loads the generator, whatever the project's target framework: it refuses an analyzer
-        built against a newer Roslyn than itself (CS9057). Build against the compiler of the oldest SDK we support,
-        .NET SDK 8.0.100 (Roslyn 4.8), and never bump it with the rest of the dependencies (renovate.json).
-        GeneratorRoslynFloorTests guards it.
+        The consumer's compiler loads the generator and refuses one built against a newer Roslyn than itself (CS9057).
+        The package ships one generator per target framework of the library, each built against the Roslyn of that
+        .NET's first SDK (x.0.100), in analyzers/dotnet/roslynX.Y/cs: the SDK loads the newest one its compiler accepts.
+        Add a line here with each new TFM in LibraryTargetFrameworks. Renovate leaves these versions alone.
     -->
     <ItemGroup>
-        <PackageReference Include="Microsoft.CodeAnalysis.CSharp" VersionOverride="4.8.0" PrivateAssets="all" />
-        <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" VersionOverride="3.11.0" PrivateAssets="all" />
+        <SupportedRoslyn Include="4.8" />  <!-- net8.0 -->
+        <SupportedRoslyn Include="4.12" /> <!-- net9.0 -->
+        <SupportedRoslyn Include="5.0" />  <!-- net10.0 -->
+        <SupportedRoslyn Include="5.12" /> <!-- net11.0 -->
     </ItemGroup>
+
+    <PropertyGroup>
+        <!-- The build the tests and the examples reference: the newest Roslyn. -->
+        <RoslynApiVersion Condition="'$(RoslynApiVersion)' == ''">5.12</RoslynApiVersion>
+        <!-- The per-Roslyn builds keep their obj/ and bin/ under obj/roslynX.Y and bin/roslynX.Y. -->
+        <DefaultItemExcludes>$(DefaultItemExcludes);obj/**;bin/**</DefaultItemExcludes>
+        <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);PackPerRoslynGenerators</TargetsForTfmSpecificContentInPackage>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.CodeAnalysis.CSharp" VersionOverride="$(RoslynApiVersion).0" PrivateAssets="all" />
+        <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" PrivateAssets="all" />
+    </ItemGroup>
+
+    <Target Name="PackPerRoslynGenerators">
+        <!-- Restore and build in separate calls: the build must evaluate the project after its restore. -->
+        <MSBuild Projects="$(MSBuildProjectFullPath)" Targets="Restore"
+                 Properties="Configuration=$(Configuration);RoslynApiVersion=%(SupportedRoslyn.Identity);BaseIntermediateOutputPath=$(MSBuildProjectDirectory)/obj/roslyn%(SupportedRoslyn.Identity)/;MSBuildRestoreSessionId=$([System.Guid]::NewGuid())" />
+        <MSBuild Projects="$(MSBuildProjectFullPath)" Targets="Build"
+                 Properties="Configuration=$(Configuration);GeneratePackageOnBuild=false;RoslynApiVersion=%(SupportedRoslyn.Identity);BaseIntermediateOutputPath=$(MSBuildProjectDirectory)/obj/roslyn%(SupportedRoslyn.Identity)/;BaseOutputPath=$(MSBuildProjectDirectory)/bin/roslyn%(SupportedRoslyn.Identity)/" />
+        <ItemGroup>
+            <TfmSpecificPackageFile Include="$(MSBuildProjectDirectory)/bin/roslyn%(SupportedRoslyn.Identity)/$(Configuration)/$(TargetFramework)/$(AssemblyName).dll"
+                                    PackagePath="analyzers/dotnet/roslyn%(SupportedRoslyn.Identity)/cs" />
+        </ItemGroup>
+    </Target>
 
     <ItemGroup>
         <AdditionalFiles Include="AnalyzerReleases.Shipped.md" />
         <AdditionalFiles Include="AnalyzerReleases.Unshipped.md" />
-    </ItemGroup>
-
-    <ItemGroup>
-        <None Include="$(OutputPath)\$(AssemblyName).dll" Pack="true"
-              PackagePath="analyzers/dotnet/cs" Visible="false" />
-        <None Include="$(OutputPath)\*.dll" Exclude="$(OutputPath)\$(AssemblyName).dll"
-              Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
     </ItemGroup>
 
 </Project>

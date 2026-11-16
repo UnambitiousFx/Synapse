@@ -6,8 +6,9 @@
 **Status:** ✅ **Resolved** on `fix/generator-roslyn-floor` — see [Resolution](#resolution).
 
 > **TL;DR.** `UnambitiousFx.Synapse.Generator` was built against the Roslyn of the newest SDK, so an older
-> compiler refused to load it. It is now built against Roslyn 4.8 (.NET SDK 8.0.100), the oldest SDK the
-> package supports, and a test keeps it there.
+> compiler refused to load it. The package now ships one generator per target framework (.NET 8, 9, 10, 11),
+> each built against the Roslyn of that .NET's first SDK, and the consumer's SDK loads the newest one its
+> compiler accepts.
 
 ---
 
@@ -73,20 +74,30 @@ macOS
 ### Root cause
 
 The generator shared the solution-wide `Microsoft.CodeAnalysis.*` versions, which Renovate updates with every
-other Microsoft package. The target framework plays no part: a `net8.0` project built with the .NET 11 SDK runs
-Roslyn 5.12, the same project built with the .NET 8 SDK runs Roslyn 4.x. What matters is the compiler of the
-oldest SDK a consumer may build with.
+other Microsoft package, and the package shipped a single build in `analyzers/dotnet/cs`. The consumer's compiler
+loads it, and that compiler comes from the SDK: a single build is either pinned to the oldest supported SDK or
+breaks every older one.
 
 ### Resolution
 
-- `Synapse.Generator.csproj` references `Microsoft.CodeAnalysis.CSharp` 4.8.0 and `Microsoft.CodeAnalysis.Analyzers`
-  3.11.0 through `VersionOverride`: the compiler of .NET SDK 8.0.100. The generator uses no newer API. The tests
-  keep the solution-wide version, so they can still parse the latest C#.
-- `renovate.json` no longer updates `Microsoft.CodeAnalysis.*` in `src/Synapse.Generator/`.
-- A generator built against a newer Roslyn on purpose would ship one analyzer per Roslyn version
-  (`analyzers/dotnet/roslyn4.8/cs`, `analyzers/dotnet/roslyn5.12/cs`); the SDK loads the newest one its compiler
-  accepts. Not needed today.
+- The package ships one generator per target framework of the library, each built against the Roslyn of that
+  .NET's first SDK, in `analyzers/dotnet/roslynX.Y/cs`:
 
-**Verification.** `GeneratorRoslynFloorTests.Generator_ReferencedRoslynAssembly_IsNoNewerThanTheOldestSupportedSdk`
-fails on 3.4.0 (`5.12.0.0`) and passes with the fix. A consumer on .NET SDK 10.0.404 builds with the packed
-generator.
+  | TFM | First SDK | Roslyn | Folder |
+  |---|---|---|---|
+  | `net8.0` | 8.0.100 | 4.8 | `roslyn4.8` |
+  | `net9.0` | 9.0.100 | 4.12 | `roslyn4.12` |
+  | `net10.0` | 10.0.100 | 5.0 | `roslyn5.0` |
+  | `net11.0` | 11.0.100 | 5.12 | `roslyn5.12` |
+
+  The SDK loads the newest folder its compiler accepts (SDK 10.0.404, Roslyn 5.9, loads `roslyn5.0`), so a
+  newer SDK gets a generator built against a newer Roslyn instead of being held to the oldest one.
+- `Synapse.Generator.csproj` lists these versions (`SupportedRoslyn`) and, at pack time, restores and builds the
+  project once per version into `obj/roslynX.Y` and `bin/roslynX.Y`. The default build, used by the tests and
+  the examples, is the newest one (5.12). A new TFM in `LibraryTargetFrameworks` needs a new line there.
+- The Roslyn versions are written in the project, out of Renovate's reach.
+
+**Verification.** Each DLL of the packed generator references the `Microsoft.CodeAnalysis` of its folder. A
+`net8.0` consumer builds with the packed generator on .NET SDK 8.0.428, 9.0.321, 10.0.404 and 11.0.100; the
+compiler receives `roslyn4.8`, `roslyn4.12`, `roslyn5.0` and `roslyn5.12` respectively (it fails with CS9057
+on 3.4.0 with every SDK but 11).
