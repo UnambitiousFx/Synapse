@@ -9,39 +9,19 @@ internal enum RequestIntent
     Query
 }
 
-// Computed once per request type: ICommand<T> and IQuery<T> are generic, so a behavior that does not know the
-// response type cannot pattern-match them per dispatch.
+// Set once per request type by AuthorizationRegistrationVisitor, which sees the closed types core registers: a
+// reflection-free replacement for scanning the interfaces, which native AOT cannot do. Unset fails closed, because a
+// request Synapse never registered would otherwise silently lose its default scope.
 internal static class RequestIntentOf<TRequest>
 {
-    public static readonly RequestIntent Value = Compute();
+    private static RequestIntent? _value;
 
-    private static RequestIntent Compute()
+    public static RequestIntent Value => _value ??
+                                         throw new InvalidOperationException(
+                                             $"The request type '{typeof(TRequest)}' was not registered through Synapse, so its authorization intent is unknown.");
+
+    public static void Set(RequestIntent intent)
     {
-        var type = typeof(TRequest);
-        if (typeof(ICommand).IsAssignableFrom(type))
-        {
-            return RequestIntent.Command;
-        }
-
-        var isQuery = false;
-        foreach (var contract in type.GetInterfaces())
-        {
-            if (!contract.IsGenericType)
-            {
-                continue;
-            }
-
-            var definition = contract.GetGenericTypeDefinition();
-            // A request marked both ways changes state, so it needs the command scope.
-            if (definition == typeof(ICommand<>))
-            {
-                return RequestIntent.Command;
-            }
-
-            // A stream only reads, so it needs the query scope.
-            isQuery |= definition == typeof(IQuery<>) || definition == typeof(IStreamRequest<>);
-        }
-
-        return isQuery ? RequestIntent.Query : RequestIntent.Other;
+        _value = intent;
     }
 }

@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using UnambitiousFx.Functional;
 using UnambitiousFx.Synapse.Abstractions;
@@ -10,6 +11,11 @@ public sealed record ExportReport : IQuery<string>, IRequiresScope
 {
     public string Scope => "reports:export";
 }
+
+public readonly record struct GetBalance(string AccountId) : IQuery<int>;
+
+// Nothing registers this type, so its intent stays unset.
+public sealed record NeverRegisteredQuery : IQuery<string>;
 
 public sealed record CreateItem(string Name) : ICommand<string>;
 
@@ -117,5 +123,29 @@ internal static class Principals
         }
 
         return principal;
+    }
+}
+
+// For tests that build a behavior by hand: runs the real visitor, so the intent is the computed one.
+internal static class Intents
+{
+    public static void Register<TRequest, TResponse>()
+        where TRequest : IRequest<TResponse>
+        where TResponse : notnull
+    {
+        new AuthorizationRegistrationVisitor(new ServiceCollection()).VisitRequest<TRequest, TResponse>();
+    }
+
+    public static void Register<TRequest>()
+        where TRequest : IRequest
+    {
+        new AuthorizationRegistrationVisitor(new ServiceCollection()).VisitRequest<TRequest>();
+    }
+
+    public static void RegisterStream<TRequest, TItem>()
+        where TRequest : IStreamRequest<TItem>
+        where TItem : notnull
+    {
+        new AuthorizationRegistrationVisitor(new ServiceCollection()).VisitStreamRequest<TRequest, TItem>();
     }
 }

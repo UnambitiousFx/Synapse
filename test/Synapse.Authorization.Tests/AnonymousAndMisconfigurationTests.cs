@@ -31,6 +31,7 @@ public sealed class AllowAnonymousTests
     {
         // Arrange (Given) — an anonymous caller holds no "write" scope
         var calls = new PipelineCalls();
+        Intents.Register<SignIn>();
         var behavior = new ScopeAuthorizationBehavior<SignIn, Result>(Principals.Anonymous(),
             new SynapseAuthorizationOptions(), []);
 
@@ -48,6 +49,7 @@ public sealed class AllowAnonymousTests
     {
         // Arrange (Given)
         var calls = new PipelineCalls();
+        Intents.Register<AnonymousReport, string>();
         var behavior = new ScopeAuthorizationBehavior<AnonymousReport, Result<string>>(Principals.Anonymous(),
             new SynapseAuthorizationOptions(), []);
 
@@ -90,6 +92,7 @@ public sealed class BlankRequirementTests
         // Arrange (Given) — the caller even holds the blank scope, which must not let the request through
         var calls = new PipelineCalls();
         var principal = Principals.Authenticated(scopes: [scope ?? "", "read"]);
+        Intents.Register<BlankScopeQuery, string>();
         var behavior = new ScopeAuthorizationBehavior<BlankScopeQuery, Result<string>>(principal,
             new SynapseAuthorizationOptions(), []);
 

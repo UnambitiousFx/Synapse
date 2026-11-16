@@ -11,7 +11,8 @@ namespace UnambitiousFx.Synapse.Authorization;
 public static class ServiceCollectionExtensions
 {
     /// <summary>
-    ///     Authorizes every request, for both <c>Result</c> and <c>Result&lt;T&gt;</c> requests, in this order: reject
+    ///     Authorizes every request Synapse registers, for both <c>Result</c> and <c>Result&lt;T&gt;</c> requests, in this
+    ///     order: reject
     ///     anonymous callers (<c>UnauthenticatedFailure</c>) unless the request is <see cref="IAllowAnonymous" />, then
     ///     check <see cref="IRequiresRole" />, then the scope (the request's <see cref="IRequiresScope" />, or the default
     ///     query / command scope), then the request type's <see cref="IRequestAccessPolicy{TRequest}" /> if one is
@@ -39,23 +40,17 @@ public static class ServiceCollectionExtensions
         Action<SynapseAuthorizationOptions>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(services);
-        var options = GetOrAddOptions(services);
+        var options = GetOrAddOptions(services, out var created);
+        if (created)
+        {
+            // Added before configure can throw, so a retry cannot find options without their visitor. One visitor
+            // closes the behaviors over every request type, whichever of this call and AddSynapse comes first.
+            services.AddRequestRegistrationVisitor(new AuthorizationRegistrationVisitor(services));
+        }
+
         configure?.Invoke(options);
         options.Validate();
         options.ApplyRegistrations(services);
-        // Scoped, like the ICurrentPrincipal they read, which is per request / per call.
-        services.TryAddEnumerable(ServiceDescriptor.Scoped(typeof(IResultPipelineBehavior<,>),
-            typeof(ActorAuthorizationBehavior<,>)));
-        services.TryAddEnumerable(ServiceDescriptor.Scoped(typeof(IResultPipelineBehavior<,>),
-            typeof(RoleAuthorizationBehavior<,>)));
-        services.TryAddEnumerable(ServiceDescriptor.Scoped(typeof(IResultPipelineBehavior<,>),
-            typeof(ScopeAuthorizationBehavior<,>)));
-        services.TryAddEnumerable(ServiceDescriptor.Scoped(typeof(IResultPipelineBehavior<,>),
-            typeof(RequestPolicyAuthorizationBehavior<,>)));
-        services.TryAddEnumerable(ServiceDescriptor.Scoped(typeof(IResultPipelineBehavior<,>),
-            typeof(ResourceAuthorizationBehavior<,>)));
-        services.TryAddEnumerable(ServiceDescriptor.Scoped(typeof(IStreamRequestPipelineBehavior<,>),
-            typeof(StreamAuthorizationBehavior<,>)));
         return services;
     }
 
@@ -85,17 +80,19 @@ public static class ServiceCollectionExtensions
 
     // Repeated calls must configure the same instance: keeping only the first call's options would silently drop a
     // later, stricter scope while that call's policy still applied.
-    private static SynapseAuthorizationOptions GetOrAddOptions(IServiceCollection services)
+    private static SynapseAuthorizationOptions GetOrAddOptions(IServiceCollection services, out bool created)
     {
         foreach (var descriptor in services)
         {
             if (descriptor.ServiceType == typeof(SynapseAuthorizationOptions) &&
                 descriptor.ImplementationInstance is SynapseAuthorizationOptions existing)
             {
+                created = false;
                 return existing;
             }
         }
 
+        created = true;
         var options = new SynapseAuthorizationOptions();
         services.AddSingleton(options);
         return options;

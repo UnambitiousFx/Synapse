@@ -115,6 +115,7 @@ public sealed class ScopeAuthorizationBehaviorTests
     {
         // Arrange (Given)
         var calls = new PipelineCalls();
+        Intents.Register<GetItem, string>();
         var behavior = new ScopeAuthorizationBehavior<GetItem, Result<string>>(
             Principals.Authenticated(scopes: [grantedScope]), new SynapseAuthorizationOptions(), []);
 
@@ -134,6 +135,7 @@ public sealed class ScopeAuthorizationBehaviorTests
     {
         // Arrange (Given)
         var calls = new PipelineCalls();
+        Intents.Register<PurgeItems>();
         var behavior = new ScopeAuthorizationBehavior<PurgeItems, Result>(
             Principals.Authenticated(scopes: [grantedScope]), new SynapseAuthorizationOptions(), []);
 
@@ -151,6 +153,7 @@ public sealed class ScopeAuthorizationBehaviorTests
     {
         // Arrange (Given) — ICommand<T> is a command too
         var calls = new PipelineCalls();
+        Intents.Register<CreateItem, string>();
         var behavior = new ScopeAuthorizationBehavior<CreateItem, Result<string>>(
             Principals.Authenticated(scopes: ["read"]), new SynapseAuthorizationOptions(), []);
 
@@ -169,6 +172,7 @@ public sealed class ScopeAuthorizationBehaviorTests
     {
         // Arrange (Given) — neither a command nor a query
         var calls = new PipelineCalls();
+        Intents.Register<Ping>();
         var behavior = new ScopeAuthorizationBehavior<Ping, Result>(
             Principals.Authenticated(), new SynapseAuthorizationOptions(), []);
 
@@ -185,6 +189,7 @@ public sealed class ScopeAuthorizationBehaviorTests
     {
         // Arrange (Given) — the caller holds the custom scope but not the default "read"
         var calls = new PipelineCalls();
+        Intents.Register<ExportReport, string>();
         var behavior = new ScopeAuthorizationBehavior<ExportReport, Result<string>>(
             Principals.Authenticated(scopes: ["reports:export"]), new SynapseAuthorizationOptions(), []);
 
@@ -203,6 +208,7 @@ public sealed class ScopeAuthorizationBehaviorTests
         // Arrange (Given) — "read" would satisfy the default, not the custom scope
         var calls = new PipelineCalls();
         var recorder = Substitute.For<IAuthorizationDenialRecorder>();
+        Intents.Register<ExportReport, string>();
         var behavior = new ScopeAuthorizationBehavior<ExportReport, Result<string>>(
             Principals.Authenticated(scopes: ["read"]), new SynapseAuthorizationOptions(), [recorder]);
         var request = new ExportReport();
@@ -226,6 +232,7 @@ public sealed class ScopeAuthorizationBehaviorTests
         // Arrange (Given)
         var calls = new PipelineCalls();
         var options = new SynapseAuthorizationOptions { QueryScope = "items:read" };
+        Intents.Register<GetItem, string>();
         var behavior = new ScopeAuthorizationBehavior<GetItem, Result<string>>(
             Principals.Authenticated(scopes: ["read"]), options, []);
 
@@ -245,7 +252,9 @@ public sealed class ScopeAuthorizationBehaviorTests
         var calls = new PipelineCalls();
         var options = new SynapseAuthorizationOptions().DisableDefaultScopes();
         var principal = Principals.Authenticated();
+        Intents.Register<GetItem, string>();
         var query = new ScopeAuthorizationBehavior<GetItem, Result<string>>(principal, options, []);
+        Intents.Register<PurgeItems>();
         var command = new ScopeAuthorizationBehavior<PurgeItems, Result>(principal, options, []);
 
         // Act (When)
@@ -266,6 +275,7 @@ public sealed class ScopeAuthorizationBehaviorTests
         // Arrange (Given)
         var calls = new PipelineCalls();
         var options = new SynapseAuthorizationOptions().DisableDefaultScopes();
+        Intents.Register<ExportReport, string>();
         var behavior = new ScopeAuthorizationBehavior<ExportReport, Result<string>>(
             Principals.Authenticated(), options, []);
 

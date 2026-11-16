@@ -242,14 +242,111 @@ public sealed class AuthorizationPipelineTests
     public void AddSynapseAuthorization_WhenCalledTwice_RegistersEachBehaviorOnce()
     {
         // Arrange (Given)
-        var services = new ServiceCollection();
+        var services = CreateServices(Principals.Authenticated(), cfg =>
+            cfg.RegisterRequestHandler<CreateItemHandler, CreateItem, string>());
 
         // Act (When)
         services.AddSynapseAuthorization();
         services.AddSynapseAuthorization();
 
         // Assert (Then)
-        Assert.Equal(5, services.Count(d => d.ServiceType == typeof(IResultPipelineBehavior<,>)));
+        Assert.Equal(5, services.Count(d => d.ServiceType == typeof(IResultPipelineBehavior<CreateItem, Result<string>>)));
+        Assert.Equal(0, services.Count(d => d.ServiceType == typeof(IResultPipelineBehavior<,>)));
+    }
+
+    [Fact]
+    public void AddSynapseAuthorization_WithClosedBehaviorAlsoRegistered_RunsItOnce()
+    {
+        // Arrange (Given)
+        var services = CreateServices(Principals.Authenticated(), cfg =>
+            cfg.RegisterResultPipelineBehavior<ScopeAuthorizationBehavior<GetItem, Result<string>>, GetItem, string>());
+        services.AddSynapseAuthorization();
+        using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        using var scope = provider.CreateScope();
+        var describer = scope.ServiceProvider.GetRequiredService<IPipelineDescriber>();
+
+        // Act (When)
+        var description = describer.Describe<GetItem, string>();
+
+        // Assert (Then)
+        Assert.NotNull(description);
+        Assert.Single(description.Behaviors,
+            b => b.Type.GetGenericTypeDefinition() == typeof(ScopeAuthorizationBehavior<,>));
+    }
+
+    [Fact]
+    public async Task AddSynapseAuthorization_BeforeAddSynapse_RejectsAnonymousCaller()
+    {
+        // Arrange (Given)
+        var services = new ServiceCollection();
+        services.AddSingleton<HandlerCalls>();
+        services.AddSingleton(Principals.Anonymous());
+        services.AddSynapseAuthorization();
+        services.AddSynapse(cfg => cfg.RegisterRequestHandler<CreateItemHandler, CreateItem, string>());
+        await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        await using var scope = provider.CreateAsyncScope();
+        var invoker = scope.ServiceProvider.GetRequiredService<IInvoker>();
+
+        // Act (When)
+        var result = await invoker.InvokeAsync(new CreateItem("x"), TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.True(result.TryGetFailure(out var failure));
+        Assert.IsType<UnauthenticatedFailure>(failure);
+        Assert.Equal(0, provider.GetRequiredService<HandlerCalls>().Count);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_ValueTypeQueryWithoutQueryScope_ReturnsUnauthorized()
+    {
+        // Arrange (Given)
+        var services = CreateServices(Principals.Authenticated(), cfg =>
+            cfg.RegisterRequestHandler<GetBalanceHandler, GetBalance, int>());
+        services.AddSynapseAuthorization(o => o.QueryScope = "accounts:read");
+        await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        await using var scope = provider.CreateAsyncScope();
+        var invoker = scope.ServiceProvider.GetRequiredService<IInvoker>();
+
+        // Act (When)
+        var result = await invoker.InvokeAsync(new GetBalance("a"), TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.True(result.TryGetFailure(out var failure));
+        Assert.IsType<UnauthorizedFailure>(failure);
+        Assert.Equal(0, provider.GetRequiredService<HandlerCalls>().Count);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_ValueTypeQueryWithQueryScope_RunsHandler()
+    {
+        // Arrange (Given)
+        var services = CreateServices(Principals.Authenticated(scopes: ["accounts:read"]), cfg =>
+            cfg.RegisterRequestHandler<GetBalanceHandler, GetBalance, int>());
+        services.AddSynapseAuthorization(o => o.QueryScope = "accounts:read");
+        await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+        await using var scope = provider.CreateAsyncScope();
+        var invoker = scope.ServiceProvider.GetRequiredService<IInvoker>();
+
+        // Act (When)
+        var result = await invoker.InvokeAsync(new GetBalance("a"), TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.True(result.IsSuccess);
+        Assert.Equal(1, provider.GetRequiredService<HandlerCalls>().Count);
+    }
+
+    [Fact]
+    public void ScopeAuthorizationBehavior_RequestNeverRegistered_Throws()
+    {
+        // Arrange (Given)
+        var options = new SynapseAuthorizationOptions();
+
+        // Act (When)
+        var exception = Record.Exception(() => new ScopeAuthorizationBehavior<NeverRegisteredQuery, Result<string>>(
+            Principals.Anonymous(), options, []));
+
+        // Assert (Then)
+        Assert.IsType<InvalidOperationException>(exception);
     }
 
     [Fact]
@@ -444,6 +541,24 @@ public sealed class AuthorizationPipelineTests
         {
             calls.Count++;
             return new ValueTask<Result<string>>(Result.Success($"item-{request.Id}"));
+        }
+    }
+
+    private sealed class GetBalanceHandler(HandlerCalls calls) : IRequestHandler<GetBalance, int>
+    {
+        public ValueTask<Result<int>> HandleAsync(GetBalance request, CancellationToken cancellationToken = default)
+        {
+            calls.Count++;
+            return new ValueTask<Result<int>>(Result.Success(1));
+        }
+    }
+
+    private sealed class CreateItemHandler(HandlerCalls calls) : IRequestHandler<CreateItem, string>
+    {
+        public ValueTask<Result<string>> HandleAsync(CreateItem request, CancellationToken cancellationToken = default)
+        {
+            calls.Count++;
+            return new ValueTask<Result<string>>(Result.Success("created"));
         }
     }
 
