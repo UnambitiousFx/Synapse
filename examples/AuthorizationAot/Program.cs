@@ -1,3 +1,4 @@
+using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
 using UnambitiousFx.Examples.AuthorizationAot;
 using UnambitiousFx.Functional;
@@ -5,18 +6,26 @@ using UnambitiousFx.Functional.Failures;
 using UnambitiousFx.Synapse;
 using UnambitiousFx.Synapse.Abstractions;
 using UnambitiousFx.Synapse.Authorization;
+using UnambitiousFx.Synapse.FluentValidation;
 
-// Exercises every authorization check under NativeAOT, where open generic behaviors cannot be closed at runtime.
+// Exercises every authorization and validation check under NativeAOT, where open generic behaviors cannot be closed at runtime.
 var principal = new TestPrincipal();
 var services = new ServiceCollection()
     .AddSingleton<ICurrentPrincipal>(principal)
-    .AddSynapse(cfg => cfg.AddRegisterGroup(new RegisterGroup()))
+    .AddSynapse(cfg =>
+    {
+        cfg.AddRegisterGroup(new RegisterGroup());
+        cfg.AddTransactions<CountingTransactionManager>();
+    })
     .AddSynapseAuthorization(o =>
     {
         o.QueryScope = "read";
         o.CommandScope = "write";
         o.Policy<DenyAllPolicy>();
+        o.RequestPolicy<Transfer, TransferPolicy>();
     })
+    .AddScoped<IValidator<Positive>, PositiveValidator>()
+    .AddSynapseFluentValidation()
     .BuildServiceProvider();
 var invoker = services.GetRequiredService<IInvoker>();
 
@@ -43,6 +52,10 @@ Check("command with only the query scope", await invoker.InvokeAsync(new Rename(
 principal.Set(scopes: "export");
 Check("query with own scope", await invoker.InvokeAsync(new Export()), null);
 
+principal.Set(scopes: "write");
+Check("request policy denies", await invoker.InvokeAsync(new Transfer(500)), typeof(UnauthorizedFailure));
+Check("request policy allows", await invoker.InvokeAsync(new Transfer(50)), null);
+
 principal.Set(scopes: "read");
 Check("denied resource", await invoker.InvokeAsync(new Document()), typeof(UnauthorizedFailure));
 
@@ -53,8 +66,26 @@ Check("stream without scope", await FirstStreamResult(), typeof(UnauthorizedFail
 principal.Set(scopes: "read");
 Check("struct query with scope", await invoker.InvokeAsync(new Count()), null);
 
+principal.Set(scopes: "read");
+Check("invalid struct query", await invoker.InvokeAsync(new Positive(0)), typeof(ValidationFailure));
+Check("valid struct query", await invoker.InvokeAsync(new Positive(1)), null);
+
+principal.Set(scopes: "write");
+var begun = CountingTransactionManager.Begun;
+var committed = CountingTransactionManager.Committed;
+Check("transactional command", await invoker.InvokeAsync(new Deposit()), null);
+CheckScopes("transactional command", 1);
+Check("transactional struct command", await invoker.InvokeAsync(new Tally()), null);
+CheckScopes("transactional struct command", 2);
+
 return failed ? 1 : 0;
 
+void CheckScopes(string name, int expected)
+{
+    var ok = CountingTransactionManager.Begun == begun + expected && CountingTransactionManager.Committed == committed + expected;
+    failed |= !ok;
+    Console.WriteLine($"{(ok ? "OK  " : "FAIL")} {name}: scopes begun/committed {CountingTransactionManager.Begun - begun}/{CountingTransactionManager.Committed - committed}, expected {expected} total");
+}
 async ValueTask<IResult> FirstStreamResult()
 {
     await foreach (var item in invoker.InvokeStreamAsync(new Numbers()))
@@ -93,6 +124,13 @@ namespace UnambitiousFx.Examples.AuthorizationAot
             CancellationToken cancellationToken = default) => ValueTask.FromResult(false);
     }
 
+    public sealed class TransferPolicy : IRequestAccessPolicy<Transfer>
+    {
+        public ValueTask<bool> IsAllowedAsync(ICurrentPrincipal principal,
+            Transfer request,
+            CancellationToken cancellationToken = default) => ValueTask.FromResult(request.Amount <= 100);
+    }
+
     public sealed record Anonymous : ICommand;
 
     public sealed record Open : ICommand, IAllowAnonymous;
@@ -114,9 +152,28 @@ namespace UnambitiousFx.Examples.AuthorizationAot
         public string Access => "read";
     }
 
+    public sealed record Transfer(int Amount) : ICommand<string>;
+
     public sealed record Rename(string Name) : ICommand<string>;
 
     public readonly record struct Count : IQuery<int>;
+
+    public readonly record struct Positive(int Value) : IQuery<int>;
+
+    public sealed class PositiveValidator : AbstractValidator<Positive>
+    {
+        public PositiveValidator()
+        {
+            RuleFor(x => x.Value).GreaterThan(0);
+        }
+    }
+
+    [RequestHandler<Positive, int>]
+    public sealed class PositiveHandler : IRequestHandler<Positive, int>
+    {
+        public ValueTask<Result<int>> HandleAsync(Positive request, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(Result.Success(request.Value));
+    }
 
     public sealed record Numbers : IStreamRequest<int>;
 
@@ -153,6 +210,13 @@ namespace UnambitiousFx.Examples.AuthorizationAot
     {
         public ValueTask<Result<string>> HandleAsync(Document request, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(Result.Success("doc"));
+    }
+
+    [RequestHandler<Transfer, string>]
+    public sealed class TransferHandler : IRequestHandler<Transfer, string>
+    {
+        public ValueTask<Result<string>> HandleAsync(Transfer request, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(Result.Success("done"));
     }
 
     [RequestHandler<Rename, string>]

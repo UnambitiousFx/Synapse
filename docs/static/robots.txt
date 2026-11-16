@@ -1,6 +1,0 @@
-# Algolia-Crawler-Verif: 5655C656083DAD19
-
-User-agent: *
-Allow: /
-
-Sitemap: https://synapse.unambitiousfx.com/sitemap.xml

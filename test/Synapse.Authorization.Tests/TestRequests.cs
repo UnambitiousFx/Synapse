@@ -126,19 +126,20 @@ internal static class Principals
     }
 }
 
-// For tests that build a behavior by hand: runs the real visitor, so the intent is the computed one.
+// For tests that build a behavior by hand: runs the real visitor into the options the behavior gets, so the intent is
+// the computed one.
 internal static class Intents
 {
-    public static void Register<TRequest, TResponse>()
+    public static void Register<TRequest, TResponse>(SynapseAuthorizationOptions options)
         where TRequest : IRequest<TResponse>
         where TResponse : notnull
     {
-        new AuthorizationRegistrationVisitor(new ServiceCollection()).VisitRequest<TRequest, TResponse>();
+        new AuthorizationRegistrationVisitor(new ServiceCollection(), options).VisitRequest<TRequest, TResponse>();
     }
 
-    public static void Register<TRequest>()
+    public static void Register<TRequest>(SynapseAuthorizationOptions options)
         where TRequest : IRequest
     {
-        new AuthorizationRegistrationVisitor(new ServiceCollection()).VisitRequest<TRequest>();
+        new AuthorizationRegistrationVisitor(new ServiceCollection(), options).VisitRequest<TRequest>();
     }
 }

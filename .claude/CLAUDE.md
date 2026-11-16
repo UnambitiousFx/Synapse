@@ -77,7 +77,7 @@ Bug found **and** resolved on a branch → record in three files:
 2. `docs/known-issues/README.md` — append index row.
 3. `docs/docs/changelog.mdx` — append row to matching area section.
 
-Use `/changelog` skill (severity/area/summary must match across files). Then `cd docs && pnpm build` to verify links.
+Use `/changelog` skill (severity/area/summary must match across files). Then build the docs site to verify links (see `docs/README.md`).
 
 ## Contribution & Review
 

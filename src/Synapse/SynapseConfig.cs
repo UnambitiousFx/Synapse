@@ -152,16 +152,14 @@ internal sealed class SynapseConfig(IServiceCollection services) : ISynapseConfi
         return this;
     }
 
-    [RequiresDynamicCode(OpenGenericBehaviorAotMessage)]
     public ISynapseConfig AddTransactions<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
     TManager>(Action<TransactionBehaviorOptions>? configure = null)
         where TManager : class, ITransactionManager
     {
         AddTransactionManager<TManager>(configure);
-        // TryAddEnumerable so calling this twice does not run the behavior twice.
-        _actions.Add(svc => svc.TryAddEnumerable(ServiceDescriptor.Scoped(typeof(IResultPipelineBehavior<,>),
-            typeof(TransactionBehavior<,>))));
+        // The visitor registers closed behaviors, deduplicated, so calling this twice does not run them twice.
+        _actions.Add(svc => svc.AddRequestRegistrationVisitor(new TransactionRegistrationVisitor(svc)));
         return this;
     }
 

@@ -16,6 +16,8 @@ public sealed class MultiShapeTests
 
     private sealed record PreRegisteredOptionsQuery : IQuery<string>;
 
+    private sealed record CrossContainer : ICommand<string>, IStreamRequest<int>;
+
     private sealed record CommandAndQuery : ICommand<string>, IQuery<string>;
 
     [Fact]
@@ -119,6 +121,28 @@ public sealed class MultiShapeTests
         // Assert (Then)
         Assert.True(result.TryGetFailure(out var failure));
         Assert.IsType<UnauthenticatedFailure>(failure);
+    }
+
+    [Fact]
+    public async Task Invoke_SameRequestTypeInTwoContainers_KeepsEachContainersIntent()
+    {
+        // Arrange (Given) — A registers only the stream shape (query intent), B built after it adds the typed command shape
+        await using var containerA = Build(Principals.Authenticated(scopes: ["read"]), services =>
+            services.AddSynapse(cfg =>
+                cfg.RegisterStreamRequestHandler<StreamHandler<CrossContainer>, CrossContainer, int>()));
+        await using var containerB = Build(Principals.Authenticated(scopes: ["read"]), services =>
+            services.AddSynapse(cfg =>
+                cfg.RegisterRequestHandler<TypedHandler<CrossContainer>, CrossContainer, string>()));
+
+        // Act (When)
+        var streamInA = await CollectAsync(containerA, new CrossContainer());
+        var typedInB = await InvokeAsync(containerB, new CrossContainer());
+
+        // Assert (Then)
+        Assert.True(Assert.Single(streamInA).IsSuccess);
+        Assert.True(typedInB.TryGetFailure(out var failure));
+        Assert.IsType<UnauthorizedFailure>(failure);
+        Assert.Equal("Requires scope 'write'.", failure.Message);
     }
 
     private static ServiceProvider Build(ICurrentPrincipal principal, Action<ServiceCollection> register)

@@ -33,8 +33,8 @@ For every `ITransactional` request, `TransactionBehavior<TRequest, TResult>` the
 4. disposes it without a commit, which rolls it back, when the result is a failure or the handler throws. The
    exception still propagates.
 
-It works for `Result` and `Result<T>` requests alike. Requests without `ITransactional` never reach it: its
-generic constraint makes the container skip them, so they pay nothing.
+It works for `Result` and `Result<T>` requests alike. Requests without `ITransactional` never reach it: `AddTransactions` only registers the behavior for `ITransactional` requests,
+so they pay nothing.
 
 ## The abstraction
 
@@ -180,21 +180,17 @@ See [Ordering](./pipelines.mdx#ordering).
 
 ## Native AOT
 
-`AddTransactions<TManager>()` registers `TransactionBehavior<,>` as an open generic, which needs runtime code
-generation. Under Native AOT, let the source generator emit closed registrations instead: it closes the behavior
-only over the `ITransactional` requests it finds.
+`AddTransactions<TManager>()` is Native-AOT safe and the recommended single path. It closes the behavior over each
+`ITransactional` request handler registered with Synapse (before or after the call), so no runtime code generation
+is needed.
 
-```csharp
-[assembly: SynapseGlobalBehavior(typeof(TransactionBehavior<,>))]
-
-services.AddSynapse(cfg =>
-{
-    cfg.AddRegisterGroup(new RegisterGroup());
-    cfg.AddTransactionManager<EfCoreTransactionManager>(); // the manager and the options, not the behavior
-});
-```
-
-Use one path or the other. With both, the behavior runs twice and the inner run opens a needless savepoint.
+Calling it twice registers the behavior once per request. If you also apply
+`[assembly: SynapseGlobalBehavior(typeof(TransactionBehavior<,>))]`, the generator's closed registration and
+`AddTransactions` are the same registration and run the behavior once, in either order. You do not need that
+attribute any more. It still works with `AddTransactionManager<TManager>()`, which registers only the manager and
+the options, but the generator then closes the behavior over every request (it has no constraint to filter on); a
+request that is not `ITransactional` passes straight through. Do not also register `TransactionBehavior<,>` as a runtime open generic
+(`AddOpenGeneric…`): it would run twice for transactional requests.
 
 ## See also
 

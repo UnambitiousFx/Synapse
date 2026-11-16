@@ -1,0 +1,39 @@
+name: Docs redirect
+
+# The docs moved to unambitiousfx.com/synapse/. synapse.unambitiousfx.com still points at this repo's
+# GitHub Pages, which now only serves .github/docs-redirect/404.html to forward every old URL.
+# Pages keeps the last deployment, so this only runs again when that page changes.
+on:
+  push:
+    branches: [main]
+    paths: ['.github/docs-redirect/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Deploy redirect
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: .github/docs-redirect
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

@@ -151,7 +151,8 @@ updated to point to `main` (a follow-up commit is fine; don't block the initial 
 After all three files are written:
 
 ```bash
-cd docs && pnpm build
+# From a clone of UnambitiousFx.github.io next to this repo (see docs/README.md)
+SYNAPSE_REPO=../Synapse pnpm build
 ```
 
 Build must succeed with **zero broken-link warnings** and the document count must increment by 1

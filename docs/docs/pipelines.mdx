@@ -183,7 +183,7 @@ Constrain the open-generic behavior on a marker interface and it applies only to
 
 ```csharp
 [PipelineBehavior]
-public sealed class TransactionBehavior<TRequest, TResponse>
+public sealed class CommandAuditBehavior<TRequest, TResponse>
     : IRequestPipelineBehavior<TRequest, TResponse>
     where TRequest : ICommand<TResponse>
     where TResponse : notnull
@@ -193,13 +193,13 @@ public sealed class TransactionBehavior<TRequest, TResponse>
         RequestHandlerDelegate<TRequest, TResponse> next,
         CancellationToken cancellationToken = default)
     {
-        // begin transaction, call next, commit or roll back
+        // audit the command, call next
         return await next(request, cancellationToken);
     }
 }
 ```
 
-The same works with `[assembly: SynapseGlobalBehavior(typeof(TransactionBehavior<,>))]` (source generator, Native-AOT safe) and with the runtime `AddOpenGenericRequestWithResponsePipelineBehavior(typeof(TransactionBehavior<,>))`: DI skips the closings whose constraints do not hold. The runtime path is not Native-AOT safe for value-type responses, so prefer `[PipelineBehavior]` under AOT. For requests without a response, use `where TRequest : ICommand` on an `IRequestPipelineBehavior<TRequest>`.
+The same works with `[assembly: SynapseGlobalBehavior(typeof(MyBehavior<,>))]` (source generator, Native-AOT safe) and with the runtime `AddOpenGenericRequestWithResponsePipelineBehavior(typeof(MyBehavior<,>))`: DI skips the closings whose constraints do not hold. (The built-in `TransactionBehavior<,>` has no such constraint: it checks `ITransactional` at run time. See [Transactions](./transactions.mdx).) The runtime path is not Native-AOT safe for value-type responses, so prefer `[PipelineBehavior]` under AOT. For requests without a response, use `where TRequest : ICommand` on an `IRequestPipelineBehavior<TRequest>`.
 
 There are no dedicated `AddCommandPipelineBehavior` helpers: the generic constraint is the scoping mechanism. The generator matches such a constraint against the handler's request type, so it works for any interface or base class, not only the markers.
 
