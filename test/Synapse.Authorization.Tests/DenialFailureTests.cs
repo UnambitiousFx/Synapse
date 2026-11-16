@@ -36,9 +36,10 @@ public sealed class DenialFailureTests
         // Act (When)
         var failure = await DenyAsync(provider, scenario);
 
-        // Assert (Then)
+        // Assert (Then) — the recorders still hear about it, with the denial the factory saw
         Assert.NotNull(seen);
         Assert.Equal(reason, seen.Reason);
+        Assert.Same(seen, Assert.Single(provider.GetRequiredService<DenialLog>().Denials));
         if (reason == AuthorizationDenialReason.Unauthenticated)
         {
             Assert.IsType<UnauthenticatedFailure>(failure);
@@ -88,18 +89,49 @@ public sealed class DenialFailureTests
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(act);
         Assert.Contains(reason.ToString(), exception.Message);
         Assert.Contains(nameof(SynapseAuthorizationOptions.DenialFailure), exception.Message);
+        Assert.Empty(provider.GetRequiredService<DenialLog>().Denials);
     }
 
     [Fact]
     public async Task InvokeStreamAsync_WithDenialFailure_YieldsTheApplicationsFailure()
     {
         // Arrange (Given)
-        await using var provider = BuildProvider(o => o.DenialFailure = _ =>
-            new UnauthorizedFailure("Reserved to administrators.") { Code = "core.admin_required" });
-        await using var scope = provider.CreateAsyncScope();
-        var invoker = scope.ServiceProvider.GetRequiredService<IInvoker>();
+        AuthorizationDenial? seen = null;
+        await using var provider = BuildProvider(o => o.DenialFailure = denial =>
+        {
+            seen = denial;
+            return new UnauthorizedFailure("Reserved to administrators.") { Code = "core.admin_required" };
+        });
 
         // Act (When)
+        var items = await StreamAsync(provider);
+
+        // Assert (Then)
+        Assert.True(Assert.Single(items).TryGetFailure(out var failure));
+        Assert.IsType<UnauthorizedFailure>(failure);
+        Assert.Equal("core.admin_required", failure.Code);
+        Assert.NotNull(seen);
+        Assert.Same(seen, Assert.Single(provider.GetRequiredService<DenialLog>().Denials));
+    }
+
+    [Fact]
+    public async Task InvokeStreamAsync_WhenDenialFailureChangesTheType_ThrowsWithoutRecording()
+    {
+        // Arrange (Given)
+        await using var provider = BuildProvider(o => o.DenialFailure = _ => new NotFoundFailure("Item", "42"));
+
+        // Act (When)
+        var act = () => StreamAsync(provider);
+
+        // Assert (Then)
+        await Assert.ThrowsAsync<InvalidOperationException>(act);
+        Assert.Empty(provider.GetRequiredService<DenialLog>().Denials);
+    }
+
+    private static async Task<List<Result<int>>> StreamAsync(ServiceProvider provider)
+    {
+        await using var scope = provider.CreateAsyncScope();
+        var invoker = scope.ServiceProvider.GetRequiredService<IInvoker>();
         var items = new List<Result<int>>();
         await foreach (var item in invoker.InvokeStreamAsync(new StreamAdminItems(),
                            TestContext.Current.CancellationToken))
@@ -107,10 +139,7 @@ public sealed class DenialFailureTests
             items.Add(item);
         }
 
-        // Assert (Then)
-        Assert.True(Assert.Single(items).TryGetFailure(out var failure));
-        Assert.IsType<UnauthorizedFailure>(failure);
-        Assert.Equal("core.admin_required", failure.Code);
+        return items;
     }
 
     private static async Task<Failure> DenyAsync(ServiceProvider provider, string scenario)
@@ -140,6 +169,7 @@ public sealed class DenialFailureTests
     private static ServiceProvider BuildProvider(Action<SynapseAuthorizationOptions> configure)
     {
         var services = new ServiceCollection();
+        services.AddSingleton<DenialLog>();
         services.AddScoped<Caller>();
         services.AddScoped(sp => sp.GetRequiredService<Caller>().Principal);
         services.AddSynapse(cfg =>
@@ -152,9 +182,24 @@ public sealed class DenialFailureTests
         services.AddSynapseAuthorization(o =>
         {
             o.Policy<DenyAll>();
+            o.DenialRecorder<LoggingRecorder>();
             configure(o);
         });
         return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+    }
+
+    private sealed class DenialLog
+    {
+        public List<AuthorizationDenial> Denials { get; } = [];
+    }
+
+    private sealed class LoggingRecorder(DenialLog log) : IAuthorizationDenialRecorder
+    {
+        public ValueTask RecordAsync(AuthorizationDenial denial, CancellationToken cancellationToken = default)
+        {
+            log.Denials.Add(denial);
+            return ValueTask.CompletedTask;
+        }
     }
 
     private sealed class Caller
