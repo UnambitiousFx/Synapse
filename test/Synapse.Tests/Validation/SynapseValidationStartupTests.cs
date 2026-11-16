@@ -1,5 +1,6 @@
 using JetBrains.Annotations;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using UnambitiousFx.Functional;
@@ -123,6 +124,24 @@ public sealed class SynapseValidationStartupTests
 
         // Assert (Then)
         Assert.IsAssignableFrom<OperationCanceledException>(exception);
+    }
+
+    [Fact]
+    public async Task StartAsync_ValidationThrows_RethrowsTheSameException()
+    {
+        // Arrange (Given) — without the registry, ValidateSynapse throws on the validation thread
+        var services = new ServiceCollection();
+        services.AddLogging(logging => logging.AddProvider(new LogSink()));
+        services.AddSynapse(cfg => cfg.ValidateOnStart());
+        services.RemoveAll<UnambitiousFx.Synapse.Validation.SynapseRegistry>();
+        await using var provider = services.BuildServiceProvider();
+
+        // Act (When)
+        var exception = await Record.ExceptionAsync(() => StartHostedServices(provider));
+
+        // Assert (Then)
+        var invalid = Assert.IsType<InvalidOperationException>(exception);
+        Assert.Contains("Synapse is not registered", invalid.Message);
     }
 
     [Fact]
