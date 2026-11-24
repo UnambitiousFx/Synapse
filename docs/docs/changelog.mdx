@@ -52,6 +52,7 @@ This page records issues discovered and resolved while hardening the library. Al
 | [018](https://github.com/UnambitiousFx/Synapse/blob/main/docs/known-issues/018-cqrs-enforcement-skips-generator-invisible-handlers.md) | CQRS enforcement was emitted per-discovered-handler only — manually registered handlers were not covered | Medium |
 | [021](https://github.com/UnambitiousFx/Synapse/blob/main/docs/known-issues/021-eventdispatcher-resorts-behaviors-every-publish.md) | `EventDispatcher` re-sorted behaviors via `OrderBy` on every publish (per-publish allocation) | Low |
 | [078](https://github.com/UnambitiousFx/Synapse/blob/main/docs/known-issues/078-validateonstart-reports-syn003-for-async-only-disposable-scoped-services.md) | `ValidateOnStart()` reported SYN003 and failed host start when a scoped service was only `IAsyncDisposable`, because the describer, the outbox start-up check, the dispatcher claim warning and the outbox gauges disposed their scopes synchronously; they now dispose with `DisposeAsync` | Medium |
+| [079](https://github.com/UnambitiousFx/Synapse/blob/fix/231-validation-single-failure/docs/known-issues/079-requestvalidationbehavior-wraps-a-single-failure-in-aggregatefailure.md) | `RequestValidationBehavior` combined validator results with `Combine()`, which wrapped a single failing validator's result in an `AggregateFailure` (code `AGGREGATE_ERROR`), hiding its real type, code and field errors; a lone failure is now returned unchanged and multiple `ValidationFailure`s are merged into one | Medium |
 
 ## Outbox
 

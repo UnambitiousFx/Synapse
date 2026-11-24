@@ -60,6 +60,7 @@ filed as a GitHub issue with minimal editing.
 | [076](076-native-aot-skips-authorization-behaviors-for-value-type-requests.md) | Under Native AOT the open-generic authorization registration was silently dropped for value-type requests, so they ran with no authorization and no error; the behaviors are now registered closed per handler shape through a request-registration visitor | ✅ Resolved | **High** | Authorization |
 | [077](077-validateonstart-can-deadlock-host-start-under-native-aot.md) | `ValidateOnStart()` validated on the thread that starts the host, where a short stack under Native AOT made the DI container hand the resolution to another thread while holding its lock, so start-up could deadlock; the validation now runs on a dedicated large-stack thread | ✅ Resolved | **High** | Core DI |
 | [078](078-validateonstart-reports-syn003-for-async-only-disposable-scoped-services.md) | `ValidateOnStart()` reported SYN003 and failed host start when a scoped service was only `IAsyncDisposable`, because the describer, the outbox start-up check, the dispatcher claim warning and the outbox gauges disposed their scopes synchronously; they now dispose with `DisposeAsync` | ✅ Resolved | Medium | Pipeline / CQRS |
+| [079](079-requestvalidationbehavior-wraps-a-single-failure-in-aggregatefailure.md) | `RequestValidationBehavior` combined validator results with `Combine()`, which wrapped a single failing validator's result in an `AggregateFailure` (code `AGGREGATE_ERROR`), hiding its real type, code and field errors; a lone failure is now returned unchanged and multiple `ValidationFailure`s are merged into one | ✅ Resolved | Medium | Pipeline / CQRS |
 
 > **Discovery context:** 001–003 were found while building the pipeline-behavior showcase in
 > `examples/MinimalApi` on branch `feature/typed-pipeline-behaviors` against .NET 10 with
@@ -80,7 +81,8 @@ filed as a GitHub issue with minimal editing.
 > implementing the SYN105 analyzer (issue #91) and resolved on `worktree-syn105-global-behavior`. 076 was found while making authorization Native AOT
 > compatible and resolved on `feat/209-authorization-native-aot` (PR #212). 077 was filed as issue #221
 > from a Native AOT deployment on linux-musl-arm64 and resolved on `fix/221-validate-on-start-deadlock`. 078 was filed as issue #223 and resolved on
-> `fix/223-async-disposable-scopes`.
+> `fix/223-async-disposable-scopes`. 079 was filed as issue #231 and resolved on
+> `fix/231-validation-single-failure`.
 >
 > Each file is the report as written at discovery. Where a later change replaced the mechanism a report
 > describes — most often the v2 context-propagation refactor, which removed `CorrelationContext`,

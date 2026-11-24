@@ -1,4 +1,5 @@
 using UnambitiousFx.Functional;
+using UnambitiousFx.Functional.Failures;
 using UnambitiousFx.Synapse.Abstractions;
 using UnambitiousFx.Synapse.Pipelines;
 
@@ -58,6 +59,73 @@ public sealed class RequestValidationBehaviorTests
         Assert.False(result.IsSuccess);
     }
 
+    [Fact]
+    public async Task HandleAsync_WhenOneValidatorFails_ReturnsThatFailureUnchanged()
+    {
+        // Arrange (Given)
+        var validationFailure = new ValidationFailure([new ValidationError("name", "Name is required.", "orders.name_required")]);
+        var validators = new IRequestValidator<ValidatedRequest>[]
+        {
+            new SuccessValidator(),
+            new SingleFailureValidator(validationFailure)
+        };
+        var behavior = new RequestValidationBehavior<ValidatedRequest, int>(validators);
+
+        // Act (When)
+        var result = await behavior.HandleAsync(new ValidatedRequest(), (_, _) =>
+            ValueTask.FromResult(Result.Success(42)), TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.True(result.TryGetFailure(out var failure));
+        Assert.Same(validationFailure, failure);
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenMultipleValidatorsFailWithValidationFailures_MergesTheirErrors()
+    {
+        // Arrange (Given)
+        var first = new ValidationFailure([new ValidationError("name", "Name is required.", "orders.name_required")]);
+        var second = new ValidationFailure([new ValidationError("quantity", "Quantity must be positive.", "orders.quantity_invalid")]);
+        var validators = new IRequestValidator<ValidatedRequest>[]
+        {
+            new SingleFailureValidator(first),
+            new SingleFailureValidator(second)
+        };
+        var behavior = new RequestValidationBehavior<ValidatedRequest, int>(validators);
+
+        // Act (When)
+        var result = await behavior.HandleAsync(new ValidatedRequest(), (_, _) =>
+            ValueTask.FromResult(Result.Success(42)), TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.True(result.TryGetFailure(out var failure));
+        var merged = Assert.IsType<ValidationFailure>(failure);
+        Assert.Equal(["name", "quantity"], merged.Errors.Select(e => e.Field));
+    }
+
+    [Fact]
+    public async Task HandleAsync_WhenMultipleValidatorsFailWithDifferentFailureTypes_ReturnsAggregateFailure()
+    {
+        // Arrange (Given)
+        var first = new ValidationFailure([new ValidationError("name", "Name is required.", "orders.name_required")]);
+        var second = new Failure("orders.not_found", "Order not found.");
+        var validators = new IRequestValidator<ValidatedRequest>[]
+        {
+            new SingleFailureValidator(first),
+            new SingleFailureValidator(second)
+        };
+        var behavior = new RequestValidationBehavior<ValidatedRequest, int>(validators);
+
+        // Act (When)
+        var result = await behavior.HandleAsync(new ValidatedRequest(), (_, _) =>
+            ValueTask.FromResult(Result.Success(42)), TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.True(result.TryGetFailure(out var failure));
+        var aggregate = Assert.IsType<AggregateFailure>(failure);
+        Assert.Equal([first, second], aggregate.Errors);
+    }
+
     // ── RequestValidationBehavior<TRequest> (void / no-response) ────────────
 
     [Fact]
@@ -106,6 +174,27 @@ public sealed class RequestValidationBehaviorTests
         // Assert (Then)
         Assert.False(nextCalled);
         Assert.False(result.IsSuccess);
+    }
+
+    [Fact]
+    public async Task HandleAsync_VoidRequest_WhenOneValidatorFails_ReturnsThatFailureUnchanged()
+    {
+        // Arrange (Given)
+        var validationFailure = new ValidationFailure([new ValidationError("name", "Name is required.", "orders.name_required")]);
+        var validators = new IRequestValidator<ValidatedVoidRequest>[]
+        {
+            new VoidSuccessValidator(),
+            new VoidSingleFailureValidator(validationFailure)
+        };
+        var behavior = new RequestValidationBehavior<ValidatedVoidRequest>(validators);
+
+        // Act (When)
+        var result = await behavior.HandleAsync(new ValidatedVoidRequest(), (_, _) =>
+            ValueTask.FromResult(Result.Success()), TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.True(result.TryGetFailure(out var failure));
+        Assert.Same(validationFailure, failure);
     }
 
     [Fact]
@@ -170,6 +259,21 @@ public sealed class RequestValidationBehaviorTests
         }
     }
 
+    private sealed class SingleFailureValidator : IRequestValidator<ValidatedRequest>
+    {
+        private readonly Failure _failure;
+
+        public SingleFailureValidator(Failure failure)
+        {
+            _failure = failure;
+        }
+
+        public ValueTask<Result> ValidateAsync(ValidatedRequest request, CancellationToken cancellationToken = default)
+        {
+            return ValueTask.FromResult(Result.Failure(_failure));
+        }
+    }
+
     private sealed record ValidatedVoidRequest : IRequest;
 
     private sealed class VoidSuccessValidator : IRequestValidator<ValidatedVoidRequest>
@@ -185,6 +289,21 @@ public sealed class RequestValidationBehaviorTests
         public ValueTask<Result> ValidateAsync(ValidatedVoidRequest request, CancellationToken cancellationToken = default)
         {
             return ValueTask.FromResult(Result.Failure("void validation failed"));
+        }
+    }
+
+    private sealed class VoidSingleFailureValidator : IRequestValidator<ValidatedVoidRequest>
+    {
+        private readonly Failure _failure;
+
+        public VoidSingleFailureValidator(Failure failure)
+        {
+            _failure = failure;
+        }
+
+        public ValueTask<Result> ValidateAsync(ValidatedVoidRequest request, CancellationToken cancellationToken = default)
+        {
+            return ValueTask.FromResult(Result.Failure(_failure));
         }
     }
 }
