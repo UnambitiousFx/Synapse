@@ -104,6 +104,35 @@ public sealed class RequestValidationBehaviorTests
     }
 
     [Fact]
+    public async Task HandleAsync_WhenMultipleValidationFailuresHaveExtraKeyCollision_LaterValidatorWins()
+    {
+        // Arrange (Given)
+        var first = new ValidationFailure(
+            [new ValidationError("name", "Name is required.", "orders.name_required")],
+            new Dictionary<string, object?> { ["requestId"] = "first", ["step"] = 1 });
+        var second = new ValidationFailure(
+            [new ValidationError("quantity", "Quantity must be positive.", "orders.quantity_invalid")],
+            new Dictionary<string, object?> { ["requestId"] = "second" });
+        var validators = new IRequestValidator<ValidatedRequest>[]
+        {
+            new SingleFailureValidator(first),
+            new SingleFailureValidator(second)
+        };
+        var behavior = new RequestValidationBehavior<ValidatedRequest, int>(validators);
+
+        // Act (When)
+        var result = await behavior.HandleAsync(new ValidatedRequest(), (_, _) =>
+            ValueTask.FromResult(Result.Success(42)), TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.True(result.TryGetFailure(out var failure));
+        var merged = Assert.IsType<ValidationFailure>(failure);
+        Assert.NotNull(merged.Extra);
+        Assert.Equal("second", merged.Extra!["requestId"]);
+        Assert.Equal(1, merged.Extra["step"]);
+    }
+
+    [Fact]
     public async Task HandleAsync_WhenMultipleValidatorsFailWithDifferentFailureTypes_ReturnsAggregateFailure()
     {
         // Arrange (Given)
@@ -195,6 +224,52 @@ public sealed class RequestValidationBehaviorTests
         // Assert (Then)
         Assert.True(result.TryGetFailure(out var failure));
         Assert.Same(validationFailure, failure);
+    }
+
+    [Fact]
+    public async Task HandleAsync_VoidRequest_WhenMultipleValidatorsFailWithValidationFailures_MergesTheirErrors()
+    {
+        // Arrange (Given)
+        var first = new ValidationFailure([new ValidationError("name", "Name is required.", "orders.name_required")]);
+        var second = new ValidationFailure([new ValidationError("quantity", "Quantity must be positive.", "orders.quantity_invalid")]);
+        var validators = new IRequestValidator<ValidatedVoidRequest>[]
+        {
+            new VoidSingleFailureValidator(first),
+            new VoidSingleFailureValidator(second)
+        };
+        var behavior = new RequestValidationBehavior<ValidatedVoidRequest>(validators);
+
+        // Act (When)
+        var result = await behavior.HandleAsync(new ValidatedVoidRequest(), (_, _) =>
+            ValueTask.FromResult(Result.Success()), TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.True(result.TryGetFailure(out var failure));
+        var merged = Assert.IsType<ValidationFailure>(failure);
+        Assert.Equal(["name", "quantity"], merged.Errors.Select(e => e.Field));
+    }
+
+    [Fact]
+    public async Task HandleAsync_VoidRequest_WhenMultipleValidatorsFailWithDifferentFailureTypes_ReturnsAggregateFailure()
+    {
+        // Arrange (Given)
+        var first = new ValidationFailure([new ValidationError("name", "Name is required.", "orders.name_required")]);
+        var second = new Failure("orders.not_found", "Order not found.");
+        var validators = new IRequestValidator<ValidatedVoidRequest>[]
+        {
+            new VoidSingleFailureValidator(first),
+            new VoidSingleFailureValidator(second)
+        };
+        var behavior = new RequestValidationBehavior<ValidatedVoidRequest>(validators);
+
+        // Act (When)
+        var result = await behavior.HandleAsync(new ValidatedVoidRequest(), (_, _) =>
+            ValueTask.FromResult(Result.Success()), TestContext.Current.CancellationToken);
+
+        // Assert (Then)
+        Assert.True(result.TryGetFailure(out var failure));
+        var aggregate = Assert.IsType<AggregateFailure>(failure);
+        Assert.Equal([first, second], aggregate.Errors);
     }
 
     [Fact]

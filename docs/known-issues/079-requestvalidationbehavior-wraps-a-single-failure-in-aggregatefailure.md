@@ -121,14 +121,18 @@ return failures.All(failure => failure is ValidationFailure)
 - Zero failures → `null` (success).
 - Exactly one failure → returned unchanged, same type/code/message/metadata as the validator produced.
 - Several failures, all `ValidationFailure` → merged into one `ValidationFailure` whose `Errors` is the
-  concatenation of every validator's `ValidationError`s (and `Extra` dictionaries merged), mirroring
-  `UnambitiousFx.Synapse.FluentValidation`'s `FluentValidationRunner`.
+  concatenation of every validator's `ValidationError`s, mirroring
+  `UnambitiousFx.Synapse.FluentValidation`'s `FluentValidationRunner`. Their `Extra` dictionaries are
+  merged key-by-key in validator order, so a key present in more than one `ValidationFailure.Extra`
+  keeps the value from the *later* validator in the list — the same last-write-wins rule a plain
+  `Dictionary<,>` indexer gives you, applied once per key rather than failure-wise.
 - Several failures of mixed types → still an `AggregateFailure`, since there is no lossless way to
   merge arbitrary failure types; `AggregateFailure.Errors` keeps every original failure reachable.
 
-**Verification.** Added `RequestValidationBehaviorTests` cases for: a single failure returned
-unchanged (`Assert.Same`), multiple `ValidationFailure`s merged into one with both field errors
-present, and a mix of a `ValidationFailure` and a plain `Failure` still producing an `AggregateFailure`
-with both originals in `Errors` — covering both the void and response-returning behavior. The full
-`test/Synapse.Tests` suite passes (1608/1608 across net8.0/net9.0/net10.0/net11.0), and
-`dotnet build src/Synapse/Synapse.csproj` is 0 warnings, 0 errors.
+**Verification.** Added `RequestValidationBehaviorTests` cases, for both the void and
+response-returning behavior: a single failure returned unchanged (`Assert.Same`), multiple
+`ValidationFailure`s merged into one with every field error present, a mix of a `ValidationFailure`
+and a plain `Failure` still producing an `AggregateFailure` with both originals in `Errors`, and (on
+the response-returning behavior) a case asserting the later-validator-wins rule for a colliding
+`Extra` key. The full `test/Synapse.Tests` suite passes (1608/1608 across
+net8.0/net9.0/net10.0/net11.0), and `dotnet build src/Synapse/Synapse.csproj` is 0 warnings, 0 errors.

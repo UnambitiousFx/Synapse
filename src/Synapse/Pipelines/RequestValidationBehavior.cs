@@ -160,6 +160,11 @@ internal static class RequestValidationRunner
             : new AggregateFailure(failures);
     }
 
+    /// <summary>
+    ///     Merges every <see cref="ValidationFailure.Errors" /> list and <see cref="ValidationFailure.Extra" />
+    ///     dictionary into one. On an <c>Extra</c> key present in more than one failure, the value from the
+    ///     later failure in <paramref name="failures" /> wins.
+    /// </summary>
     private static ValidationFailure MergeValidationFailures(List<Failure> failures)
     {
         var errors = new List<ValidationError>();
