@@ -1,4 +1,5 @@
 using UnambitiousFx.Functional;
+using UnambitiousFx.Functional.Failures;
 using UnambitiousFx.Synapse.Abstractions;
 
 namespace UnambitiousFx.Synapse.Pipelines;
@@ -55,15 +56,10 @@ public class RequestValidationBehavior<TRequest> : IRequestPipelineBehavior<TReq
     /// </returns>
     public async ValueTask<Result> HandleAsync(TRequest request, RequestHandlerDelegate<TRequest> next, CancellationToken cancellationToken = default)
     {
-        var result = await _validators.Select(x => x.ValidateAsync(request, cancellationToken))
-            .Combine();
-
-        return await result.Match(() => next(request, cancellationToken),
-            error =>
-            {
-                var r = Result.Failure(error);
-                return ValueTask.FromResult(r);
-            });
+        var failure = await RequestValidationRunner.ValidateAsync(_validators, request, cancellationToken);
+        return failure is null
+            ? await next(request, cancellationToken)
+            : Result.Failure(failure);
     }
 }
 
@@ -112,14 +108,83 @@ public class RequestValidationBehavior<TRequest, TResponse> : IRequestPipelineBe
         RequestHandlerDelegate<TRequest, TResponse> next,
         CancellationToken cancellationToken)
     {
-        var result = await _validators.Select(x => x.ValidateAsync(request, cancellationToken))
-            .Combine();
+        var failure = await RequestValidationRunner.ValidateAsync(_validators, request, cancellationToken);
+        return failure is null
+            ? await next(request, cancellationToken)
+            : Result.Failure<TResponse>(failure);
+    }
+}
 
-        return await result.Match(() => next(request, cancellationToken),
-            error =>
+/// <summary>
+///     Runs the validators registered for a request and reduces their failures to a single <see cref="Failure" />,
+///     without wrapping a lone failure in an <see cref="AggregateFailure" />.
+/// </summary>
+internal static class RequestValidationRunner
+{
+    /// <summary>
+    ///     Validates <paramref name="request" /> against every validator and reduces the failures collected.
+    /// </summary>
+    /// <returns>
+    ///     <see langword="null" /> when every validator succeeds; the single failure unchanged when exactly one
+    ///     validator fails; otherwise a failure that preserves every error (a merged <see cref="ValidationFailure" />
+    ///     when every failure is one, an <see cref="AggregateFailure" /> otherwise).
+    /// </returns>
+    public static async ValueTask<Failure?> ValidateAsync<TRequest>(
+        IEnumerable<IRequestValidator<TRequest>> validators,
+        TRequest request,
+        CancellationToken cancellationToken)
+    {
+        List<Failure>? failures = null;
+        foreach (var validator in validators)
+        {
+            var result = await validator.ValidateAsync(request, cancellationToken);
+            if (result.TryGetFailure(out var failure))
             {
-                var r = Result.Failure<TResponse>(error);
-                return ValueTask.FromResult(r);
-            });
+                failures ??= [];
+                failures.Add(failure);
+            }
+        }
+
+        if (failures is null)
+        {
+            return null;
+        }
+
+        if (failures.Count == 1)
+        {
+            return failures[0];
+        }
+
+        return failures.All(failure => failure is ValidationFailure)
+            ? MergeValidationFailures(failures)
+            : new AggregateFailure(failures);
+    }
+
+    /// <summary>
+    ///     Merges every <see cref="ValidationFailure.Errors" /> list and <see cref="ValidationFailure.Extra" />
+    ///     dictionary into one. On an <c>Extra</c> key present in more than one failure, the value from the
+    ///     later failure in <paramref name="failures" /> wins.
+    /// </summary>
+    private static ValidationFailure MergeValidationFailures(List<Failure> failures)
+    {
+        var errors = new List<ValidationError>();
+        Dictionary<string, object?>? extra = null;
+        foreach (var failure in failures)
+        {
+            var validationFailure = (ValidationFailure)failure;
+            errors.AddRange(validationFailure.Errors);
+            if (validationFailure.Extra is not { Count: > 0 })
+            {
+                continue;
+            }
+
+            extra ??= new Dictionary<string, object?>();
+            foreach (var (key, value) in validationFailure.Extra)
+            {
+                extra[key] = value;
+            }
+        }
+
+        return new ValidationFailure(errors, extra);
     }
 }
